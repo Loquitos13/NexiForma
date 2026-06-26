@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build
+dist/
+.next/
+out/
+build/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Debug / logs
+npm-debug.log*
+pnpm-debug.log*
+*.log
+
+# Test
+coverage/
+
+# Turbo
+.turbo
+
+# Prisma cliente gerado
+packages/database/generated/
+
+# Storage local (documentos formando, LMS, exports)
+apps/api/storage/
+storage/

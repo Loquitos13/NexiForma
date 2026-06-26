@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nexiforma
+          POSTGRES_PASSWORD: nexiforma_dev
+          POSTGRES_DB: nexiforma
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://nexiforma:nexiforma_dev@localhost:5432/nexiforma?schema=public
+      JWT_SECRET: ci-test-secret-at-least-32-chars-long
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Migrate
+        run: npm run migrate:deploy -w @nexiforma/database
+
+      - name: Build packages & API
+        run: npm run build:packages && npm run build -w @nexiforma/api
+
+      - name: Unit tests (API)
+        run: npm run test -w @nexiforma/api
+
+      - name: Build web
+        run: npm run build -w @nexiforma/web

@@ -1,0 +1,1 @@
+ALTER TYPE "ModuloConteudoTipo" ADD VALUE IF NOT EXISTS 'WEBINAR';

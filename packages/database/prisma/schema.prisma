@@ -1,0 +1,1332 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["public", "control_plane"]
+}
+
+// ---------------------------------------------------------------------------
+// control_plane – SaaS: tenants, subs, chaves, auditoria global, impersonação
+// ---------------------------------------------------------------------------
+
+enum ControlTenantStatus {
+  ACTIVE
+  SUSPENDED
+  TRIAL
+  ARCHIVED
+
+  @@schema("control_plane")
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  PAUSED
+
+  @@schema("control_plane")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+  UNCOLLECTIBLE
+
+  @@schema("control_plane")
+}
+
+enum SubscriptionKeyStatus {
+  ACTIVE
+  ROTATED
+  REVOKED
+
+  @@schema("control_plane")
+}
+
+enum AuditActorType {
+  SUPERADMIN_USER
+  SYSTEM
+  TENANT_USER
+
+  @@schema("control_plane")
+}
+
+/// Operadores da plataforma (Control Plane) – autenticação separada dos utilizadores tenant.
+model PlatformUser {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  displayName  String   @map("display_name")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_users")
+  @@schema("control_plane")
+}
+
+/// Sessões de refresh token (rotação; hash opaco na BD, valor em cookie HttpOnly).
+model AuthRefreshSession {
+  id            String    @id @default(uuid()) @db.Uuid
+  tokenHash     String    @unique @map("token_hash")
+  subjectKind   String    @map("subject_kind")
+  subjectId     String    @map("subject_id") @db.Uuid
+  expiresAt     DateTime  @map("expires_at")
+  revokedAt     DateTime? @map("revoked_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([subjectKind, subjectId])
+  @@index([expiresAt])
+  @@map("auth_refresh_sessions")
+  @@schema("control_plane")
+}
+
+model Tenant {
+  id          String              @id @default(uuid()) @db.Uuid
+  slug        String              @unique
+  legalName   String              @map("legal_name")
+  nif         String              @unique
+  status      ControlTenantStatus @default(TRIAL)
+  metadata    Json? // contactos, morada DGERT, etc.
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  // control_plane
+  subscriptions         TenantSubscription[]
+  subscriptionKeys      TenantSubscriptionKey[]
+  impersonationSessions ImpersonationSession[]
+
+  // public (dados operacionais isolados por tenant_id + RLS em produção)
+  users           User[]
+  tenantInvites   TenantInvite[]
+  entidadesCliente EntidadeCliente[]
+  propostasComerciais PropostaComercial[]
+  leadsComerciais     LeadComercial[]
+  configFaturacao     ConfigFaturacaoTenant?
+  seriesFaturacao     SerieFaturacao[]
+  faturasComerciais   FaturaComercial[]
+  notificacoesPortal  NotificacaoPortal[]
+  formandos       FormandoProfile[]
+  formadores      FormadorProfile[]
+  cursos          Curso[]
+  acoesFormacao   AcaoFormacao[]
+  turmas          Turma[]
+  matriculas      Matricula[]
+  cronogramas     Cronograma[]
+  sessoesFormacao SessaoFormacao[]
+  sumarios        Sumario[]
+  folhasPresenca  FolhaPresenca[]
+  presencas       Presenca[]
+  acessosLms      AcessoLms[]
+  modulosConteudo ModuloConteudo[]
+  modulosUnidade  ModuloUnidade[]
+  progressosModulo ProgressoModulo[]
+  arquivosExportacao ArquivoExportacao[]
+  certificadosVerificacao CertificadoVerificacao[]
+  tenantIntegracoes TenantIntegracao[]
+  sigoSubmissoes SigoSubmissao[]
+  rgpdPedidos RgpdPedido[]
+  rgpdConsents RgpdConsent[]
+  documentosAnexo DocumentoAnexo[]
+  quizPerguntas QuizPergunta[]
+  quizTentativas QuizTentativa[]
+  avaliacoesFormando AvaliacaoFormando[]
+
+  @@map("tenants")
+  @@schema("control_plane")
+}
+
+model SubscriptionPlan {
+  id                   String @id @default(uuid()) @db.Uuid
+  code                 String @unique // starter | pro | enterprise
+  name                 String
+  priceCentsMonthly    Int        @map("price_cents_monthly")
+  maxActiveUsers       Int?       @map("max_active_users") // null = ilimitado
+  features             Json?
+  active               Boolean    @default(true)
+  createdAt            DateTime   @default(now()) @map("created_at")
+
+  subscriptions TenantSubscription[]
+
+  @@map("subscription_plans")
+  @@schema("control_plane")
+}
+
+model TenantSubscription {
+  id                   String               @id @default(uuid()) @db.Uuid
+  tenantId             String               @map("tenant_id") @db.Uuid
+  planId               String               @map("plan_id") @db.Uuid
+  status               SubscriptionStatus   @default(TRIALING)
+  currentPeriodStart   DateTime             @map("current_period_start")
+  currentPeriodEnd     DateTime             @map("current_period_end")
+  cancelAtPeriodEnd    Boolean              @default(false) @map("cancel_at_period_end")
+  billingEmail         String?              @map("billing_email")
+  externalCustomerId   String?              @map("external_customer_id") // Stripe
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan      SubscriptionPlan @relation(fields: [planId], references: [id])
+  invoices  SubscriptionInvoice[]
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("tenant_subscriptions")
+  @@schema("control_plane")
+}
+
+model SubscriptionInvoice {
+  id                       String       @id @default(uuid()) @db.Uuid
+  tenantSubscriptionId     String       @map("tenant_subscription_id") @db.Uuid
+  periodStart              DateTime     @map("period_start") @db.Date
+  periodEnd                DateTime     @map("period_end") @db.Date
+  amountCents              Int          @map("amount_cents")
+  currency                 String       @db.Char(3)
+  status                   InvoiceStatus @default(DRAFT)
+  paidAt                   DateTime?    @map("paid_at")
+  externalInvoiceId        String?      @map("external_invoice_id")
+  paymentMethodLast4       String?      @map("payment_method_last4")
+  rawPayload               Json?        @map("raw_payload")
+  createdAt                DateTime     @default(now()) @map("created_at")
+
+  subscription TenantSubscription @relation(fields: [tenantSubscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantSubscriptionId])
+  @@map("subscription_invoices")
+  @@schema("control_plane")
+}
+
+model TenantSubscriptionKey {
+  id                        String                   @id @default(uuid()) @db.Uuid
+  tenantId                  String                   @map("tenant_id") @db.Uuid
+  keyPrefix                 String                   @map("key_prefix") // ex. nf_live_
+  keyHash                   String                   @map("key_hash") // argon2id ou bcrypt do segredo
+  status                    SubscriptionKeyStatus     @default(ACTIVE)
+  expiresAt                 DateTime?                @map("expires_at")
+  maxActiveUsersSnapshot    Int?                     @map("max_active_users_snapshot")
+  rotatedAt                 DateTime?               @map("rotated_at")
+  revokedAt                 DateTime?               @map("revoked_at")
+  createdAt                 DateTime                 @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Uma chave ACTIVE por tenant: enforcement na aplicação ou índice parcial SQL (migração manual)
+  @@index([tenantId, status])
+  @@map("tenant_subscription_keys")
+  @@schema("control_plane")
+}
+
+model GlobalAuditLog {
+  id                       BigInt   @id @default(autoincrement())
+  occurredAt               DateTime @default(now()) @map("occurred_at")
+  actorType                AuditActorType @map("actor_type")
+  actorId                  String             @map("actor_id") // Cognito sub / UUID plataforma
+  actorIp                  String?            @map("actor_ip") @db.Inet
+  action                   String
+  resourceType             String             @map("resource_type")
+  resourceId               String             @map("resource_id")
+  targetTenantId           String?       @map("target_tenant_id") @db.Uuid
+  targetUserId             String?       @map("target_user_id") @db.Uuid
+  payload                  Json?
+  prevHash                 Bytes?             @map("prev_hash") // opcional hash chain
+
+  impersonationSessions ImpersonationSession[] @relation("ImpersonationAudit")
+
+  @@index([occurredAt])
+  @@index([targetTenantId])
+  @@index([action])
+  @@map("global_audit_logs")
+  @@schema("control_plane")
+}
+
+model ImpersonationSession {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  targetUserId    String    @map("target_user_id") @db.Uuid
+  superAdminId    String    @map("super_admin_id") // identificador plataforma (Cognito)
+  reason          String
+  jwtJti          String    @unique @map("jwt_jti")
+  readOnly        Boolean   @default(true) @map("read_only")
+  expiresAt       DateTime  @map("expires_at")
+  revokedAt       DateTime? @map("revoked_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  auditLogId      BigInt?   @map("audit_log_id")
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  targetUser User            @relation("ImpersonatedUserSessions", fields: [targetUserId], references: [id], onDelete: Cascade)
+  auditLog GlobalAuditLog?  @relation("ImpersonationAudit", fields: [auditLogId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@map("impersonation_sessions")
+  @@schema("control_plane")
+}
+
+// ---------------------------------------------------------------------------
+// public – dados operacionais (RLS futuro por tenant_id)
+// ---------------------------------------------------------------------------
+
+enum TenantUserRole {
+  ADMIN
+  COORDENADOR
+  FORMADOR
+  FORMANDO
+  FINANCEIRO
+  COMERCIAL
+
+  @@schema("public")
+}
+
+enum AcaoEstado {
+  PLANEADA
+  EM_CURSO
+  CONCLUIDA
+  CANCELADA
+
+  @@schema("public")
+}
+
+enum MatriculaEstado {
+  ATIVA
+  DESISTENCIA
+  CONCLUSAO
+
+  @@schema("public")
+}
+
+enum SessaoEstado {
+  AGENDADA
+  REALIZADA
+  CANCELADA
+
+  @@schema("public")
+}
+
+enum ModuloConteudoTipo {
+  VIDEO
+  PDF
+  SCORM
+  TEXTO
+  QUIZ
+  WEBINAR
+
+  @@schema("public")
+}
+
+model User {
+  id           String           @id @default(uuid()) @db.Uuid
+  tenantId     String           @map("tenant_id") @db.Uuid
+  email        String
+  displayName  String           @map("display_name")
+  role         TenantUserRole
+  /// Hash Argon2id (ou futuro apenas SSO Cognito sem password).
+  passwordHash String?          @map("password_hash")
+  active       Boolean          @default(true)
+  cognitoSub   String?          @unique @map("cognito_sub")
+  mfaEnabled   Boolean          @default(false) @map("mfa_enabled")
+  /// Segredo TOTP base32 (em produção encriptar com KMS).
+  mfaSecret    String?          @map("mfa_secret")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  formadorProfile FormadorProfile?
+  formandoProfile FormandoProfile?
+  impersonationSessionsAsTarget ImpersonationSession[] @relation("ImpersonatedUserSessions")
+  arquivosExportacao ArquivoExportacao[]
+  rgpdConsent     RgpdConsent?
+  faturasEmitidas FaturaComercial[] @relation("FaturaEmitidaPor")
+  pedidosAnulacaoSolicitados FaturaPedidoAnulacao[] @relation("PedidoAnulacaoSolicitante")
+  pedidosAnulacaoResolvidos  FaturaPedidoAnulacao[] @relation("PedidoAnulacaoResolvido")
+  notificacoesPortal         NotificacaoPortal[]
+  pushSubscriptions          PushSubscription[]
+  leadsAtribuidos            LeadComercial[] @relation("LeadAtribuido")
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([email])
+  @@map("users")
+  @@schema("public")
+}
+
+model TenantInvite {
+  id           String         @id @default(uuid()) @db.Uuid
+  tenantId     String         @map("tenant_id") @db.Uuid
+  email        String
+  role         TenantUserRole
+  tokenHash    String         @unique @map("token_hash")
+  expiresAt    DateTime       @map("expires_at")
+  acceptedAt   DateTime?      @map("accepted_at")
+  invitedById  String         @map("invited_by_id") @db.Uuid
+  createdAt    DateTime       @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("tenant_invites")
+  @@schema("public")
+}
+
+model EntidadeCliente {
+  id         String    @id @default(uuid()) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  nif        String
+  nome       String
+  email      String?
+  telefone   String?
+  createdAt  DateTime  @default(now()) @map("created_at")
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  formandos  FormandoProfile[]
+  propostas  PropostaComercial[]
+  leads      LeadComercial[]
+  faturas    FaturaComercial[]
+  documentos DocumentoAnexo[]
+
+  @@unique([tenantId, nif])
+  @@index([tenantId])
+  @@map("entidades_cliente")
+  @@schema("public")
+}
+
+model FormandoProfile {
+  id                  String           @id @default(uuid()) @db.Uuid
+  tenantId            String           @map("tenant_id") @db.Uuid
+  userId              String?          @unique @map("user_id") @db.Uuid
+  entidadeClienteId   String?          @map("entidade_cliente_id") @db.Uuid
+  nome                String
+  nif                 String
+  email               String?
+  /// Email a usar no Zoom/Teams para contar assiduidade (gestor). Se vazio, usa a conta do tenant.
+  emailPresenca       String?          @map("email_presenca")
+  telefone            String?
+  metadata            Json? // CC encriptado app-level, etc. – nunca em claro
+  createdAt           DateTime        @default(now()) @map("created_at")
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user            User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  entidadeCliente EntidadeCliente? @relation(fields: [entidadeClienteId], references: [id], onDelete: SetNull)
+  matriculas      Matricula[]
+  documentos      DocumentoAnexo[]
+
+  @@unique([tenantId, nif])
+  @@index([tenantId])
+  @@index([tenantId, emailPresenca])
+  @@map("formandos")
+  @@schema("public")
+}
+
+model FormadorProfile {
+  id               String           @id @default(uuid()) @db.Uuid
+  tenantId         String           @map("tenant_id") @db.Uuid
+  userId           String           @unique @map("user_id") @db.Uuid
+  nomeCompleto    String           @map("nome_completo")
+  nif              String
+  email            String
+  ccNumero         String?          @map("cc_numero")
+  ccpNumero        String?          @map("ccp_numero")
+  ccValidade       DateTime?        @map("cc_validade") @db.Date
+  ccpValidade      DateTime?        @map("ccp_validade") @db.Date
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  sessoesFormacao SessaoFormacao[]
+  modulosUnidade  ModuloUnidade[]
+
+  @@unique([tenantId, nif])
+  @@index([tenantId])
+  @@map("formadores")
+  @@schema("public")
+}
+
+model Curso {
+  id                String          @id @default(uuid()) @db.Uuid
+  tenantId          String          @map("tenant_id") @db.Uuid
+  codigoUfcd        String?         @map("codigo_ufcd")
+  designacao        String
+  cargaHoras        Int             @map("carga_horas")
+  modalidade        String          // presencial | b-learning | e-learning
+  objetivos         String?
+  createdAt         DateTime        @default(now()) @map("created_at")
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  acoesFormacao    AcaoFormacao[]
+  modulosConteudo ModuloConteudo[]
+  modulosUnidade  ModuloUnidade[]
+  propostasComerciais PropostaComercial[]
+
+  @@index([tenantId])
+  @@map("cursos")
+  @@schema("public")
+}
+
+model AcaoFormacao {
+  id              String           @id @default(uuid()) @db.Uuid
+  tenantId        String           @map("tenant_id") @db.Uuid
+  cursoId         String           @map("curso_id") @db.Uuid
+  codigoInterno   String           @map("codigo_interno")
+  titulo          String
+  dataInicio      DateTime          @map("data_inicio") @db.Date
+  dataFim         DateTime          @map("data_fim") @db.Date
+  estado          AcaoEstado        @default(PLANEADA)
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  curso Curso @relation(fields: [cursoId], references: [id], onDelete: Restrict)
+
+  turmas    Turma[]
+  cronogramas Cronograma[]
+  arquivosExportacao ArquivoExportacao[]
+  sigoSubmissoes SigoSubmissao[]
+  documentosAnexo DocumentoAnexo[]
+
+  @@unique([tenantId, codigoInterno])
+  @@index([tenantId])
+  @@map("acoes_formacao")
+  @@schema("public")
+}
+
+model Turma {
+  id              String         @id @default(uuid()) @db.Uuid
+  tenantId        String         @map("tenant_id") @db.Uuid
+  acaoFormacaoId  String         @map("acao_formacao_id") @db.Uuid
+  codigo          String
+  nome            String
+
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  acaoFormacao AcaoFormacao   @relation(fields: [acaoFormacaoId], references: [id], onDelete: Cascade)
+  matriculas     Matricula[]
+  folhasPresenca FolhaPresenca[]
+
+  @@unique([tenantId, acaoFormacaoId, codigo])
+  @@index([tenantId])
+  @@map("turmas")
+  @@schema("public")
+}
+
+model Matricula {
+  id               String           @id @default(uuid()) @db.Uuid
+  tenantId         String           @map("tenant_id") @db.Uuid
+  turmaId          String           @map("turma_id") @db.Uuid
+  formandoId       String           @map("formando_id") @db.Uuid
+  estado           MatriculaEstado  @default(ATIVA)
+  dataInscricao    DateTime         @default(now()) @map("data_inscricao")
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  turma    Turma           @relation(fields: [turmaId], references: [id], onDelete: Cascade)
+  formando FormandoProfile @relation(fields: [formandoId], references: [id], onDelete: Cascade)
+
+  presencas Presenca[]
+  acessosLms AcessoLms[]
+  progressosModulo ProgressoModulo[]
+  certificadoVerificacao CertificadoVerificacao?
+  quizTentativas QuizTentativa[]
+  avaliacoes AvaliacaoFormando[]
+
+  @@unique([turmaId, formandoId])
+  @@index([tenantId])
+  @@map("matriculas")
+  @@schema("public")
+}
+
+model Cronograma {
+  id              String           @id @default(uuid()) @db.Uuid
+  tenantId        String           @map("tenant_id") @db.Uuid
+  acaoFormacaoId  String           @map("acao_formacao_id") @db.Uuid
+  versao          Int              @default(1)
+  aprovadoPor     String?          @map("aprovado_por") @db.Uuid
+  aprovadoEm      DateTime?        @map("aprovado_em")
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  acaoFormacao AcaoFormacao     @relation(fields: [acaoFormacaoId], references: [id], onDelete: Cascade)
+  sessoes      SessaoFormacao[]
+
+  @@unique([tenantId, acaoFormacaoId, versao])
+  @@index([tenantId])
+  @@map("cronogramas")
+  @@schema("public")
+}
+
+model SessaoFormacao {
+  id              String           @id @default(uuid()) @db.Uuid
+  tenantId        String           @map("tenant_id") @db.Uuid
+  cronogramaId    String           @map("cronograma_id") @db.Uuid
+  numeroSessao    Int              @map("numero_sessao")
+  data            DateTime         @db.Date
+  horaInicio      String           @map("hora_inicio") // HH:mm
+  horaFim         String           @map("hora_fim")
+  modalidade      String
+  estado          SessaoEstado     @default(AGENDADA)
+  lmsAtivo        Boolean          @default(false) @map("lms_ativo")
+  zoomMeetingId   String?          @map("zoom_meeting_id")
+  teamsMeetingId  String?          @map("teams_meeting_id")
+  salaJoinUrl     String?          @map("sala_join_url")
+  minutosPresencaMin Int           @default(60) @map("minutos_presenca_min")
+  formadorId      String?          @map("formador_id") @db.Uuid
+  moduloUnidadeId String?          @map("modulo_unidade_id") @db.Uuid
+  iniciadaEm      DateTime?        @map("iniciada_em")
+  terminadaEm     DateTime?        @map("terminada_em")
+  formadorPresente Boolean?        @map("formador_presente")
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cronograma Cronograma @relation(fields: [cronogramaId], references: [id], onDelete: Cascade)
+  formador   FormadorProfile? @relation(fields: [formadorId], references: [id], onDelete: SetNull)
+  moduloUnidade ModuloUnidade? @relation(fields: [moduloUnidadeId], references: [id], onDelete: SetNull)
+
+  sumarios        Sumario[]
+  folhasPresenca  FolhaPresenca[]
+  acessosLms      AcessoLms[]
+
+  @@unique([cronogramaId, numeroSessao])
+  @@index([tenantId])
+  @@map("sessoes_formacao")
+  @@schema("public")
+}
+
+model Sumario {
+  id                 String          @id @default(uuid()) @db.Uuid
+  tenantId           String          @map("tenant_id") @db.Uuid
+  sessaoId           String          @map("sessao_id") @db.Uuid
+  conteudo           String          @db.Text
+  assinaturaRef      String?         @map("assinatura_ref")
+  assinaturaTipo     String?         @default("interna") @map("assinatura_tipo")
+  assinaturaMetadata Json?           @map("assinatura_metadata")
+  assinadoEm         DateTime?       @map("assinado_em")
+  imutavel           Boolean         @default(false)
+  createdAt          DateTime        @default(now()) @map("created_at")
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sessao SessaoFormacao @relation(fields: [sessaoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, sessaoId])
+  @@map("sumarios")
+  @@schema("public")
+}
+
+model FolhaPresenca {
+  id                   String    @id @default(uuid()) @db.Uuid
+  tenantId             String    @map("tenant_id") @db.Uuid
+  sessaoId             String    @map("sessao_id") @db.Uuid
+  turmaId              String?   @map("turma_id") @db.Uuid
+  origem               String    @default("manual") // manual | automatica | hibrida
+  fechadaEm            DateTime? @map("fechada_em")
+  validadaFormadorEm   DateTime? @map("validada_formador_em")
+  validadaFormadorPor  String?   @map("validada_formador_por") @db.Uuid
+  aprovadaGestorEm     DateTime? @map("aprovada_gestor_em")
+  aprovadaGestorPor    String?   @map("aprovada_gestor_por") @db.Uuid
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sessao SessaoFormacao @relation(fields: [sessaoId], references: [id], onDelete: Cascade)
+  turma  Turma?         @relation(fields: [turmaId], references: [id], onDelete: Cascade)
+
+  presencas Presenca[]
+
+  @@unique([sessaoId, turmaId])
+  @@index([tenantId, sessaoId])
+  @@map("folhas_presenca")
+  @@schema("public")
+}
+
+model Presenca {
+  id                 String    @id @default(uuid()) @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
+  folhaPresencaId    String    @map("folha_presenca_id") @db.Uuid
+  matriculaId        String    @map("matricula_id") @db.Uuid
+  presente           Boolean   @default(false)
+  estado             String?   // PRESENTE | FALTA_JUSTIFICADA | FALTA_INJUSTIFICADA
+  motivoJustificacao String?   @map("motivo_justificacao")
+  minutosEfetivos    Int?      @map("minutos_efetivos")
+  origem             String    @default("manual") // manual | zoom | teams | meet | lms
+  validado           Boolean   @default(false)
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  folhaPresenca FolhaPresenca @relation(fields: [folhaPresencaId], references: [id], onDelete: Cascade)
+  matricula     Matricula     @relation(fields: [matriculaId], references: [id], onDelete: Cascade)
+
+  @@unique([folhaPresencaId, matriculaId])
+  @@index([tenantId])
+  @@map("presencas")
+  @@schema("public")
+}
+
+model AcessoLms {
+  id                String    @id @default(uuid()) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  matriculaId       String    @map("matricula_id") @db.Uuid
+  sessaoFormacaoId  String?   @map("sessao_formacao_id") @db.Uuid
+  evento            String    // join | leave | heartbeat
+  duracaoSegundos   Int?      @map("duracao_segundos")
+  ocorridoEm        DateTime  @default(now()) @map("ocorrido_em")
+  metadata          Json?
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  matricula Matricula       @relation(fields: [matriculaId], references: [id], onDelete: Cascade)
+  sessao   SessaoFormacao?  @relation(fields: [sessaoFormacaoId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, matriculaId, ocorridoEm])
+  @@map("acesso_lms")
+  @@schema("public")
+}
+
+model ModuloUnidade {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  cursoId    String   @map("curso_id") @db.Uuid
+  codigo     String?  // sigla curta para cronograma DGERT (ex. FPA, AC)
+  titulo     String
+  descricao  String?  @db.Text
+  cargaHoras Int?     @map("carga_horas")
+  ordem      Int      @default(0)
+  notaMinima Int?     @map("nota_minima")
+  formadorId String?  @map("formador_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  curso     Curso            @relation(fields: [cursoId], references: [id], onDelete: Cascade)
+  formador  FormadorProfile? @relation(fields: [formadorId], references: [id], onDelete: SetNull)
+  conteudos ModuloConteudo[]
+  sessoes   SessaoFormacao[]
+
+  @@index([tenantId, cursoId])
+  @@map("modulos_unidade")
+  @@schema("public")
+}
+
+model ModuloConteudo {
+  id           String             @id @default(uuid()) @db.Uuid
+  tenantId     String             @map("tenant_id") @db.Uuid
+  cursoId      String             @map("curso_id") @db.Uuid
+  moduloUnidadeId String?         @map("modulo_unidade_id") @db.Uuid
+  titulo       String
+  tipo         ModuloConteudoTipo
+  ordem        Int                @default(0)
+  urlOuRef     String?            @map("url_ou_ref")
+  conteudoHtml String?            @map("conteudo_html") @db.Text
+  duracaoMin   Int?               @map("duracao_min")
+  metadata     Json?
+  prerequisitoModuloId String?      @map("prerequisito_modulo_id") @db.Uuid
+  notaMinima   Int?               @default(60) @map("nota_minima")
+  publicado    Boolean            @default(true)
+  createdAt    DateTime           @default(now()) @map("created_at")
+
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  curso      Curso             @relation(fields: [cursoId], references: [id], onDelete: Cascade)
+  moduloUnidade ModuloUnidade? @relation(fields: [moduloUnidadeId], references: [id], onDelete: SetNull)
+  prerequisito ModuloConteudo? @relation("ModuloPrerequisito", fields: [prerequisitoModuloId], references: [id], onDelete: SetNull)
+  dependentes  ModuloConteudo[] @relation("ModuloPrerequisito")
+  progressos ProgressoModulo[]
+  quizPerguntas QuizPergunta[]
+  quizTentativas QuizTentativa[]
+
+  @@index([tenantId, cursoId])
+  @@map("modulos_conteudo")
+  @@schema("public")
+}
+
+model ProgressoModulo {
+  id           String    @id @default(uuid()) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  matriculaId  String    @map("matricula_id") @db.Uuid
+  moduloId     String    @map("modulo_id") @db.Uuid
+  percentual   Int       @default(0)
+  pontuacao    Int?
+  tentativas   Int       @default(0)
+  concluidoEm  DateTime? @map("concluido_em")
+  ultimaVisita DateTime  @default(now()) @map("ultima_visita")
+  metadata     Json?
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  matricula Matricula      @relation(fields: [matriculaId], references: [id], onDelete: Cascade)
+  modulo    ModuloConteudo @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+
+  @@unique([matriculaId, moduloId])
+  @@index([tenantId, matriculaId])
+  @@map("progressos_modulo")
+  @@schema("public")
+}
+
+enum ExportArquivoTipo {
+  DOSSIE_JSON
+  SIGO_JSON
+  DOSSIE_HTML
+  CRONOGRAMA_HTML
+  INSPECAO_ZIP
+
+  @@schema("public")
+}
+
+model ArquivoExportacao {
+  id              String            @id @default(uuid()) @db.Uuid
+  tenantId        String            @map("tenant_id") @db.Uuid
+  acaoFormacaoId  String            @map("acao_formacao_id") @db.Uuid
+  tipo            ExportArquivoTipo
+  storageKey      String            @map("storage_key")
+  nomeFicheiro    String            @map("nome_ficheiro")
+  mimeType        String            @map("mime_type")
+  tamanhoBytes    Int               @map("tamanho_bytes")
+  createdByUserId String            @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at")
+  expiresAt       DateTime?         @map("expires_at")
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  acaoFormacao AcaoFormacao @relation(fields: [acaoFormacaoId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, acaoFormacaoId])
+  @@map("arquivos_exportacao")
+  @@schema("public")
+}
+
+model CertificadoVerificacao {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  matriculaId      String    @unique @map("matricula_id") @db.Uuid
+  codigoPublico    String    @unique @map("codigo_publico")
+  tokenHash        String    @unique @map("token_hash")
+  hashConteudo     String    @map("hash_conteudo")
+  emitidoPorUserId String?   @map("emitido_por_user_id") @db.Uuid
+  emitidoEm        DateTime  @default(now()) @map("emitido_em")
+  revogadoEm       DateTime? @map("revogado_em")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  matricula Matricula @relation(fields: [matriculaId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("certificados_verificacao")
+  @@schema("public")
+}
+
+enum PropostaEstado {
+  RASCUNHO
+  ENVIADA
+  ACEITE
+  REJEITADA
+  CANCELADA
+
+  @@schema("public")
+}
+
+model PropostaComercial {
+  id                String         @id @default(uuid()) @db.Uuid
+  tenantId          String         @map("tenant_id") @db.Uuid
+  entidadeClienteId String         @map("entidade_cliente_id") @db.Uuid
+  codigo            String
+  titulo            String
+  descricao         String?        @db.Text
+  valorCentavos     Int            @default(0) @map("valor_centavos")
+  moeda             String         @default("EUR") @db.Char(3)
+  estado            PropostaEstado @default(RASCUNHO)
+  validadeAte       DateTime?      @map("validade_ate") @db.Date
+  cursoId           String?        @map("curso_id") @db.Uuid
+  notasInternas     String?        @map("notas_internas") @db.Text
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  entidadeCliente EntidadeCliente @relation(fields: [entidadeClienteId], references: [id], onDelete: Cascade)
+  curso           Curso?          @relation(fields: [cursoId], references: [id], onDelete: SetNull)
+  fatura          FaturaComercial?
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId])
+  @@index([entidadeClienteId])
+  @@map("propostas_comerciais")
+  @@schema("public")
+}
+
+enum LeadEstado {
+  NOVO
+  CONTACTADO
+  QUALIFICADO
+  CONVERTIDO
+  PERDIDO
+
+  @@schema("public")
+}
+
+enum LeadOrigem {
+  WEBSITE
+  REFERRAL
+  FEIRA
+  LINKEDIN
+  TELEFONE
+  OUTRO
+
+  @@schema("public")
+}
+
+model LeadComercial {
+  id                    String     @id @default(uuid()) @db.Uuid
+  tenantId              String     @map("tenant_id") @db.Uuid
+  codigo                String
+  empresaNome           String     @map("empresa_nome")
+  contactoNome          String?    @map("contacto_nome")
+  email                 String?
+  telefone              String?
+  nif                   String?
+  origem                LeadOrigem @default(OUTRO)
+  estado                LeadEstado @default(NOVO)
+  valorEstimadoCentavos Int        @default(0) @map("valor_estimado_centavos")
+  notas                 String?    @db.Text
+  motivoPerda           String?    @map("motivo_perda") @db.Text
+  entidadeClienteId     String?    @map("entidade_cliente_id") @db.Uuid
+  atribuidoUserId       String?    @map("atribuido_user_id") @db.Uuid
+  convertidoEm          DateTime?  @map("convertido_em")
+  createdAt             DateTime   @default(now()) @map("created_at")
+  updatedAt             DateTime   @updatedAt @map("updated_at")
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  entidadeCliente EntidadeCliente? @relation(fields: [entidadeClienteId], references: [id], onDelete: SetNull)
+  atribuido       User?            @relation("LeadAtribuido", fields: [atribuidoUserId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId])
+  @@index([tenantId, estado])
+  @@index([entidadeClienteId])
+  @@map("leads_comerciais")
+  @@schema("public")
+}
+
+enum FaturaEstado {
+  RASCUNHO
+  EMITIDA
+  COMUNICADA_AT
+  ANULADA
+
+  @@schema("public")
+}
+
+enum SerieFaturacaoTipo {
+  FT
+  FS
+  NC
+
+  @@schema("public")
+}
+
+model ConfigFaturacaoTenant {
+  tenantId            String   @id @map("tenant_id") @db.Uuid
+  nomeEmpresa         String   @map("nome_empresa")
+  moradaFiscal        String?  @map("morada_fiscal") @db.Text
+  nifEmitente         String   @map("nif_emitente")
+  regimeIva           String   @default("NORMAL") @map("regime_iva")
+  seriePadraoCodigo   String   @default("2026") @map("serie_padrao_codigo")
+  taxaIvaPadrao       Decimal  @default(23) @map("taxa_iva_padrao") @db.Decimal(5, 2)
+  atSubutilizador     String?  @map("at_subutilizador")
+  atWfaPasswordEnc    String?  @map("at_wfa_password_enc") @db.Text
+  atCertificadoRef    String?  @map("at_certificado_ref")
+  softwareCertificado String?  @map("software_certificado")
+  comunicacaoAtiva    Boolean  @default(false) @map("comunicacao_ativa")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("config_faturacao_tenant")
+  @@schema("public")
+}
+
+model SerieFaturacao {
+  id            String             @id @default(uuid()) @db.Uuid
+  tenantId      String             @map("tenant_id") @db.Uuid
+  codigo        String
+  tipo              SerieFaturacaoTipo @default(FT)
+  proximoNumero     Int                @default(1) @map("proximo_numero")
+  codigoValidacaoAt String?            @map("codigo_validacao_at")
+  ativo             Boolean            @default(true)
+  createdAt     DateTime           @default(now()) @map("created_at")
+
+  tenant  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  faturas FaturaComercial[]
+
+  @@unique([tenantId, codigo, tipo])
+  @@index([tenantId])
+  @@map("series_faturacao")
+  @@schema("public")
+}
+
+model FaturaComercial {
+  id                String       @id @default(uuid()) @db.Uuid
+  tenantId          String       @map("tenant_id") @db.Uuid
+  entidadeClienteId String       @map("entidade_cliente_id") @db.Uuid
+  propostaId        String?      @unique @map("proposta_id") @db.Uuid
+  serieId           String       @map("serie_id") @db.Uuid
+  numero            Int?
+  codigoAtcud       String?      @map("codigo_atcud")
+  estado            FaturaEstado @default(RASCUNHO)
+  dataEmissao       DateTime?    @map("data_emissao")
+  dataVencimento    DateTime?    @map("data_vencimento") @db.Date
+  valorCentavos     Int          @default(0) @map("valor_centavos")
+  ivaCentavos       Int          @default(0) @map("iva_centavos")
+  moeda             String       @default("EUR") @db.Char(3)
+  destinatarioNome    String       @map("destinatario_nome")
+  destinatarioNif     String       @map("destinatario_nif")
+  destinatarioMorada  String?      @map("destinatario_morada") @db.Text
+  notas             String?      @db.Text
+  emitidaPorUserId  String?      @map("emitida_por_user_id") @db.Uuid
+  anuladaEm         DateTime?    @map("anulada_em")
+  motivoAnulacao    String?      @map("motivo_anulacao") @db.Text
+  hashIntegridade   String?      @map("hash_integridade") @db.Char(64)
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  entidadeCliente EntidadeCliente       @relation(fields: [entidadeClienteId], references: [id], onDelete: Cascade)
+  proposta        PropostaComercial?    @relation(fields: [propostaId], references: [id], onDelete: SetNull)
+  serie           SerieFaturacao        @relation(fields: [serieId], references: [id], onDelete: Restrict)
+  emitidaPor      User?                 @relation("FaturaEmitidaPor", fields: [emitidaPorUserId], references: [id], onDelete: SetNull)
+  linhas          FaturaLinha[]
+  comunicacoesAt  FaturaComunicacaoAt[]
+  pedidosAnulacao FaturaPedidoAnulacao[]
+
+  @@index([tenantId])
+  @@index([entidadeClienteId])
+  @@index([estado])
+  @@map("faturas_comerciais")
+  @@schema("public")
+}
+
+model FaturaLinha {
+  id                String   @id @default(uuid()) @db.Uuid
+  faturaId          String   @map("fatura_id") @db.Uuid
+  ordem             Int      @default(1)
+  descricao         String
+  quantidade        Decimal  @default(1) @db.Decimal(12, 4)
+  precoUnitCentavos Int      @map("preco_unit_centavos")
+  taxaIva           Decimal  @map("taxa_iva") @db.Decimal(5, 2)
+  valorIvaCentavos  Int      @map("valor_iva_centavos")
+
+  fatura FaturaComercial @relation(fields: [faturaId], references: [id], onDelete: Cascade)
+
+  @@index([faturaId])
+  @@map("faturas_linhas")
+  @@schema("public")
+}
+
+model FaturaComunicacaoAt {
+  id             String   @id @default(uuid()) @db.Uuid
+  faturaId       String   @map("fatura_id") @db.Uuid
+  tentativaEm    DateTime @default(now()) @map("tentativa_em")
+  sucesso        Boolean
+  codigoResposta String?  @map("codigo_resposta")
+  mensagemAt     String?  @map("mensagem_at") @db.Text
+  payloadHash    String?  @map("payload_hash")
+
+  fatura FaturaComercial @relation(fields: [faturaId], references: [id], onDelete: Cascade)
+
+  @@index([faturaId])
+  @@map("faturas_comunicacoes_at")
+  @@schema("public")
+}
+
+enum FaturaPedidoAnulacaoEstado {
+  PENDENTE
+  APROVADO
+  REJEITADO
+
+  @@schema("public")
+}
+
+model FaturaPedidoAnulacao {
+  id                  String                     @id @default(uuid()) @db.Uuid
+  faturaId            String                     @map("fatura_id") @db.Uuid
+  solicitadoPorUserId String                     @map("solicitado_por_user_id") @db.Uuid
+  motivo              String                     @db.Text
+  estado              FaturaPedidoAnulacaoEstado @default(PENDENTE)
+  respostaMotivo      String?                    @map("resposta_motivo") @db.Text
+  resolvidoPorUserId  String?                    @map("resolvido_por_user_id") @db.Uuid
+  resolvidoEm         DateTime?                  @map("resolvido_em")
+  createdAt           DateTime                   @default(now()) @map("created_at")
+
+  fatura        FaturaComercial @relation(fields: [faturaId], references: [id], onDelete: Cascade)
+  solicitadoPor User            @relation("PedidoAnulacaoSolicitante", fields: [solicitadoPorUserId], references: [id], onDelete: Cascade)
+  resolvidoPor  User?           @relation("PedidoAnulacaoResolvido", fields: [resolvidoPorUserId], references: [id], onDelete: SetNull)
+
+  @@index([faturaId])
+  @@index([estado])
+  @@map("faturas_pedidos_anulacao")
+  @@schema("public")
+}
+
+model NotificacaoPortal {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tipo      String
+  titulo    String
+  mensagem  String   @db.Text
+  link      String?
+  lida      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, lida])
+  @@index([tenantId])
+  @@map("notificacoes_portal")
+  @@schema("public")
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
+  @@schema("public")
+}
+
+enum EmailEntregaTipo {
+  BOUNCE
+  COMPLAINT
+  DELIVERY
+
+  @@schema("public")
+}
+
+model EmailEntregaEvento {
+  id           String           @id @default(uuid()) @db.Uuid
+  tipo         EmailEntregaTipo
+  destinatario String
+  motivo       String?
+  messageId    String?          @map("message_id")
+  detalhe      Json?
+  ocorridoEm   DateTime         @map("ocorrido_em")
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  @@index([tipo])
+  @@index([destinatario])
+  @@index([ocorridoEm])
+  @@map("email_entrega_eventos")
+  @@schema("public")
+}
+
+enum IntegracaoProvider {
+  ZOOM
+  TEAMS
+  MOODLE
+
+  @@schema("public")
+}
+
+enum IntegracaoMode {
+  DISABLED
+  OAUTH
+
+  @@schema("public")
+}
+
+model TenantIntegracao {
+  id        String             @id @default(uuid()) @db.Uuid
+  tenantId  String             @map("tenant_id") @db.Uuid
+  provider  IntegracaoProvider
+  mode      IntegracaoMode     @default(DISABLED)
+  config    Json?
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, provider])
+  @@map("tenant_integracoes")
+  @@schema("public")
+}
+
+model CatalogoUfcd {
+  codigo      String  @id
+  designacao  String
+  area        String?
+  cargaHoras  Int?    @map("carga_horas")
+  nivelQnq    String? @map("nivel_qnq")
+  activo      Boolean @default(true)
+
+  @@map("catalogo_ufcd")
+  @@schema("public")
+}
+
+model QuizPergunta {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  moduloId  String   @map("modulo_id") @db.Uuid
+  enunciado String   @db.Text
+  ordem     Int      @default(0)
+  opcoes    Json
+  pontos    Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  modulo ModuloConteudo @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, moduloId])
+  @@map("quiz_perguntas")
+  @@schema("public")
+}
+
+model QuizTentativa {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  matriculaId String   @map("matricula_id") @db.Uuid
+  moduloId    String   @map("modulo_id") @db.Uuid
+  respostas   Json
+  pontuacao   Int
+  aprovado    Boolean
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  matricula Matricula      @relation(fields: [matriculaId], references: [id], onDelete: Cascade)
+  modulo    ModuloConteudo @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, matriculaId])
+  @@map("quiz_tentativas")
+  @@schema("public")
+}
+
+enum SigoSubmissaoEstado {
+  PENDENTE
+  SUBMETIDA
+  ACEITE
+  REJEITADA
+  ERRO
+
+  @@schema("public")
+}
+
+model SigoSubmissao {
+  id             String              @id @default(uuid()) @db.Uuid
+  tenantId       String              @map("tenant_id") @db.Uuid
+  acaoFormacaoId String              @map("acao_formacao_id") @db.Uuid
+  referenceId    String              @map("reference_id")
+  estado         SigoSubmissaoEstado @default(PENDENTE)
+  erros          Json?
+  payloadHash    String?             @map("payload_hash")
+  submittedAt    DateTime?           @map("submitted_at")
+  reconciledAt   DateTime?           @map("reconciled_at")
+  createdAt      DateTime            @default(now()) @map("created_at")
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  acaoFormacao AcaoFormacao @relation(fields: [acaoFormacaoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, acaoFormacaoId])
+  @@map("sigo_submissoes")
+  @@schema("public")
+}
+
+enum RgpdPedidoTipo {
+  EXPORT
+  DELETE
+
+  @@schema("public")
+}
+
+enum RgpdPedidoEstado {
+  PENDENTE
+  PROCESSADO
+  REJEITADO
+
+  @@schema("public")
+}
+
+model RgpdConsent {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  userId          String    @unique @map("user_id") @db.Uuid
+  termsVersion    String    @map("terms_version")
+  userAccepted    Boolean?  @map("user_accepted")
+  userDecidedAt   DateTime? @map("user_decided_at")
+  adminStatus     String    @default("PENDING") @map("admin_status")
+  adminReviewedAt DateTime? @map("admin_reviewed_at")
+  adminReviewedBy String?   @map("admin_reviewed_by") @db.Uuid
+  adminNotes      String?   @map("admin_notes") @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([adminStatus])
+  @@map("rgpd_consents")
+  @@schema("public")
+}
+
+model RgpdPedido {
+  id          String           @id @default(uuid()) @db.Uuid
+  tenantId    String           @map("tenant_id") @db.Uuid
+  subjectId   String           @map("subject_id") @db.Uuid
+  subjectType String           @map("subject_type")
+  tipo        RgpdPedidoTipo
+  estado      RgpdPedidoEstado @default(PENDENTE)
+  resultado   Json?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  processedAt DateTime?        @map("processed_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("rgpd_pedidos")
+  @@schema("public")
+}
+
+model DocumentoAnexo {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenantId          String   @map("tenant_id") @db.Uuid
+  entidadeClienteId String?  @map("entidade_cliente_id") @db.Uuid
+  acaoFormacaoId    String?  @map("acao_formacao_id") @db.Uuid
+  formandoId        String?  @map("formando_id") @db.Uuid
+  categoria         String?  // cc | bi | carta_conducao
+  lado              String?  // frente | verso (apenas CC)
+  nome              String
+  storageKey        String   @map("storage_key")
+  mimeType          String   @map("mime_type")
+  tamanhoBytes      Int      @map("tamanho_bytes")
+  createdByUserId   String?  @map("created_by_user_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  entidadeCliente EntidadeCliente? @relation(fields: [entidadeClienteId], references: [id], onDelete: SetNull)
+  acaoFormacao    AcaoFormacao?    @relation(fields: [acaoFormacaoId], references: [id], onDelete: SetNull)
+  formando        FormandoProfile? @relation(fields: [formandoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([formandoId])
+  @@map("documentos_anexo")
+  @@schema("public")
+}
+
+model AvaliacaoFormando {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  matriculaId String   @map("matricula_id") @db.Uuid
+  tipo        String   @default("final")
+  nota        Int?
+  observacoes String?  @db.Text
+  avaliadoEm  DateTime @default(now()) @map("avaliado_em")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  matricula Matricula @relation(fields: [matriculaId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, matriculaId])
+  @@map("avaliacoes_formando")
+  @@schema("public")
+}

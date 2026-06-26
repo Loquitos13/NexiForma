@@ -1,0 +1,865 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --bg: #070b12;
+  --bg-elevated: rgba(15, 23, 42, 0.72);
+  --fg: #e8eef7;
+  --fg-muted: #94a3b8;
+  --accent: #2563eb;
+  --accent-teal: #0d9488;
+  --platform: #7c3aed;
+  --border: rgba(148, 163, 184, 0.22);
+  --radius: 12px;
+  --shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font);
+  background: radial-gradient(1200px circle at 15% -5%, #1e3a5f 0%, var(--bg) 55%);
+  color: var(--fg);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+}
+
+/* Skeleton shimmer */
+.nexi-skeleton {
+  position: relative;
+  overflow: hidden;
+}
+
+.nexi-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(148, 163, 184, 0.14),
+    transparent
+  );
+  animation: nexi-skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes nexi-skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexi-skeleton::after {
+    animation: none;
+  }
+}
+
+/* –– Marketing site –– */
+.site-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  backdrop-filter: blur(12px);
+  background: rgba(7, 11, 18, 0.82);
+  border-bottom: 1px solid var(--border);
+}
+
+.site-header-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0.85rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.site-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-weight: 700;
+  font-size: 1.05rem;
+  text-decoration: none;
+  color: #f1f5f9;
+}
+
+.site-logo-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #2563eb, #0d9488);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  font-size: 0.92rem;
+}
+
+.site-nav a {
+  color: var(--fg-muted);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.site-nav a:hover {
+  color: #f1f5f9;
+}
+
+/* NexiForma NF - vetor de energia rosa percorre contorno (2s) → fill */
+@media (prefers-reduced-motion: no-preference) {
+  .nexi-energy-trail,
+  .nexi-energy-beam,
+  .nexi-energy-head {
+    stroke-dashoffset: 100;
+    animation-duration: var(--nexi-trace, 2s);
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+  }
+
+  .nexi-fill-traced {
+    opacity: 0;
+    animation-duration: var(--nexi-trace, 2s);
+    animation-timing-function: ease-out;
+    animation-fill-mode: forwards;
+  }
+
+  .nexi-energy-trail--0 {
+    animation-name: nexi-energy-trail-0;
+  }
+
+  .nexi-energy-beam--0 {
+    animation-name: nexi-energy-beam-0;
+  }
+
+  .nexi-energy-head--0 {
+    animation-name: nexi-energy-head-0;
+  }
+
+  .nexi-energy-trail--1 {
+    animation-name: nexi-energy-trail-1;
+  }
+
+  .nexi-energy-beam--1 {
+    animation-name: nexi-energy-beam-1;
+  }
+
+  .nexi-energy-head--1 {
+    animation-name: nexi-energy-head-1;
+  }
+
+  .nexi-fill-traced--0 {
+    animation-name: nexi-fill-traced-0;
+  }
+
+  .nexi-fill-traced--1 {
+    animation-name: nexi-fill-traced-1;
+  }
+
+  .nexi-logo-reveal--loop .nexi-energy-trail,
+  .nexi-logo-reveal--loop .nexi-energy-beam,
+  .nexi-logo-reveal--loop .nexi-energy-head {
+    animation-iteration-count: infinite;
+  }
+
+  .nexi-logo-reveal--loop .nexi-fill-traced {
+    animation-iteration-count: 1;
+    animation-fill-mode: forwards;
+  }
+
+  .nexi-neon-card--reveal {
+    animation: nexi-card-glow var(--nexi-trace, 2s) ease-out forwards;
+  }
+
+  .nexi-neon-card--loop {
+    animation: nexi-card-glow var(--nexi-trace, 2s) ease-out infinite;
+  }
+
+  /* Camada 0: fita principal - 0% → 52% do ciclo de 2s */
+  @keyframes nexi-energy-trail-0 {
+    0% {
+      stroke-dashoffset: 100;
+      opacity: 0;
+    }
+    3% {
+      opacity: 0.38;
+    }
+    52% {
+      stroke-dashoffset: 0;
+      opacity: 0.38;
+    }
+    58%,
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+  }
+
+  @keyframes nexi-energy-beam-0 {
+    0% {
+      stroke-dashoffset: 100;
+      opacity: 0;
+    }
+    2% {
+      opacity: 1;
+    }
+    52% {
+      stroke-dashoffset: 0;
+      opacity: 1;
+    }
+    58%,
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+  }
+
+  @keyframes nexi-energy-head-0 {
+    0% {
+      stroke-dashoffset: 100;
+      opacity: 0;
+    }
+    2% {
+      opacity: 1;
+    }
+    50% {
+      stroke-dashoffset: 0;
+      opacity: 1;
+    }
+    56%,
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+  }
+
+  /* Camada 1: fita superior - 48% → 100% do ciclo de 2s */
+  @keyframes nexi-energy-trail-1 {
+    0%,
+    47% {
+      stroke-dashoffset: 100;
+      opacity: 0;
+    }
+    50% {
+      opacity: 0.38;
+    }
+    98% {
+      stroke-dashoffset: 0;
+      opacity: 0.38;
+    }
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+  }
+
+  @keyframes nexi-energy-beam-1 {
+    0%,
+    47% {
+      stroke-dashoffset: 100;
+      opacity: 0;
+    }
+    50% {
+      opacity: 1;
+    }
+    98% {
+      stroke-dashoffset: 0;
+      opacity: 1;
+    }
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+  }
+
+  @keyframes nexi-energy-head-1 {
+    0%,
+    47% {
+      stroke-dashoffset: 100;
+      opacity: 0;
+    }
+    50% {
+      opacity: 1;
+    }
+    96% {
+      stroke-dashoffset: 0;
+      opacity: 1;
+    }
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+  }
+
+  @keyframes nexi-fill-traced-0 {
+    0%,
+    54% {
+      opacity: 0;
+    }
+    62% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes nexi-fill-traced-1 {
+    0%,
+    88% {
+      opacity: 0;
+    }
+    96% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes nexi-card-glow {
+    0% {
+      box-shadow: 0 0 0 rgba(236, 72, 153, 0);
+    }
+    45% {
+      box-shadow: 0 0 28px rgba(244, 114, 182, 0.28);
+    }
+    100% {
+      box-shadow: 0 0 36px rgba(236, 72, 153, 0.2);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexi-energy-trail,
+  .nexi-energy-beam,
+  .nexi-energy-head {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+
+  .nexi-fill-traced {
+    opacity: 1;
+  }
+
+  .nexi-brand-title {
+    opacity: 1;
+    filter: none;
+    background-position: 50% 50%;
+  }
+}
+
+/* Título NexiForma - rainbow líquido infinito (loop sem salto) */
+@media (prefers-reduced-motion: no-preference) {
+  .nexi-brand-title {
+    background: linear-gradient(
+      100deg,
+      #a855f7 0%,
+      #e879f9 14%,
+      #fbcfe8 28%,
+      #ffffff 42%,
+      #ff1493 56%,
+      #f0abfc 70%,
+      #ffffff 84%,
+      #a855f7 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation:
+      nexi-brand-shimmer 9s linear infinite,
+      nexi-brand-glow 9s ease-in-out infinite;
+  }
+
+  /* Deslocamento contínuo - 0% e 100% são visualmente iguais (gradiente fecha em ciclo) */
+  @keyframes nexi-brand-shimmer {
+    0% {
+      background-position: 100% center;
+    }
+    100% {
+      background-position: 0% center;
+    }
+  }
+
+  /* Intro/out suave só em opacidade - sem blur para evitar flash no restart */
+  @keyframes nexi-brand-glow {
+    0%,
+    100% {
+      opacity: 0.82;
+    }
+    15%,
+    85% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+}
+
+.site-nav-cta {
+  padding: 0.45rem 1rem !important;
+  border-radius: 8px;
+  background: var(--accent) !important;
+  color: #fff !important;
+  font-weight: 600;
+}
+
+.hero {
+  flex: 1;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 3.5rem 1.25rem 2rem;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2.5rem;
+  align-items: center;
+}
+
+@media (min-width: 900px) {
+  .hero {
+    grid-template-columns: 1.15fr 0.85fr;
+    padding: 4.5rem 1.25rem 3rem;
+  }
+}
+
+.hero-eyebrow {
+  display: inline-block;
+  margin: 0 0 0.85rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.15);
+  border: 1px solid rgba(37, 99, 235, 0.35);
+  color: #93c5fd;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.hero h1 {
+  margin: 0 0 1rem;
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  color: #f8fafc;
+}
+
+.hero-lead {
+  margin: 0 0 1.75rem;
+  font-size: 1.08rem;
+  color: #cbd5e1;
+  max-width: 36rem;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.hero-panel {
+  padding: 1.5rem;
+  border-radius: 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.hero-panel h2 {
+  margin: 0 0 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.hero-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.hero-stat {
+  padding: 0.85rem;
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.hero-stat strong {
+  display: block;
+  font-size: 1.35rem;
+  color: #86efac;
+  margin-bottom: 0.15rem;
+}
+
+.hero-stat span {
+  font-size: 0.78rem;
+  color: var(--fg-muted);
+}
+
+.features {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3.5rem;
+}
+
+.features h2 {
+  text-align: center;
+  margin: 0 0 0.5rem;
+  font-size: 1.65rem;
+  color: #f1f5f9;
+}
+
+.features-intro {
+  text-align: center;
+  margin: 0 auto 2rem;
+  max-width: 32rem;
+  color: var(--fg-muted);
+  font-size: 0.95rem;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .feature-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.feature-card {
+  padding: 1.35rem;
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  transition: border-color 0.2s, transform 0.2s;
+}
+
+.feature-card:hover {
+  border-color: rgba(37, 99, 235, 0.45);
+  transform: translateY(-2px);
+}
+
+.feature-icon {
+  font-size: 1.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.feature-card h3 {
+  margin: 0 0 0.45rem;
+  font-size: 1.05rem;
+  color: #f1f5f9;
+}
+
+.feature-card p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--fg-muted);
+  line-height: 1.5;
+}
+
+.cta-band {
+  max-width: 1120px;
+  margin: 0 auto 2rem;
+  padding: 0 1.25rem;
+}
+
+.cta-band-inner {
+  padding: 2rem 1.5rem;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.2), rgba(13, 148, 136, 0.15));
+  border: 1px solid rgba(37, 99, 235, 0.35);
+  text-align: center;
+}
+
+.cta-band h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.35rem;
+}
+
+.cta-band p {
+  margin: 0 0 1.25rem;
+  color: var(--fg-muted);
+}
+
+.site-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  background: rgba(7, 11, 18, 0.9);
+}
+
+.site-footer-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+@media (min-width: 640px) {
+  .site-footer-inner {
+    grid-template-columns: 1fr auto;
+    align-items: start;
+  }
+}
+
+.site-footer strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #f1f5f9;
+}
+
+.site-footer p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--fg-muted);
+}
+
+.site-footer-links {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.88rem;
+}
+
+.site-footer-links a {
+  color: #93c5fd;
+  text-decoration: none;
+}
+
+.site-footer-copy {
+  grid-column: 1 / -1;
+  font-size: 0.78rem !important;
+  color: #64748b !important;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+/* –– Auth pages –– */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.25rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-page-bg {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(800px circle at 50% -20%, rgba(37, 99, 235, 0.25), transparent 60%);
+  pointer-events: none;
+}
+
+.auth-page--platform .auth-page-bg {
+  background: radial-gradient(800px circle at 50% -20%, rgba(124, 58, 237, 0.28), transparent 60%);
+}
+
+.auth-page-inner {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+}
+
+.auth-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  font-weight: 700;
+  font-size: 1.05rem;
+  text-decoration: none;
+  color: #f1f5f9;
+}
+
+.auth-card {
+  padding: 1.75rem 1.5rem;
+  border-radius: 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.auth-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.auth-subtitle {
+  margin: 0 0 1.25rem;
+  font-size: 0.9rem;
+  color: var(--fg-muted);
+}
+
+.auth-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.auth-form button[type="submit"] {
+  margin-top: 0.25rem;
+  width: 100%;
+  padding: 0.7rem 1rem;
+  border-radius: 10px;
+  border: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+}
+
+.auth-page--platform .auth-form button[type="submit"] {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+}
+
+.auth-form button[type="submit"]:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.auth-footer-links {
+  margin: 1.25rem 0 0;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+.auth-footer-links a {
+  color: #93c5fd;
+  text-decoration: none;
+}
+
+.auth-demo {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px dashed rgba(148, 163, 184, 0.25);
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+}
+
+.auth-demo summary {
+  cursor: pointer;
+  color: #93c5fd;
+  font-weight: 500;
+}
+
+.auth-demo ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  line-height: 1.55;
+}
+
+.auth-demo code {
+  font-size: 0.78rem;
+  color: #e2e8f0;
+}
+
+/* –– Session bar (portal / plataforma) –– */
+.session-bar {
+  border-bottom: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+}
+
+.session-bar--plataforma {
+  background: rgba(12, 10, 20, 0.9);
+  border-bottom-color: rgba(167, 139, 250, 0.2);
+}
+
+.session-bar-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.55rem 1.35rem;
+  font-size: 0.82rem;
+}
+
+.session-bar-meta {
+  color: var(--fg-muted);
+}
+
+.session-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.session-bar-link {
+  color: #93c5fd;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.session-bar-logout {
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: transparent;
+  color: #fca5a5;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.session-bar-logout:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Focus visible for a11y */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+input:focus {
+  border-color: rgba(96, 165, 250, 0.65);
+}

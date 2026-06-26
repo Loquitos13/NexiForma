@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 856 540" width="100%" height="100%">
+  <style>
+    /* Estilo para a moldura arredondada do cartão */
+    .card-frame {
+      fill: #fdfdfd; /* Fundo branco/claro */
+      stroke: #d0d7de; /* Cor da borda subtil */
+      stroke-width: 3;
+      rx: 25; /* Cantos arredondados */
+    }
+    
+    /* Estilo para a área do avatar */
+    .avatar-area {
+      fill: #e2e8f0; /* Fundo cinzento claro para o avatar */
+      rx: 8;
+      stroke: #cbd5e1;
+      stroke-width: 2;
+    }
+    .avatar-element {
+      fill: #a1aab6; /* Cor para os elementos da figura do avatar */
+    }
+    
+    /* Estilo para o símbolo preciso e cinzento (imagem_2.png) */
+    .symbol-structure {
+      fill: #e0e0e0; /* Cinzento para a área do símbolo */
+      rx: 4;
+    }
+    .symbol-lines {
+      stroke: #a0a0a0; /* Cinzento ligeiramente mais escuro para as linhas */
+      stroke-width: 1.5;
+      fill: none;
+    }
+  </style>
+
+  <rect class="card-frame" width="850" height="534" x="3" y="3" />
+
+  <g transform="translate(35, 150)">
+    <rect width="210" height="270" class="avatar-area" />
+    <circle cx="105" cy="75" r="45" class="avatar-element" />
+    <path d="M 25 270 C 25 190, 185 190, 185 270 Z" class="avatar-element" />
+  </g>
+
+  <g transform="translate(730, 460)">
+    <rect width="90" height="60" class="symbol-structure" />
+    <rect width="70" height="40" x="10" y="10" rx="2" class="symbol-lines" />
+    <circle cx="45" cy="30" r="6" class="symbol-lines" />
+    <line x1="20" y1="20" x2="70" y2="20" class="symbol-lines" />
+    <line x1="20" y1="40" x2="70" y2="40" class="symbol-lines" />
+  </g>
+
+</svg>

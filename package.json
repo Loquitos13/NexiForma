@@ -1,0 +1,35 @@
+{
+  "name": "nexiforma",
+  "private": true,
+  "packageManager": "npm@10.9.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "db:generate": "npm run generate -w @nexiforma/database",
+    "db:migrate": "npm run migrate:dev -w @nexiforma/database",
+    "db:migrate:deploy": "npm run migrate:deploy -w @nexiforma/database",
+    "db:seed": "npm run seed -w @nexiforma/database",
+    "db:studio": "npm run studio -w @nexiforma/database",
+    "build:packages": "npm run db:generate && npm run build -w @nexiforma/shared && npm run build -w @nexiforma/database",
+    "predev:api": "npm run build:packages",
+    "dev:api": "npm run start:dev -w @nexiforma/api",
+    "predev:web": "npm run build -w @nexiforma/shared",
+    "dev:web": "npm run dev:clean -w @nexiforma/web",
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev:api\" \"npm run dev:web\"",
+    "ollama:up": "docker compose up -d ollama",
+    "ollama:pull": "docker compose exec ollama ollama pull qwen2.5:3b-instruct",
+    "ollama:setup": "npm run ollama:up && npm run ollama:pull",
+    "build": "npm run build:packages && npm run build -w @nexiforma/api && npm run build -w @nexiforma/web",
+    "test": "npm run test -w @nexiforma/api",
+    "test:teams-meeting": "node scripts/test-teams-meeting.mjs",
+    "lint": "npm run lint -w @nexiforma/web --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

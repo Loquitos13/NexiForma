@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="pt">
+  <head>
+    <meta charset="utf-8" />
+    <title>Demo SCORM NexiForma</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        padding: 1.5rem;
+        background: #0f172a;
+        color: #e2e8f0;
+      }
+      button {
+        margin-top: 1rem;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        border: none;
+        background: #2563eb;
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Conteúdo SCORM demo</h1>
+    <p>Marca como concluído para actualizar o progresso no NexiForma.</p>
+    <button type="button" id="complete">Concluir módulo</button>
+    <script>
+      function findAPI(win) {
+        var depth = 0;
+        while (win && depth < 10) {
+          if (win.API) return win.API;
+          if (win.parent === win) break;
+          win = win.parent;
+          depth++;
+        }
+        return null;
+      }
+      var API = findAPI(window);
+      if (API) {
+        API.LMSInitialize("");
+        API.LMSSetValue("cmi.core.lesson_status", "incomplete");
+      }
+      document.getElementById("complete").addEventListener("click", function () {
+        if (!API) return alert("API SCORM não encontrada.");
+        API.LMSSetValue("cmi.core.lesson_status", "completed");
+        API.LMSSetValue("cmi.core.score.raw", "100");
+        API.LMSCommit("");
+        alert("Progresso guardado.");
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,31 @@
+{
+  "name": "NexiForma – Portal Formando",
+  "short_name": "NexiForma",
+  "description": "Plataforma de gestao de formacao certificada DGERT – acede aos teus cursos, sessoes e quizzes.",
+  "start_url": "/portal/formando",
+  "display": "standalone",
+  "background_color": "#070b12",
+  "theme_color": "#070b12",
+  "orientation": "portrait-primary",
+  "lang": "pt-PT",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

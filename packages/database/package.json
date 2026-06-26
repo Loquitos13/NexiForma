@@ -1,0 +1,62 @@
+{
+
+  "name": "@nexiforma/database",
+
+  "version": "0.1.0",
+
+  "private": true,
+
+  "main": "./dist/index.js",
+
+  "types": "./dist/index.d.ts",
+
+  "exports": {
+
+    ".": {
+
+      "types": "./dist/index.d.ts",
+
+      "default": "./dist/index.js"
+
+    }
+
+  },
+
+  "scripts": {
+
+    "generate": "node ../../scripts/prisma-generate.mjs",
+
+    "migrate:dev": "node ../../scripts/load-root-env.mjs prisma migrate dev",
+
+    "migrate:deploy": "node ../../scripts/load-root-env.mjs prisma migrate deploy",
+
+    "migrate:resolve": "node ../../scripts/load-root-env.mjs prisma migrate resolve",
+
+    "studio": "node ../../scripts/load-root-env.mjs prisma studio",
+
+    "seed": "node ../../scripts/load-root-env.mjs tsx prisma/seed.ts",
+
+    "build": "node ../../scripts/prisma-generate.mjs && tsc -p tsconfig.json"
+
+  },
+
+  "dependencies": {
+
+    "@prisma/client": "^6.3.1"
+
+  },
+
+  "devDependencies": {
+
+    "argon2": "^0.41.1",
+
+    "prisma": "^6.3.1",
+
+    "tsx": "^4.19.2",
+
+    "typescript": "^5.7.3"
+
+  }
+
+}
+

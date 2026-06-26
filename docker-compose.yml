@@ -1,0 +1,58 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nexiforma-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nexiforma
+      POSTGRES_PASSWORD: nexiforma_dev
+      POSTGRES_DB: nexiforma
+    ports:
+      - "5432:5432"
+    volumes:
+      - nexiforma_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexiforma -d nexiforma"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: nexiforma-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - nexiforma_redis_data:/data
+
+  # NexiGuia - LLM local (Ollama). Arranque: npm run ollama:setup
+  ollama:
+    image: ollama/ollama:latest
+    container_name: nexiforma-ollama
+    restart: unless-stopped
+    # 11435 evita conflito com Ollama nativo no Windows (127.0.0.1:11434)
+    ports:
+      - "11435:11434"
+    volumes:
+      - nexiforma_ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    # GPU NVIDIA (opcional - requer NVIDIA Container Toolkit):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+volumes:
+  nexiforma_pg_data:
+  nexiforma_redis_data:
+  nexiforma_ollama_data:

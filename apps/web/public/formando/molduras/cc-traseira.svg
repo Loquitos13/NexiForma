@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 580" width="100%" height="100%" xml:space="preserve">
+  <style>
+    /* Estilo para a moldura externa (guia de captura da câmara) */
+    .outer-frame {
+      fill: none;
+      stroke: #94a3b8; /* Cinzento médio */
+      stroke-width: 3;
+      stroke-dasharray: 12, 8; /* Efeito tracejado */
+      rx: 15; /* Cantos arredondados */
+    }
+
+    /* Estilo para a moldura arredondada do cartão */
+    .card-frame {
+      fill: #ffffff;
+      stroke: #d0d7de;
+      stroke-width: 3;
+      rx: 25;
+    }
+
+    /* Estilo para o pequeno avatar vetorial */
+    .avatar-bg { fill: #e2e8f0; rx: 4; stroke: #cbd5e1; stroke-width: 1; }
+    .avatar-fig { fill: #94a3b8; }
+
+    /* Estilo para a área do chip */
+    .chip-area {
+      fill: #e0e0e0;
+      rx: 8;
+      stroke: #a0a0a0;
+      stroke-width: 2;
+    }
+
+    /* Estilo para o texto monospace da MRZ */
+    .mrz-text {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 18px;
+      fill: #606060;
+      letter-spacing: 2px;
+    }
+  </style>
+
+  <rect class="outer-frame" width="890" height="570" x="5" y="5" />
+
+  <g transform="translate(25, 23)">
+    
+    <rect class="card-frame" width="850" height="534" x="0" y="0" />
+
+    <g transform="translate(35, 35)">
+      <rect width="45" height="60" class="avatar-bg" />
+      <circle cx="22.5" cy="18" r="12" class="avatar-fig" />
+      <path d="M 5 60 C 5 40, 40 40, 40 60 Z" class="avatar-fig" />
+    </g>
+
+    <g transform="translate(100, 150)">
+      <rect width="180" height="150" class="chip-area" />
+    </g>
+
+    <g transform="translate(0, 400)">
+      <text x="35" y="30" class="mrz-text">X&lt;PRT0120120120&lt;1200&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;01201201201201201201201201</text>
+      <text x="35" y="60" class="mrz-text">0120120X0120120PRT&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;12&lt;&lt;01201201201201201201201201</text>
+      <text x="35" y="90" class="mrz-text">XXXXXXX&lt;YY&lt;ZZZZZZ&lt;&lt;XXXXX&lt;&lt;YYYYYZZZZZZZZZZZZZZZZZZZZZZZZZZZ</text>
+    </g>
+
+  </g>
+</svg>

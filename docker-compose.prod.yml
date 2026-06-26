@@ -1,0 +1,77 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nexiforma
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexiforma_prod}
+      POSTGRES_DB: nexiforma
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexiforma"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://nexiforma:${POSTGRES_PASSWORD:-nexiforma_prod}@postgres:5432/nexiforma?schema=public
+      JWT_SECRET: ${JWT_SECRET}
+      API_PORT: 4000
+      NODE_ENV: production
+      CORS_ORIGIN: ${APP_PUBLIC_URL:-http://localhost:3000}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:3000}
+      RLS_ENABLED: ${RLS_ENABLED:-false}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      STORAGE_LOCAL_PATH: /app/storage
+      AWS_REGION: ${AWS_REGION:-eu-west-1}
+      S3_BUCKET: ${S3_BUCKET:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      NEXIGUIA_LLM_ENABLED: ${NEXIGUIA_LLM_ENABLED:-false}
+      NEXIGUIA_LLM_URL: ${NEXIGUIA_LLM_URL:-http://ollama:11434}
+      NEXIGUIA_LLM_MODEL: ${NEXIGUIA_LLM_MODEL:-qwen2.5:3b-instruct}
+      NEXIGUIA_LLM_TIMEOUT_MS: ${NEXIGUIA_LLM_TIMEOUT_MS:-15000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - api_storage:/app/storage
+    ports:
+      - "4000:4000"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        API_URL: http://api:4000
+    environment:
+      API_URL: http://api:4000
+      NODE_ENV: production
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+  # Perfil opcional: docker compose --profile ai up -d
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ai"]
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 45s
+
+volumes:
+  pgdata:
+  api_storage:
+  ollama_data:
