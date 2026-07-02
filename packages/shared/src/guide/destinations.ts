@@ -74,9 +74,9 @@ export const GUIDE_DESTINATIONS: GuideDestination[] = [
   },
   {
     href: "/portal/crm",
-    label: "CRM",
+    label: "CRM Dashboard",
     description: "Pipeline comercial e KPIs.",
-    keywords: ["crm", "comercial", "vendas", "pipeline", "negocio"],
+    keywords: ["crm", "crm dashboard", "comercial", "vendas", "pipeline", "negocio"],
     minRole: "comercial",
   },
   {
@@ -87,8 +87,8 @@ export const GUIDE_DESTINATIONS: GuideDestination[] = [
     minRole: "comercial",
   },
   {
-    href: "/portal/entidades",
-    label: "Entidades cliente",
+    href: "/portal/clientes",
+    label: "Clientes",
     description: "Clientes B2B e empresas.",
     keywords: ["entidades", "clientes", "empresas", "b2b", "cliente"],
     minRole: "comercial",
@@ -118,7 +118,7 @@ export const GUIDE_DESTINATIONS: GuideDestination[] = [
     href: "/portal/crm/faturacao",
     label: "Dados de faturação",
     description: "Configuração fiscal e séries AT.",
-    keywords: ["dados faturacao", "series", "nif empresa", "configuracao fiscal", "saft"],
+    keywords: ["dados faturacao", "faturacao", "faturas", "series", "nif empresa", "configuracao fiscal", "saft"],
     minRole: "tenant_manager",
   },
   {

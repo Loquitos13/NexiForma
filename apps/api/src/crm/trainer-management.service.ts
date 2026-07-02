@@ -15,6 +15,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificacoesExtendedService } from "../notificacoes/notificacoes-extended.service";
+import { resolverEmailNotificacaoFormador } from "@nexiforma/shared";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 
@@ -230,7 +231,7 @@ export class TrainerManagementService {
           },
         ],
       },
-      select: { id: true, nomeCompleto: true, email: true, ccValidade: true, ccpValidade: true },
+      select: { id: true, nomeCompleto: true, email: true, ccValidade: true, ccpValidade: true, user: { select: { email: true } } },
     });
 
     const expirados = await this.prisma.formadorProfile.findMany({
@@ -241,7 +242,7 @@ export class TrainerManagementService {
           { ccpValidade: { lt: agora } },
         ],
       },
-      select: { id: true, nomeCompleto: true, email: true },
+      select: { id: true, nomeCompleto: true, email: true, user: { select: { email: true } } },
     });
 
     // Notificar admins
@@ -349,10 +350,38 @@ export class TrainerManagementService {
       );
     }
 
-    this.logger.log(
-      `🔴 Alertas de renovação formadores: ${alertas.join("; ")}`,
-    );
+    if (alertas.length === 0) return;
 
-    // TODO: Enviar email aos admins
+    await this.notificacoes.notificarAlertaCompliance(tenantId, {
+      severidade: expirados.length > 0 ? "critico" : "aviso",
+      mensagem: alertas.join("; "),
+      detalhes:
+        expirados.length > 0
+          ? `Expirados: ${expirados.map((f: { nomeCompleto: string }) => f.nomeCompleto).join(", ")}`
+          : undefined,
+    });
+
+    const todos = [...proximasRenovacoes, ...expirados];
+    const vistos = new Set<string>();
+    for (const f of todos) {
+      const email = resolverEmailNotificacaoFormador({
+        emailPerfil: f.email,
+        emailConta: f.user?.email,
+      });
+      if (!email || vistos.has(email)) continue;
+      vistos.add(email);
+
+      const expirado = expirados.some((x: { id: string }) => x.id === f.id);
+      const msg = expirado
+        ? "A sua certificação de formador (CC/CCP) está expirada. Actualize os documentos no portal."
+        : "A sua certificação de formador (CC/CCP) expira em breve. Verifique a validade no portal.";
+
+      await this.notificacoes.notificarFormadorQualificacao(
+        email,
+        f.nomeCompleto,
+        msg,
+        expirado ? "critico" : "aviso",
+      );
+    }
   }
 }

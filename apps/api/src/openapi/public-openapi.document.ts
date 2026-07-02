@@ -137,5 +137,48 @@ export const PUBLIC_OPENAPI_SPEC = {
         responses: { "200": { description: "Lista de matrículas" } },
       },
     },
+    "/formacoes/catalogo": {
+      get: {
+        summary: "Catálogo paginado de formações (website)",
+        parameters: [
+          { name: "limit", in: "query", schema: { type: "integer", maximum: 100 } },
+          { name: "after", in: "query", schema: { type: "integer" } },
+        ],
+        responses: { "200": { description: "Página do catálogo" } },
+      },
+    },
+    "/formacoes": {
+      get: {
+        summary: "Listar formações publicadas",
+        responses: { "200": { description: "Lista de formações" } },
+      },
+    },
+    "/formacoes/{codigoPublico}": {
+      get: {
+        summary: "Detalhe de formação publicada",
+        parameters: [
+          { name: "codigoPublico", in: "path", required: true, schema: { type: "integer" } },
+        ],
+        responses: { "200": { description: "Formação" }, "404": { description: "Não encontrada" } },
+      },
+    },
+    "/formacoes/{codigoPublico}/acoes": {
+      get: {
+        summary: "Acções publicadas",
+        parameters: [
+          { name: "codigoPublico", in: "path", required: true, schema: { type: "integer" } },
+        ],
+        responses: { "200": { description: "Lista de acções" } },
+      },
+    },
+    "/formacoes/{codigoPublico}/capa": {
+      get: {
+        summary: "Imagem de capa",
+        parameters: [
+          { name: "codigoPublico", in: "path", required: true, schema: { type: "integer" } },
+        ],
+        responses: { "200": { description: "image/*" } },
+      },
+    },
   },
 } as const;

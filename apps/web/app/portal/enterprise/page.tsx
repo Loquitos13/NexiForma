@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Key, Shield, ExternalLink, Copy, Trash2 } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { Alert, Button, Card, CardContent, CardHeader, CardTitle, PageHeader } from "@/components/ui";
 
@@ -144,14 +145,24 @@ export default function EnterprisePage() {
             Use no header <code className="text-blue-300">X-Api-Key: nf_live_...</code> em{" "}
             <code className="text-slate-300">/v1/public/v1/*</code>.
           </p>
-          <a
-            href="/api/v1/docs/openapi.json"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-sm text-blue-400 hover:text-blue-300"
-          >
-            OpenAPI spec <ExternalLink className="h-3.5 w-3.5" />
-          </a>
+          <div className="flex flex-wrap gap-3 text-sm">
+            <a
+              href="/api/v1/docs/openapi.json"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
+            >
+              OpenAPI enterprise <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+            <a
+              href={`${process.env.NEXT_PUBLIC_API_DOCS_URL ?? "http://localhost:4001"}/formacoes`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
+            >
+              Swagger formações <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </div>
 
           {newKey ? (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
@@ -178,7 +189,7 @@ export default function EnterprisePage() {
                 <div>
                   <span className="text-slate-200">{k.status}</span>
                   <span className="text-slate-500 ml-2 text-xs">
-                    {new Date(k.createdAt).toLocaleDateString("pt-PT")}
+                    {formatDatePt(k.createdAt)}
                   </span>
                 </div>
                 {k.status === "ACTIVE" ? (

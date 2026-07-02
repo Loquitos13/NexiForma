@@ -70,6 +70,221 @@ a {
   .nexi-skeleton::after {
     animation: none;
   }
+
+  .plan-glow-business,
+  .plan-glow-enterprise {
+    animation: none !important;
+  }
+}
+
+/* Planos – glow por coluna (explorar) */
+.plan-glow-starter {
+  background-color: rgba(59, 130, 246, 0.09);
+  border-color: rgba(96, 165, 250, 0.45);
+  box-shadow:
+    inset 0 0 28px rgba(59, 130, 246, 0.14),
+    0 0 22px rgba(59, 130, 246, 0.22);
+}
+
+.plan-glow-business {
+  background-color: rgba(168, 85, 247, 0.1);
+  border-color: rgba(232, 121, 249, 0.5);
+  animation: plan-business-glow 1.85s ease-in-out infinite;
+}
+
+@keyframes plan-enterprise-breathe {
+  0%,
+  100% {
+    background-color: rgba(251, 191, 36, 0.07);
+    border-color: rgba(252, 211, 77, 0.38);
+    box-shadow:
+      inset 0 0 20px rgba(251, 191, 36, 0.1),
+      0 0 22px rgba(245, 158, 11, 0.26),
+      0 0 0 1px rgba(252, 211, 77, 0.28);
+  }
+  50% {
+    background-color: rgba(251, 191, 36, 0.14);
+    border-color: rgba(253, 224, 71, 0.72);
+    box-shadow:
+      inset 0 0 38px rgba(254, 240, 138, 0.24),
+      0 0 46px rgba(251, 191, 36, 0.58),
+      0 0 68px rgba(245, 158, 11, 0.42),
+      0 0 0 1px rgba(253, 224, 71, 0.65);
+  }
+}
+
+@keyframes plan-business-glow {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 24px rgba(255, 71, 171, 0.1),
+      0 0 20px rgba(168, 85, 247, 0.28);
+  }
+  48% {
+    box-shadow:
+      inset 0 0 44px rgba(255, 71, 171, 0.22),
+      0 0 52px rgba(232, 121, 249, 0.52),
+      0 0 72px rgba(168, 85, 247, 0.38);
+  }
+  52% {
+    box-shadow:
+      inset 0 0 48px rgba(255, 71, 171, 0.26),
+      0 0 58px rgba(244, 114, 182, 0.58),
+      0 0 84px rgba(168, 85, 247, 0.42);
+  }
+}
+
+.plan-glow-enterprise {
+  animation: plan-enterprise-breathe 3.4s ease-in-out infinite;
+}
+
+/* Entrar – broken glass roxo */
+.entrar-glass-btn {
+  --entrar-anim-ms: 1650ms;
+}
+
+.entrar-glass-btn--shatter {
+  border-color: rgba(232, 121, 249, 0.55);
+  box-shadow:
+    0 0 32px rgba(168, 85, 247, 0.5),
+    0 0 56px rgba(255, 71, 171, 0.22),
+    inset 0 0 24px rgba(168, 85, 247, 0.14);
+}
+
+.entrar-glass-btn--afterglow {
+  border-color: rgba(232, 121, 249, 0.45);
+  color: #fff;
+  box-shadow:
+    0 0 24px rgba(168, 85, 247, 0.38),
+    0 0 40px rgba(255, 71, 171, 0.12),
+    inset 0 0 16px rgba(168, 85, 247, 0.1);
+  animation: entrar-afterglow-pulse 480ms ease-out forwards;
+}
+
+.entrar-glass-flash {
+  background: linear-gradient(
+    135deg,
+    rgba(168, 85, 247, 0.38) 0%,
+    rgba(255, 71, 171, 0.26) 45%,
+    rgba(232, 121, 249, 0.32) 100%
+  );
+  backdrop-filter: blur(4px);
+  animation: entrar-glass-flash var(--entrar-anim-ms) ease-out forwards;
+}
+
+.entrar-glass-cracks {
+  opacity: 0;
+  animation: entrar-cracks-in var(--entrar-anim-ms) ease-out forwards;
+}
+
+.entrar-crack-line {
+  stroke-dasharray: 120;
+  stroke-dashoffset: 120;
+  animation: entrar-crack-draw calc(var(--entrar-anim-ms) * 0.55) ease-out forwards;
+}
+
+.entrar-crack-line--delay {
+  animation-delay: calc(var(--entrar-anim-ms) * 0.12);
+}
+
+.entrar-glass-shard {
+  background: linear-gradient(
+    145deg,
+    rgba(232, 121, 249, 0.42) 0%,
+    rgba(168, 85, 247, 0.16) 55%,
+    rgba(255, 71, 171, 0.1) 100%
+  );
+  border: 1px solid rgba(244, 114, 182, 0.32);
+  box-shadow: inset 0 0 14px rgba(255, 255, 255, 0.1);
+  opacity: 0;
+  animation: entrar-shard-burst calc(var(--entrar-anim-ms) * 0.88) cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes entrar-glass-flash {
+  0% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  45% {
+    opacity: 0.92;
+  }
+  78% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes entrar-cracks-in {
+  0% {
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  62% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes entrar-crack-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes entrar-shard-burst {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(0deg) scale(1);
+  }
+  10% {
+    opacity: 0.95;
+  }
+  72% {
+    opacity: 0.65;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--shard-tx), var(--shard-ty)) rotate(var(--shard-rot)) scale(0.92);
+  }
+}
+
+@keyframes entrar-afterglow-pulse {
+  0% {
+    box-shadow:
+      0 0 28px rgba(168, 85, 247, 0.42),
+      0 0 48px rgba(255, 71, 171, 0.16),
+      inset 0 0 18px rgba(168, 85, 247, 0.12);
+  }
+  100% {
+    box-shadow:
+      0 0 20px rgba(168, 85, 247, 0.28),
+      0 0 32px rgba(255, 71, 171, 0.08),
+      inset 0 0 12px rgba(168, 85, 247, 0.06);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entrar-glass-flash,
+  .entrar-glass-cracks,
+  .entrar-crack-line,
+  .entrar-glass-shard,
+  .entrar-glass-btn--afterglow {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .entrar-glass-btn--shatter,
+  .entrar-glass-btn--afterglow {
+    box-shadow: 0 0 16px rgba(168, 85, 247, 0.35);
+  }
 }
 
 /* –– Marketing site –– */
@@ -862,4 +1077,22 @@ input:focus-visible {
 
 input:focus {
   border-color: rgba(96, 165, 250, 0.65);
+}
+
+/* Recharts - tema escuro: sem cursor SVG nem focus ring ao clicar */
+.nexiforma-chart .recharts-wrapper,
+.nexiforma-chart .recharts-wrapper svg,
+.nexiforma-chart .recharts-surface,
+.nexiforma-chart .recharts-wrapper:focus,
+.nexiforma-chart .recharts-wrapper:focus-visible,
+.nexiforma-chart .recharts-surface:focus,
+.nexiforma-chart .recharts-surface:focus-visible {
+  outline: none !important;
+}
+
+.nexiforma-chart .recharts-tooltip-cursor,
+.nexiforma-chart .recharts-rectangle.recharts-tooltip-cursor {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }

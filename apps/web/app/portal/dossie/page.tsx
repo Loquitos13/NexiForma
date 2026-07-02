@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { DOSSIE_DGERT_DOCUMENTOS, DOSSIE_DGERT_TOTAL } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { formatDatePt } from "@/lib/calendar-date";
 import { downloadResponseAsFile } from "@/lib/client/download-response";
 import { openHtmlForPrint } from "@/lib/client/open-html-for-print";
 
@@ -316,7 +317,7 @@ export default function DossiePedagogicoPage() {
                       <span className="text-slate-300 truncate max-w-[200px]">{a.nomeFicheiro}</span>
                       <span className="text-slate-500">{formatBytes(a.tamanhoBytes)}</span>
                       <span className="text-slate-600">{new Date(a.createdAt).toLocaleString("pt-PT")}</span>
-                      {a.expiresAt ? <span className="text-slate-600">expira {new Date(a.expiresAt).toLocaleDateString("pt-PT")}</span> : null}
+                      {a.expiresAt ? <span className="text-slate-600">expira {formatDatePt(a.expiresAt)}</span> : null}
                       <button type="button" disabled={busy} onClick={() => void abrirArquivo(a.id)} className="ml-auto px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-[11px] font-medium transition-colors">Download</button>
                     </div>
                   ))}

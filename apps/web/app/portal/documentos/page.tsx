@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 
 type Documento = {
@@ -160,7 +161,7 @@ export default function DocumentosPage() {
                     {d.entidadeCliente?.nome ?? d.acaoFormacao?.codigoInterno ?? "–"}
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">{formatBytes(d.tamanhoBytes)}</td>
-                  <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">{new Date(d.createdAt).toLocaleDateString("pt-PT")}</td>
+                  <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">{formatDatePt(d.createdAt)}</td>
                   <td className="px-4 py-3 text-right">
                     <button onClick={() => void download(d.id)}
                       className="px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-[11px] font-medium text-white transition-colors">Download</button>

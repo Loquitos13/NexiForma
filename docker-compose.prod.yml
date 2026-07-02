@@ -43,6 +43,20 @@ services:
     ports:
       - "4000:4000"
 
+  api-docs:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["node", "apps/api/dist/docs-server.main.js"]
+    environment:
+      API_DOCS_PORT: 4001
+      API_PORT: 4000
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-https://api.nexiforma.pt}
+      API_DOCS_PUBLIC_URL: ${API_DOCS_PUBLIC_URL:-https://api.nexiforma.pt}
+      NODE_ENV: production
+    ports:
+      - "4001:4001"
+
   web:
     build:
       context: .

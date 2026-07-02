@@ -54,7 +54,7 @@ export class AcoesFormacaoService {
     });
   }
 
-  async create(user: RequestUser, dto: CreateAcaoFormacaoDto) {
+  async create(user: RequestUser, dto: CreateAcaoFormacaoDto): Promise<unknown> {
     const tenantId = requireTenantId(user);
 
     const curso = await this.prisma.curso.findFirst({
@@ -102,7 +102,7 @@ export class AcoesFormacaoService {
     });
   }
 
-  async getOne(user: RequestUser, id: string) {
+  async getOne(user: RequestUser, id: string): Promise<unknown> {
     const tenantId = requireTenantId(user);
     await this.formadorScope.assertCanAccessAcao(user, id);
     const acao = await this.prisma.acaoFormacao.findFirst({
@@ -127,7 +127,7 @@ export class AcoesFormacaoService {
     return acao;
   }
 
-  async update(user: RequestUser, id: string, dto: UpdateAcaoFormacaoDto) {
+  async update(user: RequestUser, id: string, dto: UpdateAcaoFormacaoDto): Promise<unknown> {
     const tenantId = requireTenantId(user);
     const existing = await this.prisma.acaoFormacao.findFirst({
       where: { id, tenantId },
@@ -140,6 +140,18 @@ export class AcoesFormacaoService {
     const dataFim = dto.dataFim ? toPgDate(dto.dataFim, "dataFim") : existing.dataFim;
     if (dataFim.getTime() < dataInicio.getTime()) {
       throw new BadRequestException("dataFim deve ser igual ou posterior a dataInicio.");
+    }
+
+    let prazoConclusaoLms = existing.prazoConclusaoLms;
+    if (dto.prazoConclusaoLms !== undefined) {
+      prazoConclusaoLms = dto.prazoConclusaoLms
+        ? toPgDate(dto.prazoConclusaoLms, "prazoConclusaoLms")
+        : null;
+    }
+    if (prazoConclusaoLms && prazoConclusaoLms.getTime() < dataInicio.getTime()) {
+      throw new BadRequestException(
+        "prazoConclusaoLms deve ser igual ou posterior a dataInicio.",
+      );
     }
 
     let estado = existing.estado;
@@ -156,6 +168,7 @@ export class AcoesFormacaoService {
         ...(dto.titulo !== undefined ? { titulo: dto.titulo.trim() } : {}),
         dataInicio,
         dataFim,
+        prazoConclusaoLms,
         estado,
       },
       include: {

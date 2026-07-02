@@ -18,7 +18,9 @@ import { PlatformLoginDto } from "./dto/platform-login.dto";
 import { TenantLoginDto } from "./dto/tenant-login.dto";
 import {
   PlatformForgotPasswordDto,
+  PlatformResetPasswordDto,
   TenantForgotPasswordDto,
+  TenantResetPasswordDto,
 } from "./dto/forgot-password.dto";
 import { SetupMfaConfirmDto, VerifyMfaDto } from "./dto/mfa.dto";
 import { CognitoAuthService } from "./cognito-auth.service";
@@ -51,14 +53,28 @@ export class AuthController {
   @Post("tenant/forgot-password")
   @HttpCode(200)
   tenantForgotPassword(@Body() dto: TenantForgotPasswordDto) {
-    return this.auth.resetTenantPassword(dto);
+    return this.auth.requestTenantPasswordReset(dto);
   }
 
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post("platform/forgot-password")
   @HttpCode(200)
   platformForgotPassword(@Body() dto: PlatformForgotPasswordDto) {
-    return this.auth.resetPlatformPassword(dto);
+    return this.auth.requestPlatformPasswordReset(dto);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post("tenant/reset-password")
+  @HttpCode(200)
+  tenantResetPassword(@Body() dto: TenantResetPasswordDto) {
+    return this.auth.confirmTenantPasswordReset(dto);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post("platform/reset-password")
+  @HttpCode(200)
+  platformResetPassword(@Body() dto: PlatformResetPasswordDto) {
+    return this.auth.confirmPlatformPasswordReset(dto);
   }
 
   @Throttle({ default: { limit: 60, ttl: 60_000 } })

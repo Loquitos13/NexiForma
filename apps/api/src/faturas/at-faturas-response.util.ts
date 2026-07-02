@@ -52,7 +52,7 @@ export function parseAtFaturasSoapResponse(xml: string): AtFaturasParseResult {
     };
   }
 
-  if (/RegisterInvoiceResponse|DocumentoRegistado|RegistarDocumentoComercialResponse/i.test(trimmed)) {
+  if (/RegisterInvoiceResponse|ChangeInvoiceStatusResponse|DocumentoRegistado|RegistarDocumentoComercialResponse/i.test(trimmed)) {
     return {
       sucesso: true,
       codigoResposta: "0",
@@ -67,11 +67,13 @@ export function parseAtFaturasSoapResponse(xml: string): AtFaturasParseResult {
   };
 }
 
+import { AT_DOCUMENTS_NS } from "./at-faturas-constants";
+
 export function buildMockAtSuccessResponse(codigo = "0"): string {
   return `<?xml version="1.0"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
-    <RegisterInvoiceResponse xmlns="https://servicos.portaldasfinancas.gov.pt/faturas/">
+    <RegisterInvoiceResponse xmlns="${AT_DOCUMENTS_NS}">
       <ReturnCode>${codigo}</ReturnCode>
       <ReturnMessage>Documento comunicado (simulação local).</ReturnMessage>
     </RegisterInvoiceResponse>

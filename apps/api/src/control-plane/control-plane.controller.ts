@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -10,6 +11,7 @@ import {
   Res,
   UseGuards,
   BadRequestException,
+  ParseUUIDPipe,
 } from "@nestjs/common";
 import type { Request, Response } from "express";
 import type { TenantIntegracao } from "@nexiforma/database";
@@ -24,7 +26,9 @@ import { IntegracoesService } from "../integracoes/integracoes.service";
 import { UpsertIntegracaoDto } from "../integracoes/dto/integracoes.dto";
 import {
   CreateSubscriptionKeyDto,
+  CreateTenantDto,
   ImpersonateDto,
+  UpdateTenantDto,
   UpdateTenantStatusDto,
 } from "./dto/control-plane.dto";
 
@@ -48,20 +52,52 @@ export class ControlPlaneController {
     return this.cp.listTenants();
   }
 
+  @Post("tenants")
+  createTenant(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: CreateTenantDto,
+    @Req() req: Request,
+  ): Promise<Record<string, unknown>> {
+    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    return this.cp.createTenant(user, dto, ip);
+  }
+
   @Get("tenants/:id")
-  getTenant(@Param("id") id: string): Promise<Record<string, unknown>> {
+  getTenant(@Param("id", ParseUUIDPipe) id: string): Promise<Record<string, unknown>> {
     return this.cp.getTenant(id);
   }
 
+  @Patch("tenants/:id")
+  updateTenant(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: UpdateTenantDto,
+    @Req() req: Request,
+  ): Promise<Record<string, unknown>> {
+    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    return this.cp.updateTenant(user, id, dto, ip);
+  }
+
+  @Delete("tenants/:id")
+  deleteTenant(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Query("permanent") permanent: string | undefined,
+    @Req() req: Request,
+  ) {
+    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    return this.cp.deleteTenant(user, id, { permanent: permanent === "true" }, ip);
+  }
+
   @Get("tenants/:id/users")
-  listTenantUsers(@Param("id") id: string) {
+  listTenantUsers(@Param("id", ParseUUIDPipe) id: string) {
     return this.cp.listTenantUsers(id);
   }
 
   @Patch("tenants/:id/status")
   updateStatus(
     @CurrentUser() user: RequestUser,
-    @Param("id") id: string,
+    @Param("id", ParseUUIDPipe) id: string,
     @Body() dto: UpdateTenantStatusDto,
     @Req() req: Request,
   ): Promise<Record<string, unknown>> {

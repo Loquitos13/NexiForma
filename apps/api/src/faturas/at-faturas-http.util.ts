@@ -1,22 +1,50 @@
 import { readFileSync } from "node:fs";
 import https from "node:https";
+import { loadPfxAsTlsOptions } from "./at-pfx-loader.util";
 
 export type AtTlsConfig = {
   pfxPath?: string | null;
   pfxPassphrase?: string | null;
   certPath?: string | null;
   keyPath?: string | null;
+  pemPath?: string | null;
   caPath?: string | null;
 };
 
+function splitCombinedPem(pem: string): { cert: string; key: string } {
+  const keyMatch = pem.match(/-----BEGIN (?:RSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA )?PRIVATE KEY-----/);
+  const certs = pem.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g);
+  if (!keyMatch?.[0]) {
+    throw new Error("PEM combinado sem bloco PRIVATE KEY.");
+  }
+  return {
+    key: keyMatch[0],
+    cert: certs?.join("\n") ?? pem,
+  };
+}
+
 export function loadAtTlsMaterial(config: AtTlsConfig): https.AgentOptions | null {
-  if (config.pfxPath) {
+  if (config.pemPath) {
+    const pem = readFileSync(config.pemPath, "utf8");
+    const { cert, key } = splitCombinedPem(pem);
     return {
-      pfx: readFileSync(config.pfxPath),
-      passphrase: config.pfxPassphrase ?? "",
+      cert,
+      key,
       rejectUnauthorized: true,
       ...(config.caPath ? { ca: readFileSync(config.caPath) } : {}),
     };
+  }
+  if (config.pfxPath) {
+    try {
+      return loadPfxAsTlsOptions(config.pfxPath, config.pfxPassphrase ?? "");
+    } catch {
+      return {
+        pfx: readFileSync(config.pfxPath),
+        passphrase: config.pfxPassphrase ?? "",
+        rejectUnauthorized: true,
+        ...(config.caPath ? { ca: readFileSync(config.caPath) } : {}),
+      };
+    }
   }
   if (config.certPath && config.keyPath) {
     return {

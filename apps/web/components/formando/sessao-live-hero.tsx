@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { Radio, Video } from "lucide-react";
+import { formatDatePt } from "@/lib/calendar-date";
 
 type SessaoLive = {
   id: string;
@@ -55,11 +56,7 @@ export function SessaoLiveHero({ blocks }: { blocks: Block[] }) {
   if (!live) return null;
 
   const href = `/portal/formando/reuniao?matriculaId=${encodeURIComponent(live.matriculaId)}&sessaoFormacaoId=${encodeURIComponent(live.id)}`;
-  const dataFmt = new Date(live.data).toLocaleDateString("pt-PT", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
+  const dataFmt = formatDatePt(live.data);
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-teal-500/35 bg-gradient-to-br from-teal-950/70 via-slate-900/90 to-slate-950 p-5 shadow-lg shadow-teal-950/30">

@@ -62,9 +62,9 @@ export function ListaEntidades({ onSelect }: ListaEntidadesProps) {
         <p style={{ color: "#64748b" }}>A carregar…</p>
       ) : entidades.length === 0 ? (
         <p style={{ color: "#64748b" }}>
-          Nenhuma entidade encontrada.{" "}
-          <Link href="/portal/entidades" style={{ color: "#93c5fd" }}>
-            Criar entidade
+          Nenhum cliente encontrado.{" "}
+          <Link href="/portal/clientes?nova=1" style={{ color: "#93c5fd" }}>
+            Criar cliente
           </Link>
         </p>
       ) : (

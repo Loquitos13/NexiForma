@@ -1,5 +1,9 @@
+"use client";
+
 import * as React from "react";
+import { useEffect, useRef } from "react";
 import { cn } from "@/lib/ui/cn";
+import { pushToast } from "./toast";
 
 interface PageHeaderProps {
   title: string;
@@ -28,13 +32,33 @@ interface AlertProps extends React.HTMLAttributes<HTMLDivElement> {
   variant?: "error" | "success" | "warning" | "info";
 }
 
+function alertMessage(children: React.ReactNode): string {
+  if (typeof children === "string") return children;
+  if (typeof children === "number") return String(children);
+  if (Array.isArray(children)) return children.map(alertMessage).join("");
+  return "";
+}
+
 export function Alert({ variant = "info", className, children, ...props }: AlertProps) {
+  const lastToast = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (variant !== "success" && variant !== "error") return;
+    const message = alertMessage(children);
+    if (!message || lastToast.current === message) return;
+    lastToast.current = message;
+    pushToast(variant, message);
+  }, [variant, children]);
+
+  if (variant === "success" || variant === "error") {
+    return null;
+  }
+
   const styles = {
-    error: "border-red-700/40 bg-red-900/20 text-red-300",
-    success: "border-green-700/40 bg-green-900/20 text-green-300",
     warning: "border-yellow-700/40 bg-yellow-900/20 text-yellow-300",
     info: "border-blue-700/40 bg-blue-900/20 text-blue-300",
   };
+
   return (
     <div
       role="alert"

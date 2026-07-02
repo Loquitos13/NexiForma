@@ -144,9 +144,9 @@ export default function CrmDashboardPage() {
         description="Pipeline comercial, entidades B2B, propostas e equipa formativa."
         actions={
           <div className="flex flex-wrap gap-2">
-            <Link href="/portal/entidades" className={cn(buttonVariants({ variant: "secondary", size: "sm" }))}>
+            <Link href="/portal/clientes" className={cn(buttonVariants({ variant: "secondary", size: "sm" }))}>
               <Building2 className="h-3.5 w-3.5" />
-              Entidades
+              Clientes
             </Link>
             <Link href="/portal/propostas" className={cn(buttonVariants({ size: "sm" }))}>
               <Plus className="h-3.5 w-3.5" />
@@ -161,9 +161,9 @@ export default function CrmDashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6">
         <KpiCard
           icon={<Building2 className="h-5 w-5 text-blue-400" />}
-          label="Entidades"
+          label="Clientes"
           value={stats?.totalEntidades ?? 0}
-          sub={`${stats?.entidadesAtivas ?? 0} activas`}
+          sub={`${stats?.entidadesAtivas ?? 0} activos`}
           loading={loading}
         />
         <KpiCard
@@ -184,7 +184,7 @@ export default function CrmDashboardPage() {
           icon={<TrendingUp className="h-5 w-5 text-emerald-400" />}
           label="Facturação pipeline"
           value={fmtEuro(stats?.faturacaoTotalCentavos ?? 0)}
-          sub="propostas aceites"
+          sub={`${stats?.proposttasAceitadas ?? 0} aceites · pipeline comercial`}
           loading={loading}
           isCurrency
         />
@@ -283,9 +283,9 @@ export default function CrmDashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <Link href="/portal/entidades?nova=1" className={cn(buttonVariants({ variant: "secondary" }), "w-full justify-start")}>
+            <Link href="/portal/clientes?nova=1" className={cn(buttonVariants({ variant: "secondary" }), "w-full justify-start")}>
               <Building2 className="h-4 w-4" />
-              Registar entidade cliente
+              Novo cliente
             </Link>
             <Link href="/portal/propostas?nova=1" className={cn(buttonVariants({ variant: "secondary" }), "w-full justify-start")}>
               <FileText className="h-4 w-4" />
@@ -297,7 +297,7 @@ export default function CrmDashboardPage() {
             </Link>
             <Link href="/portal/crm/faturas" className={cn(buttonVariants({ variant: "secondary" }), "w-full justify-start")}>
               <FileText className="h-4 w-4" />
-              Faturas comerciais
+              Faturação
             </Link>
             <Link href="/portal/formadores" className={cn(buttonVariants({ variant: "secondary" }), "w-full justify-start")}>
               <GraduationCap className="h-4 w-4" />

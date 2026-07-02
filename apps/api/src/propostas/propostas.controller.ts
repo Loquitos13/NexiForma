@@ -19,6 +19,7 @@ import type { RequestUser } from "../auth/types/access-token-payload";
 import { ProposalService } from "../crm/proposal.service";
 import { PropostasService } from "./propostas.service";
 import { CreatePropostaDto, UpdatePropostaDto } from "./dto/proposta.dto";
+import { UpdateConfigPropostaDto } from "./dto/proposta-config.dto";
 
 @Controller("propostas")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -27,6 +28,18 @@ export class PropostasController {
     private readonly propostas: PropostasService,
     private readonly proposal: ProposalService,
   ) {}
+
+  @Get("config/template")
+  @Roles("tenant_manager", "comercial")
+  getConfig(@CurrentUser() user: RequestUser) {
+    return this.propostas.getConfig(user);
+  }
+
+  @Patch("config/template")
+  @Roles("tenant_manager")
+  updateConfig(@CurrentUser() user: RequestUser, @Body() dto: UpdateConfigPropostaDto) {
+    return this.propostas.updateConfig(user, dto);
+  }
 
   @Get("resumo")
   @Roles("tenant_manager", "comercial")
@@ -94,14 +107,14 @@ export class PropostasController {
   }
 
   @Post(":id/aceitar")
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager")
   async aceitar(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
     await this.proposal.aceitarProposta(user, id);
     return { sucesso: true };
   }
 
   @Post(":id/rejeitar")
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager")
   async rejeitar(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,

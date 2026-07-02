@@ -76,11 +76,13 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/portal/crm", label: "CRM Dashboard", icon: "PieChart" },
       { href: "/portal/crm/leads", label: "Leads", icon: "UserPlus" },
-      { href: "/portal/entidades", label: "Entidades cliente", icon: "Building2" },
+      { href: "/portal/clientes", label: "Clientes", icon: "Building2" },
       { href: "/portal/parceiros", label: "Parceiros", icon: "Handshake" },
       { href: "/portal/propostas", label: "Propostas", icon: "FileText" },
+      { href: "/portal/propostas/config", label: "Modelo propostas", icon: "Settings", minRole: "tenant_manager" },
       { href: "/portal/crm/faturas", label: "Faturas", icon: "Receipt" },
       { href: "/portal/crm/faturacao", label: "Dados faturação", icon: "Settings", minRole: "tenant_manager" },
+      { href: "/portal/formacoes", label: "Formacoes website", icon: "Globe", minRole: "tenant_manager" },
       { href: "/portal/contratos", label: "Contratos", icon: "FileCheck" },
     ],
     minRole: "tenant_manager",
@@ -96,6 +98,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Formacao",
     items: [
       { href: "/portal/cursos", label: "Cursos", icon: "BookOpen" },
+      { href: "/portal/formacoes", label: "Formacoes website", icon: "Globe", minRole: "tenant_manager" },
       { href: "/portal/acoes", label: "Accoes", icon: "GraduationCap" },
       { href: "/portal/catalogo-ufcd", label: "Catalogo UFCD", icon: "Library" },
       { href: "/portal/matriculas", label: "Inscricoes", icon: "UserPlus", minRole: "tenant_manager" },

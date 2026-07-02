@@ -1,3 +1,5 @@
+import { formatDatePt } from "@/lib/calendar-date";
+
 export type PropostaEstado = "RASCUNHO" | "ENVIADA" | "ACEITE" | "REJEITADA" | "CANCELADA";
 
 export type LeadEstado = "NOVO" | "CONTACTADO" | "QUALIFICADO" | "CONVERTIDO" | "PERDIDO";
@@ -9,7 +11,7 @@ export function fmtEuro(cents: number) {
 
 export function fmtDate(iso: string | null | undefined) {
   if (!iso) return "-";
-  return new Date(iso).toLocaleDateString("pt-PT");
+  return formatDatePt(iso);
 }
 
 export function propostaEstadoLabel(estado: string) {

@@ -2,6 +2,7 @@ export type LinhaIvaInput = {
   quantidade: number;
   precoUnitCentavos: number;
   taxaIva: number;
+  codigoIsencaoIva?: string | null;
 };
 
 export function calcularValorIvaCentavos(linha: LinhaIvaInput): number {
@@ -21,4 +22,14 @@ export function calcularTotaisFatura(linhas: LinhaIvaInput[]): {
     ivaCentavos += calcularValorIvaCentavos(linha);
   }
   return { valorCentavos, ivaCentavos };
+}
+
+/** Total a pagar após retenção na fonte (fase 2). */
+export function calcularTotalLiquidoCentavos(
+  valorCentavos: number,
+  ivaCentavos: number,
+  retencaoCentavos = 0,
+): number {
+  const ret = Math.max(0, Math.min(retencaoCentavos, valorCentavos + ivaCentavos));
+  return valorCentavos + ivaCentavos - ret;
 }

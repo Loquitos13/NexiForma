@@ -88,6 +88,24 @@ model AuthRefreshSession {
   @@schema("control_plane")
 }
 
+/// Token opaco para recuperação de palavra-passe (hash SHA-256 na BD).
+model PasswordResetToken {
+  id          String    @id @default(uuid()) @db.Uuid
+  tokenHash   String    @unique @map("token_hash")
+  subjectKind String    @map("subject_kind")
+  subjectId   String    @map("subject_id") @db.Uuid
+  tenantSlug  String?   @map("tenant_slug")
+  email       String
+  expiresAt   DateTime  @map("expires_at")
+  usedAt      DateTime? @map("used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([email])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+  @@schema("control_plane")
+}
+
 model Tenant {
   id          String              @id @default(uuid()) @db.Uuid
   slug        String              @unique
@@ -110,6 +128,7 @@ model Tenant {
   propostasComerciais PropostaComercial[]
   leadsComerciais     LeadComercial[]
   configFaturacao     ConfigFaturacaoTenant?
+  configProposta      ConfigPropostaTenant?
   seriesFaturacao     SerieFaturacao[]
   faturasComerciais   FaturaComercial[]
   notificacoesPortal  NotificacaoPortal[]
@@ -169,6 +188,8 @@ model TenantSubscription {
   cancelAtPeriodEnd    Boolean              @default(false) @map("cancel_at_period_end")
   billingEmail         String?              @map("billing_email")
   externalCustomerId   String?              @map("external_customer_id") // Stripe
+  /** Add-ons activados em negociação comercial (códigos em @nexiforma/shared/billing). */
+  customAddons         Json?                @default("[]") @map("custom_addons")
   createdAt            DateTime             @default(now()) @map("created_at")
   updatedAt            DateTime             @updatedAt @map("updated_at")
 
@@ -220,6 +241,25 @@ model TenantSubscriptionKey {
   // Uma chave ACTIVE por tenant: enforcement na aplicação ou índice parcial SQL (migração manual)
   @@index([tenantId, status])
   @@map("tenant_subscription_keys")
+  @@schema("control_plane")
+}
+
+model PlatformSalesLead {
+  id              String   @id @default(uuid()) @db.Uuid
+  nome            String
+  email           String
+  empresa         String?
+  telefone        String?
+  planoInteresse  String?  @map("plano_interesse")
+  addonsInteresse Json?    @map("addons_interesse")
+  mensagem        String?
+  origem          String   @default("welcome")
+  status          String   @default("NOVO")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([status, createdAt])
+  @@index([email])
+  @@map("platform_sales_leads")
   @@schema("control_plane")
 }
 
@@ -300,6 +340,13 @@ enum MatriculaEstado {
   @@schema("public")
 }
 
+enum InscricoesEstado {
+  ABERTAS
+  FECHADAS
+
+  @@schema("public")
+}
+
 enum SessaoEstado {
   AGENDADA
   REALIZADA
@@ -332,6 +379,7 @@ model User {
   mfaEnabled   Boolean          @default(false) @map("mfa_enabled")
   /// Segredo TOTP base32 (em produção encriptar com KMS).
   mfaSecret    String?          @map("mfa_secret")
+  emailVerifiedAt DateTime?     @map("email_verified_at")
   createdAt    DateTime         @default(now()) @map("created_at")
   updatedAt    DateTime         @updatedAt @map("updated_at")
 
@@ -348,6 +396,7 @@ model User {
   notificacoesPortal         NotificacaoPortal[]
   pushSubscriptions          PushSubscription[]
   leadsAtribuidos            LeadComercial[] @relation("LeadAtribuido")
+  propostasEnviadas          PropostaComercial[] @relation("PropostaEnviadaPor")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -360,6 +409,7 @@ model TenantInvite {
   id           String         @id @default(uuid()) @db.Uuid
   tenantId     String         @map("tenant_id") @db.Uuid
   email        String
+  displayName  String?        @map("display_name")
   role         TenantUserRole
   tokenHash    String         @unique @map("token_hash")
   expiresAt    DateTime       @map("expires_at")
@@ -376,13 +426,14 @@ model TenantInvite {
 }
 
 model EntidadeCliente {
-  id         String    @id @default(uuid()) @db.Uuid
-  tenantId   String    @map("tenant_id") @db.Uuid
-  nif        String
-  nome       String
-  email      String?
-  telefone   String?
-  createdAt  DateTime  @default(now()) @map("created_at")
+  id           String    @id @default(uuid()) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  nif          String
+  nome         String
+  moradaFiscal String?   @map("morada_fiscal") @db.Text
+  email        String?
+  telefone     String?
+  createdAt    DateTime  @default(now()) @map("created_at")
   tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   formandos  FormandoProfile[]
@@ -452,11 +503,17 @@ model FormadorProfile {
 model Curso {
   id                String          @id @default(uuid()) @db.Uuid
   tenantId          String          @map("tenant_id") @db.Uuid
+  /// ID sequencial por tenant (catálogo / website externo).
+  codigoPublico     Int?            @map("codigo_publico")
   codigoUfcd        String?         @map("codigo_ufcd")
   designacao        String
   cargaHoras        Int             @map("carga_horas")
   modalidade        String          // presencial | b-learning | e-learning
   objetivos         String?
+  enquadramento     String?         @db.Text
+  metodoEnsino      String?         @map("metodo_ensino") @db.Text
+  coverStorageKey   String?         @map("cover_storage_key")
+  publicado         Boolean         @default(false)
   createdAt         DateTime        @default(now()) @map("created_at")
 
   tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -465,6 +522,7 @@ model Curso {
   modulosUnidade  ModuloUnidade[]
   propostasComerciais PropostaComercial[]
 
+  @@unique([tenantId, codigoPublico])
   @@index([tenantId])
   @@map("cursos")
   @@schema("public")
@@ -478,7 +536,12 @@ model AcaoFormacao {
   titulo          String
   dataInicio      DateTime          @map("data_inicio") @db.Date
   dataFim         DateTime          @map("data_fim") @db.Date
+  prazoConclusaoLms DateTime?       @map("prazo_conclusao_lms") @db.Date
   estado          AcaoEstado        @default(PLANEADA)
+  inscricoesEstado InscricoesEstado @default(FECHADAS) @map("inscricoes_estado")
+  publicado       Boolean          @default(false)
+  /// Configuração original de agenda (repetição, horários) para sync com website.
+  agendaTemplate  Json?            @map("agenda_template")
   createdAt       DateTime         @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -566,6 +629,7 @@ model SessaoFormacao {
   data            DateTime         @db.Date
   horaInicio      String           @map("hora_inicio") // HH:mm
   horaFim         String           @map("hora_fim")
+  local           String?
   modalidade      String
   estado          SessaoEstado     @default(AGENDADA)
   lmsAtivo        Boolean          @default(false) @map("lms_ativo")
@@ -826,25 +890,90 @@ model PropostaComercial {
   entidadeClienteId String         @map("entidade_cliente_id") @db.Uuid
   codigo            String
   titulo            String
+  subtitulo         String?        @db.Text
   descricao         String?        @db.Text
+  apresentacaoEmpresa String?      @map("apresentacao_empresa") @db.Text
+  enquadramento     String?        @db.Text
+  objetivos         String?        @db.Text
+  conteudosProgramaticos String?   @map("conteudos_programaticos") @db.Text
+  metodologia       String?        @db.Text
+  destinatarios     String?        @db.Text
+  duracaoTexto      String?        @map("duracao_texto") @db.Text
+  localTexto        String?        @map("local_texto") @db.Text
+  beneficios        String?        @db.Text
+  condicoesComerciais String?      @map("condicoes_comerciais") @db.Text
+  porqueEscolher    String?        @map("porque_escolher") @db.Text
+  proximosPassos    String?        @map("proximos_passos") @db.Text
   valorCentavos     Int            @default(0) @map("valor_centavos")
   moeda             String         @default("EUR") @db.Char(3)
   estado            PropostaEstado @default(RASCUNHO)
   validadeAte       DateTime?      @map("validade_ate") @db.Date
   cursoId           String?        @map("curso_id") @db.Uuid
   notasInternas     String?        @map("notas_internas") @db.Text
+  enviadaPorUserId  String?        @map("enviada_por_user_id") @db.Uuid
+  enviadaEm         DateTime?      @map("enviada_em")
+  aceiteEm          DateTime?      @map("aceite_em")
+  rejeitadaEm       DateTime?      @map("rejeitada_em")
   createdAt         DateTime       @default(now()) @map("created_at")
   updatedAt         DateTime       @updatedAt @map("updated_at")
 
   tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   entidadeCliente EntidadeCliente @relation(fields: [entidadeClienteId], references: [id], onDelete: Cascade)
   curso           Curso?          @relation(fields: [cursoId], references: [id], onDelete: SetNull)
+  enviadaPor      User?           @relation("PropostaEnviadaPor", fields: [enviadaPorUserId], references: [id], onDelete: SetNull)
   fatura          FaturaComercial?
+  linhas          PropostaLinha[]
 
   @@unique([tenantId, codigo])
   @@index([tenantId])
   @@index([entidadeClienteId])
   @@map("propostas_comerciais")
+  @@schema("public")
+}
+
+model PropostaLinha {
+  id                String   @id @default(uuid()) @db.Uuid
+  propostaId        String   @map("proposta_id") @db.Uuid
+  ordem             Int      @default(1)
+  descricao         String
+  notas             String?  @db.Text
+  quantidade        Decimal  @default(1) @db.Decimal(12, 4)
+  precoUnitCentavos Int      @map("preco_unit_centavos")
+  taxaIva           Decimal  @map("taxa_iva") @db.Decimal(5, 2)
+  valorIvaCentavos  Int      @map("valor_iva_centavos")
+
+  proposta PropostaComercial @relation(fields: [propostaId], references: [id], onDelete: Cascade)
+
+  @@index([propostaId])
+  @@map("propostas_linhas")
+  @@schema("public")
+}
+
+model ConfigPropostaTenant {
+  tenantId                  String   @id @map("tenant_id") @db.Uuid
+  apresentacaoEmpresa       String?  @map("apresentacao_empresa") @db.Text
+  enquadramentoPadrao       String?  @map("enquadramento_padrao") @db.Text
+  objetivosPadrao           String?  @map("objetivos_padrao") @db.Text
+  conteudosProgramaticosPadrao String? @map("conteudos_programaticos_padrao") @db.Text
+  metodologiaPadrao         String?  @map("metodologia_padrao") @db.Text
+  destinatariosPadrao       String?  @map("destinatarios_padrao") @db.Text
+  duracaoTextoPadrao        String?  @map("duracao_texto_padrao") @db.Text
+  localTextoPadrao          String?  @map("local_texto_padrao") @db.Text
+  beneficiosPadrao          String?  @map("beneficios_padrao") @db.Text
+  condicoesComerciaisPadrao String?  @map("condicoes_comerciais_padrao") @db.Text
+  porqueEscolherPadrao      String?  @map("porque_escolher_padrao") @db.Text
+  proximosPassosPadrao      String?  @map("proximos_passos_padrao") @db.Text
+  validadeDiasPadrao        Int      @default(30) @map("validade_dias_padrao")
+  nomeContacto              String?  @map("nome_contacto")
+  emailContacto             String?  @map("email_contacto")
+  telefoneContacto          String?  @map("telefone_contacto")
+  website                   String?
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("config_proposta_tenant")
   @@schema("public")
 }
 
@@ -918,12 +1047,26 @@ enum SerieFaturacaoTipo {
   @@schema("public")
 }
 
+enum SerieAtEstado {
+  PENDENTE
+  REGISTADA
+  FINALIZADA
+  ANULADA
+
+  @@schema("public")
+}
+
 model ConfigFaturacaoTenant {
-  tenantId            String   @id @map("tenant_id") @db.Uuid
-  nomeEmpresa         String   @map("nome_empresa")
-  moradaFiscal        String?  @map("morada_fiscal") @db.Text
-  nifEmitente         String   @map("nif_emitente")
-  regimeIva           String   @default("NORMAL") @map("regime_iva")
+  tenantId              String   @id @map("tenant_id") @db.Uuid
+  nomeEmpresa           String   @map("nome_empresa")
+  moradaFiscal          String?  @map("morada_fiscal") @db.Text
+  nifEmitente           String   @map("nif_emitente")
+  iban                  String?  @db.VarChar(34)
+  bicSwift              String?  @map("bic_swift") @db.VarChar(11)
+  emailGestor           String?  @map("email_gestor") @db.VarChar(255)
+  capitalSocial         String?  @map("capital_social") @db.VarChar(64)
+  consRegCom            String?  @map("cons_reg_com") @db.VarChar(128)
+  regimeIva             String   @default("NORMAL") @map("regime_iva")
   seriePadraoCodigo   String   @default("2026") @map("serie_padrao_codigo")
   taxaIvaPadrao       Decimal  @default(23) @map("taxa_iva_padrao") @db.Decimal(5, 2)
   atSubutilizador     String?  @map("at_subutilizador")
@@ -931,6 +1074,7 @@ model ConfigFaturacaoTenant {
   atCertificadoRef    String?  @map("at_certificado_ref")
   softwareCertificado String?  @map("software_certificado")
   comunicacaoAtiva    Boolean  @default(false) @map("comunicacao_ativa")
+  comunicacaoAutomatica Boolean @default(false) @map("comunicacao_automatica")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -941,14 +1085,19 @@ model ConfigFaturacaoTenant {
 }
 
 model SerieFaturacao {
-  id            String             @id @default(uuid()) @db.Uuid
-  tenantId      String             @map("tenant_id") @db.Uuid
-  codigo        String
-  tipo              SerieFaturacaoTipo @default(FT)
-  proximoNumero     Int                @default(1) @map("proximo_numero")
-  codigoValidacaoAt String?            @map("codigo_validacao_at")
-  ativo             Boolean            @default(true)
-  createdAt     DateTime           @default(now()) @map("created_at")
+  id                   String             @id @default(uuid()) @db.Uuid
+  tenantId             String             @map("tenant_id") @db.Uuid
+  codigo               String
+  tipo                 SerieFaturacaoTipo @default(FT)
+  proximoNumero        Int                @default(1) @map("proximo_numero")
+  codigoValidacaoAt    String?            @map("codigo_validacao_at")
+  estadoAt             SerieAtEstado      @default(PENDENTE) @map("estado_at")
+  comunicadaAtEm       DateTime?          @map("comunicada_at_em")
+  dataInicioPrevUtiliz DateTime?          @map("data_inicio_prev_utiliz") @db.Date
+  numInicialComunicado Int?               @map("num_inicial_comunicado")
+  mensagemAtSerie      String?            @map("mensagem_at_serie") @db.Text
+  ativo                Boolean            @default(true)
+  createdAt            DateTime           @default(now()) @map("created_at")
 
   tenant  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   faturas FaturaComercial[]
@@ -980,7 +1129,10 @@ model FaturaComercial {
   emitidaPorUserId  String?      @map("emitida_por_user_id") @db.Uuid
   anuladaEm         DateTime?    @map("anulada_em")
   motivoAnulacao    String?      @map("motivo_anulacao") @db.Text
-  hashIntegridade   String?      @map("hash_integridade") @db.Char(64)
+  hashIntegridade   String?      @map("hash_integridade") @db.VarChar(256)
+  hashControl       String?      @map("hash_control") @db.VarChar(32)
+  retencaoCentavos  Int          @default(0) @map("retencao_centavos")
+  faturaReferenciaId String?     @map("fatura_referencia_id") @db.Uuid
   createdAt         DateTime     @default(now()) @map("created_at")
   updatedAt         DateTime     @updatedAt @map("updated_at")
 
@@ -989,6 +1141,8 @@ model FaturaComercial {
   proposta        PropostaComercial?    @relation(fields: [propostaId], references: [id], onDelete: SetNull)
   serie           SerieFaturacao        @relation(fields: [serieId], references: [id], onDelete: Restrict)
   emitidaPor      User?                 @relation("FaturaEmitidaPor", fields: [emitidaPorUserId], references: [id], onDelete: SetNull)
+  faturaReferencia FaturaComercial?     @relation("NotaCreditoOrigem", fields: [faturaReferenciaId], references: [id], onDelete: SetNull)
+  notasCredito    FaturaComercial[]     @relation("NotaCreditoOrigem")
   linhas          FaturaLinha[]
   comunicacoesAt  FaturaComunicacaoAt[]
   pedidosAnulacao FaturaPedidoAnulacao[]
@@ -1009,6 +1163,7 @@ model FaturaLinha {
   precoUnitCentavos Int      @map("preco_unit_centavos")
   taxaIva           Decimal  @map("taxa_iva") @db.Decimal(5, 2)
   valorIvaCentavos  Int      @map("valor_iva_centavos")
+  codigoIsencaoIva  String?  @map("codigo_isencao_iva") @db.VarChar(8)
 
   fatura FaturaComercial @relation(fields: [faturaId], references: [id], onDelete: Cascade)
 

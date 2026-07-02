@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { UserPlus, Shield, ShieldOff, ShieldCheck, Mail } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
 import {
@@ -13,9 +14,9 @@ import {
 type UserRow = { id: string; email: string; displayName: string; role: string; active: boolean; mfaEnabled: boolean };
 type InviteRow = { id: string; email: string; role: string; expiresAt: string };
 
-const ROLES = ["ADMIN", "COORDENADOR", "FORMADOR", "FINANCEIRO", "COMERCIAL"];
-const ROLE_VARIANT: Record<string, "purple" | "blue" | "teal" | "yellow" | "green"> = {
-  ADMIN: "purple", COORDENADOR: "blue", FORMADOR: "teal", FINANCEIRO: "yellow", COMERCIAL: "green",
+const ROLES = ["ADMIN", "COORDENADOR", "FORMADOR", "FORMANDO", "FINANCEIRO", "COMERCIAL"];
+const ROLE_VARIANT: Record<string, "purple" | "blue" | "teal" | "yellow" | "green" | "orange"> = {
+  ADMIN: "purple", COORDENADOR: "blue", FORMADOR: "teal", FORMANDO: "orange", FINANCEIRO: "yellow", COMERCIAL: "green",
 };
 
 export default function UtilizadoresPage() {
@@ -177,7 +178,7 @@ export default function UtilizadoresPage() {
                   <span className="text-sm text-slate-300">{i.email}</span>
                   <div className="flex items-center gap-2">
                     <Badge variant={ROLE_VARIANT[i.role] ?? "default"}>{i.role}</Badge>
-                    <span className="text-xs text-slate-500">expira {new Date(i.expiresAt).toLocaleDateString("pt-PT")}</span>
+                    <span className="text-xs text-slate-500">expira {formatDatePt(i.expiresAt)}</span>
                   </div>
                 </div>
               ))}

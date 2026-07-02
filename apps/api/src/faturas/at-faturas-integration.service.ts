@@ -1,25 +1,35 @@
-import { readFileSync } from "node:fs";
 import {
   BadRequestException,
   Injectable,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { AT_FATURAS_ENDPOINTS, AT_SOAP_ACTION_REGISTER } from "./at-faturas-constants";
+import { AT_SOAP_ACTION_CHANGE_STATUS, AT_SOAP_ACTION_REGISTER } from "./at-faturas-constants";
 import { formatarUsernameWfa } from "./at-faturas-credentials.util";
-import { loadAtTlsMaterial, postAtSoapRequest } from "./at-faturas-http.util";
-import type { AtFaturaDocumentoInput } from "./at-faturas-payload.util";
+import { postAtSoapRequest } from "./at-faturas-http.util";
 import {
+  isAtSandboxMock,
+  loadAtPublicKeyPem,
+  loadAtTlsFromConfig,
+  readAtMode,
+  resolveAtFaturasEndpoint,
+  formatAtTlsConnectionError,
+  type AtIntegrationMode,
+} from "./at-integration.util";
+import type { AtFaturaDocumentoInput, AtInvoiceStatus } from "./at-faturas-payload.util";
+import {
+  buildChangeInvoiceStatusSoapEnvelope,
   buildRegisterInvoiceSoapEnvelope,
   hashAtFaturaPayload,
 } from "./at-faturas-payload.util";
 import {
+  buildMockAtSuccessResponse,
   parseAtFaturasSoapResponse,
   type AtFaturasParseResult,
 } from "./at-faturas-response.util";
 import { buildAtSecurityHeaderFields } from "./at-faturas-security.util";
 
-export type AtFaturasMode = "disabled" | "production";
+export type AtFaturasMode = AtIntegrationMode;
 
 export type AtWfaCredenciais = {
   nifEmitente: string;
@@ -34,17 +44,20 @@ export type AtFaturasRegistoResult = AtFaturasParseResult & {
 
 @Injectable()
 export class AtFaturasIntegrationService {
-  private publicKeyPem: string | null = null;
+  private publicKeyCache = { value: null as string | null };
 
   constructor(private readonly config: ConfigService) {}
 
   getPublicConfig() {
     const mode = this.mode();
+    const mock = mode === "sandbox" && isAtSandboxMock(this.config, "AT_FATURAS");
     return {
       mode,
-      configured: mode === "production",
-      endpoint: mode === "production" ? this.resolveEndpoint() : null,
+      configured: mode === "production" || mode === "sandbox",
+      endpoint: mode === "disabled" ? null : resolveAtFaturasEndpoint(this.config, mode),
       softwareCertificado: this.config.get<string>("AT_SOFTWARE_CERT_NUMBER") ?? null,
+      sandboxSimulado: mock,
+      sandboxReal: mode === "sandbox" && !mock,
     };
   }
 
@@ -55,12 +68,207 @@ export class AtFaturasIntegrationService {
     const mode = this.mode();
     const payloadHash = hashAtFaturaPayload(documento);
 
-    if (mode !== "production") {
+    if (mode === "disabled") {
       throw new ServiceUnavailableException(
-        "Comunicação AT desactivada - configure AT_FATURAS_MODE=production e credenciais.",
+        "Comunicação AT desactivada - configure AT_FATURAS_MODE=sandbox ou production.",
       );
     }
 
+    if (mode === "sandbox" && isAtSandboxMock(this.config, "AT_FATURAS")) {
+      return this.simularSandbox(payloadHash, credenciais);
+    }
+
+    this.assertCredenciais(credenciais);
+    return this.enviarRegisto(documento, credenciais, mode, payloadHash);
+  }
+
+  async alterarEstadoDocumento(
+    documento: AtFaturaDocumentoInput,
+    novoEstado: Exclude<AtInvoiceStatus, "N">,
+    statusDate: Date,
+    credenciais: AtWfaCredenciais,
+  ): Promise<AtFaturasRegistoResult> {
+    const mode = this.mode();
+    const payloadHash = hashAtFaturaPayload({ ...documento, invoiceStatus: novoEstado });
+
+    if (mode === "disabled") {
+      throw new ServiceUnavailableException(
+        "Comunicação AT desactivada - configure AT_FATURAS_MODE=sandbox ou production.",
+      );
+    }
+
+    if (mode === "sandbox" && isAtSandboxMock(this.config, "AT_FATURAS")) {
+      const parsed = parseAtFaturasSoapResponse(buildMockAtSuccessResponse("0"));
+      return {
+        ...parsed,
+        mensagemAt: `Estado alterado para ${novoEstado} (simulação local).`,
+        mode: "sandbox",
+        payloadHash,
+      };
+    }
+
+    this.assertCredenciais(credenciais);
+    const endpoint = resolveAtFaturasEndpoint(this.config, mode);
+    const envelope = buildChangeInvoiceStatusSoapEnvelope(
+      this.buildSecurity(credenciais),
+      documento,
+      novoEstado,
+      statusDate,
+      this.buildVersionOpts(),
+    );
+    return this.postSoap(endpoint, AT_SOAP_ACTION_CHANGE_STATUS, envelope, mode, payloadHash);
+  }
+
+  async testarLigacao(credenciais: AtWfaCredenciais): Promise<AtFaturasRegistoResult> {
+    const mode = this.mode();
+    if (mode === "disabled") {
+      throw new ServiceUnavailableException(
+        "Integração AT desactivada - configure AT_FATURAS_MODE=sandbox ou production.",
+      );
+    }
+
+    if (mode === "sandbox" && isAtSandboxMock(this.config, "AT_FATURAS")) {
+      return this.simularSandbox("test-ligacao-at", credenciais, true);
+    }
+
+    this.assertCredenciais(credenciais);
+
+    const docTeste: AtFaturaDocumentoInput = {
+      nifEmitente: credenciais.nifEmitente,
+      nifCliente: credenciais.nifEmitente,
+      tipoDocumento: "FT",
+      serie: "TEST",
+      numero: 0,
+      atcud: "SANDBOX-0",
+      dataEmissao: new Date(),
+      valorCentavos: 0,
+      ivaCentavos: 0,
+      moeda: "EUR",
+      invoiceStatus: "N",
+      linhas: [],
+      softwareCertificado: this.config.get<string>("AT_SOFTWARE_CERT_NUMBER") ?? "9999",
+    };
+
+    return this.registarDocumento(docTeste, credenciais);
+  }
+
+  private async enviarRegisto(
+    documento: AtFaturaDocumentoInput,
+    credenciais: AtWfaCredenciais,
+    mode: AtFaturasMode,
+    payloadHash: string,
+  ): Promise<AtFaturasRegistoResult> {
+    const endpoint = resolveAtFaturasEndpoint(this.config, mode);
+    const envelope = buildRegisterInvoiceSoapEnvelope(
+      this.buildSecurity(credenciais),
+      documento,
+      this.buildVersionOpts(),
+    );
+    return this.postSoap(endpoint, AT_SOAP_ACTION_REGISTER, envelope, mode, payloadHash);
+  }
+
+  private async postSoap(
+    endpoint: string,
+    soapAction: string,
+    envelope: string,
+    mode: AtFaturasMode,
+    payloadHash: string,
+  ): Promise<AtFaturasRegistoResult> {
+    const timeoutMs = Number(this.config.get<string>("AT_FATURAS_TIMEOUT_MS") ?? "30000");
+    const tls = loadAtTlsFromConfig(this.config);
+    if (!tls) {
+      throw new ServiceUnavailableException(
+        "Certificado SSL AT em falta - configure AT_FATURAS_CLIENT_CERT_PFX_PATH (TesteWebservices.pfx em sandbox).",
+      );
+    }
+
+    try {
+      const res = await postAtSoapRequest(endpoint, soapAction, envelope, { timeoutMs, tls });
+      const parsed = parseAtFaturasSoapResponse(res.body);
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        return {
+          sucesso: false,
+          codigoResposta: parsed.codigoResposta ?? `HTTP-${res.statusCode}`,
+          mensagemAt: parsed.mensagemAt ?? `Erro HTTP ${res.statusCode} na comunicação AT.`,
+          mode,
+          payloadHash,
+        };
+      }
+      return { ...parsed, mode, payloadHash };
+    } catch (err) {
+      return {
+        sucesso: false,
+        codigoResposta: "NETWORK",
+        mensagemAt: formatAtTlsConnectionError(this.config, endpoint, err),
+        mode,
+        payloadHash,
+      };
+    }
+  }
+
+  private buildSecurity(credenciais: AtWfaCredenciais) {
+    const username = formatarUsernameWfa(credenciais.nifEmitente, credenciais.subutilizador);
+    return buildAtSecurityHeaderFields(
+      username,
+      credenciais.password.trim(),
+      loadAtPublicKeyPem(this.config, this.publicKeyCache),
+    );
+  }
+
+  private simularSandbox(
+    payloadHash: string,
+    credenciais: AtWfaCredenciais,
+    ligacao = false,
+  ): AtFaturasRegistoResult {
+    const failSim = this.config.get<string>("AT_FATURAS_SANDBOX_FAIL") === "1";
+    const temSub = !!credenciais.subutilizador?.trim();
+    const temPwd = !!credenciais.password?.trim();
+
+    if (!temSub || !temPwd) {
+      if (this.config.get<string>("AT_FATURAS_SANDBOX_REQUIRE_CREDS") === "1") {
+        return {
+          sucesso: false,
+          codigoResposta: "SANDBOX-CREDS",
+          mensagemAt:
+            "Modo sandbox mock: configure subutilizador e password WFA para simular comunicação.",
+          mode: "sandbox",
+          payloadHash,
+        };
+      }
+      const parsed = parseAtFaturasSoapResponse(buildMockAtSuccessResponse("0"));
+      return {
+        ...parsed,
+        mensagemAt: ligacao
+          ? "Ligação sandbox mock OK (simulação local, sem credenciais WFA)."
+          : "Documento comunicado em sandbox mock (simulação local).",
+        mode: "sandbox",
+        payloadHash,
+      };
+    }
+
+    if (!/^\d{9}$/.test(credenciais.nifEmitente.replace(/\s/g, ""))) {
+      return {
+        sucesso: false,
+        codigoResposta: "3",
+        mensagemAt: "NIF emitente inválido para teste sandbox.",
+        mode: "sandbox",
+        payloadHash,
+      };
+    }
+
+    const codigo = failSim ? "-99" : "0";
+    const parsed = parseAtFaturasSoapResponse(buildMockAtSuccessResponse(codigo));
+    return {
+      ...parsed,
+      mensagemAt: ligacao
+        ? `Ligação sandbox mock OK – credenciais WFA validadas (${formatarUsernameWfa(credenciais.nifEmitente, credenciais.subutilizador)}).`
+        : parsed.mensagemAt,
+      mode: "sandbox",
+      payloadHash,
+    };
+  }
+
+  private assertCredenciais(credenciais: AtWfaCredenciais) {
     if (!credenciais.subutilizador?.trim()) {
       throw new BadRequestException(
         "Configure o subutilizador AT (WFA) em Configuração → Faturação.",
@@ -71,82 +279,16 @@ export class AtFaturasIntegrationService {
         "Configure a password WFA em Configuração → Faturação.",
       );
     }
-
-    const endpoint = this.resolveEndpoint();
-    const username = formatarUsernameWfa(credenciais.nifEmitente, credenciais.subutilizador);
-    const security = buildAtSecurityHeaderFields(
-      username,
-      credenciais.password.trim(),
-      this.loadPublicKeyPem(),
-    );
-    const envelope = buildRegisterInvoiceSoapEnvelope(security, documento);
-    const timeoutMs = Number(this.config.get<string>("AT_FATURAS_TIMEOUT_MS") ?? "30000");
-    const tls = loadAtTlsMaterial({
-      pfxPath: this.config.get<string>("AT_FATURAS_CLIENT_CERT_PFX_PATH"),
-      pfxPassphrase: this.config.get<string>("AT_FATURAS_CLIENT_CERT_PASSPHRASE"),
-      certPath: this.config.get<string>("AT_FATURAS_CLIENT_CERT_PATH"),
-      keyPath: this.config.get<string>("AT_FATURAS_CLIENT_KEY_PATH"),
-      caPath: this.config.get<string>("AT_FATURAS_CA_PATH"),
-    });
-
-    if (!tls) {
-      throw new ServiceUnavailableException(
-        "Certificado SSL AT (mTLS) em falta - configure AT_FATURAS_CLIENT_CERT_PFX_PATH.",
-      );
-    }
-
-    let responseText: string;
-    try {
-      const res = await postAtSoapRequest(endpoint, AT_SOAP_ACTION_REGISTER, envelope, {
-        timeoutMs,
-        tls,
-      });
-      responseText = res.body;
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        const parsed = parseAtFaturasSoapResponse(responseText);
-        return {
-          sucesso: false,
-          codigoResposta: parsed.codigoResposta ?? `HTTP-${res.statusCode}`,
-          mensagemAt: parsed.mensagemAt ?? `Erro HTTP ${res.statusCode} na comunicação AT.`,
-          mode,
-          payloadHash,
-        };
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Erro de rede";
-      return {
-        sucesso: false,
-        codigoResposta: "NETWORK",
-        mensagemAt: `Falha na ligação ao webservice AT: ${msg}`,
-        mode,
-        payloadHash,
-      };
-    }
-
-    const parsed = parseAtFaturasSoapResponse(responseText);
-    return { ...parsed, mode, payloadHash };
-  }
-
-  private resolveEndpoint(): string {
-    const custom = this.config.get<string>("AT_FATURAS_ENDPOINT")?.trim();
-    return custom || AT_FATURAS_ENDPOINTS.production;
-  }
-
-  private loadPublicKeyPem(): string {
-    if (this.publicKeyPem) return this.publicKeyPem;
-    const path = this.config.get<string>("AT_FATURAS_PUBLIC_KEY_PATH")?.trim();
-    if (!path) {
-      throw new ServiceUnavailableException(
-        "AT_FATURAS_PUBLIC_KEY_PATH não configurado (chave pública AT para WS-Security).",
-      );
-    }
-    this.publicKeyPem = readFileSync(path, "utf8");
-    return this.publicKeyPem;
   }
 
   private mode(): AtFaturasMode {
-    const raw = (this.config.get<string>("AT_FATURAS_MODE") ?? "disabled").toLowerCase();
-    if (raw === "production") return "production";
-    return "disabled";
+    return readAtMode(this.config, "AT_FATURAS_MODE");
+  }
+
+  private buildVersionOpts() {
+    return {
+      eFaturaMDVersion: this.config.get<string>("AT_EFATURA_MD_VERSION") ?? undefined,
+      auditFileVersion: this.config.get<string>("AT_AUDIT_FILE_VERSION") ?? undefined,
+    };
   }
 }

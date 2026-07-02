@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   UnauthorizedException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -19,11 +20,21 @@ import type { PlatformLoginDto } from "./dto/platform-login.dto";
 import type { TenantLoginDto } from "./dto/tenant-login.dto";
 import type {
   PlatformForgotPasswordDto,
+  PlatformResetPasswordDto,
   TenantForgotPasswordDto,
+  TenantResetPasswordDto,
 } from "./dto/forgot-password.dto";
 import { MfaService } from "./mfa.service";
 import { hashRefreshToken, newRefreshOpaqueToken } from "./refresh-token.util";
 import type { AccessTokenPayload } from "./types/access-token-payload";
+import { MailService } from "../mail/mail.service";
+import {
+  hashPasswordResetToken,
+  newPasswordResetOpaque,
+} from "./password-reset.util";
+
+const PASSWORD_RESET_GENERIC =
+  "Se existir uma conta com esse email, enviámos instruções para redefinir a palavra-passe.";
 
 function mapPrismaRoleToJwt(role: TenantUserRole): JwtRole {
   switch (role) {
@@ -62,6 +73,7 @@ export interface LoginResponse {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   private readonly accessExpiresSeconds: number;
   private readonly refreshExpiresSeconds: number;
 
@@ -70,6 +82,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly mfa: MfaService,
+    private readonly mail: MailService,
   ) {
     this.accessExpiresSeconds = parseJwtExpirySeconds(
       this.config.get<string>("JWT_EXPIRES") ?? "15m",
@@ -217,45 +230,160 @@ export class AuthService {
     return this.completeLogin(payload, pu.id, pu.email, "platform", res);
   }
 
-  async resetTenantPassword(dto: TenantForgotPasswordDto): Promise<{ message: string }> {
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { slug: dto.tenantSlug.trim() },
-    });
+  private passwordResetPepper(): string {
+    return (
+      this.config.get<string>("PASSWORD_RESET_PEPPER") ??
+      `${this.config.getOrThrow<string>("JWT_SECRET")}:password_reset`
+    );
+  }
+
+  private passwordResetTtlMinutes(): number {
+    return Number(this.config.get<string>("PASSWORD_RESET_TTL_MINUTES") ?? 60);
+  }
+
+  async requestTenantPasswordReset(dto: TenantForgotPasswordDto): Promise<{ message: string }> {
+    const slug = dto.tenantSlug.trim();
+    const email = dto.email.toLowerCase();
+    const tenant = await this.prisma.tenant.findUnique({ where: { slug } });
     if (!tenant) {
-      throw new UnauthorizedException("Não encontrámos uma conta com estes dados.");
+      return { message: PASSWORD_RESET_GENERIC };
     }
 
     const user = await this.prisma.user.findFirst({
-      where: { tenantId: tenant.id, email: dto.email.toLowerCase(), active: true },
+      where: { tenantId: tenant.id, email, active: true },
     });
     if (!user) {
-      throw new UnauthorizedException("Não encontrámos uma conta com estes dados.");
+      return { message: PASSWORD_RESET_GENERIC };
+    }
+
+    await this.issuePasswordReset({
+      subjectKind: "tenant",
+      subjectId: user.id,
+      email,
+      tenantSlug: slug,
+    });
+
+    return { message: PASSWORD_RESET_GENERIC };
+  }
+
+  async requestPlatformPasswordReset(dto: PlatformForgotPasswordDto): Promise<{ message: string }> {
+    const email = dto.email.toLowerCase();
+    const pu = await this.prisma.platformUser.findUnique({ where: { email } });
+    if (!pu?.active) {
+      return { message: PASSWORD_RESET_GENERIC };
+    }
+
+    await this.issuePasswordReset({
+      subjectKind: "platform",
+      subjectId: pu.id,
+      email,
+      tenantSlug: null,
+    });
+
+    return { message: PASSWORD_RESET_GENERIC };
+  }
+
+  async confirmTenantPasswordReset(dto: TenantResetPasswordDto): Promise<{ message: string }> {
+    const row = await this.consumePasswordResetToken(dto.token);
+    if (row.subjectKind !== "tenant") {
+      throw new UnauthorizedException("Link inválido ou expirado.");
+    }
+    if (dto.tenantSlug?.trim() && row.tenantSlug !== dto.tenantSlug.trim()) {
+      throw new UnauthorizedException("Link inválido ou expirado.");
     }
 
     const passwordHash = await argon2.hash(dto.newPassword, { type: argon2.argon2id });
     await this.prisma.user.update({
-      where: { id: user.id },
+      where: { id: row.subjectId },
       data: { passwordHash },
     });
 
     return { message: "Palavra-passe actualizada. Podes iniciar sessão." };
   }
 
-  async resetPlatformPassword(dto: PlatformForgotPasswordDto): Promise<{ message: string }> {
-    const pu = await this.prisma.platformUser.findUnique({
-      where: { email: dto.email.toLowerCase() },
-    });
-    if (!pu?.active) {
-      throw new UnauthorizedException("Não encontrámos uma conta com estes dados.");
+  async confirmPlatformPasswordReset(dto: PlatformResetPasswordDto): Promise<{ message: string }> {
+    const row = await this.consumePasswordResetToken(dto.token);
+    if (row.subjectKind !== "platform") {
+      throw new UnauthorizedException("Link inválido ou expirado.");
     }
 
     const passwordHash = await argon2.hash(dto.newPassword, { type: argon2.argon2id });
     await this.prisma.platformUser.update({
-      where: { id: pu.id },
+      where: { id: row.subjectId },
       data: { passwordHash },
     });
 
     return { message: "Palavra-passe actualizada. Podes iniciar sessão." };
+  }
+
+  private async issuePasswordReset(input: {
+    subjectKind: "tenant" | "platform";
+    subjectId: string;
+    email: string;
+    tenantSlug: string | null;
+  }) {
+    const pepper = this.passwordResetPepper();
+    const { raw, hash } = newPasswordResetOpaque(pepper);
+    const ttlMin = this.passwordResetTtlMinutes();
+    const expiresAt = new Date(Date.now() + ttlMin * 60_000);
+
+    await this.prisma.passwordResetToken.create({
+      data: {
+        tokenHash: hash,
+        subjectKind: input.subjectKind,
+        subjectId: input.subjectId,
+        tenantSlug: input.tenantSlug,
+        email: input.email,
+        expiresAt,
+      },
+    });
+
+    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const qs = new URLSearchParams({ token: raw });
+    if (input.tenantSlug) qs.set("slug", input.tenantSlug);
+    const resetUrl = `${appUrl}/login/recuperar?${qs.toString()}`;
+
+    await this.mail.sendPasswordReset(input.email, resetUrl, ttlMin);
+
+    if (this.config.get<string>("NODE_ENV") !== "production") {
+      this.logger.log(`[dev] password reset link: ${resetUrl}`);
+    }
+  }
+
+  private async consumePasswordResetToken(rawToken: string) {
+    const pepper = this.passwordResetPepper();
+    const tokenHash = hashPasswordResetToken(pepper, rawToken);
+    const row = await this.prisma.passwordResetToken.findUnique({ where: { tokenHash } });
+    if (!row || row.usedAt || row.expiresAt <= new Date()) {
+      throw new UnauthorizedException("Link inválido ou expirado.");
+    }
+
+    await this.prisma.passwordResetToken.update({
+      where: { id: row.id },
+      data: { usedAt: new Date() },
+    });
+
+    return row;
+  }
+
+  /** @deprecated Usar requestTenantPasswordReset + confirmTenantPasswordReset */
+  async resetTenantPassword(dto: TenantForgotPasswordDto & { newPassword?: string }): Promise<{ message: string }> {
+    if (dto.newPassword) {
+      throw new UnauthorizedException(
+        "Redefinição directa desactivada. Solicita um link por email em /login/recuperar.",
+      );
+    }
+    return this.requestTenantPasswordReset(dto);
+  }
+
+  /** @deprecated Usar requestPlatformPasswordReset + confirmPlatformPasswordReset */
+  async resetPlatformPassword(dto: PlatformForgotPasswordDto & { newPassword?: string }): Promise<{ message: string }> {
+    if (dto.newPassword) {
+      throw new UnauthorizedException(
+        "Redefinição directa desactivada. Solicita um link por email em /login/recuperar.",
+      );
+    }
+    return this.requestPlatformPasswordReset(dto);
   }
 
   async refreshFromCookie(req: Request, res: Response): Promise<LoginResponse> {

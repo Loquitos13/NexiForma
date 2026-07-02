@@ -9,6 +9,8 @@ export {
   getAllowedDestinations,
   canAccessDestination,
   findGuideDestinationByHref,
+  searchGuideDestinations,
+  guideResultToSearchHits,
 } from "./matcher";
 export {
   buildGuideLlmContext,
@@ -27,6 +29,7 @@ export type {
   GuideUnknownResult,
   GuideAnswerResult,
   GuideOutOfScopeResult,
+  GuideSearchHit,
   GuideViewArea,
   GuideViewContext,
 } from "./types";

@@ -297,7 +297,7 @@ export default function CrmLeadsPage() {
           <LeadEstadoBadge estado={l.estado} />
           {l.entidadeCliente ? (
             <Link
-              href={`/portal/entidades/${l.entidadeCliente.id}`}
+              href={`/portal/clientes/${l.entidadeCliente.id}`}
               className="text-[10px] text-blue-400/90 mt-1 block hover:underline"
             >
               {l.entidadeCliente.nome}

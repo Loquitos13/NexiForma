@@ -40,8 +40,9 @@ export class FaturasController {
     @CurrentUser() user: RequestUser,
     @Query("entidadeClienteId") entidadeClienteId?: string,
     @Query("estado") estado?: string,
+    @Query("q") q?: string,
   ): Promise<unknown> {
-    return this.faturas.list(user, { entidadeClienteId, estado });
+    return this.faturas.list(user, { entidadeClienteId, estado, q });
   }
 
   @Get("faturas/export/saft")
@@ -82,6 +83,24 @@ export class FaturasController {
       `${asAttachment ? "attachment" : "inline"}; filename="${pkg.filename}"`,
     );
     res.send(pkg.html);
+  }
+
+  @Get("faturas/:id/documento.pdf")
+  @Roles("tenant_manager", "comercial")
+  async documentoPdf(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Query("download") download: string | undefined,
+    @Res() res: Response,
+  ) {
+    const pkg = await this.faturas.buildDocumentoPdf(user, id);
+    const asAttachment = download === "1" || download === "true";
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `${asAttachment ? "attachment" : "inline"}; filename="${pkg.filename}"`,
+    );
+    res.send(pkg.pdf);
   }
 
   @Get("faturas/:id")
@@ -182,6 +201,21 @@ export class FaturasController {
     return this.faturas.createFromProposta(user, propostaId);
   }
 
+  @Post("faturas/:id/nota-credito")
+  @Roles("tenant_manager", "comercial")
+  criarNotaCredito(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+  ): Promise<unknown> {
+    return this.faturas.criarNotaCredito(user, id);
+  }
+
+  @Post("config/faturacao/testar-at")
+  @Roles("tenant_manager")
+  testarLigacaoAt(@CurrentUser() user: RequestUser): Promise<unknown> {
+    return this.faturas.testarLigacaoAt(user);
+  }
+
   @Get("config/faturacao/certificacao")
   @Roles("tenant_manager")
   certificacaoStatus(@CurrentUser() user: RequestUser): Promise<unknown> {
@@ -196,6 +230,21 @@ export class FaturasController {
     @Body() dto: UpdateSerieFaturacaoDto,
   ): Promise<unknown> {
     return this.faturas.updateSerie(user, serieId, dto);
+  }
+
+  @Post("config/faturacao/series/:serieId/comunicar-at")
+  @Roles("tenant_manager")
+  comunicarSerieAt(
+    @CurrentUser() user: RequestUser,
+    @Param("serieId", ParseUUIDPipe) serieId: string,
+  ): Promise<unknown> {
+    return this.faturas.comunicarSerieAt(user, serieId);
+  }
+
+  @Post("config/faturacao/series/comunicar-todas")
+  @Roles("tenant_manager")
+  comunicarTodasSeriesAt(@CurrentUser() user: RequestUser): Promise<unknown> {
+    return this.faturas.comunicarTodasSeriesAt(user);
   }
 
   @Get("config/faturacao")

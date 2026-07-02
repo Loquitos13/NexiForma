@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { Plus } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { parseApiError } from "@/lib/ui/backoffice";
 
 type TenantRow = {
   id: string;
@@ -21,11 +23,39 @@ const statusBadge: Record<string, string> = {
   ARCHIVED: "bg-slate-500/10 text-slate-500 border-slate-500/20",
 };
 
+const inputClass =
+  "w-full px-3 py-2 rounded-lg bg-[#0c0a14] border border-purple-500/15 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-purple-500/40 transition-colors";
+
+const EMPTY_CREATE = {
+  slug: "",
+  legalName: "",
+  nif: "",
+  planCode: "starter",
+  managerEmail: "",
+  managerPassword: "",
+  managerDisplayName: "",
+};
+
+function slugFromName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 64);
+}
+
 export default function PlataformaTenantsPage() {
   const [rows, setRows] = useState<TenantRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState(EMPTY_CREATE);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,6 +84,44 @@ export default function PlataformaTenantsPage() {
     return r.slug.toLowerCase().includes(q) || r.legalName.toLowerCase().includes(q) || (r.nif ?? "").includes(q);
   }) ?? [];
 
+  async function criarTenant(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setMsg(null);
+    const body: Record<string, string> = {
+      slug: createForm.slug.trim() || slugFromName(createForm.legalName),
+      legalName: createForm.legalName.trim(),
+      nif: createForm.nif.trim(),
+      planCode: createForm.planCode,
+    };
+    if (createForm.managerEmail.trim()) {
+      body.managerEmail = createForm.managerEmail.trim();
+      body.managerPassword = createForm.managerPassword;
+      if (createForm.managerDisplayName.trim()) {
+        body.managerDisplayName = createForm.managerDisplayName.trim();
+      }
+    }
+    const res = await bffFetch("/api/v1/control-plane/tenants", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", accept: "application/json" },
+      body: JSON.stringify(body),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setError(await parseApiError(res));
+      return;
+    }
+    const created = (await res.json()) as { id: string };
+    setCreateOpen(false);
+    setCreateForm(EMPTY_CREATE);
+    setMsg("Tenant criado.");
+    await load();
+    if (created.id) {
+      window.location.href = `/plataforma/tenantes/${created.id}`;
+    }
+  }
+
   return (
     <div className="max-w-5xl space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -62,6 +130,14 @@ export default function PlataformaTenantsPage() {
           <p className="text-sm text-slate-500 mt-1">Gestao multi-tenant · {rows?.length ?? 0} entidades</p>
         </div>
         <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Novo tenant
+          </button>
           <input
             type="text"
             placeholder="Buscar por nome, slug ou NIF..."
@@ -78,6 +154,12 @@ export default function PlataformaTenantsPage() {
           </button>
         </div>
       </div>
+
+      {msg ? (
+        <div className="flex items-start gap-2.5 rounded-xl bg-green-950/30 border border-green-500/25 px-4 py-3">
+          <p className="text-sm text-green-300">{msg}</p>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="flex items-start gap-2.5 rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3">
@@ -143,6 +225,108 @@ export default function PlataformaTenantsPage() {
           </table>
         </div>
       )}
+
+      {createOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-[#0c0a14] border border-purple-500/20 p-6 shadow-xl">
+            <h2 className="text-lg font-semibold text-slate-100 mb-1">Novo tenant</h2>
+            <p className="text-xs text-slate-500 mb-4">Cria entidade formadora com subscrição trial e gestor opcional.</p>
+            <form onSubmit={(e) => void criarTenant(e)} className="grid gap-3">
+              <label className="grid gap-1 text-xs text-slate-400">
+                Razão social *
+                <input
+                  required
+                  className={inputClass}
+                  value={createForm.legalName}
+                  onChange={(e) => {
+                    const legalName = e.target.value;
+                    setCreateForm((f) => ({
+                      ...f,
+                      legalName,
+                      slug: f.slug || slugFromName(legalName),
+                    }));
+                  }}
+                />
+              </label>
+              <label className="grid gap-1 text-xs text-slate-400">
+                Slug *
+                <input
+                  required
+                  pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                  className={inputClass}
+                  value={createForm.slug}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, slug: e.target.value.toLowerCase() }))}
+                  placeholder="acme-formacao"
+                />
+              </label>
+              <label className="grid gap-1 text-xs text-slate-400">
+                NIF (9 dígitos) *
+                <input
+                  required
+                  pattern="\d{9}"
+                  className={inputClass}
+                  value={createForm.nif}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, nif: e.target.value.replace(/\D/g, "").slice(0, 9) }))}
+                />
+              </label>
+              <label className="grid gap-1 text-xs text-slate-400">
+                Plano inicial
+                <select
+                  className={inputClass}
+                  value={createForm.planCode}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, planCode: e.target.value }))}
+                >
+                  <option value="starter">Starter</option>
+                  <option value="pro">Profissional</option>
+                  <option value="enterprise">Enterprise</option>
+                </select>
+              </label>
+              <div className="border-t border-purple-500/10 pt-3 mt-1">
+                <p className="text-xs text-slate-500 mb-2">Gestor inicial (opcional)</p>
+                <div className="grid gap-2">
+                  <input
+                    type="email"
+                    placeholder="Email gestor"
+                    className={inputClass}
+                    value={createForm.managerEmail}
+                    onChange={(e) => setCreateForm((f) => ({ ...f, managerEmail: e.target.value }))}
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password (mín. 8 caracteres)"
+                    className={inputClass}
+                    value={createForm.managerPassword}
+                    onChange={(e) => setCreateForm((f) => ({ ...f, managerPassword: e.target.value }))}
+                  />
+                  <input
+                    placeholder="Nome a mostrar"
+                    className={inputClass}
+                    value={createForm.managerDisplayName}
+                    onChange={(e) => setCreateForm((f) => ({ ...f, managerDisplayName: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-medium"
+                >
+                  {busy ? "A criar…" : "Criar tenant"}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setCreateOpen(false)}
+                  className="px-4 py-2 rounded-lg border border-purple-500/20 text-slate-400 text-sm"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

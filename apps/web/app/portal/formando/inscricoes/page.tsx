@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { formatDatePt } from "@/lib/calendar-date";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -106,10 +107,10 @@ export default function FormandoInscricoesPage() {
                       {item.acaoCodigo} · {item.turma}
                     </p>
                     <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
-                      {new Date(item.dataInicio).toLocaleDateString("pt-PT")} –{" "}
-                      {new Date(item.dataFim).toLocaleDateString("pt-PT")}
+                      {formatDatePt(item.dataInicio)} –{" "}
+                      {formatDatePt(item.dataFim)}
                       {" · "}
-                      Inscrito em {new Date(item.inscritoEm).toLocaleDateString("pt-PT")}
+                      Inscrito em {formatDatePt(item.inscritoEm)}
                     </p>
                     {item.curso.codigoUfcd ? (
                       <p className="text-[11px] text-slate-600 mt-1">

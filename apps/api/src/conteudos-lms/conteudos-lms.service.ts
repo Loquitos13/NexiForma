@@ -423,6 +423,19 @@ export class ConteudosLmsService {
     const tenantId = requireTenantId(user);
     await this.assertMatriculaAccess(user, matriculaId, tenantId);
 
+    const matricula = await this.prisma.matricula.findFirst({
+      where: { id: matriculaId, tenantId },
+      include: {
+        turma: {
+          include: {
+            acaoFormacao: {
+              select: { dataFim: true, prazoConclusaoLms: true },
+            },
+          },
+        },
+      },
+    });
+
     const [unidades, modulos, progressos] = await Promise.all([
       this.prisma.moduloUnidade.findMany({
         where: { tenantId, cursoId },
@@ -492,7 +505,35 @@ export class ConteudosLmsService {
       };
     });
 
-    return { unidades: unidadesOut, tarefas: tarefasOut };
+    const total = tarefasOut.length;
+    const concluidos = tarefasOut.filter((t) => t.concluido).length;
+    const acao = matricula?.turma.acaoFormacao;
+    const limite = acao?.prazoConclusaoLms ?? acao?.dataFim ?? null;
+    const now = new Date();
+    const msDia = 86_400_000;
+    const diasRestantes =
+      limite != null ? Math.ceil((limite.getTime() - now.getTime()) / msDia) : null;
+    const percentualConclusao = total > 0 ? Math.round((concluidos / total) * 1000) / 10 : 0;
+    const completo = total > 0 && concluidos >= total;
+    const emAtraso = limite != null && now > limite && !completo;
+    const cumpridoNoPrazo = completo && !emAtraso;
+
+    return {
+      unidades: unidadesOut,
+      tarefas: tarefasOut,
+      prazoLms: limite
+        ? {
+            limite: limite.toISOString().slice(0, 10),
+            diasRestantes,
+            percentualConclusao,
+            concluidos,
+            total,
+            completo,
+            emAtraso,
+            cumpridoNoPrazo,
+          }
+        : null,
+    };
   }
 
   async listProgresso(

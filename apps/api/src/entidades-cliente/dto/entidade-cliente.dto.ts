@@ -10,6 +10,10 @@ export class CreateEntidadeClienteDto {
   @Length(2, 200)
   nome!: string;
 
+  @IsString()
+  @Length(5, 500)
+  moradaFiscal!: string;
+
   @IsOptional()
   @IsEmail()
   email?: string;
@@ -24,6 +28,11 @@ export class UpdateEntidadeClienteDto {
   @IsString()
   @Length(2, 200)
   nome?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(5, 500)
+  moradaFiscal?: string;
 
   @IsOptional()
   @IsEmail()

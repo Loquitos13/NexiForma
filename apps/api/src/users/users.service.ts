@@ -46,6 +46,7 @@ export class UsersService {
         role: true,
         active: true,
         mfaEnabled: true,
+        emailVerifiedAt: true,
         createdAt: true,
       },
     });
@@ -88,12 +89,14 @@ export class UsersService {
       create: {
         tenantId,
         email,
+        displayName: dto.displayName.trim(),
         role: dto.role,
         tokenHash,
         expiresAt,
         invitedById: user.sub,
       },
       update: {
+        displayName: dto.displayName.trim(),
         role: dto.role,
         tokenHash,
         expiresAt,
@@ -110,7 +113,13 @@ export class UsersService {
     const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
     const inviteUrl = `${appUrl}/convite/${rawToken}`;
 
-    await this.mail.sendInvite(email, tenant?.legalName ?? tenant?.slug ?? "tenant", inviteUrl, dto.role);
+    await this.mail.sendInvite(
+      email,
+      tenant?.legalName ?? tenant?.slug ?? "tenant",
+      inviteUrl,
+      dto.role,
+      dto.displayName.trim(),
+    );
 
     return {
       id: invite.id,
@@ -142,14 +151,16 @@ export class UsersService {
     await this.assertUserLimit(invite.tenantId);
 
     const passwordHash = await argon2.hash(dto.password, { type: argon2.argon2id });
+    const now = new Date();
     const created = await this.prisma.$transaction(async (tx) => {
       const u = await tx.user.create({
         data: {
           tenantId: invite.tenantId,
           email: invite.email,
-          displayName: invite.email.split("@")[0],
+          displayName: invite.displayName?.trim() || invite.email.split("@")[0]!,
           role: invite.role,
           passwordHash,
+          emailVerifiedAt: now,
         },
       });
       await tx.tenantInvite.update({

@@ -5,6 +5,7 @@ import { FileText, Fingerprint, Lock, Shield, User } from "lucide-react";
 import { DocumentCaptureModule } from "@/components/formando/document-capture-module";
 import { useConsentSettings } from "@/components/consent/consent-gate";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { formatDatePt } from "@/lib/calendar-date";
 import {
   DOCUMENTO_LAYOUTS,
   TIPOS_DOCUMENTO,
@@ -428,7 +429,7 @@ export default function FormandoPerfilPage() {
                         {DOCUMENTO_LAYOUTS[doc.categoria as TipoDocumento]?.titulo ?? doc.categoria}
                         {doc.lado && doc.categoria === "cc" ? ` · ${doc.lado}` : ""} ·{" "}
                         {formatBytes(doc.tamanhoBytes)} ·{" "}
-                        {new Date(doc.createdAt).toLocaleDateString("pt-PT")}
+                        {formatDatePt(doc.createdAt)}
                       </p>
                     </div>
                     <Button type="button" size="sm" variant="ghost" onClick={() => void openDocumento(doc.id)}>

@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { NexiFormaHeroTitle } from "@/components/brand/NexiFormaHeroTitle";
+import { PlansComparisonSection } from "@/components/site/plans-comparison-section";
 import { ScrollReveal } from "@/components/site/scroll-reveal";
 
 const features: Array<{
@@ -134,10 +135,10 @@ export function WelcomePageContent() {
               </svg>
             </Link>
             <a
-              href="#funcionalidades"
+              href="#planos"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-slate-600/60 text-slate-300 font-semibold text-sm hover:border-slate-500 hover:text-slate-100 transition-all"
             >
-              Ver funcionalidades
+              Ver planos
             </a>
           </div>
         </div>
@@ -304,6 +305,8 @@ export function WelcomePageContent() {
           </div>
         </ScrollReveal>
       </section>
+
+      <PlansComparisonSection />
 
       {/* CTA */}
       <div className="max-w-6xl mx-auto w-full px-5 pb-16">

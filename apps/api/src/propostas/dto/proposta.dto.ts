@@ -7,12 +7,16 @@ import {
   IsUUID,
   Length,
   Min,
+  ValidateNested,
 } from "class-validator";
+import { Type } from "class-transformer";
 import type { PropostaEstado } from "@nexiforma/database";
+import { PropostaLinhaDto } from "./proposta-linha.dto";
+import { PropostaConteudoDto } from "./proposta-config.dto";
 
 const ESTADOS = ["RASCUNHO", "ENVIADA", "ACEITE", "REJEITADA", "CANCELADA"] as const;
 
-export class CreatePropostaDto {
+export class CreatePropostaDto extends PropostaConteudoDto {
   @IsUUID()
   entidadeClienteId!: string;
 
@@ -45,9 +49,14 @@ export class CreatePropostaDto {
   @IsOptional()
   @IsString()
   notasInternas?: string;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => PropostaLinhaDto)
+  linhas?: PropostaLinhaDto[];
 }
 
-export class UpdatePropostaDto {
+export class UpdatePropostaDto extends PropostaConteudoDto {
   @IsOptional()
   @IsString()
   @Length(2, 200)
@@ -68,13 +77,18 @@ export class UpdatePropostaDto {
 
   @IsOptional()
   @IsDateString()
-  validadeAte?: string;
+  validadeAte?: string | null;
 
   @IsOptional()
   @IsUUID()
-  cursoId?: string;
+  cursoId?: string | null;
 
   @IsOptional()
   @IsString()
-  notasInternas?: string;
+  notasInternas?: string | null;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => PropostaLinhaDto)
+  linhas?: PropostaLinhaDto[];
 }

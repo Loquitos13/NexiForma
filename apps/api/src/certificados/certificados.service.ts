@@ -8,6 +8,8 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 import { CertificadoVerificacaoService } from "./certificado-verificacao.service";
+import { NotificacoesExtendedService } from "../notificacoes/notificacoes-extended.service";
+import { resolverEmailNotificacaoFormando } from "@nexiforma/shared";
 
 const PRESENCA_MINIMA_DEFAULT = 60;
 
@@ -16,6 +18,7 @@ export class CertificadosService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly verificacao: CertificadoVerificacaoService,
+    private readonly notificacoes: NotificacoesExtendedService,
   ) {}
 
   async listByAcao(user: RequestUser, acaoId: string) {
@@ -28,7 +31,7 @@ export class CertificadosService {
           include: {
             matriculas: {
               where: { estado: { in: ["ATIVA", "CONCLUSAO"] } },
-              include: { formando: { select: { id: true, nome: true, nif: true, email: true } } },
+              include: { formando: { select: { id: true, nome: true, nif: true, email: true, user: { select: { email: true } } } } },
             },
           },
         },
@@ -82,7 +85,17 @@ export class CertificadosService {
     const matricula = await this.prisma.matricula.findFirst({
       where: { id: matriculaId, tenantId },
       include: {
-        formando: { select: { nome: true, nif: true, userId: true } },
+        formando: {
+          select: {
+            id: true,
+            nome: true,
+            nif: true,
+            userId: true,
+            email: true,
+            telefone: true,
+            user: { select: { email: true } },
+          },
+        },
         turma: {
           include: {
             acaoFormacao: {
@@ -108,6 +121,23 @@ export class CertificadosService {
       stats.taxaPresenca !== null && stats.taxaPresenca >= PRESENCA_MINIMA_DEFAULT;
 
     const verif = await this.verificacao.emitir(user, matriculaId);
+
+    if (!verif.reutilizado) {
+      const formandoEmail = resolverEmailNotificacaoFormando({
+        emailContacto: matricula.formando.email,
+        emailConta: matricula.formando.user?.email,
+      });
+      if (formandoEmail) {
+        void this.notificacoes
+          .notificarCertificadoDisponivel(formandoEmail, matricula.formando.nome, {
+            nomeCurso: acao.titulo,
+            codigoFormacao: acao.codigoInterno,
+            telefone: matricula.formando.telefone ?? undefined,
+          })
+          .catch(() => undefined);
+      }
+    }
+
     const qrDataUrl = await QRCode.toDataURL(verif.verifyUrl, {
       width: 120,
       margin: 1,

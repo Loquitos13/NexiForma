@@ -16,6 +16,10 @@
 
     "start:prod": "node dist/main",
 
+    "start:docs": "node dist/docs-server.main.js",
+
+    "start:docs:dev": "nest start --watch --entryFile docs-server.main",
+
     "test": "jest --passWithNoTests"
 
   },
@@ -42,6 +46,8 @@
 
     "@nestjs/platform-express": "^11.0.8",
 
+    "@nestjs/schedule": "^6.1.3",
+
     "@nestjs/throttler": "^6.5.0",
 
     "@nexiforma/database": "*",
@@ -64,6 +70,8 @@
 
     "jose": "^6.2.3",
 
+    "node-forge": "^1.4.0",
+
     "nodemailer": "^8.0.9",
 
     "otplib": "^13.4.0",
@@ -72,6 +80,8 @@
 
     "passport-jwt": "^4.0.1",
 
+    "puppeteer": "^24.36.1",
+
     "qrcode": "^1.5.4",
 
     "reflect-metadata": "^0.2.2",
@@ -79,6 +89,8 @@
     "rxjs": "^7.8.1",
 
     "stripe": "^22.2.0",
+
+    "swagger-ui-express": "^5.0.1",
 
     "web-push": "^3.6.7"
 
@@ -102,11 +114,15 @@
 
     "@types/node": "^22.10.7",
 
+    "@types/node-forge": "^1.3.14",
+
     "@types/nodemailer": "^8.0.0",
 
     "@types/passport-jwt": "^4.0.1",
 
     "@types/qrcode": "^1.5.6",
+
+    "@types/swagger-ui-express": "^4.1.8",
 
     "@types/web-push": "^3.6.4",
 

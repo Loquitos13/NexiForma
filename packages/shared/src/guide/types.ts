@@ -76,6 +76,15 @@ export type GuideOutOfScopeResult = {
   suggestions: Array<{ href: string; label: string }>;
 };
 
+/** Resultado da pesquisa global de funcionalidades (portal). */
+export type GuideSearchHit = {
+  href: string;
+  label: string;
+  description: string;
+  matchedKeywords: string[];
+  score: number;
+};
+
 export type GuideResult =
   | GuideNavigateResult
   | GuideSuggestResult

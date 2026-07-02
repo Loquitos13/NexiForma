@@ -1,6 +1,7 @@
 import {
   agruparLinhasPorTaxa,
   buildAtFaturaPayloadCanonical,
+  buildChangeInvoiceStatusSoapEnvelope,
   buildRegisterInvoiceSoapEnvelope,
   hashAtFaturaPayload,
   identificacaoDocumentoAt,
@@ -14,6 +15,11 @@ import {
   encriptarPasswordWfa,
   formatarUsernameWfa,
 } from "./at-faturas-credentials.util";
+import {
+  extrairHashCharacters,
+  resolverTaxCodeIva,
+  resolverTaxExemptionCode,
+} from "./at-tax-codes.util";
 import { generateKeyPairSync } from "node:crypto";
 import { buildAtSecurityHeaderFields } from "./at-faturas-security.util";
 
@@ -28,6 +34,8 @@ const sampleDoc = {
   valorCentavos: 10000,
   ivaCentavos: 2300,
   moeda: "EUR",
+          hashIntegridade: "dN0mi1g2EmZxFnSM3Z/01Up/1+Ot7rlaBJOLyfgPLAl3q0w4mFIcXwV/ZUQRP+8SPhoU0GqxbEfBEJLt6HMz4YD3hqnBHzxBvETYSK4iKP1euzjE2bSYO179BQBVXcqWEzWM2q028dOa5/ZXeCNHcHPf0xdqxddO8NaZFphwOe8=",
+  softwareCertificado: "1234",
   linhas: [
     {
       descricao: "Formação",
@@ -38,6 +46,25 @@ const sampleDoc = {
     },
   ],
 };
+
+describe("at-tax-codes.util", () => {
+  it("mapeia taxas IVA PT para TaxCode", () => {
+    expect(resolverTaxCodeIva(23)).toBe("NOR");
+    expect(resolverTaxCodeIva(13)).toBe("INT");
+    expect(resolverTaxCodeIva(6)).toBe("RED");
+    expect(resolverTaxCodeIva(0)).toBe("ISE");
+  });
+
+  it("aplica M07 por defeito em isenção", () => {
+    expect(resolverTaxExemptionCode(0)).toBe("M07");
+    expect(resolverTaxExemptionCode(23)).toBeNull();
+  });
+
+  it("extrai HashCharacters do hash de integridade", () => {
+    expect(extrairHashCharacters("a".repeat(64), "1234")).toBe("aaaa");
+    expect(extrairHashCharacters(null, "1234")).toBe("0");
+  });
+});
 
 describe("at-faturas-payload.util", () => {
   it("formata identificação do documento", () => {
@@ -52,18 +79,18 @@ describe("at-faturas-payload.util", () => {
     expect(buildAtFaturaPayloadCanonical(sampleDoc)).toContain('"atcud":"ABCD1234-42"');
   });
 
-  it("agrupa linhas por taxa IVA", () => {
+  it("agrupa linhas por taxa IVA e motivo isenção", () => {
     const grupos = agruparLinhasPorTaxa([
       { descricao: "A", quantidade: 1, precoUnitCentavos: 5000, taxaIva: 23, valorIvaCentavos: 1150 },
       { descricao: "B", quantidade: 1, precoUnitCentavos: 5000, taxaIva: 23, valorIvaCentavos: 1150 },
       { descricao: "C", quantidade: 1, precoUnitCentavos: 2000, taxaIva: 6, valorIvaCentavos: 120 },
+      { descricao: "D", quantidade: 1, precoUnitCentavos: 1000, taxaIva: 0, valorIvaCentavos: 0, codigoMotivoIsencao: "M16" },
     ]);
-    expect(grupos).toHaveLength(2);
-    expect(grupos[0]?.taxaIva).toBe(6);
-    expect(grupos[1]?.baseCentavos).toBe(10000);
+    expect(grupos).toHaveLength(3);
+    expect(grupos.find((g) => g.taxaIva === 0)?.codigoMotivoIsencao).toBe("M16");
   });
 
-  it("gera envelope RegisterInvoice com namespaces AT", () => {
+  it("gera envelope RegisterInvoiceRequest v3 AT", () => {
     const xml = buildRegisterInvoiceSoapEnvelope(
       {
         username: "123456789/1",
@@ -73,10 +100,57 @@ describe("at-faturas-payload.util", () => {
       },
       sampleDoc,
     );
-    expect(xml).toContain("RegisterInvoice");
-    expect(xml).toContain("https://servicos.portaldasfinancas.gov.pt/faturas/");
-    expect(xml).toContain("<InvoiceStatus>N</InvoiceStatus>");
-    expect(xml).toContain("<CreditAmount>100.00</CreditAmount>");
+    expect(xml).toContain("RegisterInvoiceRequest");
+    expect(xml).toContain("http://factemi.at.min_financas.pt/documents");
+    expect(xml).toContain("<doc:InvoiceStatus>N</doc:InvoiceStatus>");
+    expect(xml).toContain("<doc:LineSummary>");
+    expect(xml).toContain("<doc:TaxCode>NOR</doc:TaxCode>");
+    expect(xml).toContain("<doc:PaperLessIndicator>0</doc:PaperLessIndicator>");
+    expect(xml).toContain("<doc:ATCUD>ABCD1234-42</doc:ATCUD>");
+    expect(xml).not.toContain("TaxExemptionReason");
+  });
+
+  it("inclui TaxExemptionCode em linhas isentas", () => {
+    const xml = buildRegisterInvoiceSoapEnvelope(
+      {
+        username: "123456789/1",
+        passwordEnc: "enc-pwd",
+        nonceEnc: "enc-nonce",
+        createdEnc: "enc-created",
+      },
+      {
+        ...sampleDoc,
+        valorCentavos: 5000,
+        ivaCentavos: 0,
+        linhas: [
+          {
+            descricao: "Isento",
+            quantidade: 1,
+            precoUnitCentavos: 5000,
+            taxaIva: 0,
+            valorIvaCentavos: 0,
+          },
+        ],
+      },
+    );
+    expect(xml).toContain("<doc:TaxExemptionCode>M07</doc:TaxExemptionCode>");
+    expect(xml).toContain("<doc:TaxCode>ISE</doc:TaxCode>");
+  });
+
+  it("gera ChangeInvoiceStatusRequest para anulação", () => {
+    const xml = buildChangeInvoiceStatusSoapEnvelope(
+      {
+        username: "123456789/1",
+        passwordEnc: "enc-pwd",
+        nonceEnc: "enc-nonce",
+        createdEnc: "enc-created",
+      },
+      sampleDoc,
+      "A",
+      new Date("2026-05-30T12:00:00Z"),
+    );
+    expect(xml).toContain("ChangeInvoiceStatusRequest");
+    expect(xml).toContain("<doc:InvoiceStatus>A</doc:InvoiceStatus>");
   });
 });
 

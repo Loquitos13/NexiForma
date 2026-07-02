@@ -1,7 +1,12 @@
+"use client";
+
+import { usePathname } from "next/navigation";
 import { NexiFormaLogoAnimated } from "@/components/brand/NexiFormaLogoAnimated";
 import { UserSessionBar } from "@/components/site/user-session-bar";
+import { PortalGlobalSearch } from "@/components/portal/portal-global-search";
 
 export function FormandoShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   return (
     <div className="min-h-screen flex flex-col bg-[#070b12]">
       <header className="px-5 py-3.5 border-b border-slate-700/30 bg-slate-950/90">
@@ -21,6 +26,11 @@ export function FormandoShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <UserSessionBar area="portal" />
+      <div className="border-b border-slate-800/80 bg-[#0a0f18]/90 px-5 py-2">
+        <div className="mx-auto max-w-4xl">
+          <PortalGlobalSearch pathname={pathname} />
+        </div>
+      </div>
       <div className="flex-1 w-full">{children}</div>
     </div>
   );

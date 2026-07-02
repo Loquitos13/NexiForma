@@ -28,6 +28,7 @@ export function DialogContent({
           "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
           "data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%]",
           "data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]",
+          "overflow-hidden",
           className,
         )}
         {...props}
@@ -35,7 +36,7 @@ export function DialogContent({
         {/* header */}
         {(title || description) && (
           <div className="flex items-start justify-between gap-4 border-b border-slate-700/50 px-6 py-4">
-            <div>
+            <div className="min-w-0">
               {title && (
                 <RadixDialog.Title className="text-base font-semibold text-slate-100">
                   {title}
@@ -52,7 +53,7 @@ export function DialogContent({
             </RadixDialog.Close>
           </div>
         )}
-        <div className="p-6">{children}</div>
+        <div className="min-w-0 max-h-[min(70vh,720px)] overflow-y-auto overflow-x-hidden p-6">{children}</div>
       </RadixDialog.Content>
     </RadixDialog.Portal>
   );

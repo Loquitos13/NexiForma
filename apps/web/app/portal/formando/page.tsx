@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, GraduationCap } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { Card, CardContent } from "@/components/ui/card";
+import { Alert } from "@/components/ui";
 import { SessaoLiveHero } from "@/components/formando/sessao-live-hero";
 
 type SessaoItem = {
@@ -33,6 +34,14 @@ type PercursoResumo = {
   total: number;
   concluidos: number;
   pendentes: number;
+  prazoLms?: {
+    limite: string;
+    diasRestantes: number | null;
+    percentualConclusao: number;
+    emAtraso: boolean;
+    cumpridoNoPrazo: boolean;
+    completo: boolean;
+  } | null;
 };
 
 export default function FormandoPortalPage() {
@@ -68,11 +77,12 @@ export default function FormandoPortalPage() {
         }
         const p = (await pRes.json()) as {
           tarefas: Array<{ concluido: boolean; desbloqueado: boolean }>;
+          prazoLms?: PercursoResumo["prazoLms"];
         };
         const total = p.tarefas.length;
         const concluidos = p.tarefas.filter((t) => t.concluido).length;
         const pendentes = p.tarefas.filter((t) => t.desbloqueado && !t.concluido).length;
-        next[b.matriculaId] = { total, concluidos, pendentes };
+        next[b.matriculaId] = { total, concluidos, pendentes, prazoLms: p.prazoLms ?? null };
       }),
     );
     setProgresso(next);
@@ -95,11 +105,7 @@ export default function FormandoPortalPage() {
 
       {blocks && blocks.length > 0 ? <SessaoLiveHero blocks={blocks} /> : null}
 
-      {error ? (
-        <div className="rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3 text-sm text-red-300">
-          {error}
-        </div>
-      ) : null}
+      {error ? <Alert variant="error">{error}</Alert> : null}
 
       {!blocks ? (
         <p className="text-sm text-slate-500 text-center py-10">A carregar inscrições…</p>
@@ -137,6 +143,27 @@ export default function FormandoPortalPage() {
                           {prog.concluidos}/{prog.total} módulos concluídos
                           {prog.pendentes > 0 ? (
                             <span className="text-amber-400/90"> · {prog.pendentes} por fazer</span>
+                          ) : null}
+                          {prog.prazoLms ? (
+                            <span
+                              className={
+                                prog.prazoLms.emAtraso
+                                  ? " text-red-400"
+                                  : prog.prazoLms.cumpridoNoPrazo
+                                    ? " text-emerald-400"
+                                    : " text-slate-400"
+                              }
+                            >
+                              {" "}
+                              · Prazo LMS: {prog.prazoLms.limite}
+                              {prog.prazoLms.completo
+                                ? prog.prazoLms.cumpridoNoPrazo
+                                  ? " (concluído no prazo)"
+                                  : " (concluído fora do prazo)"
+                                : prog.prazoLms.diasRestantes != null && prog.prazoLms.diasRestantes >= 0
+                                  ? ` (${prog.prazoLms.diasRestantes} dias restantes)`
+                                  : " (prazo ultrapassado)"}
+                            </span>
                           ) : null}
                         </p>
                       ) : null}

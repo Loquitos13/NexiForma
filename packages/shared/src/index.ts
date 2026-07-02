@@ -105,6 +105,14 @@ export {
 } from "./lms/email-presenca";
 
 export {
+  resolverEmailNotificacaoFormando,
+  resolverEmailNotificacaoFormador,
+  resolverEmailUtilizador,
+  type EmailNotificacaoFormandoInput,
+  type EmailNotificacaoFormadorInput,
+} from "./notificacoes/email-destinatario";
+
+export {
   GUIDE_DESTINATIONS,
   queryGuide,
   resolveGuideFollowUp,
@@ -114,6 +122,8 @@ export {
   getAllowedDestinations,
   canAccessDestination,
   findGuideDestinationByHref,
+  searchGuideDestinations,
+  guideResultToSearchHits,
   buildGuideLlmContext,
   buildGuideLlmSystemPrompt,
   buildGuideLlmUserPrompt,
@@ -127,6 +137,7 @@ export {
   type GuideUnknownResult,
   type GuideAnswerResult,
   type GuideOutOfScopeResult,
+  type GuideSearchHit,
   type GuideViewArea,
   type GuideViewContext,
   type GuideLlmContext,
@@ -137,3 +148,68 @@ export {
   DOSSIE_DGERT_TOTAL,
   type DossieDgertDocumentoDef,
 } from "./dossie/documentos-dgert";
+
+export {
+  AT_MOTIVOS_ISENCAO,
+  AT_MOTIVOS_ISENCAO_LABELS,
+  AT_MOTIVO_ISENCAO_DEFAULT,
+  formatarMotivoIsencaoAt,
+  isMotivoIsencaoAtValido,
+  type AtMotivoIsencaoCodigo,
+} from "./faturacao/motivos-isencao-at";
+
+export {
+  buildFaturaQrPayload,
+  extrairHashCharacters,
+  type FaturaQrInput,
+} from "./faturacao/fatura-qr";
+
+export {
+  type RelatorioAgingBucket,
+  type RelatorioCohortLinha,
+  type RelatorioComparacoes,
+  type RelatorioComercial,
+  type RelatorioComercialAvancado,
+  type RelatorioConversaoPropostas,
+  type RelatorioDashboard,
+  type RelatorioDescricaoGrafico,
+  type RelatorioEmpresarial,
+  type RelatorioEmpresarialAvancado,
+  type RelatorioFinanceiro,
+  type RelatorioFinanceiroAvancado,
+  type RelatorioFluxoCaixa,
+  type RelatorioFunil,
+  type RelatorioFunilEtapa,
+  type RelatorioGargalo,
+  type RelatorioInsightsRequest,
+  type RelatorioInsightsResponse,
+  type RelatorioKpi,
+  type RelatorioLtvResumo,
+  type RelatorioMargemItem,
+  type RelatorioOrigemLead,
+  type RelatorioSerieMensal,
+  type RelatorioTempoProposta,
+  type RelatorioTopCliente,
+  type RelatorioVariacao,
+} from "./relatorios";
+
+export {
+  BILLING_ADDON_CODES,
+  BILLING_ADDON_LABELS,
+  BILLING_CATALOG,
+  BILLING_PLAN_CODES,
+  BILLING_PLAN_LABELS,
+  PLAN_NATIVE_ADDONS,
+  PLAN_NEGOTIABLE_ADDONS,
+  PLAN_RELATORIOS_TIER,
+  calcularProrataCredito,
+  resolveTenantEntitlements,
+  type BillingAddonCode,
+  type BillingCatalog,
+  type BillingComparisonRow,
+  type BillingPlanCode,
+  type BillingPlanSummary,
+  type PlanFeatureCell,
+  type RelatoriosTier,
+  type TenantEntitlements,
+} from "./billing";

@@ -23,7 +23,10 @@ export class ComplianceAlertasService {
   ) {}
 
   async listAlertas(user: RequestUser, limit = 20) {
-    const tenantId = requireTenantId(user);
+    return this.listAlertasForTenant(requireTenantId(user), limit);
+  }
+
+  async listAlertasForTenant(tenantId: string, limit = 20) {
     const now = new Date();
     const em30Dias = new Date(now.getTime() + 30 * 86400000);
     const amanha = new Date(now.getTime() + 86400000);
@@ -70,7 +73,7 @@ export class ComplianceAlertasService {
     const alertas: ComplianceAlerta[] = [];
 
     for (const acao of acoes) {
-      const detail = await this.compliance.getByAcao(user, acao.id);
+      const detail = await this.compliance.getByAcaoForTenant(tenantId, acao.id);
       const checklist = detail.checklist;
 
       if (!checklist.prontoInspecao && acao.dataFim <= em30Dias) {

@@ -44,6 +44,10 @@ npm run dev
 
 Sem Ollama activo, o NexiGuia usa o motor local (keywords) - funciona offline.
 
+### Email transacional (Brevo / Resend)
+
+Notificações usam **só email**. Guia passo a passo: **[docs/EMAIL_SMTP_SETUP.md](./docs/EMAIL_SMTP_SETUP.md)**. Resumo: verificar domínio no Brevo ou Resend → preencher `SMTP_*` e `MAIL_FROM` no `.env` → testar em `/portal/notificacoes`.
+
 ### Interface (produção)
 
 - **Landing** (`/`) – marketing DGERT, funcionalidades, CTAs; painel BFF só em `development`.
@@ -253,8 +257,7 @@ Middleware Next protege `/portal/*` (cookie `nexiforma_refresh`).
 
 ### Fase 8 – Notificações e pacote inspeção ZIP
 
-- **Notificações email** – digest de alertas compliance, lembretes de sessão (amanhã), aviso de certificado disponível; reutiliza `MailService` (SES/SMTP/log).
-- **SMS opcional** – `SMS_PROVIDER=twilio` + credenciais Twilio; fallback log em dev.
+- **Notificações email** – digest de alertas compliance, lembretes de sessão (amanhã), aviso de certificado disponível; reutiliza `MailService` (SES/SMTP/log). SMS/push são opcionais e podem ficar desactivados.
 - **Pacote inspeção ZIP** – agrega dossiê JSON/HTML, SIGO JSON/CSV, compliance DGERT, validação SIGO, presenças CSV e evidências LMS num ZIP para auditoria DGERT.
 - **UI** – botão «Pacote inspeção ZIP» em `/portal/dossie`; notificações em `/portal/compliance` e dashboard; «Notificar formandos elegíveis» em `/portal/certificados`.
 
@@ -265,7 +268,7 @@ Middleware Next protege `/portal/*` (cookie `nexiforma_refresh`).
 | `POST /api/v1/notificacoes/alertas/digest` | email digest alertas | tenant_manager |
 | `POST /api/v1/notificacoes/sessoes/lembretes` | lembretes sessão amanhã | manager, formador |
 | `POST /api/v1/notificacoes/certificados/acoes-formacao/:id` | aviso certificado | manager, formador |
-| `GET /api/v1/notificacoes/config` | estado email/SMS | manager, formador |
+| `GET /api/v1/notificacoes/config` | estado email | manager, formador |
 
 ### Fase 9 – Certificado QR verificável + assinatura CMD
 

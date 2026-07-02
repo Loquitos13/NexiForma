@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { Alert, PageHeader } from "@/components/ui";
+import { EmailSetupGuide } from "@/components/portal/email-setup-guide";
 
 type EmailConfig = {
   enabled: boolean;
@@ -110,12 +112,14 @@ export default function NotificacoesPage() {
   return (
     <div className="max-w-4xl space-y-5">
       <PageHeader
-        title="Notificações / Mensagens"
-        description="Estado do email transacional, alertas e lembretes. Em produção use AWS SES - não o SMTP do alojamento."
+        title="Notificações por email"
+        description="Convites, lembretes de sessão, alertas compliance e certificados. Configura SMTP (ex. Brevo/Resend) ou AWS SES - não uses SMTP do alojamento."
       />
 
       {error ? <Alert variant="error">{error}</Alert> : null}
       {msg ? <Alert variant="success">{msg}</Alert> : null}
+
+      {canManage ? <EmailSetupGuide /> : null}
 
       {email ? (
         <div className="rounded-2xl border border-slate-700/30 bg-slate-900/50 p-5 space-y-4">
@@ -206,7 +210,7 @@ export default function NotificacoesPage() {
                                 {e.motivo ?? "-"}
                               </td>
                               <td className="px-2 py-1.5 text-right text-slate-500">
-                                {new Date(e.ocorridoEm).toLocaleDateString("pt-PT")}
+                                {formatDatePt(e.ocorridoEm)}
                               </td>
                             </tr>
                           ))}
@@ -217,20 +221,6 @@ export default function NotificacoesPage() {
               ) : null}
             </>
           ) : null}
-        </div>
-      ) : null}
-
-      {config ? (
-        <div className="rounded-2xl border border-slate-700/30 bg-slate-900/50 p-5">
-          <h2 className="text-sm font-semibold text-slate-200 mb-3">SMS</h2>
-          <div className="flex items-center gap-2 text-sm">
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${config.sms.enabled ? "bg-green-400" : "bg-slate-600"}`}
-            />
-            <span className="text-slate-400">
-              {config.sms.enabled ? "Activo" : "Inactivo"} ({config.sms.provider})
-            </span>
-          </div>
         </div>
       ) : null}
 
@@ -256,7 +246,7 @@ export default function NotificacoesPage() {
 
       <div className="rounded-2xl border border-slate-700/30 bg-slate-900/50 p-5">
         <h2 className="text-sm font-semibold text-slate-200 mb-2">Lembretes de sessões</h2>
-        <p className="text-xs text-slate-500 mb-3">Lembretes por email/SMS aos formandos.</p>
+        <p className="text-xs text-slate-500 mb-3">Lembretes por email aos formandos (sessões de amanhã).</p>
         <SessaoReminderForm onSend={(id) => void enviarLembretes(id)} busy={busy} canManage={canManage} />
       </div>
     </div>

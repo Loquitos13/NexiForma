@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { formatDatePt } from "@/lib/calendar-date";
 import { openMeetingUrl } from "@/lib/client/open-meeting-url";
 import { syncAccessTokenToLocalStorage } from "@/lib/client/access-token";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
@@ -15,6 +16,7 @@ import {
 } from "@/lib/lms/use-presenca-sessao";
 import { TempoPresencaAoVivo } from "@/components/lms/tempo-presenca-ao-vivo";
 import { SessaoLiveHero } from "@/components/formando/sessao-live-hero";
+import { Alert } from "@/components/ui";
 
 type PresencaResumo = {
   emSessao: boolean;
@@ -77,6 +79,14 @@ type UnidadeItem = {
 type PercursoBlock = {
   unidades: UnidadeItem[];
   tarefas: ModuloItem[];
+  prazoLms?: {
+    limite: string;
+    diasRestantes: number | null;
+    percentualConclusao: number;
+    emAtraso: boolean;
+    cumpridoNoPrazo: boolean;
+    completo: boolean;
+  } | null;
 };
 
 const tipoIcon: Record<string, string> = {
@@ -373,17 +383,8 @@ export function FormandoAprendizagemView({ matriculaId }: Props) {
         </div>
       </div>
 
-      {error ? (
-        <div className="flex items-start gap-2.5 rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3">
-          <p className="text-sm text-red-300">{error}</p>
-        </div>
-      ) : null}
-
-      {msg ? (
-        <div className="flex items-start gap-2.5 rounded-xl bg-green-950/30 border border-green-500/25 px-4 py-3">
-          <p className="text-sm text-green-300">{msg}</p>
-        </div>
-      ) : null}
+      {error ? <Alert variant="error">{error}</Alert> : null}
+      {msg ? <Alert variant="success">{msg}</Alert> : null}
 
       {block ? <SessaoLiveHero blocks={[block]} /> : null}
 
@@ -478,11 +479,7 @@ export function FormandoAprendizagemView({ matriculaId }: Props) {
                           </span>
                           <div className="min-w-0">
                             <p className="text-sm text-slate-200 truncate">
-                              {new Date(s.data).toLocaleDateString("pt-PT", {
-                                weekday: "short",
-                                day: "numeric",
-                                month: "short",
-                              })}
+                              {formatDatePt(s.data)}
                               {" · "}
                               {s.horaInicio}–{s.horaFim}
                             </p>
@@ -541,6 +538,31 @@ export function FormandoAprendizagemView({ matriculaId }: Props) {
 
               {percurso?.tarefas.length ? (
                 <div>
+                  {percurso.prazoLms ? (
+                    <div
+                      className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
+                        percurso.prazoLms.emAtraso
+                          ? "border-red-500/30 bg-red-950/30 text-red-200"
+                          : percurso.prazoLms.cumpridoNoPrazo
+                            ? "border-emerald-500/30 bg-emerald-950/25 text-emerald-200"
+                            : "border-slate-600/40 bg-slate-900/50 text-slate-300"
+                      }`}
+                    >
+                      <p className="font-medium">Prazo de conclusão LMS: {percurso.prazoLms.limite}</p>
+                      <p className="text-xs mt-1 opacity-90">
+                        Progresso: {percurso.prazoLms.percentualConclusao}% ·{" "}
+                        {percurso.prazoLms.completo
+                          ? percurso.prazoLms.cumpridoNoPrazo
+                            ? "Concluído dentro do prazo"
+                            : "Concluído fora do prazo"
+                          : percurso.prazoLms.emAtraso
+                            ? "Prazo ultrapassado - conclui os módulos pendentes"
+                            : percurso.prazoLms.diasRestantes != null && percurso.prazoLms.diasRestantes >= 0
+                              ? `${percurso.prazoLms.diasRestantes} dias restantes`
+                              : "Prazo ultrapassado"}
+                      </p>
+                    </div>
+                  ) : null}
                   <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
                     Conteudos ({doneMods}/{totalMods})
                   </h4>

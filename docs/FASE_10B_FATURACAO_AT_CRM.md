@@ -40,7 +40,7 @@ Entidade cliente → Proposta (RASCUNHO → ENVIADA → ACEITE) → Fatura → C
 - HTTPS + certificado SSL do processo de adesão (produtor de software)
 - Operação **Registo de Documento Comercial** por fatura emitida
 - Tratamento de respostas: sucesso, erro de validação, erro de autenticação
-- Modos **`production`** (webservice real) ou **`disabled`** (até credenciais AT)
+- Modos **`production`** (webservice real), **`sandbox`** (simulação local para testes) ou **`disabled`** (até credenciais AT)
 
 ### 3. Modelo de dados (Prisma – proposta)
 
@@ -150,8 +150,9 @@ model FaturaComunicacaoAt {
 | **10B.3** | Cliente SOAP AT + comunicação + auditoria | 10B.2, credenciais AT |
 | **10B.4** | UI CRM completa + emails ao cliente | 10B.1–10B.3 |
 | **10B.5** | Certificação AT: hash integridade, checklist, guards produção, doc processo | 10B.2 estável |
+| **10B.6** | Fase 2: sandbox AT, comunicação automática, NC, retenções, teste ligação | 10B.3 |
 
-> **Nota legal:** até existir **número de certificação AT**, mantenha `AT_FATURAS_MODE=disabled` até aprovação no programa de faturação certificada.
+> **Nota legal:** até existir **número de certificação AT**, use `AT_FATURAS_MODE=sandbox` em dev ou `disabled` em produção.
 
 ---
 
@@ -160,7 +161,7 @@ model FaturaComunicacaoAt {
 ```env
 AT_FATURAS_WSDL_URL=...
 AT_FATURAS_ENDPOINT=https://servicos.portaldasfinancas.gov.pt:400/fews/faturas
-AT_FATURAS_MODE=production|disabled
+AT_FATURAS_MODE=production|sandbox|disabled
 AT_SOFTWARE_CERT_NUMBER=   # após certificação
 ```
 
@@ -170,19 +171,20 @@ Credenciais por tenant: `atSubutilizador` + password encriptada. Guia completo: 
 
 ## Critérios de aceitação
 
-- [ ] Comercial converte proposta aceite em fatura rascunho em 2 cliques
-- [ ] Gestor configura série e vê estado da integração AT
-- [ ] Fatura emitida gera documento com ATCUD + QR legível
-- [ ] Comunicação AT regista sucesso/erro com mensagem compreensível
-- [ ] Fatura emitida é imutável; anulação só por gestor com motivo
-- [ ] CRM dashboard reflecte receita faturada vs propostas aceites
-- [x] Testes unitários: cálculo IVA, numeração, parser respostas AT
+- [x] Comercial converte proposta aceite em fatura rascunho em 2 cliques
+- [x] Gestor configura série e vê estado da integração AT (incl. modo sandbox)
+- [x] Fatura emitida gera documento com ATCUD + QR legível
+- [x] Comunicação AT regista sucesso/erro com mensagem compreensível (sandbox + produção)
+- [x] Fatura emitida é imutável; anulação só por gestor com motivo
+- [x] CRM dashboard reflecte receita faturada vs propostas aceites
+- [x] Testes unitários: cálculo IVA, numeração, parser respostas AT, sandbox, retenções
 
 ---
 
 ## Referências
 
-- [Portal Finanças – Comunicação faturas (webservice)](https://info.portaldasfinancas.gov.pt/pt/faturas/Pages/faqs-00996.aspx)
+- [Portal Finanças – Especificação webservice 2022+](https://info.portaldasfinancas.gov.pt/pt/apoio_ao_contribuinte/Negocios/Faturacao/Regras_mecanismos_comunicacao/e_Fatura/e_Fatura_Comunicacao_elementos_docs_faturacao_2022_seguintes/Paginas/default.aspx)
+- [FAQs webservice faturas AT](https://info.portaldasfinancas.gov.pt/pt/apoio_contribuinte/questoes_frequentes/pages/faqs-00996.aspx)
 - [Programa faturação certificação (gov.pt)](https://www.gov.pt/servicos/programa-de-faturacao-certificacao)
 - `FASE_10_EM_PROGRESSO.md` – CRM base
 - `apps/api/src/propostas/` – propostas comerciais existentes

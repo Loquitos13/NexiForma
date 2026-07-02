@@ -2,12 +2,14 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import type { Prisma } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
+import { resolveProjectPath } from "../config/env-paths";
 import {
   calcularTotaisFatura,
   calcularValorIvaCentavos,
@@ -22,21 +24,43 @@ import type {
 } from "./dto/fatura.dto";
 import { FaturaHtmlExportService } from "./fatura-html-export.service";
 import {
+  buildFaturaEmitidaInternaEmail,
+  buildFaturaEnviadaClienteEmail,
+  fmtDataFaturaEmail,
+  fmtEuroCentavos,
+  type FaturaEmailResumo,
+} from "./fatura-email.util";
+import {
   formatarAtcud,
-  gerarCodigoValidacaoSerie,
 } from "./fatura-atcud.util";
 import { hashIntegridadeFatura } from "./fatura-integridade.util";
+import {
+  assinarDocumentoFaturaAt,
+  carregarChaveAtDeFicheiro,
+  formatarAtInvoiceNo,
+  isAssinaturaAtRsa,
+} from "./fatura-assinatura-at.util";
 import {
   avaliarCertificacaoAt,
   resolverSoftwareCertificado,
 } from "./at-certificacao.util";
 import { AtFaturasIntegrationService } from "./at-faturas-integration.service";
-import type { AtFaturaDocumentoInput, AtInvoiceStatus } from "./at-faturas-payload.util";
+import { AtSeriesIntegrationService } from "./at-series-integration.service";
+import {
+  identificacaoDocumentoAt,
+  type AtFaturaDocumentoInput,
+  type AtInvoiceStatus,
+} from "./at-faturas-payload.util";
+import { isMotivoIsencaoValido } from "./at-tax-codes.util";
 import {
   desencriptarPasswordWfa,
   encriptarPasswordWfa,
 } from "./at-faturas-credentials.util";
 import { PortalNotificacoesService } from "../notificacoes/portal-notificacoes.service";
+import {
+  GESTOR_ROLES,
+  resolverEmailNotificacaoUtilizador,
+} from "../notificacoes/notificacao-roles.util";
 import { MailService } from "../mail/mail.service";
 import type {
   AnularFaturaDto,
@@ -46,11 +70,26 @@ import type {
 } from "./dto/fatura.dto";
 import { ConfigService } from "@nestjs/config";
 import { buildSaftPtXml } from "./saft-pt-export.util";
+import { mergeFaturaSearchWhere } from "./fatura-search.util";
+import {
+  assertDadosClienteCompletos,
+  assertDadosEmitenteCompletos,
+  normalizarBic,
+  normalizarIban,
+} from "./faturacao-dados-legais.util";
 
 const FATURA_INCLUDE = {
   entidadeCliente: { select: { id: true, nome: true, nif: true, email: true } },
   proposta: { select: { id: true, codigo: true, titulo: true, estado: true } },
   serie: { select: { id: true, codigo: true, tipo: true } },
+  faturaReferencia: {
+    select: {
+      id: true,
+      numero: true,
+      codigoAtcud: true,
+      serie: { select: { codigo: true, tipo: true } },
+    },
+  },
   linhas: { orderBy: { ordem: "asc" as const } },
   comunicacoesAt: { orderBy: { tentativaEm: "desc" as const }, take: 5 },
   pedidosAnulacao: {
@@ -65,10 +104,13 @@ const FATURA_INCLUDE = {
 
 @Injectable()
 export class FaturasService {
+  private readonly logger = new Logger(FaturasService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly htmlExport: FaturaHtmlExportService,
     private readonly atFaturas: AtFaturasIntegrationService,
+    private readonly atSeries: AtSeriesIntegrationService,
     private readonly portalNotificacoes: PortalNotificacoesService,
     private readonly mail: MailService,
     private readonly config: ConfigService,
@@ -76,17 +118,18 @@ export class FaturasService {
 
   list(
     user: RequestUser,
-    filters?: { entidadeClienteId?: string; estado?: string },
+    filters?: { entidadeClienteId?: string; estado?: string; q?: string },
   ) {
     const tenantId = requireTenantId(user);
+    const base: Prisma.FaturaComercialWhereInput = {
+      tenantId,
+      ...(filters?.entidadeClienteId
+        ? { entidadeClienteId: filters.entidadeClienteId }
+        : {}),
+      ...(filters?.estado ? { estado: filters.estado as never } : {}),
+    };
     return this.prisma.faturaComercial.findMany({
-      where: {
-        tenantId,
-        ...(filters?.entidadeClienteId
-          ? { entidadeClienteId: filters.entidadeClienteId }
-          : {}),
-        ...(filters?.estado ? { estado: filters.estado as never } : {}),
-      },
+      where: mergeFaturaSearchWhere(base, filters?.q),
       orderBy: { updatedAt: "desc" },
       include: FATURA_INCLUDE,
     });
@@ -111,24 +154,49 @@ export class FaturasService {
       include: {
         curso: { select: { designacao: true } },
         fatura: { select: { id: true } },
-        entidadeCliente: { select: { nome: true, nif: true } },
+        entidadeCliente: { select: { nome: true, nif: true, moradaFiscal: true } },
+        linhas: { orderBy: { ordem: "asc" } },
       },
     });
     if (!proposta) {
       throw new NotFoundException("Proposta não encontrada.");
     }
-    if (proposta.estado !== "ACEITE") {
+    if (proposta.estado === "REJEITADA") {
+      throw new BadRequestException("Não é possível faturar propostas rejeitadas.");
+    }
+    if (proposta.estado !== "ACEITE" && user.role !== "tenant_manager") {
       throw new BadRequestException("Só é possível faturar propostas aceites.");
     }
     if (proposta.fatura) {
       throw new ConflictException("Esta proposta já tem fatura associada.");
     }
 
+    assertDadosClienteCompletos(proposta.entidadeCliente);
+
     const { serie, taxaIva } = await this.resolveSerieETaxa(tenantId);
-    const descricao =
+    const descricaoFallback =
       proposta.curso?.designacao?.trim() ||
       proposta.titulo.trim() ||
       "Prestação de serviços de formação";
+
+    const linhas =
+      proposta.linhas.length > 0
+        ? proposta.linhas.map((l) => ({
+            descricao: l.descricao,
+            quantidade: Number(l.quantidade),
+            precoUnitCentavos: l.precoUnitCentavos,
+            taxaIva: Number(l.taxaIva),
+            codigoIsencaoIva: Number(l.taxaIva) <= 0 ? "M07" : null,
+          }))
+        : [
+            {
+              descricao: descricaoFallback,
+              quantidade: 1,
+              precoUnitCentavos: proposta.valorCentavos,
+              taxaIva,
+              codigoIsencaoIva: taxaIva <= 0 ? "M07" : null,
+            },
+          ];
 
     return this.createFaturaInternal(tenantId, {
       entidadeClienteId: proposta.entidadeClienteId,
@@ -138,15 +206,8 @@ export class FaturasService {
       notas: proposta.notasInternas,
       destinatarioNome: proposta.entidadeCliente.nome,
       destinatarioNif: proposta.entidadeCliente.nif,
-      destinatarioMorada: null,
-      linhas: [
-        {
-          descricao,
-          quantidade: 1,
-          precoUnitCentavos: proposta.valorCentavos,
-          taxaIva,
-        },
-      ],
+      destinatarioMorada: proposta.entidadeCliente.moradaFiscal!.trim(),
+      linhas,
     });
   }
 
@@ -155,11 +216,13 @@ export class FaturasService {
     await this.assertEntidade(tenantId, dto.entidadeClienteId);
     const entidade = await this.prisma.entidadeCliente.findFirst({
       where: { id: dto.entidadeClienteId, tenantId },
-      select: { nome: true, nif: true },
+      select: { nome: true, nif: true, moradaFiscal: true },
     });
     if (!entidade) {
       throw new NotFoundException("Entidade cliente não encontrada.");
     }
+    assertDadosClienteCompletos(entidade);
+
     const { serie, taxaIva } = await this.resolveSerieETaxa(tenantId, dto.serieId);
 
     return this.createFaturaInternal(tenantId, {
@@ -169,13 +232,8 @@ export class FaturasService {
       notas: dto.notas?.trim() || null,
       destinatarioNome: dto.destinatarioNome?.trim() || entidade.nome,
       destinatarioNif: dto.destinatarioNif?.trim() || entidade.nif,
-      destinatarioMorada: dto.destinatarioMorada?.trim() || null,
-      linhas: dto.linhas.map((l) => ({
-        descricao: l.descricao.trim(),
-        quantidade: l.quantidade ?? 1,
-        precoUnitCentavos: l.precoUnitCentavos,
-        taxaIva: l.taxaIva ?? taxaIva,
-      })),
+      destinatarioMorada: dto.destinatarioMorada?.trim() || entidade.moradaFiscal!.trim(),
+      linhas: dto.linhas.map((l) => this.normalizeLinha(l, taxaIva)),
     });
   }
 
@@ -200,12 +258,18 @@ export class FaturasService {
         quantidade: Number(l.quantidade),
         precoUnitCentavos: l.precoUnitCentavos,
         taxaIva: Number(l.taxaIva),
+        codigoIsencaoIva: l.codigoIsencaoIva,
       }));
 
     const totais = calcularTotaisFatura(linhasInput);
     if (linhasInput.length === 0) {
       throw new BadRequestException("A fatura precisa de pelo menos uma linha.");
     }
+
+    const retencaoCentavos =
+      dto.retencaoCentavos !== undefined
+        ? Math.max(0, dto.retencaoCentavos)
+        : existing.retencaoCentavos;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.faturaLinha.deleteMany({ where: { faturaId: id } });
@@ -233,6 +297,7 @@ export class FaturasService {
           notas: dto.notas !== undefined ? dto.notas?.trim() || null : existing.notas,
           valorCentavos: totais.valorCentavos,
           ivaCentavos: totais.ivaCentavos,
+          retencaoCentavos,
           linhas: {
             create: linhasInput.map((l, i) => ({
               ordem: i + 1,
@@ -241,6 +306,7 @@ export class FaturasService {
               precoUnitCentavos: l.precoUnitCentavos,
               taxaIva: l.taxaIva,
               valorIvaCentavos: calcularValorIvaCentavos(l),
+              codigoIsencaoIva: l.codigoIsencaoIva,
             })),
           },
         },
@@ -267,7 +333,15 @@ export class FaturasService {
     }
 
     const config = await this.ensureConfig(tenantId);
+    assertDadosEmitenteCompletos(config);
+    assertDadosClienteCompletos({
+      nome: existing.destinatarioNome,
+      nif: existing.destinatarioNif,
+      moradaFiscal: existing.destinatarioMorada,
+    });
     const softwareCertificado = this.resolveSoftwareCertNumber(config);
+
+    await this.ensureSerieComunicadaAt(tenantId, existing.serieId, config);
 
     await this.prisma.$transaction(async (tx) => {
       const serieRow = await tx.serieFaturacao.findUnique({
@@ -277,46 +351,86 @@ export class FaturasService {
         throw new NotFoundException("Série de faturação inválida.");
       }
 
-      let codigoValidacao = serieRow.codigoValidacaoAt;
-      if (!codigoValidacao) {
-        codigoValidacao = gerarCodigoValidacaoSerie(
-          tenantId,
-          serieRow.codigo,
-          serieRow.tipo,
+      const codigoValidacao = serieRow.codigoValidacaoAt;
+      if (!codigoValidacao?.trim()) {
+        throw new BadRequestException(
+          "A série não tem código de validação AT. Comunique a série antes de emitir documentos.",
         );
-        await tx.serieFaturacao.update({
-          where: { id: serieRow.id },
-          data: { codigoValidacaoAt: codigoValidacao },
-        });
+      }
+      if (serieRow.estadoAt === "ANULADA") {
+        throw new BadRequestException("Série anulada na AT – não pode emitir documentos.");
       }
 
       const numero = serieRow.proximoNumero;
       const atcud = formatarAtcud(codigoValidacao, numero);
       const dataEmissao = new Date();
+      const invoiceNo = formatarAtInvoiceNo(serieRow.tipo, serieRow.codigo, numero);
+      const grossCentavos = existing.valorCentavos + existing.ivaCentavos;
 
-      const hashIntegridade = hashIntegridadeFatura({
-        tenantId,
-        faturaId: id,
-        nifEmitente: config.nifEmitente,
-        destinatarioNif: existing.destinatarioNif,
-        tipoDocumento: serieRow.tipo,
-        serie: serieRow.codigo,
-        numero,
-        atcud,
-        dataEmissao,
-        valorCentavos: existing.valorCentavos,
-        ivaCentavos: existing.ivaCentavos,
-        moeda: existing.moeda,
-        softwareCertificado,
-        linhas: existing.linhas.map((l, i) => ({
-          ordem: l.ordem ?? i + 1,
-          descricao: l.descricao,
-          quantidade: Number(l.quantidade),
-          precoUnitCentavos: l.precoUnitCentavos,
-          taxaIva: Number(l.taxaIva),
-          valorIvaCentavos: l.valorIvaCentavos,
-        })),
+      const ultimaEmitida = await tx.faturaComercial.findFirst({
+        where: {
+          serieId: serieRow.id,
+          id: { not: id },
+          numero: { not: null },
+          estado: { in: ["EMITIDA", "COMUNICADA_AT", "ANULADA"] },
+        },
+        orderBy: { numero: "desc" },
+        select: { hashIntegridade: true },
       });
+
+      const privateKeyPath = resolveProjectPath(
+        this.config.get<string>("AT_SAFT_PRIVATE_KEY_PATH"),
+      );
+      const hashControlDefault =
+        this.config.get<string>("AT_SAFT_HASH_CONTROL")?.trim() || "1";
+
+      let hashIntegridade: string;
+      let hashControl: string | null = null;
+
+      if (privateKeyPath) {
+        try {
+          const privateKey = carregarChaveAtDeFicheiro(privateKeyPath);
+          const hashAnterior = isAssinaturaAtRsa(ultimaEmitida?.hashIntegridade)
+            ? ultimaEmitida!.hashIntegridade
+            : null;
+          hashIntegridade = assinarDocumentoFaturaAt(privateKey, {
+            invoiceDate: dataEmissao,
+            systemEntryDate: dataEmissao,
+            invoiceNo,
+            grossTotalCentavos: grossCentavos,
+            hashDocumentoAnterior: hashAnterior,
+          });
+          hashControl = hashControlDefault;
+        } catch {
+          throw new BadRequestException(
+            "Chave privada AT inválida ou inacessível (AT_SAFT_PRIVATE_KEY_PATH).",
+          );
+        }
+      } else {
+        hashIntegridade = hashIntegridadeFatura({
+          tenantId,
+          faturaId: id,
+          nifEmitente: config.nifEmitente,
+          destinatarioNif: existing.destinatarioNif,
+          tipoDocumento: serieRow.tipo,
+          serie: serieRow.codigo,
+          numero,
+          atcud,
+          dataEmissao,
+          valorCentavos: existing.valorCentavos,
+          ivaCentavos: existing.ivaCentavos,
+          moeda: existing.moeda,
+          softwareCertificado,
+          linhas: existing.linhas.map((l, i) => ({
+            ordem: l.ordem ?? i + 1,
+            descricao: l.descricao,
+            quantidade: Number(l.quantidade),
+            precoUnitCentavos: l.precoUnitCentavos,
+            taxaIva: Number(l.taxaIva),
+            valorIvaCentavos: l.valorIvaCentavos,
+          })),
+        });
+      }
 
       await tx.serieFaturacao.update({
         where: { id: serieRow.id },
@@ -332,15 +446,113 @@ export class FaturasService {
           dataEmissao,
           emitidaPorUserId: user.sub,
           hashIntegridade,
+          hashControl,
         },
       });
     });
 
+    await this.tentarComunicacaoAutomatica(user, id, config);
+    await this.enviarCopiaDocumentoAposEmissao(user, id);
+
     return this.getOne(user, id);
+  }
+
+  /** Cópia interna do documento emitido para quem emitiu e gestores do tenant. */
+  private async enviarCopiaDocumentoAposEmissao(user: RequestUser, faturaId: string) {
+    try {
+      const tenantId = requireTenantId(user);
+      const config = await this.ensureConfig(tenantId);
+      const fatura = await this.prisma.faturaComercial.findFirst({
+        where: { id: faturaId, tenantId },
+        include: { serie: { select: { codigo: true, tipo: true } } },
+      });
+      if (!fatura?.numero) return;
+
+      const pkg = await this.htmlExport.buildPrintablePdf(user, faturaId);
+
+      const emitente = await this.prisma.user.findUnique({
+        where: { id: user.sub },
+        select: { email: true, role: true },
+      });
+
+      const gestores = await this.prisma.user.findMany({
+        where: { tenantId, active: true, role: { in: GESTOR_ROLES } },
+        select: { email: true, role: true },
+      });
+
+      const destinatarios = new Set<string>();
+      const emailEmitente = emitente
+        ? resolverEmailNotificacaoUtilizador(emitente.role, emitente.email)
+        : null;
+      if (emailEmitente) destinatarios.add(emailEmitente.toLowerCase());
+
+      for (const g of gestores) {
+        const email = resolverEmailNotificacaoUtilizador(g.role, g.email);
+        if (email) destinatarios.add(email.toLowerCase());
+      }
+
+      if (destinatarios.size === 0) return;
+
+      const resumo = this.buildFaturaEmailResumo(fatura, config, pkg.filename);
+      const emailTpl = buildFaturaEmitidaInternaEmail(resumo);
+
+      for (const to of destinatarios) {
+        await this.mail.send({
+          to,
+          subject: emailTpl.subject,
+          text: emailTpl.text,
+          html: emailTpl.html,
+          attachments: [
+            {
+              filename: pkg.filename,
+              content: pkg.pdf,
+              contentType: "application/pdf",
+            },
+          ],
+        });
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Falha ao enviar cópia da fatura ${faturaId} por email: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /** Comunica à AT automaticamente após emissão se activo no tenant. */
+  private async tentarComunicacaoAutomatica(
+    user: RequestUser,
+    id: string,
+    config: {
+      comunicacaoAtiva: boolean;
+      comunicacaoAutomatica: boolean;
+      softwareCertificado: string | null;
+      nifEmitente: string;
+      atSubutilizador: string | null;
+      atWfaPasswordEnc: string | null;
+    },
+  ) {
+    if (!config.comunicacaoAtiva || !config.comunicacaoAutomatica) return;
+
+    const atMode = this.atFaturas.getPublicConfig().mode;
+    if (atMode === "disabled") return;
+
+    try {
+      const tenantId = requireTenantId(user);
+      this.assertComunicacaoAtPermitida(config);
+      const existing = await this.loadFaturaParaComunicacaoAt(tenantId, id);
+      const documento = this.buildDocumentoAtInput(existing, config, "N");
+      await this.executarComunicacaoAt(id, documento, config, { marcarComunicada: true });
+    } catch {
+      // Emissão mantém-se EMITIDA; comunicação manual ou reenvio posterior.
+    }
   }
 
   buildDocumentoHtml(user: RequestUser, id: string) {
     return this.htmlExport.buildPrintableHtml(user, id);
+  }
+
+  buildDocumentoPdf(user: RequestUser, id: string) {
+    return this.htmlExport.buildPrintablePdf(user, id);
   }
 
   async comunicarAt(user: RequestUser, id: string) {
@@ -418,22 +630,23 @@ export class FaturasService {
       );
     }
 
-    const pkg = await this.htmlExport.buildPrintableHtml(user, id);
-    const ref = this.refFatura(existing);
+    const pkg = await this.htmlExport.buildPrintablePdf(user, id);
     const config = await this.ensureConfig(tenantId);
+    const resumo = this.buildFaturaEmailResumo(existing, config, pkg.filename);
+    const emailTpl = buildFaturaEnviadaClienteEmail(resumo);
 
     await this.mail.send({
       to,
-      subject: `Fatura ${ref} - ${config.nomeEmpresa}`,
-      text:
-        `Exmo(a). Sr(a).,\n\n` +
-        `Enviamos em anexo a fatura ${ref} emitida por ${config.nomeEmpresa}.\n\n` +
-        `Com os melhores cumprimentos,\n${config.nomeEmpresa}`,
-      html:
-        `<p>Exmo(a). Sr(a).,</p>` +
-        `<p>Segue a fatura <strong>${ref}</strong> emitida por <strong>${config.nomeEmpresa}</strong>.</p>` +
-        `<hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0" />` +
-        pkg.html,
+      subject: emailTpl.subject,
+      text: emailTpl.text,
+      html: emailTpl.html,
+      attachments: [
+        {
+          filename: pkg.filename,
+          content: pkg.pdf,
+          contentType: "application/pdf",
+        },
+      ],
     });
 
     return { enviado: true, destinatario: to, faturaId: id };
@@ -519,12 +732,17 @@ export class FaturasService {
 
     if (comunicadaAt) {
       this.assertComunicacaoAtPermitida(config);
-      const documento = this.buildDocumentoAtInput(fatura, config, "A");
-      const resultado = await this.atFaturas.registarDocumento(documento, {
-        nifEmitente: config.nifEmitente,
-        subutilizador: config.atSubutilizador ?? "",
-        password: this.resolveAtWfaPassword(config),
-      });
+      const documento = this.buildDocumentoAtInput(fatura, config, "N");
+      const resultado = await this.atFaturas.alterarEstadoDocumento(
+        documento,
+        "A",
+        new Date(),
+        {
+          nifEmitente: config.nifEmitente,
+          subutilizador: config.atSubutilizador ?? "",
+          password: this.resolveAtWfaPassword(config),
+        },
+      );
       await this.prisma.faturaComunicacaoAt.create({
         data: {
           faturaId: id,
@@ -579,7 +797,7 @@ export class FaturasService {
 
     const pendente = await this.prisma.faturaPedidoAnulacao.findFirst({
       where: { faturaId: id, estado: "PENDENTE" },
-      include: { solicitadoPor: { select: { id: true, displayName: true } } },
+      include: { solicitadoPor: { select: { id: true, displayName: true, email: true } } },
     });
     if (!pendente) {
       throw new NotFoundException("Não há pedido de anulação pendente.");
@@ -601,20 +819,28 @@ export class FaturasService {
     });
     const faturaRef = fatura ? this.refFatura(fatura) : id;
     const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const link = `/portal/crm/faturas/${id}`;
+    const respostaMotivo =
+      dto.respostaMotivo?.trim() ||
+      `O gestor rejeitou o pedido de anulação da fatura ${faturaRef}.`;
 
     await this.portalNotificacoes.notifyUser({
       tenantId,
       userId: pendente.solicitadoPorUserId,
       tipo: "FATURA_PEDIDO_ANULACAO_REJEITADO",
       titulo: `Pedido de anulação rejeitado – ${faturaRef}`,
-      mensagem:
-        dto.respostaMotivo?.trim() ||
-        `O gestor rejeitou o pedido de anulação da fatura ${faturaRef}.`,
-      link: `/portal/crm/faturas/${id}`,
+      mensagem: respostaMotivo,
+      link,
+      emailConteudo: this.portalNotificacoes.buildPedidoAnulacaoRejeitadoEmail({
+        comercialNome: pendente.solicitadoPor.displayName,
+        faturaRef,
+        respostaMotivo,
+        portalUrl: `${appUrl}${link}`,
+      }),
       push: {
         title: "Pedido de anulação rejeitado",
         body: `Fatura ${faturaRef}`,
-        url: `${appUrl}/portal/crm/faturas/${id}`,
+        url: `${appUrl}${link}`,
       },
     });
 
@@ -624,7 +850,16 @@ export class FaturasService {
   private async loadFaturaParaAnulacao(tenantId: string, id: string) {
     const fatura = await this.prisma.faturaComercial.findFirst({
       where: { id, tenantId },
-      include: { serie: true, linhas: { orderBy: { ordem: "asc" } } },
+      include: {
+        serie: true,
+        linhas: { orderBy: { ordem: "asc" } },
+        faturaReferencia: {
+          select: {
+            numero: true,
+            serie: { select: { codigo: true, tipo: true } },
+          },
+        },
+      },
     });
     if (!fatura) {
       throw new NotFoundException("Fatura não encontrada.");
@@ -649,6 +884,50 @@ export class FaturasService {
   private refFatura(fatura: { serie: { codigo: string; tipo: string }; numero: number | null }) {
     if (fatura.numero == null) return `${fatura.serie.tipo} ${fatura.serie.codigo}`;
     return `${fatura.serie.tipo} ${fatura.serie.codigo}/${fatura.numero}`;
+  }
+
+  private buildFaturaEmailResumo(
+    fatura: {
+      id: string;
+      numero: number | null;
+      codigoAtcud: string | null;
+      dataEmissao: Date | null;
+      dataVencimento: Date | null;
+      valorCentavos: number;
+      ivaCentavos: number;
+      retencaoCentavos: number;
+      destinatarioNome: string;
+      destinatarioNif: string;
+      serie: { codigo: string; tipo: string };
+    },
+    config: {
+      nomeEmpresa: string;
+      nifEmitente: string;
+      iban: string | null;
+      emailGestor: string | null;
+    },
+    filename: string,
+  ): FaturaEmailResumo {
+    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const totalLiquido =
+      fatura.valorCentavos + fatura.ivaCentavos - (fatura.retencaoCentavos ?? 0);
+    return {
+      ref: this.refFatura(fatura),
+      nomeEmpresa: config.nomeEmpresa,
+      nifEmitente: config.nifEmitente,
+      clienteNome: fatura.destinatarioNome,
+      clienteNif: fatura.destinatarioNif,
+      dataEmissao: fmtDataFaturaEmail(fatura.dataEmissao),
+      dataVencimento: fmtDataFaturaEmail(fatura.dataVencimento),
+      atcud: fatura.codigoAtcud ?? "-",
+      totalSemIva: fmtEuroCentavos(fatura.valorCentavos),
+      totalIva: fmtEuroCentavos(fatura.ivaCentavos),
+      totalComIva: fmtEuroCentavos(totalLiquido),
+      iban: config.iban,
+      emailGestor: config.emailGestor,
+      filename,
+      portalUrl: `${appUrl}/portal/crm/faturas/${fatura.id}`,
+    };
   }
 
   async getConfig(user: RequestUser) {
@@ -683,6 +962,14 @@ export class FaturasService {
     if (!serie) {
       throw new NotFoundException("Série não encontrada.");
     }
+    const emitidas = await this.prisma.faturaComercial.count({
+      where: { serieId, numero: { not: null } },
+    });
+    if (emitidas > 0 && dto.codigoValidacaoAt !== undefined) {
+      throw new BadRequestException(
+        "Não pode alterar o código de validação AT após emissão de documentos nesta série.",
+      );
+    }
     const codigo = dto.codigoValidacaoAt?.trim().toUpperCase() || null;
     if (codigo && !/^[A-Z0-9]{8}$/.test(codigo)) {
       throw new BadRequestException(
@@ -691,7 +978,10 @@ export class FaturasService {
     }
     const updated = await this.prisma.serieFaturacao.update({
       where: { id: serieId },
-      data: { codigoValidacaoAt: codigo },
+      data: {
+        codigoValidacaoAt: codigo,
+        ...(codigo ? { estadoAt: "REGISTADA" } : {}),
+      },
     });
     const config = await this.ensureConfig(tenantId);
     const series = await this.prisma.serieFaturacao.findMany({
@@ -715,6 +1005,10 @@ export class FaturasService {
         : existing.softwareCertificado;
     const nextComunicacao =
       dto.comunicacaoAtiva !== undefined ? dto.comunicacaoAtiva : existing.comunicacaoAtiva;
+    const nextComunicacaoAutomatica =
+      dto.comunicacaoAutomatica !== undefined
+        ? dto.comunicacaoAutomatica
+        : existing.comunicacaoAutomatica;
 
     if (nextComunicacao && integracao.mode === "production") {
       const cert = resolverSoftwareCertificado(
@@ -763,6 +1057,30 @@ export class FaturasService {
             ? dto.moradaFiscal?.trim() || null
             : existing.moradaFiscal,
         nifEmitente: dto.nifEmitente?.trim() ?? existing.nifEmitente,
+        iban:
+          dto.iban !== undefined
+            ? dto.iban?.trim()
+              ? normalizarIban(dto.iban)
+              : null
+            : existing.iban,
+        bicSwift:
+          dto.bicSwift !== undefined
+            ? dto.bicSwift?.trim()
+              ? normalizarBic(dto.bicSwift)
+              : null
+            : existing.bicSwift,
+        emailGestor:
+          dto.emailGestor !== undefined
+            ? dto.emailGestor?.trim() || null
+            : existing.emailGestor,
+        capitalSocial:
+          dto.capitalSocial !== undefined
+            ? dto.capitalSocial?.trim() || null
+            : existing.capitalSocial,
+        consRegCom:
+          dto.consRegCom !== undefined
+            ? dto.consRegCom?.trim() || null
+            : existing.consRegCom,
         seriePadraoCodigo: dto.seriePadraoCodigo?.trim() ?? existing.seriePadraoCodigo,
         taxaIvaPadrao: dto.taxaIvaPadrao ?? Number(existing.taxaIvaPadrao),
         regimeIva: dto.regimeIva?.trim() ?? existing.regimeIva,
@@ -777,8 +1095,11 @@ export class FaturasService {
             : existing.atCertificadoRef,
         softwareCertificado: nextSoftware,
         comunicacaoAtiva: nextComunicacao,
+        comunicacaoAutomatica: nextComunicacaoAutomatica,
       },
     });
+
+    assertDadosEmitenteCompletos(config);
 
     const series = await this.prisma.serieFaturacao.findMany({
       where: { tenantId, ativo: true },
@@ -795,8 +1116,95 @@ export class FaturasService {
     };
   }
 
+  async testarLigacaoAt(user: RequestUser) {
+    const tenantId = requireTenantId(user);
+    const config = await this.ensureConfig(tenantId);
+    const integracao = this.atFaturas.getPublicConfig();
+
+    if (integracao.mode === "disabled") {
+      throw new BadRequestException(
+        "Integração AT desactivada - configure AT_FATURAS_MODE=sandbox ou production.",
+      );
+    }
+
+    const resultado = await this.atFaturas.testarLigacao({
+      nifEmitente: config.nifEmitente,
+      subutilizador: config.atSubutilizador ?? "",
+      password: this.resolveAtWfaPassword(config),
+    });
+
+    return {
+      sucesso: resultado.sucesso,
+      codigoResposta: resultado.codigoResposta,
+      mensagemAt: resultado.mensagemAt,
+      mode: resultado.mode,
+      sandboxSimulado: integracao.sandboxSimulado ?? false,
+      sandboxReal: integracao.sandboxReal ?? false,
+      endpoint: integracao.endpoint,
+    };
+  }
+
+  async criarNotaCredito(user: RequestUser, faturaId: string) {
+    const tenantId = requireTenantId(user);
+    const original = await this.prisma.faturaComercial.findFirst({
+      where: { id: faturaId, tenantId },
+      include: {
+        serie: true,
+        linhas: { orderBy: { ordem: "asc" } },
+      },
+    });
+    if (!original) {
+      throw new NotFoundException("Fatura não encontrada.");
+    }
+    if (original.serie.tipo !== "FT") {
+      throw new BadRequestException("Notas de crédito só podem ser criadas a partir de faturas (FT).");
+    }
+    if (original.estado !== "EMITIDA" && original.estado !== "COMUNICADA_AT") {
+      throw new BadRequestException(
+        "Só faturas emitidas ou comunicadas podem originar nota de crédito.",
+      );
+    }
+
+    const ncExistente = await this.prisma.faturaComercial.findFirst({
+      where: {
+        tenantId,
+        faturaReferenciaId: faturaId,
+        estado: { in: ["RASCUNHO", "EMITIDA", "COMUNICADA_AT"] },
+        serie: { tipo: "NC" },
+      },
+    });
+    if (ncExistente) {
+      throw new ConflictException(
+        "Já existe uma nota de crédito activa para esta fatura.",
+      );
+    }
+
+    await this.ensureConfig(tenantId);
+    const serieNc = await this.ensureSerieByTipo(tenantId, original.serie.codigo, "NC");
+    const refOriginal = this.refFatura(original);
+
+    return this.createFaturaInternal(tenantId, {
+      entidadeClienteId: original.entidadeClienteId,
+      faturaReferenciaId: original.id,
+      serieId: serieNc.id,
+      dataVencimento: original.dataVencimento,
+      notas: `Nota de crédito referente a ${refOriginal}`,
+      destinatarioNome: original.destinatarioNome,
+      destinatarioNif: original.destinatarioNif,
+      destinatarioMorada: original.destinatarioMorada,
+      retencaoCentavos: original.retencaoCentavos,
+      linhas: original.linhas.map((l) => ({
+        descricao: `Anulação parcial/total: ${l.descricao}`,
+        quantidade: Number(l.quantidade),
+        precoUnitCentavos: l.precoUnitCentavos,
+        taxaIva: Number(l.taxaIva),
+        codigoIsencaoIva: l.codigoIsencaoIva,
+      })),
+    });
+  }
+
   private resolveSoftwareCertNumber(
-    config: { softwareCertificado: string | null },
+    config: { softwareCertificado?: string | null },
   ): string | null {
     return resolverSoftwareCertificado(
       config.softwareCertificado,
@@ -831,17 +1239,20 @@ export class FaturasService {
     input: {
       entidadeClienteId: string;
       propostaId?: string;
+      faturaReferenciaId?: string;
       serieId: string;
       dataVencimento: Date | null;
       notas: string | null;
       destinatarioNome: string;
       destinatarioNif: string;
       destinatarioMorada: string | null;
+      retencaoCentavos?: number;
       linhas: Array<{
         descricao: string;
         quantidade: number;
         precoUnitCentavos: number;
         taxaIva: number;
+        codigoIsencaoIva?: string | null;
       }>;
     },
   ) {
@@ -855,6 +1266,7 @@ export class FaturasService {
         tenantId,
         entidadeClienteId: input.entidadeClienteId,
         propostaId: input.propostaId ?? null,
+        faturaReferenciaId: input.faturaReferenciaId ?? null,
         serieId: input.serieId,
         dataVencimento: input.dataVencimento,
         notas: input.notas,
@@ -863,6 +1275,7 @@ export class FaturasService {
         destinatarioMorada: input.destinatarioMorada,
         valorCentavos: totais.valorCentavos,
         ivaCentavos: totais.ivaCentavos,
+        retencaoCentavos: input.retencaoCentavos ?? 0,
         linhas: {
           create: input.linhas.map((l, i) => ({
             ordem: i + 1,
@@ -871,6 +1284,7 @@ export class FaturasService {
             precoUnitCentavos: l.precoUnitCentavos,
             taxaIva: l.taxaIva,
             valorIvaCentavos: calcularValorIvaCentavos(l),
+            codigoIsencaoIva: l.codigoIsencaoIva ?? null,
           })),
         },
       },
@@ -878,12 +1292,27 @@ export class FaturasService {
     });
   }
 
-  private normalizeLinha(l: FaturaLinhaDto, taxaPadrao: number): LinhaIvaInput & { descricao: string } {
+  private normalizeLinha(
+    l: FaturaLinhaDto,
+    taxaPadrao: number,
+  ): LinhaIvaInput & { descricao: string; codigoIsencaoIva: string | null } {
+    const taxaIva = l.taxaIva ?? taxaPadrao;
+    let codigoIsencaoIva: string | null = null;
+    if (taxaIva <= 0) {
+      const raw = (l.codigoIsencaoIva?.trim() || "M07").toUpperCase();
+      if (!isMotivoIsencaoValido(raw)) {
+        throw new BadRequestException(
+          `Código de isenção IVA inválido (${raw}). Use códigos M01–M99 da AT.`,
+        );
+      }
+      codigoIsencaoIva = raw;
+    }
     return {
       descricao: l.descricao.trim(),
       quantidade: l.quantidade ?? 1,
       precoUnitCentavos: l.precoUnitCentavos,
-      taxaIva: l.taxaIva ?? taxaPadrao,
+      taxaIva,
+      codigoIsencaoIva,
     };
   }
 
@@ -980,7 +1409,13 @@ export class FaturasService {
     if (!encKey?.trim()) {
       throw new BadRequestException("AT_CREDENTIALS_ENCRYPTION_KEY não configurado no servidor.");
     }
-    return desencriptarPasswordWfa(config.atWfaPasswordEnc, encKey);
+    try {
+      return desencriptarPasswordWfa(config.atWfaPasswordEnc, encKey);
+    } catch {
+      throw new BadRequestException(
+        "Password WFA não pode ser lida - guarde novamente a password em Configuração → Faturação (ou verifique AT_CREDENTIALS_ENCRYPTION_KEY).",
+      );
+    }
   }
 
   private async loadFaturaParaComunicacaoAt(tenantId: string, id: string) {
@@ -989,6 +1424,12 @@ export class FaturasService {
       include: {
         serie: { select: { codigo: true, tipo: true } },
         linhas: { orderBy: { ordem: "asc" } },
+        faturaReferencia: {
+          select: {
+            numero: true,
+            serie: { select: { codigo: true, tipo: true } },
+          },
+        },
       },
     });
     if (!existing) {
@@ -1014,6 +1455,8 @@ export class FaturasService {
       valorCentavos: number;
       ivaCentavos: number;
       moeda: string;
+      hashIntegridade?: string | null;
+      retencaoCentavos?: number;
       serie: { codigo: string; tipo: string };
       linhas: Array<{
         descricao: string;
@@ -1021,11 +1464,26 @@ export class FaturasService {
         precoUnitCentavos: number;
         taxaIva: unknown;
         valorIvaCentavos: number;
+        codigoIsencaoIva?: string | null;
       }>;
+      faturaReferencia?: {
+        numero: number | null;
+        serie: { codigo: string; tipo: string };
+      } | null;
     },
-    config: { nifEmitente: string },
+    config: { nifEmitente: string; softwareCertificado?: string | null },
     invoiceStatus: AtInvoiceStatus,
   ): AtFaturaDocumentoInput {
+    const sw = this.resolveSoftwareCertNumber(config);
+    const ref =
+      existing.faturaReferencia?.numero != null
+        ? {
+            tipo: existing.faturaReferencia.serie.tipo,
+            serie: existing.faturaReferencia.serie.codigo,
+            numero: existing.faturaReferencia.numero,
+          }
+        : null;
+
     return {
       nifEmitente: config.nifEmitente,
       nifCliente: existing.destinatarioNif,
@@ -1038,12 +1496,19 @@ export class FaturasService {
       ivaCentavos: existing.ivaCentavos,
       moeda: existing.moeda,
       invoiceStatus,
+      hashIntegridade: existing.hashIntegridade,
+      softwareCertificado: sw,
+      systemEntryDate: existing.dataEmissao!,
+      retencaoCentavos: existing.retencaoCentavos ?? 0,
+      retencaoTipo: "IRS",
+      documentoReferencia: ref,
       linhas: existing.linhas.map((l) => ({
         descricao: l.descricao,
         quantidade: Number(l.quantidade),
         precoUnitCentavos: l.precoUnitCentavos,
         taxaIva: Number(l.taxaIva),
         valorIvaCentavos: l.valorIvaCentavos,
+        codigoMotivoIsencao: l.codigoIsencaoIva,
       })),
     };
   }
@@ -1056,12 +1521,15 @@ export class FaturasService {
     if (atMode === "disabled") {
       throw new BadRequestException("Integração AT desactivada no servidor.");
     }
+    if (!config.comunicacaoAtiva) {
+      throw new BadRequestException(
+        "Comunicação AT não activa - active em Configuração → Faturação.",
+      );
+    }
+    if (atMode === "sandbox") {
+      return;
+    }
     if (atMode === "production") {
-      if (!config.comunicacaoAtiva) {
-        throw new BadRequestException(
-          "Comunicação AT não activa - active em Configuração → Faturação.",
-        );
-      }
       if (!this.resolveSoftwareCertNumber(config)) {
         throw new BadRequestException(
           "Software não certificado pela AT - configure o número de certificação antes de comunicar em produção.",
@@ -1114,6 +1582,122 @@ export class FaturasService {
     }
   }
 
+  /** Comunica uma série à AT via webservice e grava código de validação. */
+  async comunicarSerieAt(user: RequestUser, serieId: string) {
+    const tenantId = requireTenantId(user);
+    const config = await this.ensureConfig(tenantId);
+    return this.comunicarSerieInterno(tenantId, serieId, config);
+  }
+
+  /** Comunica todas as séries activas sem código AT. */
+  async comunicarTodasSeriesAt(user: RequestUser) {
+    const tenantId = requireTenantId(user);
+    const config = await this.ensureConfig(tenantId);
+    const series = await this.prisma.serieFaturacao.findMany({
+      where: {
+        tenantId,
+        ativo: true,
+        OR: [{ codigoValidacaoAt: null }, { estadoAt: "PENDENTE" }],
+      },
+    });
+    const results = [];
+    for (const s of series) {
+      results.push(await this.comunicarSerieInterno(tenantId, s.id, config));
+    }
+    return { total: results.length, results };
+  }
+
+  private async ensureSerieComunicadaAt(
+    tenantId: string,
+    serieId: string,
+    config: { nifEmitente: string; atSubutilizador: string | null; atWfaPasswordEnc: string | null; softwareCertificado: string | null },
+  ) {
+    const serie = await this.prisma.serieFaturacao.findFirst({
+      where: { id: serieId, tenantId },
+    });
+    if (!serie) return;
+    if (serie.codigoValidacaoAt?.trim() && serie.estadoAt === "REGISTADA") return;
+
+    const auto =
+      this.config.get<string>("AT_SERIES_AUTO_REGISTER") === "1" ||
+      this.atSeries.getPublicConfig().mode !== "disabled";
+    if (!auto) return;
+
+    await this.comunicarSerieInterno(tenantId, serieId, config);
+  }
+
+  private async comunicarSerieInterno(
+    tenantId: string,
+    serieId: string,
+    config: {
+      nifEmitente: string;
+      atSubutilizador: string | null;
+      atWfaPasswordEnc: string | null;
+      softwareCertificado: string | null;
+    },
+  ) {
+    const serie = await this.prisma.serieFaturacao.findFirst({
+      where: { id: serieId, tenantId },
+    });
+    if (!serie) {
+      throw new NotFoundException("Série não encontrada.");
+    }
+    if (serie.estadoAt === "REGISTADA" && serie.codigoValidacaoAt?.trim()) {
+      return { serie, resultado: { sucesso: true, mensagemAt: "Série já registada na AT." } };
+    }
+    if (serie.estadoAt === "ANULADA") {
+      throw new BadRequestException("Série anulada na AT – crie uma nova série.");
+    }
+
+    const sw = resolverSoftwareCertificado(
+      config.softwareCertificado,
+      this.config.get<string>("AT_SOFTWARE_CERT_NUMBER"),
+    ).numero;
+    if (!sw && this.atSeries.getPublicConfig().mode === "production") {
+      throw new BadRequestException(
+        "Número de certificação software AT em falta para comunicar séries.",
+      );
+    }
+
+    const dataInicio = serie.dataInicioPrevUtiliz ?? new Date();
+    const resultado = await this.atSeries.registarSerie(
+      {
+        serie: serie.codigo,
+        tipoDocumento: serie.tipo,
+        numInicialSeq: serie.numInicialComunicado ?? serie.proximoNumero,
+        dataInicioPrevUtiliz: dataInicio,
+        numCertSWFatur: sw ?? "0",
+      },
+      {
+        nifEmitente: config.nifEmitente,
+        subutilizador: config.atSubutilizador ?? "",
+        password: this.resolveAtWfaPassword(config),
+      },
+    );
+
+    const updated = await this.prisma.serieFaturacao.update({
+      where: { id: serieId },
+      data: {
+        mensagemAtSerie: resultado.mensagemAt,
+        ...(resultado.sucesso && resultado.codigoValidacao
+          ? {
+              codigoValidacaoAt: resultado.codigoValidacao,
+              estadoAt: "REGISTADA",
+              comunicadaAtEm: new Date(),
+              dataInicioPrevUtiliz: dataInicio,
+              numInicialComunicado: serie.numInicialComunicado ?? serie.proximoNumero,
+            }
+          : {}),
+      },
+    });
+
+    if (!resultado.sucesso) {
+      throw new BadRequestException(resultado.mensagemAt);
+    }
+
+    return { serie: updated, resultado };
+  }
+
   async exportSaftPt(
     user: RequestUser,
     opts: { ano: number; mes?: number },
@@ -1143,8 +1727,25 @@ export class FaturasService {
       include: {
         linhas: { orderBy: { ordem: "asc" } },
         serie: { select: { codigo: true, tipo: true } },
+        faturaReferencia: {
+          select: {
+            numero: true,
+            serie: { select: { codigo: true, tipo: true } },
+          },
+        },
       },
-      orderBy: { dataEmissao: "asc" },
+      orderBy: [{ serieId: "asc" }, { numero: "asc" }],
+    });
+
+    const series = await this.prisma.serieFaturacao.findMany({
+      where: { tenantId, ativo: true },
+      select: {
+        codigo: true,
+        tipo: true,
+        codigoValidacaoAt: true,
+        proximoNumero: true,
+        estadoAt: true,
+      },
     });
 
     const productNif =
@@ -1155,10 +1756,18 @@ export class FaturasService {
     const xml = buildSaftPtXml({
       nifEmitente: config.nifEmitente,
       nomeEmpresa: config.nomeEmpresa,
+      moradaFiscal: config.moradaFiscal,
       softwareCertificado: config.softwareCertificado,
       productCompanyTaxId: productNif,
       periodoInicio,
       periodoFim,
+      series: series.map((s) => ({
+        codigo: s.codigo,
+        tipo: s.tipo,
+        codigoValidacaoAt: s.codigoValidacaoAt,
+        proximoNumero: s.proximoNumero,
+        estadoAt: s.estadoAt,
+      })),
       faturas: faturas
         .filter((f) => f.numero != null && f.dataEmissao)
         .map((f) => ({
@@ -1169,16 +1778,29 @@ export class FaturasService {
           dataEmissao: f.dataEmissao!,
           valorCentavos: f.valorCentavos,
           ivaCentavos: f.ivaCentavos,
+          retencaoCentavos: f.retencaoCentavos,
+          hashIntegridade: f.hashIntegridade,
+          hashControl: f.hashControl,
           destinatarioNome: f.destinatarioNome,
           destinatarioNif: f.destinatarioNif,
+          destinatarioMorada: f.destinatarioMorada,
           serieCodigo: f.serie.codigo,
           serieTipo: f.serie.tipo,
+          documentoReferencia:
+            f.faturaReferencia?.numero != null
+              ? identificacaoDocumentoAt(
+                  f.faturaReferencia.serie.tipo,
+                  f.faturaReferencia.serie.codigo,
+                  f.faturaReferencia.numero,
+                )
+              : null,
           linhas: f.linhas.map((l) => ({
             descricao: l.descricao,
             quantidade: Number(l.quantidade),
             precoUnitCentavos: l.precoUnitCentavos,
             taxaIva: Number(l.taxaIva),
             valorIvaCentavos: l.valorIvaCentavos,
+            codigoIsencaoIva: l.codigoIsencaoIva,
           })),
         })),
     });

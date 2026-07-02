@@ -82,6 +82,7 @@ AT_FATURAS_WSDL_URL=https://servicos.portaldasfinancas.gov.pt:400/fews/faturas?w
 
 ## Referências
 
-- [FAQs webservice faturas AT](https://info.portaldasfinancas.gov.pt/pt/faturas/Pages/faqs-00996.aspx)
+- [Especificação webservice 2022+](https://info.portaldasfinancas.gov.pt/pt/apoio_ao_contribuinte/Negocios/Faturacao/Regras_mecanismos_comunicacao/e_Fatura/e_Fatura_Comunicacao_elementos_docs_faturacao_2022_seguintes/Paginas/default.aspx)
+- [FAQs webservice faturas AT](https://info.portaldasfinancas.gov.pt/pt/apoio_contribuinte/questoes_frequentes/pages/faqs-00996.aspx)
 - [nunopicado/AtWS](https://github.com/nunopicado/AtWS) (exemplos técnicos)
 - Código: `apps/api/src/faturas/at-faturas-*.ts`

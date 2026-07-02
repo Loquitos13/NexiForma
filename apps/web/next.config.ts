@@ -36,6 +36,20 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   transpilePackages: ["@nexiforma/shared"],
   output: "standalone",
+  async redirects() {
+    return [
+      {
+        source: "/portal/crm/propostas",
+        destination: "/portal/propostas",
+        permanent: true,
+      },
+      {
+        source: "/portal/crm/propostas/:id",
+        destination: "/portal/propostas/:id",
+        permanent: true,
+      },
+    ];
+  },
   webpack(config) {
     config.resolve.alias = {
       ...config.resolve.alias,

@@ -1,90 +1,107 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { RefreshCw } from "lucide-react";
+import type { RelatorioDashboard } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
-import { gridStats, LoadingBlock, PageShell, StatCard } from "@/components/portal/page-shell";
-import { bo, parseApiError } from "@/lib/ui/backoffice";
-
-type Relatorio = {
-  geradoEm: string;
-  formacao: {
-    matriculasAtivas: number;
-    matriculasConcluidas: number;
-    taxaConclusao: number;
-    acoesEmCurso: number;
-    taxaAprovacaoQuiz: number | null;
-  };
-  comercial: { propostasAbertas: number; propostasGanhas: number };
-  compliance: {
-    formadoresCcExpirar30d: number;
-    sigoPendentes: number;
-    sigoRejeitadas: number;
-  };
-};
+import { parseApiError } from "@/lib/ui/backoffice";
+import { Alert, PageContentSkeleton, PageHeader } from "@/components/ui";
+import { cn } from "@/lib/ui/cn";
+import {
+  RELATORIO_TABS,
+  RelatoriosTabContent,
+  type RelatorioTab,
+} from "@/components/relatorios/sections";
 
 export default function RelatoriosPage() {
-  const [data, setData] = useState<Relatorio | null>(null);
-  const [inspecao, setInspecao] = useState<{ acoes: unknown[]; submissoes: unknown[]; totalDocumentos: number } | null>(null);
+  const [data, setData] = useState<RelatorioDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<RelatorioTab>("financeiro");
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [r1, r2] = await Promise.all([
-      bffFetch("/api/v1/relatorios/executivo", { headers: { accept: "application/json" } }),
-      bffFetch("/api/v1/relatorios/inspecao", { headers: { accept: "application/json" } }),
-    ]);
-    if (!r1.ok) setError(await parseApiError(r1));
-    else setData((await r1.json()) as Relatorio);
-    if (r2.ok) setInspecao(await r2.json());
-    setLoading(false);
+    setError(null);
+    try {
+      const res = await bffFetch("/api/v1/relatorios/dashboard", {
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) {
+        setError(await parseApiError(res));
+        return;
+      }
+      setData((await res.json()) as RelatorioDashboard);
+    } catch {
+      setError("Erro ao carregar relatórios.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  if (loading && !data) {
+    return <PageContentSkeleton />;
+  }
+
   return (
-    <PageShell
-      title="Relatórios executivos"
-      subtitle="Indicadores para gestão, inspecção DGERT e tomada de decisão."
-    >
-      {error ? <p style={bo.alert}>{error}</p> : null}
-      {loading || !data ? (
-        <LoadingBlock />
-      ) : (
+    <div className="space-y-6">
+      <PageHeader
+        title="Relatórios"
+        description="Análise financeira, comercial e empresarial com comparações temporais e insights IA."
+        actions={
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-700/60 bg-slate-900/80 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+            Actualizar
+          </button>
+        }
+      />
+
+      {error ? <Alert variant="error">{error}</Alert> : null}
+
+      {data ? (
         <>
-          <div style={gridStats()}>
-            <StatCard label="Matrículas activas" value={data.formacao.matriculasAtivas} />
-            <StatCard label="Taxa conclusão" value={`${data.formacao.taxaConclusao}%`} color={bo.scoreColor(data.formacao.taxaConclusao)} />
-            <StatCard label="Acções em curso" value={data.formacao.acoesEmCurso} />
-            <StatCard
-              label="Aprovação quiz"
-              value={data.formacao.taxaAprovacaoQuiz != null ? `${data.formacao.taxaAprovacaoQuiz}%` : "–"}
-              color="#0d9488"
-            />
-          </div>
-          <div style={gridStats()}>
-            <StatCard label="Propostas abertas" value={data.comercial.propostasAbertas} color="#fbbf24" />
-            <StatCard label="Propostas ganhas" value={data.comercial.propostasGanhas} color="#4ade80" />
-            <StatCard label="CC a expirar (30d)" value={data.compliance.formadoresCcExpirar30d} color="#f87171" />
-            <StatCard label="SIGO pendentes" value={data.compliance.sigoPendentes} />
+          <p className="text-xs text-slate-500">
+            Período de referência:{" "}
+            {new Date(data.periodoReferencia.inicio).toLocaleDateString("pt-PT")} -{" "}
+            {new Date(data.periodoReferencia.fim).toLocaleDateString("pt-PT")} · Gerado{" "}
+            {new Date(data.geradoEm).toLocaleString("pt-PT")}
+          </p>
+
+          <div className="flex flex-wrap gap-1 rounded-xl border border-slate-800/80 bg-slate-950/50 p-1">
+            {RELATORIO_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+                  tab === t.id
+                    ? "bg-blue-600/25 text-blue-300 shadow-sm"
+                    : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200",
+                )}
+              >
+                {t.icon}
+                {t.label}
+              </button>
+            ))}
           </div>
 
-          {inspecao ? (
-            <div style={bo.card}>
-              <h2 style={bo.h2}>Pacote inspecção (resumo)</h2>
-              <p style={{ color: "#94a3b8", fontSize: "0.88rem" }}>
-                {inspecao.acoes.length} acções · {inspecao.submissoes.length} submissões SIGO ·{" "}
-                {inspecao.totalDocumentos} documentos anexos
-              </p>
-              <p style={{ color: "#64748b", fontSize: "0.8rem", marginTop: "0.5rem" }}>
-                Gerado em {new Date(data.geradoEm).toLocaleString("pt-PT")}
-              </p>
-            </div>
-          ) : null}
+          <p className="text-xs text-slate-600">
+            Cada KPI inclui variação vs mês anterior, trimestre anterior, semestre anterior e ano
+            anterior.
+          </p>
+
+          <RelatoriosTabContent data={data} tab={tab} />
         </>
-      )}
-    </PageShell>
+      ) : null}
+    </div>
   );
 }

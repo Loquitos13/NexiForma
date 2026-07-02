@@ -12,11 +12,14 @@ export function validateProductionConfig(env: NodeJS.ProcessEnv = process.env): 
   assertNot(env, "CMD_SIGNATURE_MODE", ["mock"], errors);
   assertNot(env, "MAIL_PROVIDER", ["log"], errors);
   if (!env.MAIL_PROVIDER?.trim()) {
-    errors.push("MAIL_PROVIDER é obrigatório em produção (use ses).");
+    errors.push("MAIL_PROVIDER é obrigatório em produção (use brevo, smtp ou ses).");
   }
-  assertNot(env, "SMS_PROVIDER", ["log"], errors);
-  if (!env.SMS_PROVIDER?.trim()) {
-    errors.push("SMS_PROVIDER é obrigatório em produção (use twilio).");
+  // SMS é opcional – email + push PWA cobrem lembretes e alertas sem apps extra.
+  const smsProvider = (env.SMS_PROVIDER ?? "").toLowerCase();
+  if (smsProvider === "twilio") {
+    requireSet(env, "TWILIO_ACCOUNT_SID", errors);
+    requireSet(env, "TWILIO_AUTH_TOKEN", errors);
+    requireSet(env, "TWILIO_FROM_NUMBER", errors);
   }
   assertNot(env, "STORAGE_BACKEND", ["local"], errors);
   if (!env.STORAGE_BACKEND?.trim()) {
@@ -33,6 +36,20 @@ export function validateProductionConfig(env: NodeJS.ProcessEnv = process.env): 
   if (env.MAIL_PROVIDER === "ses") {
     requireSet(env, "AWS_REGION", errors);
     requireSet(env, "MAIL_FROM", errors);
+  }
+
+  if (env.MAIL_PROVIDER === "smtp") {
+    requireSet(env, "SMTP_HOST", errors);
+    requireSet(env, "MAIL_FROM", errors);
+  }
+
+  if (env.MAIL_PROVIDER === "brevo") {
+    requireSet(env, "BREVO_API_KEY", errors);
+    requireSet(env, "MAIL_FROM", errors);
+  }
+
+  if (env.SMS_PROVIDER === "telegram") {
+    requireSet(env, "TELEGRAM_BOT_TOKEN", errors);
   }
 
   if (env.STORAGE_BACKEND === "s3") {

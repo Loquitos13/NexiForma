@@ -44,7 +44,7 @@ export class NotificacoesController {
   }
 
   @Get("push/vapid-public-key")
-  @Roles("tenant_manager", "comercial", "formador")
+  @Roles("tenant_manager", "comercial", "formador", "formando")
   vapidPublicKey() {
     return {
       enabled: this.push.isEnabled(),
@@ -53,7 +53,7 @@ export class NotificacoesController {
   }
 
   @Post("push/subscribe")
-  @Roles("tenant_manager", "comercial", "formador")
+  @Roles("tenant_manager", "comercial", "formador", "formando")
   subscribePush(@CurrentUser() user: RequestUser, @Body() dto: SubscribePushDto) {
     return this.push.subscribe(user.sub, dto);
   }

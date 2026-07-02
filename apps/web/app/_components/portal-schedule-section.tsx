@@ -21,6 +21,7 @@ import {
   Video,
 } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { formatDatePt } from "@/lib/calendar-date";
 import { openHtmlForPrint } from "@/lib/client/open-html-for-print";
 import { openMeetingUrl } from "@/lib/client/open-meeting-url";
 import { resolveSalaOnline, isModalidadeOnline, providerParaModalidade, ESTADOS_PRESENCA, ESTADO_PRESENCA_LABELS, isEstadoPresenca, ALERTA_PRESENCA_LABELS, type EstadoPresenca, type AlertaPresencaCodigo } from "@nexiforma/shared";
@@ -179,12 +180,7 @@ function sessaoEstadoBadge(estado: string) {
 }
 
 function formatDataPt(iso: string) {
-  return new Date(iso).toLocaleDateString("pt-PT", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDatePt(iso);
 }
 
 function formatDataHoraPt(iso: string | null | undefined) {
@@ -1361,7 +1357,7 @@ export function PortalScheduleSection({
           ) : null}
           {cronogramaAtivo?.aprovadoEm ? (
             <Badge variant="green" className="self-center shrink-0">
-              Aprovado {new Date(cronogramaAtivo.aprovadoEm).toLocaleDateString("pt-PT")}
+              Aprovado {formatDatePt(cronogramaAtivo.aprovadoEm)}
             </Badge>
           ) : cronogramaAtivo ? (
             <Badge variant="yellow" className="self-center shrink-0">
@@ -1387,7 +1383,7 @@ export function PortalScheduleSection({
                   <p className="text-xs text-slate-500">
                     {new Date(a.createdAt).toLocaleString("pt-PT")}
                     {a.expiresAt
-                      ? ` · válido até ${new Date(a.expiresAt).toLocaleDateString("pt-PT")}`
+                      ? ` · válido até ${formatDatePt(a.expiresAt)}`
                       : ""}
                   </p>
                 </div>

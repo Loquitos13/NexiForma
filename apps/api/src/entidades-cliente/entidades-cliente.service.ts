@@ -4,6 +4,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 import type { CreateEntidadeClienteDto, UpdateEntidadeClienteDto } from "./dto/entidade-cliente.dto";
+import { assertDadosClienteCompletos } from "../faturas/faturacao-dados-legais.util";
 
 @Injectable()
 export class EntidadesClienteService {
@@ -46,6 +47,7 @@ export class EntidadesClienteService {
         tenantId,
         nif,
         nome: dto.nome.trim(),
+        moradaFiscal: dto.moradaFiscal.trim(),
         email: dto.email?.trim() || null,
         telefone: dto.telefone?.trim() || null,
       },
@@ -58,10 +60,20 @@ export class EntidadesClienteService {
     if (!existing) {
       throw new NotFoundException("Entidade cliente não encontrada.");
     }
+    const nextMorada =
+      dto.moradaFiscal !== undefined ? dto.moradaFiscal.trim() : existing.moradaFiscal;
+    const nextNome = dto.nome?.trim() ?? existing.nome;
+    assertDadosClienteCompletos({
+      nome: nextNome,
+      nif: existing.nif,
+      moradaFiscal: nextMorada,
+    });
+
     return this.prisma.entidadeCliente.update({
       where: { id },
       data: {
-        nome: dto.nome?.trim() ?? existing.nome,
+        nome: nextNome,
+        moradaFiscal: nextMorada,
         email: dto.email !== undefined ? dto.email?.trim() || null : existing.email,
         telefone: dto.telefone !== undefined ? dto.telefone?.trim() || null : existing.telefone,
       },

@@ -35,10 +35,10 @@ async function main() {
   });
   await prisma.subscriptionPlan.upsert({
     where: { code: "pro" },
-    update: { active: true },
+    update: { active: true, name: "Business" },
     create: {
       code: "pro",
-      name: "Profissional",
+      name: "Business",
       priceCentsMonthly: 12900,
       maxActiveUsers: 25,
       features: { dossie: true, compliance: true, sigo: true, billing: true },

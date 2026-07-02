@@ -6,11 +6,36 @@ import helmet from "helmet";
 import { API_PREFIX } from "@nexiforma/shared";
 import { AppModule } from "./app.module";
 import { validateProductionConfig } from "./config/production-config";
+import { PlatformAlertasService } from "./notificacoes/platform-alertas.service";
+
+function reportProcessError(
+  alertas: PlatformAlertasService,
+  origem: string,
+  err: unknown,
+) {
+  const message = err instanceof Error ? err.message : String(err);
+  const stack = err instanceof Error ? err.stack : undefined;
+  void alertas
+    .notificarErroServidor({
+      modulo: origem,
+      resumo: message,
+      stack,
+    })
+    .catch(() => undefined);
+}
 
 async function bootstrap() {
   validateProductionConfig();
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,
+  });
+
+  const platformAlertas = app.get(PlatformAlertasService);
+  process.on("unhandledRejection", (reason) => {
+    reportProcessError(platformAlertas, "processo-unhandledRejection", reason);
+  });
+  process.on("uncaughtException", (err) => {
+    reportProcessError(platformAlertas, "processo-uncaughtException", err);
   });
   if (process.env.TRUST_PROXY === "true" || process.env.TRUST_PROXY === "1") {
     app.set("trust proxy", 1);

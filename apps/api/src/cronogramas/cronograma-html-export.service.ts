@@ -122,7 +122,10 @@ export class CronogramaHtmlExportService {
       const horas = Math.round(horasEntre(s.horaInicio, s.horaFim) * 10) / 10;
       const fid = s.formadorId ?? s.moduloUnidade?.formadorId ?? "";
       const bg = fid ? cores.get(fid) ?? "#b8d4f0" : "#b8d4f0";
-      const label = `${Number.isInteger(horas) ? horas : horas.toFixed(1).replace(/\.0$/, "")}${codigo}`;
+      const horasTxt = Number.isInteger(horas)
+        ? `${horas}h`
+        : `${horas.toFixed(1).replace(".", ",").replace(/,0$/, "")}h`;
+      const label = `${codigo} (${horasTxt})`;
       const arr = sessoesPorDia.get(key) ?? [];
       arr.push({ label, bg });
       sessoesPorDia.set(key, arr);
@@ -157,6 +160,15 @@ export class CronogramaHtmlExportService {
     const metodologias = cfg.metodologias ?? ["formacao_acao"];
     const turma = acao.turmas[0];
     const codigoAcao = turma?.codigo ?? acao.codigoInterno;
+
+    const horarioInicio = cfg.horarioInicio ?? cronograma.sessoes[0]?.horaInicio ?? "-";
+    const horarioFim = cfg.horarioFim ?? cronograma.sessoes[0]?.horaFim ?? "-";
+    const sabInicio = cfg.horarioSabadoInicio?.trim();
+    const sabFim = cfg.horarioSabadoFim?.trim();
+    const horarioSabadoHtml =
+      sabInicio && sabFim
+        ? ` · Sábados ${escapeHtml(sabInicio)} – ${escapeHtml(sabFim)}`
+        : "";
 
     const filename = `cronograma-${acao.codigoInterno}-v${cronograma.versao}.html`;
 
@@ -220,9 +232,8 @@ export class CronogramaHtmlExportService {
       <td><span class="lbl">Duração:</span> ${curso.cargaHoras} horas</td>
       <td>
         <span class="lbl">Horário:</span>
-        Início ${escapeHtml(cfg.horarioInicio ?? cronograma.sessoes[0]?.horaInicio ?? "-")}
-        Fim ${escapeHtml(cfg.horarioFim ?? cronograma.sessoes[0]?.horaFim ?? "-")}
-        · Sábados ${escapeHtml(cfg.horarioSabadoInicio ?? "-")} – ${escapeHtml(cfg.horarioSabadoFim ?? "-")}
+        Início ${escapeHtml(horarioInicio)}
+        Fim ${escapeHtml(horarioFim)}${horarioSabadoHtml}
       </td>
     </tr>
     <tr>
@@ -250,6 +261,7 @@ export class CronogramaHtmlExportService {
   </table>
 
   <div class="cals">${grelhasHtml || "<p>Sem período de formação definido.</p>"}</div>
+  <p style="margin-top:8px;font-size:6.5pt;color:#555">Legenda calendário: código da sessão ou módulo (ex.: S1 = sessão 1) e duração em horas. Células «S»/«D» = fim de semana sem formação.</p>
 </body>
 </html>`;
 

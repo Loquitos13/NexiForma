@@ -1,30 +1,39 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import type { PropostaComercial, PropostaEstado } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
+import { PropostaNotificacoesService } from "../notificacoes/proposta-notificacoes.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 import type { CreatePropostaDto, UpdatePropostaDto } from "./dto/proposta.dto";
+import type { UpdateConfigPropostaDto } from "./dto/proposta-config.dto";
+import type { PropostaLinhaDto } from "./dto/proposta-linha.dto";
+import { buildPropostaHtmlDocument } from "./proposta-html.util";
+import {
+  DEFAULTS_PROPOSTA_TEMPLATE,
+  configRowToTemplate,
+  extractPropostaConteudo,
+  type ConfigPropostaTemplate,
+} from "./proposta-template.util";
+import {
+  normalizePropostaLinhas,
+  totaisPropostaLinhas,
+} from "./proposta-linhas.util";
 
-function escapeHtml(raw: string): string {
-  return raw
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-const ESTADO_LABEL: Record<string, string> = {
-  RASCUNHO: "Rascunho",
-  ENVIADA: "Enviada",
-  ACEITE: "Aceite",
-  REJEITADA: "Rejeitada",
+const PROPOSTA_INCLUDE = {
+  entidadeCliente: { select: { id: true, nome: true, nif: true, email: true } },
+  curso: { select: { id: true, designacao: true, codigoUfcd: true, cargaHoras: true } },
+  fatura: { select: { id: true, estado: true } },
+  linhas: { orderBy: { ordem: "asc" as const } },
 };
 
 @Injectable()
 export class PropostasService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly propostaNotificacoes: PropostaNotificacoesService,
+  ) {}
 
-  list(user: RequestUser, entidadeClienteId?: string) {
+  list(user: RequestUser, entidadeClienteId?: string): Promise<PropostaComercial[]> {
     const tenantId = requireTenantId(user);
     return this.prisma.propostaComercial.findMany({
       where: {
@@ -32,27 +41,97 @@ export class PropostasService {
         ...(entidadeClienteId ? { entidadeClienteId } : {}),
       },
       orderBy: { updatedAt: "desc" },
-      include: {
-        entidadeCliente: { select: { id: true, nome: true, nif: true, email: true } },
-        curso: { select: { id: true, designacao: true, codigoUfcd: true } },
-        fatura: { select: { id: true, estado: true } },
-      },
-    });
+      include: PROPOSTA_INCLUDE,
+    }) as Promise<PropostaComercial[]>;
   }
 
   async getOne(user: RequestUser, id: string): Promise<PropostaComercial> {
     const tenantId = requireTenantId(user);
     const row = await this.prisma.propostaComercial.findFirst({
       where: { id, tenantId },
-      include: {
-        entidadeCliente: { select: { id: true, nome: true, nif: true, email: true } },
-        curso: { select: { id: true, designacao: true, codigoUfcd: true, cargaHoras: true } },
-      },
+      include: PROPOSTA_INCLUDE,
     });
     if (!row) {
       throw new NotFoundException("Proposta não encontrada.");
     }
     return row;
+  }
+
+  async getConfig(user: RequestUser) {
+    const tenantId = requireTenantId(user);
+    const config = await this.ensureConfigProposta(tenantId);
+    return { config: this.toConfigTemplate(config) };
+  }
+
+  async updateConfig(user: RequestUser, dto: UpdateConfigPropostaDto) {
+    const tenantId = requireTenantId(user);
+    const existing = await this.ensureConfigProposta(tenantId);
+    const config = await this.prisma.configPropostaTenant.update({
+      where: { tenantId },
+      data: {
+        apresentacaoEmpresa:
+          dto.apresentacaoEmpresa !== undefined
+            ? dto.apresentacaoEmpresa?.trim() || null
+            : existing.apresentacaoEmpresa,
+        enquadramentoPadrao:
+          dto.enquadramentoPadrao !== undefined
+            ? dto.enquadramentoPadrao?.trim() || null
+            : existing.enquadramentoPadrao,
+        objetivosPadrao:
+          dto.objetivosPadrao !== undefined
+            ? dto.objetivosPadrao?.trim() || null
+            : existing.objetivosPadrao,
+        conteudosProgramaticosPadrao:
+          dto.conteudosProgramaticosPadrao !== undefined
+            ? dto.conteudosProgramaticosPadrao?.trim() || null
+            : existing.conteudosProgramaticosPadrao,
+        metodologiaPadrao:
+          dto.metodologiaPadrao !== undefined
+            ? dto.metodologiaPadrao?.trim() || null
+            : existing.metodologiaPadrao,
+        destinatariosPadrao:
+          dto.destinatariosPadrao !== undefined
+            ? dto.destinatariosPadrao?.trim() || null
+            : existing.destinatariosPadrao,
+        duracaoTextoPadrao:
+          dto.duracaoTextoPadrao !== undefined
+            ? dto.duracaoTextoPadrao?.trim() || null
+            : existing.duracaoTextoPadrao,
+        localTextoPadrao:
+          dto.localTextoPadrao !== undefined
+            ? dto.localTextoPadrao?.trim() || null
+            : existing.localTextoPadrao,
+        beneficiosPadrao:
+          dto.beneficiosPadrao !== undefined
+            ? dto.beneficiosPadrao?.trim() || null
+            : existing.beneficiosPadrao,
+        condicoesComerciaisPadrao:
+          dto.condicoesComerciaisPadrao !== undefined
+            ? dto.condicoesComerciaisPadrao?.trim() || null
+            : existing.condicoesComerciaisPadrao,
+        porqueEscolherPadrao:
+          dto.porqueEscolherPadrao !== undefined
+            ? dto.porqueEscolherPadrao?.trim() || null
+            : existing.porqueEscolherPadrao,
+        proximosPassosPadrao:
+          dto.proximosPassosPadrao !== undefined
+            ? dto.proximosPassosPadrao?.trim() || null
+            : existing.proximosPassosPadrao,
+        validadeDiasPadrao: dto.validadeDiasPadrao ?? existing.validadeDiasPadrao,
+        nomeContacto:
+          dto.nomeContacto !== undefined ? dto.nomeContacto?.trim() || null : existing.nomeContacto,
+        emailContacto:
+          dto.emailContacto !== undefined
+            ? dto.emailContacto?.trim() || null
+            : existing.emailContacto,
+        telefoneContacto:
+          dto.telefoneContacto !== undefined
+            ? dto.telefoneContacto?.trim() || null
+            : existing.telefoneContacto,
+        website: dto.website !== undefined ? dto.website?.trim() || null : existing.website,
+      },
+    });
+    return { config: this.toConfigTemplate(config) };
   }
 
   async create(user: RequestUser, dto: CreatePropostaDto): Promise<PropostaComercial> {
@@ -62,10 +141,22 @@ export class PropostasService {
       await this.assertCurso(tenantId, dto.cursoId);
     }
 
+    const config = await this.ensureConfigProposta(tenantId);
     const codigo = (dto.codigo?.trim() || `PROP-${Date.now().toString(36).toUpperCase()}`).toUpperCase();
     const dup = await this.prisma.propostaComercial.findFirst({ where: { tenantId, codigo } });
     if (dup) {
       throw new ConflictException("Código de proposta já existe.");
+    }
+
+    const linhasNorm = this.parseLinhasDto(dto.linhas);
+    const valorCentavos = linhasNorm.length
+      ? totaisPropostaLinhas(linhasNorm).valorCentavos
+      : (dto.valorCentavos ?? 0);
+
+    let validadeAte: Date | null = dto.validadeAte ? new Date(dto.validadeAte) : null;
+    if (!validadeAte && config.validadeDiasPadrao > 0) {
+      validadeAte = new Date();
+      validadeAte.setDate(validadeAte.getDate() + config.validadeDiasPadrao);
     }
 
     return this.prisma.propostaComercial.create({
@@ -74,18 +165,39 @@ export class PropostasService {
         entidadeClienteId: dto.entidadeClienteId,
         codigo,
         titulo: dto.titulo.trim(),
+        subtitulo: dto.subtitulo?.trim() || null,
         descricao: dto.descricao?.trim() || null,
-        valorCentavos: dto.valorCentavos ?? 0,
-        validadeAte: dto.validadeAte ? new Date(dto.validadeAte) : null,
+        ...this.mapConteudoFromDto(dto),
+        valorCentavos,
+        validadeAte,
         cursoId: dto.cursoId ?? null,
         notasInternas: dto.notasInternas?.trim() || null,
+        ...(linhasNorm.length
+          ? {
+              linhas: {
+                create: linhasNorm.map((l, i) => ({
+                  ordem: i + 1,
+                  descricao: l.descricao,
+                  notas: l.notas,
+                  quantidade: l.quantidade,
+                  precoUnitCentavos: l.precoUnitCentavos,
+                  taxaIva: l.taxaIva,
+                  valorIvaCentavos: l.valorIvaCentavos,
+                })),
+              },
+            }
+          : {}),
       },
+      include: PROPOSTA_INCLUDE,
     });
   }
 
   async update(user: RequestUser, id: string, dto: UpdatePropostaDto): Promise<PropostaComercial> {
     const tenantId = requireTenantId(user);
-    const existing = await this.prisma.propostaComercial.findFirst({ where: { id, tenantId } });
+    const existing = await this.prisma.propostaComercial.findFirst({
+      where: { id, tenantId },
+      include: { linhas: true },
+    });
     if (!existing) {
       throw new NotFoundException("Proposta não encontrada.");
     }
@@ -93,24 +205,67 @@ export class PropostasService {
       await this.assertCurso(tenantId, dto.cursoId);
     }
 
-    return this.prisma.propostaComercial.update({
-      where: { id },
-      data: {
-        titulo: dto.titulo?.trim() ?? existing.titulo,
-        descricao: dto.descricao !== undefined ? dto.descricao?.trim() || null : existing.descricao,
-        valorCentavos: dto.valorCentavos ?? existing.valorCentavos,
-        estado: (dto.estado as PropostaEstado | undefined) ?? existing.estado,
-        validadeAte:
-          dto.validadeAte !== undefined
-            ? dto.validadeAte
-              ? new Date(dto.validadeAte)
-              : null
-            : existing.validadeAte,
-        cursoId: dto.cursoId !== undefined ? dto.cursoId : existing.cursoId,
-        notasInternas:
-          dto.notasInternas !== undefined ? dto.notasInternas?.trim() || null : existing.notasInternas,
-      },
+    const linhasNorm = dto.linhas !== undefined ? this.parseLinhasDto(dto.linhas) : null;
+    const valorCentavos =
+      linhasNorm && linhasNorm.length > 0
+        ? totaisPropostaLinhas(linhasNorm).valorCentavos
+        : (dto.valorCentavos ?? existing.valorCentavos);
+
+    const estadoNovo = (dto.estado as PropostaEstado | undefined) ?? existing.estado;
+    const conteudoPatch = this.mapConteudoFromDto(dto as Partial<CreatePropostaDto>, existing);
+
+    await this.prisma.$transaction(async (tx) => {
+      if (linhasNorm !== null) {
+        await tx.propostaLinha.deleteMany({ where: { propostaId: id } });
+        if (linhasNorm.length > 0) {
+          await tx.propostaLinha.createMany({
+            data: linhasNorm.map((l, i) => ({
+              propostaId: id,
+              ordem: i + 1,
+              descricao: l.descricao,
+              notas: l.notas,
+              quantidade: l.quantidade,
+              precoUnitCentavos: l.precoUnitCentavos,
+              taxaIva: l.taxaIva,
+              valorIvaCentavos: l.valorIvaCentavos,
+            })),
+          });
+        }
+      }
+
+      await tx.propostaComercial.update({
+        where: { id },
+        data: {
+          titulo: dto.titulo?.trim() ?? existing.titulo,
+          subtitulo:
+            dto.subtitulo !== undefined ? dto.subtitulo?.trim() || null : existing.subtitulo,
+          descricao: dto.descricao !== undefined ? dto.descricao?.trim() || null : existing.descricao,
+          ...conteudoPatch,
+          valorCentavos,
+          estado: estadoNovo,
+          validadeAte:
+            dto.validadeAte !== undefined
+              ? dto.validadeAte
+                ? new Date(dto.validadeAte)
+                : null
+              : existing.validadeAte,
+          cursoId: dto.cursoId !== undefined ? dto.cursoId : existing.cursoId,
+          notasInternas:
+            dto.notasInternas !== undefined ? dto.notasInternas?.trim() || null : existing.notasInternas,
+        },
+      });
     });
+
+    if (estadoNovo !== existing.estado) {
+      await this.propostaNotificacoes.aoAlterarEstado(
+        tenantId,
+        id,
+        existing.estado,
+        estadoNovo,
+      );
+    }
+
+    return this.getOne(user, id);
   }
 
   resumo(user: RequestUser) {
@@ -125,96 +280,113 @@ export class PropostasService {
 
   async buildPropostaHtml(user: RequestUser, id: string) {
     const tenantId = requireTenantId(user);
-    const row = await this.prisma.propostaComercial.findFirst({
-      where: { id, tenantId },
-      include: {
-        tenant: { select: { legalName: true, nif: true } },
-        entidadeCliente: { select: { nome: true, nif: true, email: true } },
-        curso: { select: { designacao: true, codigoUfcd: true, cargaHoras: true } },
-      },
-    });
+    const [row, configRow] = await Promise.all([
+      this.prisma.propostaComercial.findFirst({
+        where: { id, tenantId },
+        include: {
+          tenant: { select: { legalName: true, nif: true } },
+          entidadeCliente: { select: { nome: true, nif: true, email: true } },
+          curso: { select: { designacao: true, codigoUfcd: true, cargaHoras: true } },
+          linhas: { orderBy: { ordem: "asc" } },
+        },
+      }),
+      this.ensureConfigProposta(tenantId),
+    ]);
     if (!row) {
       throw new NotFoundException("Proposta não encontrada.");
     }
 
-    const valor = `${(row.valorCentavos / 100).toFixed(2)} ${row.moeda}`;
-    const validade = row.validadeAte
-      ? row.validadeAte.toLocaleDateString("pt-PT", { day: "2-digit", month: "long", year: "numeric" })
-      : "Sem data limite";
-    const emitida = row.updatedAt.toLocaleDateString("pt-PT", {
-      day: "2-digit",
-      month: "long",
-      year: "numeric",
+    return buildPropostaHtmlDocument({
+      codigo: row.codigo,
+      titulo: row.titulo,
+      subtitulo: row.subtitulo,
+      descricao: row.descricao,
+      moeda: row.moeda,
+      valorCentavos: row.valorCentavos,
+      validadeAte: row.validadeAte,
+      createdAt: row.createdAt,
+      tenant: row.tenant,
+      entidadeCliente: row.entidadeCliente,
+      curso: row.curso,
+      conteudo: extractPropostaConteudo(row),
+      config: this.toConfigTemplate(configRow),
+      linhas: row.linhas.map((l: (typeof row.linhas)[number]) => ({
+        descricao: l.descricao,
+        notas: l.notas,
+        quantidade: Number(l.quantidade),
+        precoUnitCentavos: l.precoUnitCentavos,
+        taxaIva: Number(l.taxaIva),
+        valorIvaCentavos: l.valorIvaCentavos,
+      })),
     });
-    const descricaoHtml = row.descricao
-      ? `<div class="desc">${escapeHtml(row.descricao).replace(/\n/g, "<br>")}</div>`
-      : "";
-    const cursoHtml = row.curso
-      ? `<tr><th>Curso</th><td>${escapeHtml(row.curso.designacao)}${row.curso.codigoUfcd ? ` (UFCD ${escapeHtml(row.curso.codigoUfcd)})` : ""}${row.curso.cargaHoras ? ` · ${row.curso.cargaHoras}h` : ""}</td></tr>`
-      : "";
-    const filename = `proposta-${row.codigo.toLowerCase()}.html`;
+  }
 
-    const html = `<!DOCTYPE html>
-<html lang="pt">
-<head>
-  <meta charset="utf-8"/>
-  <title>Proposta ${escapeHtml(row.codigo)} – ${escapeHtml(row.titulo)}</title>
-  <style>
-    @media print { .no-print { display: none; } body { margin: 1.5cm; } }
-    body { font-family: "Segoe UI", system-ui, sans-serif; color: #111; margin: 2rem; line-height: 1.5; font-size: 11pt; max-width: 800px; }
-    h1 { font-size: 1.4rem; margin: 0 0 0.25rem; color: #1e3a8a; }
-    .meta { color: #555; font-size: 0.9rem; margin-bottom: 1.5rem; }
-    .box { border: 1px solid #cbd5e1; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; }
-    .box h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin: 0 0 0.75rem; }
-    table { width: 100%; border-collapse: collapse; font-size: 10.5pt; }
-    th, td { border: 1px solid #e2e8f0; padding: 0.45rem 0.6rem; text-align: left; vertical-align: top; }
-    th { background: #f8fafc; width: 32%; font-weight: 600; }
-    .valor { font-size: 1.35rem; font-weight: 700; color: #1e40af; }
-    .desc { margin-top: 0.75rem; white-space: pre-wrap; }
-    .estado { display: inline-block; padding: 0.2rem 0.55rem; border-radius: 4px; font-size: 0.8rem; font-weight: 600; background: #eff6ff; color: #1d4ed8; }
-    footer { margin-top: 2rem; font-size: 0.8rem; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 0.75rem; }
-    .no-print { margin-bottom: 1rem; }
-    .no-print button { background: #2563eb; color: #fff; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
-  </style>
-</head>
-<body>
-  <div class="no-print"><button type="button" onclick="window.print()">Imprimir / Guardar PDF</button></div>
-  <h1>Proposta Comercial</h1>
-  <p class="meta">${escapeHtml(row.tenant.legalName)} · NIF ${escapeHtml(row.tenant.nif)}</p>
-  <p><span class="estado">${escapeHtml(ESTADO_LABEL[row.estado] ?? row.estado)}</span></p>
+  private mapConteudoFromDto(
+    dto: Partial<CreatePropostaDto>,
+    existing?: {
+      apresentacaoEmpresa: string | null;
+      enquadramento: string | null;
+      objetivos: string | null;
+      conteudosProgramaticos: string | null;
+      metodologia: string | null;
+      destinatarios: string | null;
+      duracaoTexto: string | null;
+      localTexto: string | null;
+      beneficios: string | null;
+      condicoesComerciais: string | null;
+      porqueEscolher: string | null;
+      proximosPassos: string | null;
+    },
+  ) {
+    const trim = (v: string | null | undefined) =>
+      v !== undefined ? v?.trim() || null : undefined;
+    return {
+      apresentacaoEmpresa:
+        trim(dto.apresentacaoEmpresa) ?? existing?.apresentacaoEmpresa ?? undefined,
+      enquadramento: trim(dto.enquadramento) ?? existing?.enquadramento ?? undefined,
+      objetivos: trim(dto.objetivos) ?? existing?.objetivos ?? undefined,
+      conteudosProgramaticos:
+        trim(dto.conteudosProgramaticos) ?? existing?.conteudosProgramaticos ?? undefined,
+      metodologia: trim(dto.metodologia) ?? existing?.metodologia ?? undefined,
+      destinatarios: trim(dto.destinatarios) ?? existing?.destinatarios ?? undefined,
+      duracaoTexto: trim(dto.duracaoTexto) ?? existing?.duracaoTexto ?? undefined,
+      localTexto: trim(dto.localTexto) ?? existing?.localTexto ?? undefined,
+      beneficios: trim(dto.beneficios) ?? existing?.beneficios ?? undefined,
+      condicoesComerciais:
+        trim(dto.condicoesComerciais) ?? existing?.condicoesComerciais ?? undefined,
+      porqueEscolher: trim(dto.porqueEscolher) ?? existing?.porqueEscolher ?? undefined,
+      proximosPassos: trim(dto.proximosPassos) ?? existing?.proximosPassos ?? undefined,
+    };
+  }
 
-  <div class="box">
-    <h2>Identificação</h2>
-    <table>
-      <tr><th>Código</th><td>${escapeHtml(row.codigo)}</td></tr>
-      <tr><th>Título</th><td>${escapeHtml(row.titulo)}</td></tr>
-      <tr><th>Emitida em</th><td>${escapeHtml(emitida)}</td></tr>
-      <tr><th>Validade</th><td>${escapeHtml(validade)}</td></tr>
-      ${cursoHtml}
-    </table>
-    ${descricaoHtml}
-  </div>
+  private toConfigTemplate(row: Parameters<typeof configRowToTemplate>[0]): ConfigPropostaTemplate {
+    return configRowToTemplate(row);
+  }
 
-  <div class="box">
-    <h2>Cliente</h2>
-    <table>
-      <tr><th>Entidade</th><td>${escapeHtml(row.entidadeCliente.nome)}</td></tr>
-      <tr><th>NIF</th><td>${escapeHtml(row.entidadeCliente.nif)}</td></tr>
-      ${row.entidadeCliente.email ? `<tr><th>Email</th><td>${escapeHtml(row.entidadeCliente.email)}</td></tr>` : ""}
-    </table>
-  </div>
+  private async ensureConfigProposta(tenantId: string) {
+    const existing = await this.prisma.configPropostaTenant.findUnique({ where: { tenantId } });
+    if (existing) return existing;
 
-  <div class="box">
-    <h2>Valor proposto</h2>
-    <p class="valor">${escapeHtml(valor)}</p>
-    <p style="font-size:0.85rem;color:#64748b;margin:0.5rem 0 0;">Valores sem IVA, salvo indicação em contrário.</p>
-  </div>
+    return this.prisma.configPropostaTenant.create({
+      data: {
+        tenantId,
+        ...DEFAULTS_PROPOSTA_TEMPLATE,
+        validadeDiasPadrao: 30,
+      },
+    });
+  }
 
-  <footer>Documento gerado por NexiForma · ${escapeHtml(row.codigo)}</footer>
-</body>
-</html>`;
-
-    return { html, filename };
+  private parseLinhasDto(linhas: PropostaLinhaDto[] | undefined) {
+    if (!linhas?.length) return [];
+    return normalizePropostaLinhas(
+      linhas.map((l) => ({
+        descricao: l.descricao,
+        notas: l.notas ?? null,
+        quantidade: l.quantidade ?? 1,
+        precoUnitCentavos: l.precoUnitCentavos,
+        taxaIva: l.taxaIva ?? 23,
+      })),
+    );
   }
 
   private async assertEntidade(tenantId: string, id: string) {

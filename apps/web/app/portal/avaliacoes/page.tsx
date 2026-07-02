@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 
 type AcaoOpt = { id: string; codigoInterno: string; titulo: string };
@@ -163,7 +164,7 @@ export default function AvaliacoesPage() {
                     <span className="text-slate-500 text-xs">/100</span>
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-400 hidden sm:table-cell max-w-xs truncate">{a.observacoes ?? "–"}</td>
-                  <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">{new Date(a.createdAt).toLocaleDateString("pt-PT")}</td>
+                  <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">{formatDatePt(a.createdAt)}</td>
                 </tr>
               ))}
             </tbody>

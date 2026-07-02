@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CreditCard, Check, Zap } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle, PageHeader } from "@/components/ui";
@@ -79,7 +80,7 @@ export default function BillingPage() {
                 </div>
                 {sub.currentPeriodEnd && (
                   <div className="text-xs text-slate-500">
-                    Renova em {new Date(sub.currentPeriodEnd).toLocaleDateString("pt-PT")}
+                    Renova em {formatDatePt(sub.currentPeriodEnd)}
                   </div>
                 )}
               </div>

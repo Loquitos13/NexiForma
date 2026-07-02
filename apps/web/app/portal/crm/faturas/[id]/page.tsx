@@ -1,37 +1,34 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Ban, FileText, Mail, Plus, RefreshCw, Save, Send, Settings, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Ban, FileText, Mail, RefreshCw, Save, Send, Upload } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
-import { openHtmlForPrint } from "@/lib/client/open-html-for-print";
+import { downloadResponseAsFile } from "@/lib/client/download-response";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
 import {
-  calcularBaseLinhaCentavos,
   calcularTotaisLinhas,
-  calcularValorIvaCentavos,
   formatarEurosInput,
   parseEurosInput,
 } from "@/lib/crm/fatura-calculos";
-import { fmtEuro, fmtFaturaRef, type FaturaEstado } from "@/lib/crm/shared";
+import { fmtFaturaRef, type FaturaEstado } from "@/lib/crm/shared";
 import { FaturaEstadoBadge } from "@/components/crm/fatura-estado-badge";
-import { Alert, Button, Input, PageHeader, Textarea } from "@/components/ui";
-
-type LinhaEdit = {
-  key: string;
-  descricao: string;
-  quantidade: string;
-  precoEuros: string;
-  taxaIva: string;
-};
+import {
+  FaturaInlineEditor,
+  linhasFromApi,
+  type FaturaLinhaEdit,
+} from "@/components/crm/fatura-inline-editor";
+import { AT_MOTIVO_ISENCAO_DEFAULT } from "@nexiforma/shared";
+import { Alert, Button, PageHeader, Textarea } from "@/components/ui";
 
 type FaturaDetalhe = {
   id: string;
   estado: FaturaEstado;
   numero: number | null;
   codigoAtcud: string | null;
+  dataEmissao: string | null;
+  hashIntegridade?: string | null;
   dataVencimento: string | null;
   notas: string | null;
   destinatarioNome: string;
@@ -39,13 +36,20 @@ type FaturaDetalhe = {
   destinatarioMorada: string | null;
   valorCentavos: number;
   ivaCentavos: number;
+  retencaoCentavos?: number;
   serie: { codigo: string; tipo: string };
+  faturaReferencia?: {
+    id: string;
+    numero: number | null;
+    serie: { codigo: string; tipo: string };
+  } | null;
   proposta: { codigo: string; titulo: string } | null;
   linhas: Array<{
     descricao: string;
     quantidade: number | string;
     precoUnitCentavos: number;
     taxaIva: number | string;
+    codigoIsencaoIva?: string | null;
   }>;
   pedidosAnulacao?: Array<{
     id: string;
@@ -62,33 +66,17 @@ type ConfigFaturacao = {
     nomeEmpresa: string;
     moradaFiscal: string | null;
     nifEmitente: string;
+    iban?: string | null;
+    bicSwift?: string | null;
+    emailGestor?: string | null;
+    capitalSocial?: string | null;
+    consRegCom?: string | null;
     taxaIvaPadrao: number | string;
+    softwareCertificadoEfectivo?: string | null;
   };
 };
 
-function novaLinha(taxaPadrao: number): LinhaEdit {
-  return {
-    key: crypto.randomUUID(),
-    descricao: "",
-    quantidade: "1",
-    precoEuros: "0.00",
-    taxaIva: String(taxaPadrao),
-  };
-}
-
-function linhasFromApi(
-  linhas: FaturaDetalhe["linhas"],
-  taxaPadrao: number,
-): LinhaEdit[] {
-  if (linhas.length === 0) return [novaLinha(taxaPadrao)];
-  return linhas.map((l) => ({
-    key: crypto.randomUUID(),
-    descricao: l.descricao,
-    quantidade: String(Number(l.quantidade)),
-    precoEuros: formatarEurosInput(l.precoUnitCentavos),
-    taxaIva: String(Number(l.taxaIva)),
-  }));
-}
+type TenantBranding = { logoUrl?: string | null };
 
 export default function FaturaEditorPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
@@ -96,12 +84,14 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
   const [faturaId, setFaturaId] = useState<string | null>(null);
   const [fatura, setFatura] = useState<FaturaDetalhe | null>(null);
   const [config, setConfig] = useState<ConfigFaturacao["config"] | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [destNome, setDestNome] = useState("");
   const [destNif, setDestNif] = useState("");
   const [destMorada, setDestMorada] = useState("");
   const [dataVencimento, setDataVencimento] = useState("");
   const [notas, setNotas] = useState("");
-  const [linhas, setLinhas] = useState<LinhaEdit[]>([]);
+  const [retencaoEuros, setRetencaoEuros] = useState("0.00");
+  const [linhas, setLinhas] = useState<FaturaLinhaEdit[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,9 +122,10 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
     if (!faturaId) return;
     setLoading(true);
     setError(null);
-    const [fRes, cRes] = await Promise.all([
+    const [fRes, cRes, bRes] = await Promise.all([
       bffFetch(`/api/v1/crm/faturas/${faturaId}`, { headers: { accept: "application/json" } }),
       bffFetch("/api/v1/crm/config/faturacao", { headers: { accept: "application/json" } }),
+      bffFetch("/api/v1/portal/tenant/branding", { headers: { accept: "application/json" } }),
     ]);
     setLoading(false);
     if (!fRes.ok) {
@@ -148,12 +139,17 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
     setDestMorada(f.destinatarioMorada ?? "");
     setDataVencimento(f.dataVencimento?.slice(0, 10) ?? "");
     setNotas(f.notas ?? "");
+    setRetencaoEuros(formatarEurosInput(f.retencaoCentavos ?? 0));
 
     let tp = 23;
     if (cRes.ok) {
       const cfg = (await cRes.json()) as ConfigFaturacao;
       setConfig(cfg.config);
       tp = Number(cfg.config.taxaIvaPadrao);
+    }
+    if (bRes.ok) {
+      const brand = (await bRes.json()) as TenantBranding;
+      setLogoUrl(brand.logoUrl ?? null);
     }
     setLinhas(linhasFromApi(f.linhas, tp));
   }, [faturaId]);
@@ -165,18 +161,26 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
   function buildPayload() {
     const linhasPayload = linhas
       .filter((l) => l.descricao.trim())
-      .map((l) => ({
-        descricao: l.descricao.trim(),
-        quantidade: Number.parseFloat(l.quantidade.replace(",", ".")) || 1,
-        precoUnitCentavos: parseEurosInput(l.precoEuros),
-        taxaIva: Number.parseFloat(l.taxaIva.replace(",", ".")) || 0,
-      }));
+      .map((l) => {
+        const taxaIva = Number.parseFloat(l.taxaIva.replace(",", ".")) || 0;
+        return {
+          descricao: l.descricao.trim(),
+          quantidade: Number.parseFloat(l.quantidade.replace(",", ".")) || 1,
+          precoUnitCentavos: parseEurosInput(l.precoEuros),
+          taxaIva,
+          codigoIsencaoIva:
+            taxaIva <= 0
+              ? (l.codigoIsencaoIva.trim() || AT_MOTIVO_ISENCAO_DEFAULT)
+              : null,
+        };
+      });
     return {
       destinatarioNome: destNome.trim(),
       destinatarioNif: destNif.trim(),
       destinatarioMorada: destMorada.trim() || null,
       dataVencimento: dataVencimento || null,
       notas: notas.trim() || null,
+      retencaoCentavos: parseEurosInput(retencaoEuros),
       linhas: linhasPayload,
     };
   }
@@ -284,19 +288,23 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
     setMsg(`Fatura enviada por email para ${body.destinatario ?? "cliente"}.`);
   }
 
-  async function imprimir() {
-    if (!faturaId) return;
+  async function downloadPdf() {
+    if (!faturaId || !fatura) return;
     setBusy(true);
-    const res = await bffFetch(`/api/v1/crm/faturas/${faturaId}/documento.html`, {
-      headers: { accept: "text/html" },
-    });
+    const ref =
+      fatura.numero != null
+        ? `${fatura.serie.codigo}-${fatura.numero}`
+        : faturaId.slice(0, 8);
+    const res = await bffFetch(
+      `/api/v1/crm/faturas/${faturaId}/documento.pdf?download=1`,
+      { headers: { accept: "application/pdf" } },
+    );
     setBusy(false);
     if (!res.ok) {
-      setError("Erro ao gerar documento.");
+      setError("Erro ao gerar PDF.");
       return;
     }
-    const opened = openHtmlForPrint(await res.text());
-    if (!opened.ok) setError(opened.error);
+    await downloadResponseAsFile(res, `fatura-${ref.toLowerCase()}.pdf`);
   }
 
   async function solicitarAnulacao() {
@@ -349,6 +357,23 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
     await load();
   }
 
+  async function criarNotaCredito() {
+    if (!faturaId) return;
+    setBusy(true);
+    setError(null);
+    const res = await bffFetch(`/api/v1/crm/faturas/${faturaId}/nota-credito`, {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setError(await parseApiError(res));
+      return;
+    }
+    const nc = (await res.json()) as { id: string };
+    router.push(`/portal/crm/faturas/${nc.id}`);
+  }
+
   async function rejeitarPedido() {
     if (!faturaId) return;
     setBusy(true);
@@ -390,6 +415,15 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
   const pedidoPendente = fatura.pedidosAnulacao?.find((p) => p.estado === "PENDENTE");
   const podeAnular =
     fatura.estado === "EMITIDA" || fatura.estado === "COMUNICADA_AT";
+  const podeNotaCredito =
+    fatura.serie.tipo === "FT" && podeAnular;
+  const retencaoCentavos = editavel
+    ? parseEurosInput(retencaoEuros)
+    : (fatura.retencaoCentavos ?? 0);
+  const totalLiquido = Math.max(
+    0,
+    totais.valorCentavos + totais.ivaCentavos - retencaoCentavos,
+  );
 
   return (
     <div className="space-y-4 pb-10">
@@ -437,7 +471,13 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
                     Email cliente
                   </Button>
                 ) : null}
-                <Button size="sm" variant="secondary" disabled={busy} onClick={() => void imprimir()}>
+                {podeNotaCredito && canManageCrm ? (
+                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => void criarNotaCredito()}>
+                    <FileText className="h-3.5 w-3.5" />
+                    Nota de crédito
+                  </Button>
+                ) : null}
+                <Button size="sm" variant="secondary" disabled={busy} onClick={() => void downloadPdf()}>
                   <FileText className="h-3.5 w-3.5" />
                   PDF
                 </Button>
@@ -544,286 +584,62 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
         </div>
       ) : null}
 
-      <article className="mx-auto max-w-4xl rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xl shadow-black/20">
-        <header className="border-b border-slate-200 px-6 py-5 sm:px-8">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-blue-800">
-                {editavel ? "Rascunho" : "Fatura"} · {fatura.serie.tipo}
-              </p>
-              <h2 className="text-2xl font-bold text-slate-900">
-                {editavel
-                  ? `${fatura.serie.tipo} ${fatura.serie.codigo}`
-                  : fmtFaturaRef(fatura.serie, fatura.numero)}
-              </h2>
-              {fatura.proposta ? (
-                <p className="mt-1 text-sm text-slate-500">
-                  Ref. proposta {fatura.proposta.codigo} - {fatura.proposta.titulo}
-                </p>
-              ) : null}
-            </div>
-            {editavel ? <FaturaEstadoBadge estado={fatura.estado} /> : null}
-          </div>
-        </header>
+      {fatura.proposta ? (
+        <p className="text-sm text-slate-400">
+          Ref. proposta {fatura.proposta.codigo} - {fatura.proposta.titulo}
+        </p>
+      ) : null}
 
-        <div className="grid gap-0 sm:grid-cols-2">
-          <section className="border-b border-slate-200 p-6 sm:border-b-0 sm:border-r">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Emitente</h3>
-              {canManage ? (
-                <Link
-                  href="/portal/crm/faturacao"
-                  className="inline-flex items-center gap-1 text-xs text-blue-700 hover:underline"
-                >
-                  <Settings className="h-3 w-3" />
-                  Configurar
-                </Link>
-              ) : null}
-            </div>
-            <p className="font-semibold text-slate-900">{config?.nomeEmpresa ?? "-"}</p>
-            {config?.moradaFiscal ? (
-              <p className="mt-1 whitespace-pre-line text-sm text-slate-600">{config.moradaFiscal}</p>
-            ) : (
-              <p className="mt-1 text-sm text-amber-700">
-                Morada fiscal não configurada.
-                {canManage ? (
-                  <>
-                    {" "}
-                    <Link href="/portal/crm/faturacao" className="underline">
-                      Adicionar
-                    </Link>
-                  </>
-                ) : null}
-              </p>
-            )}
-            <p className="mt-2 text-sm">
-              <span className="text-slate-500">NIF </span>
-              <span className="font-medium">{config?.nifEmitente ?? "-"}</span>
-            </p>
-          </section>
-
-          <section className="border-b border-slate-200 p-6">
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Destinatário
-            </h3>
-            {editavel ? (
-              <div className="space-y-3">
-                <div>
-                  <label className="mb-1 block text-xs text-slate-500">Nome (empresa ou particular) *</label>
-                  <Input
-                    value={destNome}
-                    onChange={(e) => setDestNome(e.target.value)}
-                    className="bg-white text-slate-900 border-slate-300"
-                    placeholder="Nome do cliente"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-slate-500">NIF *</label>
-                  <Input
-                    value={destNif}
-                    onChange={(e) => setDestNif(e.target.value)}
-                    className="bg-white text-slate-900 border-slate-300"
-                    placeholder="NIF"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-slate-500">Morada fiscal (opcional)</label>
-                  <Textarea
-                    value={destMorada}
-                    onChange={(e) => setDestMorada(e.target.value)}
-                    rows={2}
-                    className="bg-white text-slate-900 border-slate-300"
-                    placeholder="Morada do cliente"
-                  />
-                </div>
-              </div>
-            ) : (
-              <>
-                <p className="font-semibold">{destNome}</p>
-                {destMorada ? (
-                  <p className="mt-1 whitespace-pre-line text-sm text-slate-600">{destMorada}</p>
-                ) : null}
-                <p className="mt-2 text-sm">
-                  <span className="text-slate-500">NIF </span>
-                  <span className="font-medium">{destNif}</span>
-                </p>
-              </>
-            )}
-          </section>
-        </div>
-
-        {editavel ? (
-          <div className="border-b border-slate-200 px-6 py-4 sm:px-8">
-            <label className="mb-1 block text-xs text-slate-500">Data de vencimento (opcional)</label>
-            <Input
-              type="date"
-              value={dataVencimento}
-              onChange={(e) => setDataVencimento(e.target.value)}
-              className="max-w-xs bg-white text-slate-900 border-slate-300"
-            />
-          </div>
-        ) : null}
-
-        <div className="overflow-x-auto px-4 py-4 sm:px-6">
-          <table className="w-full min-w-[640px] border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-2 py-2 font-semibold">Produto / serviço</th>
-                <th className="px-2 py-2 font-semibold text-right w-16">Qtd.</th>
-                <th className="px-2 py-2 font-semibold text-right w-24">Preço s/ IVA</th>
-                <th className="px-2 py-2 font-semibold text-right w-24">Base</th>
-                <th className="px-2 py-2 font-semibold text-right w-16">IVA %</th>
-                <th className="px-2 py-2 font-semibold text-right w-24">IVA</th>
-                <th className="px-2 py-2 font-semibold text-right w-28">Total c/ IVA</th>
-                {editavel ? <th className="w-10" /> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {linhas.map((linha, idx) => {
-                const q = Number.parseFloat(linha.quantidade.replace(",", ".")) || 0;
-                const preco = parseEurosInput(linha.precoEuros);
-                const taxa = Number.parseFloat(linha.taxaIva.replace(",", ".")) || 0;
-                const base = calcularBaseLinhaCentavos({ quantidade: q, precoUnitCentavos: preco, taxaIva: taxa });
-                const iva = calcularValorIvaCentavos({ quantidade: q, precoUnitCentavos: preco, taxaIva: taxa });
-                const total = base + iva;
-
-                return (
-                  <tr key={linha.key} className="border-b border-slate-100">
-                    <td className="px-2 py-2">
-                      {editavel ? (
-                        <Input
-                          value={linha.descricao}
-                          onChange={(e) => {
-                            const next = [...linhas];
-                            next[idx] = { ...linha, descricao: e.target.value };
-                            setLinhas(next);
-                          }}
-                          className="bg-white text-slate-900 border-slate-300"
-                          placeholder="Descrição"
-                        />
-                      ) : (
-                        linha.descricao
-                      )}
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      {editavel ? (
-                        <Input
-                          value={linha.quantidade}
-                          onChange={(e) => {
-                            const next = [...linhas];
-                            next[idx] = { ...linha, quantidade: e.target.value };
-                            setLinhas(next);
-                          }}
-                          className="bg-white text-slate-900 border-slate-300 text-right"
-                        />
-                      ) : (
-                        q
-                      )}
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      {editavel ? (
-                        <Input
-                          value={linha.precoEuros}
-                          onChange={(e) => {
-                            const next = [...linhas];
-                            next[idx] = { ...linha, precoEuros: e.target.value };
-                            setLinhas(next);
-                          }}
-                          className="bg-white text-slate-900 border-slate-300 text-right"
-                        />
-                      ) : (
-                        fmtEuro(preco)
-                      )}
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums text-slate-600">{fmtEuro(base)}</td>
-                    <td className="px-2 py-2 text-right">
-                      {editavel ? (
-                        <Input
-                          value={linha.taxaIva}
-                          onChange={(e) => {
-                            const next = [...linhas];
-                            next[idx] = { ...linha, taxaIva: e.target.value };
-                            setLinhas(next);
-                          }}
-                          className="bg-white text-slate-900 border-slate-300 text-right"
-                        />
-                      ) : (
-                        `${taxa}%`
-                      )}
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums text-slate-600">{fmtEuro(iva)}</td>
-                    <td className="px-2 py-2 text-right tabular-nums font-medium">{fmtEuro(total)}</td>
-                    {editavel ? (
-                      <td className="px-1 py-2">
-                        <button
-                          type="button"
-                          className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                          onClick={() => setLinhas(linhas.filter((_, i) => i !== idx))}
-                          disabled={linhas.length <= 1}
-                          title="Remover linha"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </td>
-                    ) : null}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {editavel ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              className="mt-3"
-              onClick={() => setLinhas([...linhas, novaLinha(taxaPadrao)])}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Adicionar linha
-            </Button>
-          ) : null}
-        </div>
-
-        <div className="flex flex-col gap-4 border-t border-slate-200 px-6 py-5 sm:flex-row sm:justify-between sm:px-8">
-          {editavel ? (
-            <div className="flex-1">
-              <label className="mb-1 block text-xs text-slate-500">Notas (opcional)</label>
-              <Textarea
-                value={notas}
-                onChange={(e) => setNotas(e.target.value)}
-                rows={2}
-                className="bg-white text-slate-900 border-slate-300"
-              />
-            </div>
-          ) : notas ? (
-            <p className="flex-1 text-sm text-slate-600">
-              <strong>Notas:</strong> {notas}
-            </p>
-          ) : (
-            <div className="flex-1" />
-          )}
-
-          <div className="w-full max-w-xs space-y-1 text-sm sm:text-right">
-            <div className="flex justify-between gap-4 sm:justify-end">
-              <span className="text-slate-500">Subtotal (s/ IVA)</span>
-              <span className="font-medium tabular-nums">{fmtEuro(totais.valorCentavos)}</span>
-            </div>
-            <div className="flex justify-between gap-4 sm:justify-end">
-              <span className="text-slate-500">IVA</span>
-              <span className="font-medium tabular-nums">{fmtEuro(totais.ivaCentavos)}</span>
-            </div>
-            <div className="flex justify-between gap-4 border-t border-slate-200 pt-2 sm:justify-end">
-              <span className="font-semibold text-blue-900">Total</span>
-              <span className="text-lg font-bold tabular-nums text-blue-900">
-                {fmtEuro(totais.valorCentavos + totais.ivaCentavos)}
-              </span>
-            </div>
-            <p className="text-[10px] text-slate-400 sm:text-right">
-              Valores com IVA discriminado por linha
-            </p>
-          </div>
-        </div>
-      </article>
+      <FaturaInlineEditor
+        editavel={editavel}
+        canManageConfig={canManage}
+        logoUrl={logoUrl}
+        emitente={{
+          nomeEmpresa: config?.nomeEmpresa ?? "",
+          moradaFiscal: config?.moradaFiscal ?? null,
+          nifEmitente: config?.nifEmitente ?? "",
+          iban: config?.iban ?? null,
+          bicSwift: config?.bicSwift ?? null,
+          emailGestor: config?.emailGestor ?? null,
+          capitalSocial: config?.capitalSocial ?? null,
+          consRegCom: config?.consRegCom ?? null,
+        }}
+        destNome={destNome}
+        destNif={destNif}
+        destMorada={destMorada}
+        onDestNome={setDestNome}
+        onDestNif={setDestNif}
+        onDestMorada={setDestMorada}
+        tipoDocumento={fatura.serie.tipo === "FT" ? "FATURA" : fatura.serie.tipo}
+        tipoSerie={fatura.serie.tipo}
+        numeroDocumento={
+          fatura.numero != null
+            ? `${fatura.serie.codigo}/${fatura.numero}`
+            : `${fatura.serie.codigo}/-`
+        }
+        estadoDocumento={editavel ? "RASCUNHO" : "ORIGINAL"}
+        codigoAtcud={fatura.codigoAtcud}
+        dataEmissao={
+          fatura.dataEmissao
+            ? new Date(fatura.dataEmissao).toISOString().slice(0, 10)
+            : editavel
+              ? new Date().toISOString().slice(0, 10)
+              : null
+        }
+        dataVencimento={dataVencimento}
+        onDataVencimento={setDataVencimento}
+        linhas={linhas}
+        onLinhas={setLinhas}
+        taxaPadrao={taxaPadrao}
+        retencaoEuros={retencaoEuros}
+        onRetencaoEuros={setRetencaoEuros}
+        notas={notas}
+        onNotas={setNotas}
+        totalLiquidoCentavos={totalLiquido}
+        totais={totais}
+        softwareCertificado={config?.softwareCertificadoEfectivo ?? null}
+        hashIntegridade={fatura.hashIntegridade}
+      />
     </div>
   );
 }

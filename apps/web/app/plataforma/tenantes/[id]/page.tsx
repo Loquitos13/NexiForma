@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { formatDatePt } from "@/lib/calendar-date";
+import { parseApiError } from "@/lib/ui/backoffice";
 import { PageContentSkeleton } from "@/components/ui/page-skeleton";
 
 type TenantDetail = {
@@ -41,6 +43,8 @@ export default function TenantDetailPage() {
   const [zoomDraft, setZoomDraft] = useState({ accountId: "", clientId: "", clientSecret: "", userId: "" });
   const [intBusy, setIntBusy] = useState(false);
   const [consentUrl, setConsentUrl] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ slug: "", legalName: "", nif: "" });
+  const [editBusy, setEditBusy] = useState(false);
 
   const loadIntegracoes = useCallback(async () => {
     const [listR, statusR] = await Promise.all([
@@ -64,7 +68,9 @@ export default function TenantDetailPage() {
       bffFetch(`/api/v1/control-plane/tenants/${id}/users`, { headers: { accept: "application/json" } }),
     ]);
     if (!tenantR.ok) { setError(`HTTP ${tenantR.status}`); return; }
-    setTenant((await tenantR.json()) as TenantDetail);
+    const t = (await tenantR.json()) as TenantDetail;
+    setTenant(t);
+    setEditForm({ slug: t.slug, legalName: t.legalName, nif: t.nif });
     if (usersR.ok) {
       const list = (await usersR.json()) as TenantUser[];
       setUsers(list);
@@ -83,6 +89,64 @@ export default function TenantDetailPage() {
     if (!r.ok) { setError(`HTTP ${r.status}`); return; }
     setMsg(`Estado actualizado para ${status}.`);
     await load();
+  }
+
+  async function guardarDados(e: FormEvent) {
+    e.preventDefault();
+    setEditBusy(true);
+    setError(null);
+    const r = await bffFetch(`/api/v1/control-plane/tenants/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        slug: editForm.slug.trim(),
+        legalName: editForm.legalName.trim(),
+        nif: editForm.nif.trim(),
+      }),
+    });
+    setEditBusy(false);
+    if (!r.ok) {
+      setError(await parseApiError(r));
+      return;
+    }
+    setMsg("Dados do tenant actualizados.");
+    await load();
+  }
+
+  async function arquivarTenant() {
+    if (!window.confirm("Arquivar este tenant? Utilizadores deixam de aceder (estado ARCHIVED).")) return;
+    setEditBusy(true);
+    setError(null);
+    const r = await bffFetch(`/api/v1/control-plane/tenants/${id}`, { method: "DELETE" });
+    setEditBusy(false);
+    if (!r.ok) {
+      setError(await parseApiError(r));
+      return;
+    }
+    setMsg("Tenant arquivado.");
+    await load();
+  }
+
+  async function eliminarPermanente() {
+    if (!tenant) return;
+    const empty =
+      tenant._count.users === 0 &&
+      tenant._count.acoesFormacao === 0 &&
+      tenant._count.formandos === 0;
+    if (!empty) {
+      setError("Só é possível eliminar permanentemente tenants sem dados operacionais.");
+      return;
+    }
+    if (!window.confirm("Eliminar permanentemente? Esta acção não pode ser revertida.")) return;
+    setEditBusy(true);
+    setError(null);
+    const r = await bffFetch(`/api/v1/control-plane/tenants/${id}?permanent=true`, { method: "DELETE" });
+    setEditBusy(false);
+    if (!r.ok) {
+      setError(await parseApiError(r));
+      return;
+    }
+    router.push("/plataforma/tenantes");
   }
 
   async function personificar() {
@@ -177,6 +241,45 @@ export default function TenantDetailPage() {
 
       {tenant ? (
         <>
+          {/* Dados */}
+          <div className="rounded-2xl bg-[#0c0a14]/80 border border-purple-500/10 p-5">
+            <h2 className="text-sm font-semibold text-purple-200 mb-3">Dados do tenant</h2>
+            <form onSubmit={(e) => void guardarDados(e)} className="grid gap-3 max-w-md">
+              <label className="grid gap-1 text-xs text-slate-500">
+                Razão social
+                <input className={inputClass} required value={editForm.legalName}
+                  onChange={(e) => setEditForm((f) => ({ ...f, legalName: e.target.value }))} />
+              </label>
+              <label className="grid gap-1 text-xs text-slate-500">
+                Slug
+                <input className={inputClass} required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={editForm.slug}
+                  onChange={(e) => setEditForm((f) => ({ ...f, slug: e.target.value.toLowerCase() }))} />
+              </label>
+              <label className="grid gap-1 text-xs text-slate-500">
+                NIF
+                <input className={inputClass} required pattern="\d{9}" value={editForm.nif}
+                  onChange={(e) => setEditForm((f) => ({ ...f, nif: e.target.value.replace(/\D/g, "").slice(0, 9) }))} />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button type="submit" disabled={editBusy} className={btnPrimaryClass}>
+                  {editBusy ? "A guardar…" : "Guardar alterações"}
+                </button>
+                {tenant.status !== "ARCHIVED" ? (
+                  <button type="button" disabled={editBusy} onClick={() => void arquivarTenant()}
+                    className="px-3.5 py-2 rounded-lg border border-yellow-500/30 text-yellow-300 text-sm hover:bg-yellow-500/10">
+                    Arquivar
+                  </button>
+                ) : null}
+                {tenant._count.users === 0 && tenant._count.acoesFormacao === 0 ? (
+                  <button type="button" disabled={editBusy} onClick={() => void eliminarPermanente()}
+                    className="px-3.5 py-2 rounded-lg border border-red-500/30 text-red-400 text-sm hover:bg-red-500/10">
+                    Eliminar permanentemente
+                  </button>
+                ) : null}
+              </div>
+            </form>
+          </div>
+
           {/* Metrics */}
           <div className="rounded-2xl bg-[#0c0a14]/80 border border-purple-500/10 p-5">
             <h2 className="text-sm font-semibold text-purple-200 mb-3">Metricas</h2>
@@ -312,7 +415,7 @@ export default function TenantDetailPage() {
                   <div key={k.id} className="flex items-center gap-3 text-xs text-slate-400">
                     <code className="text-purple-300">{k.keyPrefix}...</code>
                     <span className="text-slate-500">{k.status}</span>
-                    {k.expiresAt ? <span className="text-slate-600">· expira {new Date(k.expiresAt).toLocaleDateString("pt-PT")}</span> : null}
+                    {k.expiresAt ? <span className="text-slate-600">· expira {formatDatePt(k.expiresAt)}</span> : null}
                   </div>
                 ))}
               </div>

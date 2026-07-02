@@ -214,6 +214,11 @@ export class ComplianceService {
 
   async getByAcao(user: RequestUser, acaoId: string) {
     const tenantId = requireTenantId(user);
+    return this.getByAcaoForTenant(tenantId, acaoId);
+  }
+
+  /** Uso interno (cron, jobs) sem contexto JWT. */
+  async getByAcaoForTenant(tenantId: string, acaoId: string) {
     const data = await this.loadAcaoComplianceData(tenantId, acaoId);
     return {
       geradoEm: new Date().toISOString(),

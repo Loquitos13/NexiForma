@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { resolverEmailNotificacaoFormando } from "@nexiforma/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { MailService } from "../mail/mail.service";
 import { ComplianceAlertasService } from "../compliance/compliance-alertas.service";
@@ -7,6 +8,10 @@ import { CertificadosService } from "../certificados/certificados.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 import { SmsService } from "./sms.service";
+import {
+  GESTOR_ROLES,
+  resolverEmailNotificacaoUtilizador,
+} from "./notificacao-roles.util";
 
 @Injectable()
 export class NotificacoesService {
@@ -45,18 +50,37 @@ export class NotificacoesService {
 
   async enviarDigestAlertas(user: RequestUser) {
     const tenantId = requireTenantId(user);
-    const { alertas } = await this.alertas.listAlertas(user, 50);
+    return this.enviarDigestAlertasTenant(tenantId);
+  }
+
+  async enviarDigestAlertasTenant(tenantId: string) {
+    const { alertas } = await this.alertas.listAlertasForTenant(tenantId, 50);
 
     const destinatarios = await this.prisma.user.findMany({
       where: {
         tenantId,
         active: true,
-        role: { in: ["ADMIN", "COORDENADOR", "FORMADOR"] },
+        role: { in: [...GESTOR_ROLES, "FORMADOR"] },
       },
-      select: { email: true, displayName: true },
+      select: {
+        email: true,
+        displayName: true,
+        role: true,
+        formadorProfile: { select: { email: true } },
+      },
     });
 
-    if (!destinatarios.length) {
+    const emailsUnicos = new Map<string, string>();
+    for (const d of destinatarios) {
+      const to = resolverEmailNotificacaoUtilizador(
+        d.role,
+        d.email,
+        d.formadorProfile?.email,
+      );
+      if (to) emailsUnicos.set(to, d.displayName);
+    }
+
+    if (!emailsUnicos.size) {
       return { enviados: 0, alertas: alertas.length, destinatarios: [] };
     }
 
@@ -91,9 +115,9 @@ export class NotificacoesService {
         : `<p>Sem alertas activos.</p>`) +
       `<p><a href="${appUrl}/portal">Abrir portal</a></p>`;
 
-    for (const d of destinatarios) {
+    for (const [to] of emailsUnicos) {
       await this.mail.send({
-        to: d.email,
+        to,
         subject: `NexiForma – ${alertas.length} alerta(s) operacionais`,
         text,
         html,
@@ -101,14 +125,18 @@ export class NotificacoesService {
     }
 
     return {
-      enviados: destinatarios.length,
+      enviados: emailsUnicos.size,
       alertas: alertas.length,
-      destinatarios: destinatarios.map((d) => d.email),
+      destinatarios: [...emailsUnicos.keys()],
     };
   }
 
   async enviarLembretesSessao(user: RequestUser, acaoId?: string) {
     const tenantId = requireTenantId(user);
+    return this.enviarLembretesSessaoTenant(tenantId, acaoId);
+  }
+
+  async enviarLembretesSessaoTenant(tenantId: string, acaoId?: string) {
     const now = new Date();
     const amanhaInicio = new Date(now);
     amanhaInicio.setDate(amanhaInicio.getDate() + 1);
@@ -149,7 +177,13 @@ export class NotificacoesService {
         },
         include: {
           formando: {
-            select: { nome: true, email: true, telefone: true, userId: true },
+            select: {
+              nome: true,
+              email: true,
+              telefone: true,
+              userId: true,
+              user: { select: { email: true } },
+            },
           },
         },
       });
@@ -158,14 +192,10 @@ export class NotificacoesService {
       const horaStr = sessao.horaInicio ?? "";
 
       for (const m of matriculas) {
-        let email = m.formando.email;
-        if (!email && m.formando.userId) {
-          const u = await this.prisma.user.findUnique({
-            where: { id: m.formando.userId },
-            select: { email: true },
-          });
-          email = u?.email ?? null;
-        }
+        const email = resolverEmailNotificacaoFormando({
+          emailContacto: m.formando.email,
+          emailConta: m.formando.user?.email,
+        });
         if (!email) continue;
 
         const text =
@@ -222,7 +252,10 @@ export class NotificacoesService {
 
     let enviados = 0;
     for (const f of elegiveis) {
-      const email = f.formando.email;
+      const email = resolverEmailNotificacaoFormando({
+        emailContacto: f.formando.email,
+        emailConta: f.formando.user?.email,
+      });
       if (!email) continue;
 
       await this.mail.send({

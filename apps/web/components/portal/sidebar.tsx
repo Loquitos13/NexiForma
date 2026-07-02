@@ -13,6 +13,13 @@ interface SidebarProps {
 
 function isActive(href: string, pathname: string) {
   if (href === "/portal") return pathname === "/portal";
+  if (href === "/portal/crm") return pathname === "/portal/crm";
+  if (href === "/portal/propostas") {
+    return (
+      pathname === "/portal/propostas" ||
+      (pathname.startsWith("/portal/propostas/") && !pathname.startsWith("/portal/propostas/config"))
+    );
+  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

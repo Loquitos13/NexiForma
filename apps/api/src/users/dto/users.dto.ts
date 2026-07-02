@@ -1,7 +1,14 @@
 import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 import type { TenantUserRole } from "@nexiforma/database";
 
-const ROLES: TenantUserRole[] = ["ADMIN", "COORDENADOR", "FORMADOR", "FINANCEIRO", "COMERCIAL"];
+const ROLES: TenantUserRole[] = [
+  "ADMIN",
+  "COORDENADOR",
+  "FORMADOR",
+  "FORMANDO",
+  "FINANCEIRO",
+  "COMERCIAL",
+];
 
 export class InviteUserDto {
   @IsEmail()

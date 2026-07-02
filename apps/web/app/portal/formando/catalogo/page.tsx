@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { formatDatePt } from "@/lib/calendar-date";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -108,8 +109,8 @@ export default function FormandoCatalogoPage() {
                         <p className="text-sm font-medium text-slate-200 truncate">{acao.titulo}</p>
                         <p className="text-xs text-slate-500">
                           {acao.codigoInterno} ·{" "}
-                          {new Date(acao.dataInicio).toLocaleDateString("pt-PT")} –{" "}
-                          {new Date(acao.dataFim).toLocaleDateString("pt-PT")}
+                          {formatDatePt(acao.dataInicio)} –{" "}
+                          {formatDatePt(acao.dataFim)}
                         </p>
                       </div>
                       <Badge variant={estadoVariant(acao.estado)}>

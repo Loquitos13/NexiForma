@@ -42,3 +42,15 @@ packages/database/generated/
 # Storage local (documentos formando, LMS, exports)
 apps/api/storage/
 storage/
+
+# Chaves privadas AT / certificação (nunca commitar)
+chaveprivada.txt
+**/chaveprivada.txt
+certs/*.pfx
+certs/*.pem
+certs/*.zip
+certs/certificados/
+certs/adesao/
+certs/eskiso/
+apps/api/certs/*.pem
+apps/api/certs/*.pfx

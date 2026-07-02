@@ -4,6 +4,13 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Video } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import {
+  buildMonthGridCells,
+  dayFromDateKey,
+  formatDateKeyPt,
+  formatLocalDateKey,
+  toDateKey,
+} from "@/lib/calendar-date";
 import { PageContentSkeleton } from "@/components/ui/page-skeleton";
 import { Button } from "@/components/ui/button";
 
@@ -23,14 +30,10 @@ type SessaoRow = {
   acaoCodigo?: string;
 };
 
-function toDateKey(value: string) {
-  return value.includes("T") ? value.split("T")[0]! : value.slice(0, 10);
-}
-
 function estadoSessao(s: SessaoRow) {
   if (s.terminadaEm) return "CONCLUIDA";
   if (s.iniciadaEm) return "EM_CURSO";
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = formatLocalDateKey(new Date());
   const d = toDateKey(s.data);
   if (d < hoje) return "PASSADA";
   if (d === hoje) return "HOJE";
@@ -94,18 +97,9 @@ export function FormandoCalendarioView() {
 
   const ano = mesAtual.getFullYear();
   const mes = mesAtual.getMonth();
-  const primeiroDia = new Date(ano, mes, 1).getDay();
-  const diasNoMes = new Date(ano, mes + 1, 0).getDate();
-  const hoje = new Date().toISOString().split("T")[0]!;
+  const hoje = formatLocalDateKey(new Date());
 
-  const dias = useMemo(() => {
-    const arr: (string | null)[] = [];
-    for (let i = 0; i < (primeiroDia === 0 ? 6 : primeiroDia - 1); i++) arr.push(null);
-    for (let d = 1; d <= diasNoMes; d++) {
-      arr.push(new Date(ano, mes, d).toISOString().split("T")[0]!);
-    }
-    return arr;
-  }, [ano, mes, primeiroDia, diasNoMes]);
+  const dias = useMemo(() => buildMonthGridCells(ano, mes), [ano, mes]);
 
   const eventosDoDia = (data: string) =>
     eventos.filter((e) => toDateKey(e.data) === data).sort((a, b) => a.horaInicio.localeCompare(b.horaInicio));
@@ -131,17 +125,17 @@ export function FormandoCalendarioView() {
         <div className="flex items-center justify-between border-b border-slate-700/30 px-4 py-3 sm:px-5">
           <button
             type="button"
-            onClick={() => setMesAtual(new Date(ano, mes - 1))}
+            onClick={() => setMesAtual(new Date(ano, mes - 1, 1))}
             className="rounded-lg border border-slate-600/40 px-3 py-1.5 text-sm text-slate-400 transition-colors hover:bg-slate-800/40"
           >
             ← {new Date(ano, mes - 1).toLocaleDateString("pt-PT", { month: "short" })}
           </button>
           <h2 className="text-base font-bold text-slate-100 sm:text-lg">
-            {new Date(ano, mes).toLocaleDateString("pt-PT", { month: "long", year: "numeric" })}
+            {new Date(ano, mes, 1).toLocaleDateString("pt-PT", { month: "long", year: "numeric" })}
           </h2>
           <button
             type="button"
-            onClick={() => setMesAtual(new Date(ano, mes + 1))}
+            onClick={() => setMesAtual(new Date(ano, mes + 1, 1))}
             className="rounded-lg border border-slate-600/40 px-3 py-1.5 text-sm text-slate-400 transition-colors hover:bg-slate-800/40"
           >
             {new Date(ano, mes + 1).toLocaleDateString("pt-PT", { month: "short" })} →
@@ -180,7 +174,7 @@ export function FormandoCalendarioView() {
                       data === hoje ? "bg-blue-600 text-white" : "text-slate-400"
                     }`}
                   >
-                    {new Date(data).getDate()}
+                    {dayFromDateKey(data)}
                   </span>
                   {eventosDoDia(data).length > 0 ? (
                     <div className="mt-1 space-y-0.5">
@@ -211,12 +205,7 @@ export function FormandoCalendarioView() {
       {selectedDate ? (
         <div className="rounded-2xl border border-slate-700/30 bg-slate-900/50 p-5">
           <h3 className="mb-3 text-sm font-semibold text-slate-200">
-            Sessões de{" "}
-            {new Date(selectedDate).toLocaleDateString("pt-PT", {
-              weekday: "long",
-              day: "numeric",
-              month: "long",
-            })}
+            Sessões de {formatDateKeyPt(selectedDate)}
           </h3>
           {eventosDoDia(selectedDate).length === 0 ? (
             <p className="text-sm text-slate-500">Sem sessões neste dia.</p>

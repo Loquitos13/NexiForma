@@ -16,8 +16,11 @@ describe("buildSaftPtXml", () => {
           codigoAtcud: "ABCD1234-1",
           estado: "EMITIDA",
           dataEmissao: new Date("2026-01-15T10:00:00Z"),
-          valorCentavos: 12300,
+          valorCentavos: 10000,
           ivaCentavos: 2300,
+          hashIntegridade:
+            "dN0mi1g2EmZxFnSM3Z/01Up/1+Ot7rlaBJOLyfgPLAl3q0w4mFIcXwV/ZUQRP+8SPhoU0GqxbEfBEJLt6HMz4YD3hqnBHzxBvETYSK4iKP1euzjE2bSYO179BQBVXcqWEzWM2q028dOa5/ZXeCNHcHPf0xdqxddO8NaZFphwOe8=",
+          hashControl: "1",
           destinatarioNome: "Cliente SA",
           destinatarioNif: "501234567",
           serieCodigo: "2026",
@@ -39,5 +42,12 @@ describe("buildSaftPtXml", () => {
     expect(xml).toContain("<CompanyID>500123456</CompanyID>");
     expect(xml).toContain("<NumberOfEntries>1</NumberOfEntries>");
     expect(xml).toContain("FT 2026/1");
+    expect(xml).toContain("<GrossTotal>123.00</GrossTotal>");
+    expect(xml).toContain("<NetTotal>100.00</NetTotal>");
+    expect(xml).toContain("<HashControl>1</HashControl>");
+    expect(xml).toContain("<MasterFiles>");
+    expect(xml).toContain("<Customer>");
+    expect(xml).toContain("<Product>");
+    expect(xml).toContain("<TaxTable>");
   });
 });

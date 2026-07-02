@@ -2,6 +2,7 @@ import { Type } from "class-transformer";
 import {
   IsArray,
   IsDateString,
+  IsEmail,
   IsInt,
   IsNumber,
   IsOptional,
@@ -30,6 +31,12 @@ export class FaturaLinhaDto {
   @IsNumber()
   @Min(0)
   taxaIva?: number;
+
+  /** Obrigatório quando taxaIva = 0 (códigos AT M01–M99). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(8)
+  codigoIsencaoIva?: string | null;
 }
 
 export class CreateFaturaDto {
@@ -96,6 +103,11 @@ export class UpdateFaturaDto {
   notas?: string | null;
 
   @IsOptional()
+  @IsInt()
+  @Min(0)
+  retencaoCentavos?: number;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => FaturaLinhaDto)
@@ -117,6 +129,31 @@ export class UpdateConfigFaturacaoDto {
   @IsString()
   @MaxLength(20)
   nifEmitente?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(34)
+  iban?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(11)
+  bicSwift?: string | null;
+
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(255)
+  emailGestor?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  capitalSocial?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  consRegCom?: string | null;
 
   @IsOptional()
   @IsString()
@@ -146,6 +183,9 @@ export class UpdateConfigFaturacaoDto {
 
   @IsOptional()
   comunicacaoAtiva?: boolean;
+
+  @IsOptional()
+  comunicacaoAutomatica?: boolean;
 
   @IsOptional()
   @IsString()

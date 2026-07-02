@@ -47,7 +47,7 @@ export default function AcceptInvitePage() {
   return (
     <AuthShell
       title="Activar conta"
-      subtitle="Define a tua palavra-passe para concluir o convite."
+      subtitle="Define a tua palavra-passe para confirmar o email e activar a conta."
     >
       <form onSubmit={(e) => void submit(e)} className="space-y-4">
         <div>

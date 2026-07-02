@@ -4,8 +4,9 @@
 
 | Componente | Serviço AWS |
 |------------|--------------|
-| API NestJS | ECS Fargate + ALB |
-| Web Next.js | ECS Fargate (standalone) ou Amplify |
+| API NestJS | ECS Fargate + ALB (`api.nexiforma.pt`) |
+| Swagger / OpenAPI | ECS Fargate (mesma imagem API, `docs-server.main.js`, porta 4001) |
+| Web Next.js | ECS Fargate (standalone) ou Amplify (`app.nexiforma.pt`) |
 | PostgreSQL | RDS PostgreSQL 16 |
 | Secrets | Secrets Manager (`JWT_SECRET`, `STRIPE_*`, `DATABASE_URL`) |
 | Email | SES (substitui SMTP) |
@@ -60,6 +61,26 @@
 13. **Teams webhook** – endpoint público `POST /v1/assiduidade/webhooks/teams` com header `x-nexiforma-teams-token`; configurar `teamsMeetingId` nas sessões LMS.
 
 14. **MFA gestores** – Cognito pool + `MFA_REQUIRED_MANAGERS=true` na API nativa; gestores sem TOTP activo não conseguem login local.
+
+## Subdomínio `api.nexiforma.pt`
+
+| Path / porta | Destino | Notas |
+|--------------|---------|--------|
+| `https://api.nexiforma.pt/v1/*` | Target group API :4000 | REST (JWT, public API, webhooks) |
+| `https://api.nexiforma.pt/` | Target group docs :4001 | Swagger UI (índice + `/formacoes`, `/tenant-webhook`) |
+| `GET /v1/health` | API | Health check ALB |
+
+**Route53:** registo A/AAAA alias para o ALB.
+
+**Variáveis ECS (API):** `API_PUBLIC_URL=https://api.nexiforma.pt`, `APP_PUBLIC_URL=https://app.nexiforma.pt`, `CORS_ORIGIN=https://app.nexiforma.pt`.
+
+**Task docs (Swagger):** mesma imagem `apps/api/Dockerfile`, comando `node apps/api/dist/docs-server.main.js`, env `API_DOCS_PORT=4001`, `API_DOCS_PUBLIC_URL=https://api.nexiforma.pt`.
+
+**ALB listener rules (exemplo):**
+1. Prioridade 10: path `/v1/*` → TG `nexiforma-api:4000`
+2. Default: TG `nexiforma-api-docs:4001`
+
+Local: `npm run dev:docs` (porta 4001) + `npm run dev:api` (4000).
 
 ## Health checks
 

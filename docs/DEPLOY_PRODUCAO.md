@@ -10,6 +10,8 @@
 NODE_ENV=production
 DATABASE_URL=postgresql://...
 APP_PUBLIC_URL=https://app.nexiforma.pt
+API_PUBLIC_URL=https://api.nexiforma.pt
+API_DOCS_PUBLIC_URL=https://api.nexiforma.pt
 CORS_ORIGIN=https://app.nexiforma.pt
 COOKIE_SECURE=true
 TRUST_PROXY=true

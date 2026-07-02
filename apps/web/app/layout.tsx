@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { APP_NAME } from "@nexiforma/shared";
 import { NexiGuia } from "@/components/guide/nexi-guia";
+import { AppProviders } from "@/components/ui/app-providers";
 
 export const metadata: Metadata = {
   title: {
@@ -36,8 +37,10 @@ export default function RootLayout({
   return (
     <html lang="pt">
       <body>
-        {children}
-        <NexiGuia />
+        <AppProviders>
+          {children}
+          <NexiGuia />
+        </AppProviders>
       </body>
     </html>
   );

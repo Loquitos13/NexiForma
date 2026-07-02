@@ -30,8 +30,13 @@ Base: `/v1/public/v1` - autenticação `X-Api-Key: nf_live_...`
 | GET | `/propostas` | Propostas comerciais |
 | GET | `/faturas` | Faturas emitidas/comunicadas |
 | GET | `/matriculas` | Matrículas activas |
+| GET | `/formacoes/catalogo` | Catálogo paginado (website) |
+| GET | `/formacoes` | Formações publicadas |
+| GET | `/formacoes/{codigoPublico}` | Detalhe formação |
+| GET | `/formacoes/{codigoPublico}/acoes` | Acções publicadas |
+| GET | `/formacoes/{codigoPublico}/capa` | Imagem de capa |
 
-Documentação OpenAPI: `GET /v1/docs/openapi.json`
+Documentação OpenAPI: `GET /v1/docs/openapi.json` · Swagger UI: servidor docs (`API_DOCS_PORT`, futuro `https://api.nexiforma.pt/formacoes`)
 
 ### Chaves API (gestor tenant)
 

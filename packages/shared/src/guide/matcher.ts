@@ -1,4 +1,4 @@
-import { isComercial, isFormador, isFormando, roleSatisfies } from "../access";
+import { canManageCrm, isComercial, isCrmPortalPath, isFormador, isFormando, roleSatisfies } from "../access";
 import type { JwtRole } from "../index";
 import { GUIDE_DESTINATIONS } from "./destinations";
 import { GUIDE_KNOWLEDGE, type GuideKnowledgeEntry } from "./knowledge";
@@ -11,6 +11,7 @@ import type {
   GuideOutOfScopeResult,
   GuideQueryContext,
   GuideResult,
+  GuideSearchHit,
   GuideUnknownResult,
   GuideViewContext,
 } from "./types";
@@ -66,10 +67,11 @@ function destinationAllowed(dest: GuideDestination, role: JwtRole | null): boole
   if (isComercial(role)) {
     return (
       dest.minRole === "comercial" ||
-      dest.href.startsWith("/portal/crm") ||
+      isCrmPortalPath(dest.href) ||
       dest.href === "/portal/rgpd"
     );
   }
+  if (canManageCrm(role) && isCrmPortalPath(dest.href)) return true;
   if (dest.minRole && !roleSatisfies(role, dest.minRole)) return false;
   return true;
 }
@@ -102,6 +104,54 @@ function relatedBoost(pathname: string | undefined, dest: GuideDestination): num
   const view = resolveViewContext(pathname);
   if (view.related.some((r) => r.href === dest.href)) return 6;
   return 0;
+}
+
+function sharesPrefix(a: string, b: string, min = 4): boolean {
+  const len = Math.min(a.length, b.length);
+  return len >= min && a.slice(0, min) === b.slice(0, min);
+}
+
+function scoreSearchDestination(
+  query: string,
+  queryTokens: string[],
+  dest: GuideDestination,
+): number {
+  const normalizedQuery = normalize(query);
+  const normalizedLabel = normalize(dest.label);
+  const haystack = normalize([dest.label, dest.description, ...dest.keywords].join(" "));
+  let score = 0;
+
+  for (const kw of dest.keywords) {
+    const nkw = normalize(kw);
+    if (nkw.length >= 3 && normalizedQuery.includes(nkw)) {
+      score += nkw.includes(" ") ? 14 : 10;
+    } else if (nkw.length === 2 && queryTokens.includes(nkw)) {
+      score += 8;
+    }
+  }
+
+  if (normalizedLabel === normalizedQuery) score += 24;
+  if (normalizedQuery.includes(normalizedLabel)) score += 12;
+  if (normalizedLabel.includes(normalizedQuery) && normalizedQuery.length >= 2) score += 10;
+
+  for (const token of queryTokens) {
+    if (haystack.split(" ").some((word) => word === token || sharesPrefix(word, token))) {
+      score += 4;
+    }
+    for (const kw of dest.keywords) {
+      const nkw = normalize(kw);
+      if (
+        nkw === token ||
+        nkw.startsWith(token) ||
+        token.startsWith(nkw) ||
+        sharesPrefix(nkw, token)
+      ) {
+        score += 5;
+      }
+    }
+  }
+
+  return score;
 }
 
 function scoreDestination(
@@ -567,6 +617,133 @@ export function canAccessDestination(dest: GuideDestination, role: JwtRole | nul
 
 export function findGuideDestinationByHref(href: string): GuideDestination | undefined {
   return findDestination(href);
+}
+
+function pickMatchedKeywords(query: string, keywords: string[]): string[] {
+  const normalizedQuery = normalize(query);
+  const queryToks = tokens(query);
+  const matched = keywords.filter((kw) => {
+    const nkw = normalize(kw);
+    if (nkw.length >= 3 && normalizedQuery.includes(nkw)) return true;
+    if (nkw.length >= 3 && nkw.includes(normalizedQuery)) return true;
+    if (nkw.length === 2 && queryToks.includes(nkw)) return true;
+    return queryToks.some(
+      (t) =>
+        t.length >= 2 &&
+        (nkw.includes(t) ||
+          t.includes(nkw) ||
+          nkw.startsWith(t) ||
+          t.startsWith(nkw) ||
+          sharesPrefix(nkw, t)),
+    );
+  });
+  return matched.slice(0, 4);
+}
+
+/** Pesquisa local de funcionalidades do portal (keywords + label). */
+export function searchGuideDestinations(
+  query: string,
+  ctx: GuideQueryContext | JwtRole | null,
+  limit = 8,
+): GuideSearchHit[] {
+  const { role } = resolveCtx(ctx);
+  const trimmed = query.trim();
+
+  if (!trimmed) {
+    return listAllowed(role)
+      .filter((d) => !d.href.includes("#") && (!role || !d.publicOnly))
+      .slice(0, limit)
+      .map((dest) => ({
+        href: dest.href,
+        label: dest.label,
+        description: dest.description,
+        matchedKeywords: dest.keywords.slice(0, 3),
+        score: 0,
+      }));
+  }
+
+  const queryTokens = tokens(trimmed);
+  const ranked = listAllowed(role)
+    .filter((d) => !role || !d.publicOnly)
+    .map((dest) => ({
+      dest,
+      score: scoreSearchDestination(trimmed, queryTokens, dest),
+    }))
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  return ranked.map(({ dest, score }) => ({
+    href: dest.href,
+    label: dest.label,
+    description: dest.description,
+    matchedKeywords: pickMatchedKeywords(trimmed, dest.keywords),
+    score,
+  }));
+}
+
+/** Converte resposta do guia (IA/local) em sugestões de pesquisa. */
+export function guideResultToSearchHits(result: GuideResult, limit = 6): GuideSearchHit[] {
+  const aiTag = ["sugerido"];
+  const toHit = (
+    href: string,
+    label: string,
+    description: string,
+    score: number,
+  ): GuideSearchHit => ({
+    href,
+    label,
+    description,
+    matchedKeywords: aiTag,
+    score,
+  });
+
+  switch (result.type) {
+    case "navigate":
+      return [toHit(result.href, result.label, result.description, 10)];
+    case "suggest":
+      return result.options.slice(0, limit).map((o) =>
+        toHit(o.href, o.label, o.description, o.score),
+      );
+    case "unknown":
+      return result.suggestions.slice(0, limit).map((s, i) =>
+        toHit(
+          s.href,
+          s.label,
+          findDestination(s.href)?.description ?? "",
+          8 - i,
+        ),
+      );
+    case "help":
+      return result.destinations.slice(0, limit).map((d, i) =>
+        toHit(
+          d.href,
+          d.label,
+          findDestination(d.href)?.description ?? "",
+          6 - i,
+        ),
+      );
+    case "answer":
+      return result.related.slice(0, limit).map((r, i) =>
+        toHit(
+          r.href,
+          r.label,
+          result.reply.slice(0, 120),
+          7 - i,
+        ),
+      );
+    case "out_of_scope":
+      return result.suggestions.slice(0, limit).map((s, i) =>
+        toHit(
+          s.href,
+          s.label,
+          findDestination(s.href)?.description ?? "",
+          5 - i,
+        ),
+      );
+    default:
+      return [];
+  }
 }
 
 export { resolveViewContext };

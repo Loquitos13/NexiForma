@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Check,
   Download,
@@ -32,6 +34,12 @@ import {
 } from "@/components/ui";
 import { PropostaEstadoBadge } from "@/components/crm/proposta-estado-badge";
 import {
+  PropostaLinhasEditor,
+  linhasPropostaParaApi,
+  novaPropostaLinha,
+  type PropostaLinhaForm,
+} from "@/components/crm/PropostaLinhasEditor";
+import {
   fmtDate,
   fmtEuro,
   generatePropostaCodigo,
@@ -62,8 +70,19 @@ const ESTADOS: (PropostaEstado | "TODAS")[] = [
   "CANCELADA",
 ];
 
+function podeEnviarProposta(estado: string): boolean {
+  return estado !== "CANCELADA";
+}
+
+function podeFaturarProposta(p: Proposta, gestor: boolean): boolean {
+  if (p.fatura || p.estado === "REJEITADA" || p.estado === "CANCELADA") return false;
+  if (p.estado === "ACEITE") return true;
+  return gestor;
+}
+
 export default function PropostasPage() {
-  const { canManageCrm } = useTenantRole();
+  const router = useRouter();
+  const { canManageCrm, canManage } = useTenantRole();
   const [estadoFilter, setEstadoFilter] = useState<string>("TODAS");
   const [entidadeFilter, setEntidadeFilter] = useState("");
   const [entidades, setEntidades] = useState<EntidadeOpt[]>([]);
@@ -79,6 +98,7 @@ export default function PropostasPage() {
   const [activeProposta, setActiveProposta] = useState<Proposta | null>(null);
   const [enviarEmail, setEnviarEmail] = useState("");
   const [rejeitarMotivo, setRejeitarMotivo] = useState("");
+  const [pendingEnviarId, setPendingEnviarId] = useState<string | null>(null);
   const [form, setForm] = useState({
     entidadeClienteId: "",
     codigo: "",
@@ -88,17 +108,22 @@ export default function PropostasPage() {
     validadeAte: "",
     cursoId: "",
   });
+  const [linhas, setLinhas] = useState<PropostaLinhaForm[]>([novaPropostaLinha()]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ent = params.get("entidade");
     const est = params.get("estado");
     const nova = params.get("nova");
+    const enviarId = params.get("enviar");
     if (ent) setEntidadeFilter(ent);
     if (est && ESTADOS.includes(est as PropostaEstado | "TODAS")) setEstadoFilter(est);
     if (nova === "1" && canManageCrm) {
       setForm((f) => ({ ...f, codigo: generatePropostaCodigo() }));
       setCreateOpen(true);
+    }
+    if (enviarId) {
+      setPendingEnviarId(enviarId);
     }
   }, [canManageCrm]);
 
@@ -132,6 +157,28 @@ export default function PropostasPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!pendingEnviarId || loading) return;
+    void (async () => {
+      let p = propostas.find((x) => x.id === pendingEnviarId) ?? null;
+      if (!p) {
+        const res = await bffFetch(`/api/v1/propostas/${pendingEnviarId}`, {
+          headers: { accept: "application/json" },
+        });
+        if (res.ok) {
+          p = (await res.json()) as Proposta;
+        }
+      }
+      if (p && podeEnviarProposta(p.estado)) {
+        setActiveProposta(p);
+        setEnviarEmail(p.entidadeCliente.email ?? "");
+        setEnviarOpen(true);
+      }
+      setPendingEnviarId(null);
+      router.replace("/portal/propostas", { scroll: false });
+    })();
+  }, [pendingEnviarId, loading, propostas, router]);
+
   const filtered = useMemo(() => {
     if (estadoFilter === "TODAS") return propostas;
     return propostas.filter((p) => p.estado === estadoFilter);
@@ -151,23 +198,30 @@ export default function PropostasPage() {
     setBusy(true);
     setMsg(null);
     setError(null);
+    const linhasApi = linhasPropostaParaApi(linhas);
     const euros = Number(form.valorEuros.replace(",", ".")) || 0;
+    const body: Record<string, unknown> = {
+      entidadeClienteId: form.entidadeClienteId,
+      codigo: form.codigo.trim() || undefined,
+      titulo: form.titulo.trim(),
+      descricao: form.descricao.trim() || undefined,
+      validadeAte: form.validadeAte || undefined,
+      cursoId: form.cursoId || undefined,
+    };
+    if (linhasApi.length > 0) {
+      body.linhas = linhasApi;
+    } else {
+      body.valorCentavos = Math.round(euros * 100);
+    }
     const res = await bffFetch("/api/v1/propostas", {
       method: "POST",
       headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({
-        entidadeClienteId: form.entidadeClienteId,
-        codigo: form.codigo.trim() || undefined,
-        titulo: form.titulo.trim(),
-        descricao: form.descricao.trim() || undefined,
-        valorCentavos: Math.round(euros * 100),
-        validadeAte: form.validadeAte || undefined,
-        cursoId: form.cursoId || undefined,
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) setError(await parseApiError(res));
     else {
-      setMsg("Proposta criada em rascunho.");
+      const created = (await res.json()) as { id: string };
+      setMsg("Proposta criada - personalize o conteúdo.");
       setCreateOpen(false);
       setForm((f) => ({
         ...f,
@@ -178,7 +232,8 @@ export default function PropostasPage() {
         validadeAte: "",
         cursoId: "",
       }));
-      await load();
+      setLinhas([novaPropostaLinha()]);
+      router.push(`/portal/propostas/${created.id}`);
     }
     setBusy(false);
   }
@@ -210,7 +265,11 @@ export default function PropostasPage() {
       setError(await parseApiError(res));
       return;
     }
-    setMsg("Proposta enviada por email ao cliente.");
+    setMsg(
+      activeProposta.estado === "RASCUNHO"
+        ? "Proposta enviada por email ao cliente."
+        : "Proposta reenviada por email ao cliente.",
+    );
     setEnviarOpen(false);
     setActiveProposta(null);
     await load();
@@ -306,13 +365,13 @@ export default function PropostasPage() {
       key: "codigo",
       header: "Proposta",
       cell: (p) => (
-        <div>
+        <Link href={`/portal/propostas/${p.id}`} className="block hover:text-blue-300">
           <span className="font-medium text-slate-100">{p.codigo}</span>
           <p className="text-xs text-slate-500 mt-0.5">{p.titulo}</p>
           {p.curso && (
             <p className="text-xs text-slate-600 mt-0.5">{p.curso.designacao}</p>
           )}
-        </div>
+        </Link>
       ),
     },
     {
@@ -348,17 +407,26 @@ export default function PropostasPage() {
         title="Propostas comerciais"
         description="Orçamentos B2B com envio por email, aceitação e registo de facturação pipeline."
         actions={
-          canManageCrm && entidades.length ? (
-            <Button
-              onClick={() => {
-                setForm((f) => ({ ...f, codigo: generatePropostaCodigo() }));
-                setCreateOpen(true);
-              }}
-            >
-              <Plus className="h-4 w-4" />
-              Nova proposta
-            </Button>
-          ) : null
+          <div className="flex flex-wrap gap-2">
+            {canManage ? (
+              <Link href="/portal/propostas/config">
+                <Button size="sm" variant="secondary">
+                  Modelo padrão
+                </Button>
+              </Link>
+            ) : null}
+            {canManageCrm && entidades.length ? (
+              <Button
+                onClick={() => {
+                  setForm((f) => ({ ...f, codigo: generatePropostaCodigo() }));
+                  setCreateOpen(true);
+                }}
+              >
+                <Plus className="h-4 w-4" />
+                Nova proposta
+              </Button>
+            ) : null}
+          </div>
         }
       />
 
@@ -430,10 +498,10 @@ export default function PropostasPage() {
                         <FileText className="h-3.5 w-3.5" />
                         PDF
                       </Button>
-                      {p.estado === "RASCUNHO" && (
+                      {podeEnviarProposta(p.estado) && (
                         <Button size="sm" onClick={() => openEnviar(p)} disabled={busy}>
                           <Send className="h-3.5 w-3.5" />
-                          Enviar
+                          {p.estado === "RASCUNHO" ? "Enviar" : "Reenviar"}
                         </Button>
                       )}
                       {p.estado === "ENVIADA" && (
@@ -448,13 +516,13 @@ export default function PropostasPage() {
                           </Button>
                         </>
                       )}
-                      {p.estado === "ACEITE" && (
-                        p.fatura ? (
+                      {podeFaturarProposta(p, canManage) &&
+                        (p.fatura ? (
                           <Button size="sm" variant="secondary" asChild>
-                            <a href="/portal/crm/faturas">
+                            <Link href={`/portal/crm/faturas/${p.fatura.id}`}>
                               <Receipt className="h-3.5 w-3.5" />
                               Ver fatura
-                            </a>
+                            </Link>
                           </Button>
                         ) : (
                           <Button
@@ -466,8 +534,7 @@ export default function PropostasPage() {
                             <Receipt className="h-3.5 w-3.5" />
                             Faturar
                           </Button>
-                        )
-                      )}
+                        ))}
                     </div>
                   )
                 : undefined
@@ -477,8 +544,12 @@ export default function PropostasPage() {
       </Card>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent title="Nova proposta" description="Criada em rascunho - envie ao cliente quando estiver pronta.">
-          <form onSubmit={(e) => void criar(e)} className="grid gap-4">
+        <DialogContent
+          title="Nova proposta"
+          description="Criada em rascunho - envie ao cliente quando estiver pronta."
+          className="max-w-2xl"
+        >
+          <form onSubmit={(e) => void criar(e)} className="grid min-w-0 gap-4">
             <Select
               label="Entidade cliente *"
               required
@@ -491,7 +562,7 @@ export default function PropostasPage() {
                 </option>
               ))}
             </Select>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Input
                 label="Código"
                 value={form.codigo}
@@ -518,14 +589,15 @@ export default function PropostasPage() {
               onChange={(ev) => setForm((f) => ({ ...f, descricao: ev.target.value }))}
               rows={3}
             />
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Input
-                label="Valor (€)"
+                label="Valor global (€) - se não usar itens"
                 type="number"
                 min={0}
                 step={0.01}
                 value={form.valorEuros}
                 onChange={(ev) => setForm((f) => ({ ...f, valorEuros: ev.target.value }))}
+                placeholder="Opcional com linhas abaixo"
               />
               <Select
                 label="Curso (opcional)"
@@ -541,6 +613,7 @@ export default function PropostasPage() {
                 ))}
               </Select>
             </div>
+            <PropostaLinhasEditor compact linhas={linhas} onChange={setLinhas} />
             <div className="flex gap-2">
               <Button type="submit" disabled={busy}>{busy ? "A criar…" : "Criar rascunho"}</Button>
               <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>Cancelar</Button>
@@ -551,7 +624,9 @@ export default function PropostasPage() {
 
       <Dialog open={enviarOpen} onOpenChange={setEnviarOpen}>
         <DialogContent
-          title="Enviar proposta"
+          title={
+            activeProposta?.estado === "RASCUNHO" ? "Enviar proposta" : "Reenviar proposta"
+          }
           description={
             activeProposta
               ? `${activeProposta.codigo} - ${activeProposta.titulo}`
@@ -569,12 +644,18 @@ export default function PropostasPage() {
             />
             <p className="text-xs text-slate-500 flex items-start gap-2">
               <Mail className="h-4 w-4 shrink-0 mt-0.5" />
-              O cliente recebe um email com o resumo da proposta e o valor. O estado passa para «Enviada».
+              {activeProposta?.estado === "RASCUNHO"
+                ? "O cliente recebe um email com resumo e o documento da proposta em anexo (HTML imprimível em PDF). O estado passa para «Enviada»."
+                : "O cliente recebe novamente o email com resumo e o documento em anexo. O estado da proposta mantém-se."}
             </p>
             <div className="flex gap-2">
               <Button type="submit" disabled={busy}>
                 <Send className="h-4 w-4" />
-                {busy ? "A enviar…" : "Enviar proposta"}
+                {busy
+                  ? "A enviar…"
+                  : activeProposta?.estado === "RASCUNHO"
+                    ? "Enviar proposta"
+                    : "Reenviar proposta"}
               </Button>
               <Button type="button" variant="secondary" onClick={() => setEnviarOpen(false)}>Cancelar</Button>
             </div>

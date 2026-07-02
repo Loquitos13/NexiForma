@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 
 type TenantInfo = {
@@ -198,7 +199,7 @@ export default function ConfiguracoesPage() {
             <div className="mt-3 pt-3 border-t border-slate-700/30 text-xs text-slate-500">
               Plano: {plan.plan.name} ({plan.status})
               {plan.currentPeriodEnd
-                ? ` · até ${new Date(plan.currentPeriodEnd).toLocaleDateString("pt-PT")}`
+                ? ` · até ${formatDatePt(plan.currentPeriodEnd)}`
                 : ""}
             </div>
           ) : null}
@@ -482,7 +483,7 @@ export default function ConfiguracoesPage() {
                 key={i}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/40 border border-slate-700/20 text-xs text-slate-300"
               >
-                {new Date(f).toLocaleDateString("pt-PT")}
+                {formatDatePt(f)}
                 <button
                   onClick={() => {
                     setFeriados(feriados.filter((_, j) => j !== i));

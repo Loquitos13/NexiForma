@@ -40,6 +40,7 @@ type AcaoDetail = {
   estado: string;
   dataInicio: string;
   dataFim: string;
+  prazoConclusaoLms?: string | null;
   curso: { id: string; designacao: string; codigoUfcd: string | null; cargaHoras: number };
   turmas: Array<{ id: string; codigo: string; _count?: { matriculas: number } }>;
   cronogramas: Array<{ id: string; versao: number; aprovadoEm: string | null; _count?: { sessoes: number } }>;
@@ -115,7 +116,13 @@ export default function AcaoDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [edit, setEdit] = useState({ titulo: "", estado: "", dataInicio: "", dataFim: "" });
+  const [edit, setEdit] = useState({
+    titulo: "",
+    estado: "",
+    dataInicio: "",
+    dataFim: "",
+    prazoConclusaoLms: "",
+  });
 
   const load = useCallback(async () => {
     if (!acaoId) return;
@@ -138,6 +145,9 @@ export default function AcaoDetailPage() {
         estado: data.estado,
         dataInicio: String(data.dataInicio).slice(0, 10),
         dataFim: String(data.dataFim).slice(0, 10),
+        prazoConclusaoLms: data.prazoConclusaoLms
+          ? String(data.prazoConclusaoLms).slice(0, 10)
+          : "",
       });
     }
     if (compRes && compRes.ok) setCompliance((await compRes.json()) as ComplianceDetail);
@@ -156,7 +166,10 @@ export default function AcaoDetailPage() {
     const res = await bffFetch(`/api/v1/acoes-formacao/${acaoId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify(edit),
+      body: JSON.stringify({
+        ...edit,
+        prazoConclusaoLms: edit.prazoConclusaoLms.trim() ? edit.prazoConclusaoLms : null,
+      }),
     });
     if (!res.ok) setError(await parseApiError(res));
     else {
@@ -306,6 +319,15 @@ export default function AcaoDetailPage() {
                   <Input label="Início" type="date" value={edit.dataInicio} onChange={(e) => setEdit((x) => ({ ...x, dataInicio: e.target.value }))} />
                   <Input label="Fim" type="date" value={edit.dataFim} onChange={(e) => setEdit((x) => ({ ...x, dataFim: e.target.value }))} />
                 </div>
+                <Input
+                  label="Prazo conclusão LMS"
+                  type="date"
+                  value={edit.prazoConclusaoLms}
+                  onChange={(e) => setEdit((x) => ({ ...x, prazoConclusaoLms: e.target.value }))}
+                />
+                <p className="text-xs text-slate-500">
+                  Opcional. Se vazio, usa a data de fim da acção. O formando vê o progresso face a este prazo.
+                </p>
                 <Button type="submit" disabled={busy}>{busy ? "A guardar…" : "Guardar"}</Button>
               </form>
             ) : (
@@ -320,6 +342,12 @@ export default function AcaoDetailPage() {
                     {String(acao.dataInicio).slice(0, 10)} – {String(acao.dataFim).slice(0, 10)}
                   </dd>
                 </div>
+                {acao.prazoConclusaoLms ? (
+                  <div className="flex gap-2">
+                    <dt className="text-slate-500 w-24">Prazo LMS</dt>
+                    <dd className="text-slate-200">{String(acao.prazoConclusaoLms).slice(0, 10)}</dd>
+                  </div>
+                ) : null}
                 <div className="flex gap-2">
                   <dt className="text-slate-500 w-24">Curso</dt>
                   <dd>

@@ -26,6 +26,11 @@ describe("at-certificacao.util", () => {
         nomeEmpresa: "Empresa",
         nifEmitente: "123456789",
         moradaFiscal: "Rua X",
+        iban: "PT50000201231234567890154",
+        bicSwift: "BBPIPTPL",
+        emailGestor: "gestor@empresa.pt",
+        capitalSocial: "5000 EUR",
+        consRegCom: "123456789",
         atSubutilizador: "wfa-user",
         atWfaPasswordEnc: "enc",
         atCertificadoRef: null,
@@ -38,6 +43,27 @@ describe("at-certificacao.util", () => {
     });
     expect(r.prontaProducao).toBe(true);
     expect(r.items.find((i) => i.id === "software_certificado")?.ok).toBe(true);
+  });
+
+  it("marca prontidão sandbox com dados mínimos", () => {
+    const r = avaliarCertificacaoAt({
+      config: {
+        nomeEmpresa: "Empresa",
+        nifEmitente: "123456789",
+        moradaFiscal: null,
+        atSubutilizador: null,
+        atWfaPasswordEnc: null,
+        atCertificadoRef: null,
+        softwareCertificado: null,
+        comunicacaoAtiva: false,
+      },
+      series: [],
+      softwarePlataforma: null,
+      modoServidor: "sandbox",
+    });
+    expect(r.prontaSandbox).toBe(true);
+    expect(r.prontaProducao).toBe(false);
+    expect(r.modoServidor).toBe("sandbox");
   });
 
   it("falha prontidão sem certificado em produção", () => {

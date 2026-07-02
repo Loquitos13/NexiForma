@@ -331,4 +331,243 @@ export class EmailTemplates {
         `<p>–<br>NexiForma</p>`,
     };
   }
+
+  /** Resposta do gestor ao pedido de anulação (gestor → comercial). */
+  static pedidoAnulacaoRejeitado(params: {
+    comercialNome: string;
+    faturaRef: string;
+    respostaMotivo: string;
+    portalUrl: string;
+  }): EmailTemplate {
+    return {
+      subject: `Pedido de anulação rejeitado – ${params.faturaRef}`,
+      text:
+        `Olá ${params.comercialNome},\n\n` +
+        `O pedido de anulação da fatura ${params.faturaRef} foi rejeitado.\n\n` +
+        (params.respostaMotivo ? `Motivo:\n${params.respostaMotivo}\n\n` : "") +
+        `Consultar no portal: ${params.portalUrl}\n\n` +
+        `–\nNexiForma\n`,
+      html:
+        `<p>Olá <strong>${params.comercialNome}</strong>,</p>` +
+        `<p>O pedido de anulação da fatura <strong>${params.faturaRef}</strong> foi <strong>rejeitado</strong>.</p>` +
+        (params.respostaMotivo
+          ? `<div style="background:#fee2e2;padding:12px;border-left:4px solid #dc2626;margin:16px 0;">` +
+            `<p style="margin:0;"><strong>Motivo:</strong></p>` +
+            `<p style="margin:8px 0 0;white-space:pre-wrap;">${params.respostaMotivo}</p>` +
+            `</div>`
+          : "") +
+        `<p><a href="${params.portalUrl}" style="background:#2563eb;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;">Ver fatura</a></p>` +
+        `<p>–<br>NexiForma</p>`,
+    };
+  }
+
+  /** Falha ao sincronizar catálogo com website do tenant. */
+  static websiteSyncFalhou(params: {
+    nomeDestinatario: string;
+    entidade: string;
+    evento: string;
+    erro: string;
+    portalUrl: string;
+  }): EmailTemplate {
+    return {
+      subject: `Sync website falhou – ${params.entidade}`,
+      text:
+        `Olá ${params.nomeDestinatario},\n\n` +
+        `A sincronização do catálogo de formações com o website falhou (${params.evento}).\n\n` +
+        `Erro: ${params.erro}\n\n` +
+        `Verifique a URL do webhook e o endpoint no portal:\n${params.portalUrl}\n\n` +
+        `–\nNexiForma\n`,
+      html:
+        `<p>Olá <strong>${params.nomeDestinatario}</strong>,</p>` +
+        `<p>A sincronização do catálogo com o <strong>website</strong> falhou ` +
+        `(evento <code>${params.evento}</code>).</p>` +
+        `<div style="background:#fee2e2;padding:12px;border-left:4px solid #dc2626;margin:16px 0;">` +
+        `<p style="margin:0;"><strong>Erro:</strong></p>` +
+        `<p style="margin:8px 0 0;font-family:monospace;font-size:13px;">${params.erro}</p>` +
+        `</div>` +
+        `<p><a href="${params.portalUrl}" style="background:#2563eb;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;">Formações website</a></p>` +
+        `<p>–<br>NexiForma</p>`,
+    };
+  }
+
+  static propostaEstadoGestor(params: {
+    gestorNome: string;
+    codigo: string;
+    titulo: string;
+    cliente: string;
+    estado: "ACEITE" | "REJEITADA";
+    motivo?: string;
+    portalUrl: string;
+  }): EmailTemplate {
+    const label = params.estado === "ACEITE" ? "aceite" : "rejeitada";
+    return {
+      subject: `Proposta ${params.codigo} ${label}`,
+      text:
+        `Olá ${params.gestorNome},\n\n` +
+        `A proposta ${params.codigo} («${params.titulo}») foi ${label}.\n` +
+        `Cliente: ${params.cliente}\n` +
+        (params.motivo ? `Motivo: ${params.motivo}\n` : "") +
+        `\nVer no portal: ${params.portalUrl}\n\n–\nNexiForma\n`,
+      html:
+        `<p>Olá <strong>${params.gestorNome}</strong>,</p>` +
+        `<p>A proposta <strong>${params.codigo}</strong> («${params.titulo}») foi <strong>${label}</strong>.</p>` +
+        `<p>Cliente: ${params.cliente}</p>` +
+        (params.motivo
+          ? `<p><strong>Motivo:</strong> ${params.motivo.replace(/\n/g, "<br>")}</p>`
+          : "") +
+        `<p><a href="${params.portalUrl}">Abrir CRM</a></p><p>–<br>NexiForma</p>`,
+    };
+  }
+
+  static propostaEstadoComercial(params: {
+    comercialNome: string;
+    codigo: string;
+    titulo: string;
+    cliente: string;
+    estado: "ACEITE" | "REJEITADA";
+    motivo?: string;
+    portalUrl: string;
+  }): EmailTemplate {
+    const label = params.estado === "ACEITE" ? "aceite" : "rejeitada";
+    return {
+      subject: `A sua proposta ${params.codigo} foi ${label}`,
+      text:
+        `Olá ${params.comercialNome},\n\n` +
+        `A proposta ${params.codigo} («${params.titulo}») que enviou foi ${label}.\n` +
+        `Cliente: ${params.cliente}\n` +
+        (params.motivo ? `Nota: ${params.motivo}\n` : "") +
+        `\nConsultar: ${params.portalUrl}\n\n–\nNexiForma\n`,
+      html:
+        `<p>Olá <strong>${params.comercialNome}</strong>,</p>` +
+        `<p>A proposta <strong>${params.codigo}</strong> que enviou foi <strong>${label}</strong>.</p>` +
+        `<p>Cliente: ${params.cliente}</p>` +
+        (params.motivo ? `<p>${params.motivo.replace(/\n/g, "<br>")}</p>` : "") +
+        `<p><a href="${params.portalUrl}">Ver propostas</a></p><p>–<br>NexiForma</p>`,
+    };
+  }
+
+  static formacaoCatalogoGestor(params: {
+    gestorNome: string;
+    acao: "atualizada" | "eliminada" | "despublicada";
+    titulo: string;
+    codigoPublico: number | null;
+    portalUrl: string;
+  }): EmailTemplate {
+    const ref = params.codigoPublico != null ? `#${params.codigoPublico}` : "-";
+    return {
+      subject: `Formação ${ref} ${params.acao} no catálogo`,
+      text:
+        `Olá ${params.gestorNome},\n\n` +
+        `A formação «${params.titulo}» (${ref}) foi ${params.acao} no catálogo website.\n\n` +
+        `${params.portalUrl}\n\n–\nNexiForma\n`,
+      html:
+        `<p>Olá <strong>${params.gestorNome}</strong>,</p>` +
+        `<p>A formação <strong>${params.titulo}</strong> (${ref}) foi <strong>${params.acao}</strong> no catálogo.</p>` +
+        `<p><a href="${params.portalUrl}">Formações website</a></p><p>–<br>NexiForma</p>`,
+    };
+  }
+
+  /** Control Plane: tenant criado/actualizado/eliminado → superadmin. */
+  static tenantLifecycleSuperadmin(params: {
+    acao: "criado" | "actualizado" | "arquivado" | "eliminado";
+    legalName: string;
+    slug: string;
+    nif: string;
+    status: string;
+    actorEmail: string;
+    detalhe?: string;
+    plataformaUrl: string;
+  }): EmailTemplate {
+    const titulos: Record<string, string> = {
+      criado: "Novo tenant criado",
+      actualizado: "Tenant actualizado",
+      arquivado: "Tenant arquivado",
+      eliminado: "Tenant eliminado permanentemente",
+    };
+    return {
+      subject: `[NexiForma Control Plane] ${titulos[params.acao]} – ${params.slug}`,
+      text:
+        `${titulos[params.acao]}\n\n` +
+        `Entidade: ${params.legalName}\n` +
+        `Slug: ${params.slug}\n` +
+        `NIF: ${params.nif}\n` +
+        `Estado: ${params.status}\n` +
+        `Operação por: ${params.actorEmail}\n` +
+        (params.detalhe ? `\n${params.detalhe}\n` : "") +
+        `\nPlataforma: ${params.plataformaUrl}\n\n–\nNexiForma Control Plane\n`,
+      html:
+        `<p><strong>${titulos[params.acao]}</strong></p>` +
+        `<ul>` +
+        `<li><strong>Entidade:</strong> ${params.legalName}</li>` +
+        `<li><strong>Slug:</strong> <code>${params.slug}</code></li>` +
+        `<li><strong>NIF:</strong> ${params.nif}</li>` +
+        `<li><strong>Estado:</strong> ${params.status}</li>` +
+        `<li><strong>Operação por:</strong> ${params.actorEmail}</li>` +
+        `</ul>` +
+        (params.detalhe
+          ? `<pre style="background:#f1f5f9;padding:12px;border-radius:6px;font-size:12px;white-space:pre-wrap;">${params.detalhe}</pre>`
+          : "") +
+        `<p><a href="${params.plataformaUrl}">Abrir Control Plane</a></p>` +
+        `<p>–<br>NexiForma Control Plane</p>`,
+    };
+  }
+
+  /** Gestor inicial quando superadmin cria tenant. */
+  static tenantGestorBemVindo(params: {
+    nomeGestor: string;
+    entidadeFormadora: string;
+    slug: string;
+    loginUrl: string;
+    recuperarUrl: string;
+  }): EmailTemplate {
+    return {
+      subject: `Acesso NexiForma – ${params.entidadeFormadora}`,
+      text:
+        `Olá ${params.nomeGestor},\n\n` +
+        `A entidade formadora «${params.entidadeFormadora}» foi registada no NexiForma.\n\n` +
+        `Foi criada uma conta de gestor com este email.\n\n` +
+        `Iniciar sessão:\n${params.loginUrl}\n\n` +
+        `Slug do tenant: ${params.slug}\n\n` +
+        `Se não souberes a palavra-passe, redefine em:\n${params.recuperarUrl}\n\n` +
+        `–\nNexiForma\n`,
+      html:
+        `<p>Olá <strong>${params.nomeGestor}</strong>,</p>` +
+        `<p>A entidade formadora <strong>${params.entidadeFormadora}</strong> foi registada no NexiForma.</p>` +
+        `<p>Foi criada uma conta de <strong>gestor</strong> com este email.</p>` +
+        `<p>Slug do tenant: <code>${params.slug}</code></p>` +
+        `<p><a href="${params.loginUrl}" style="background:#2563eb;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;">Iniciar sessão</a></p>` +
+        `<p style="font-size:13px;color:#64748b;">Se não souberes a palavra-passe, <a href="${params.recuperarUrl}">redefine-a aqui</a>.</p>` +
+        `<p>–<br>NexiForma</p>`,
+    };
+  }
+
+  static erroPlataforma(params: {
+    modulo: string;
+    tenantLabel: string;
+    resumo: string;
+    detalhe?: string;
+    htmlDetalhe?: string;
+  }): EmailTemplate {
+    return {
+      subject: `[NexiForma] Erro – ${params.modulo}`,
+      text:
+        `Erro na plataforma NexiForma\n\n` +
+        `Módulo: ${params.modulo}\n` +
+        `Tenant: ${params.tenantLabel}\n` +
+        `Resumo: ${params.resumo}\n\n` +
+        (params.detalhe ? `${params.detalhe}\n\n` : "") +
+        `–\nNexiForma Control Plane\n`,
+      html:
+        params.htmlDetalhe ??
+        (`<p><strong>Erro na plataforma</strong></p>` +
+          `<ul>` +
+          `<li><strong>Módulo:</strong> ${params.modulo}</li>` +
+          `<li><strong>Tenant:</strong> ${params.tenantLabel}</li>` +
+          `<li><strong>Resumo:</strong> ${params.resumo}</li>` +
+          (params.detalhe
+            ? `<li><pre style="white-space:pre-wrap;font-size:12px;">${params.detalhe}</pre></li>`
+            : "") +
+          `</ul>`),
+    };
+  }
 }

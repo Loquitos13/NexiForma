@@ -15,9 +15,21 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { MailService } from "../mail/mail.service";
+import { PropostaNotificacoesService } from "../notificacoes/proposta-notificacoes.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 import type { PropostaEstado } from "@nexiforma/database";
+import { buildPropostaHtmlDocument } from "../propostas/proposta-html.util";
+import {
+  DEFAULTS_PROPOSTA_TEMPLATE,
+  configRowToTemplate,
+  extractPropostaConteudo,
+} from "../propostas/proposta-template.util";
+import {
+  normalizePropostaLinhas,
+  totaisPropostaLinhas,
+} from "../propostas/proposta-linhas.util";
+import type { PropostaLinhaDto } from "../propostas/dto/proposta-linha.dto";
 
 export interface PropostaComercialDto {
   entidadeClienteId: string;
@@ -29,6 +41,7 @@ export interface PropostaComercialDto {
   validadeAte?: string; // ISO date
   cursoId?: string;
   notasInternas?: string;
+  linhas?: PropostaLinhaDto[];
 }
 
 @Injectable()
@@ -38,6 +51,7 @@ export class ProposalService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
+    private readonly propostaNotificacoes: PropostaNotificacoesService,
   ) {}
 
   /**
@@ -74,6 +88,20 @@ export class ProposalService {
       }
     }
 
+    const linhasNorm = dto.linhas?.length
+      ? normalizePropostaLinhas(
+          dto.linhas.map((l) => ({
+            descricao: l.descricao,
+            quantidade: l.quantidade ?? 1,
+            precoUnitCentavos: l.precoUnitCentavos,
+            taxaIva: l.taxaIva ?? 23,
+          })),
+        )
+      : [];
+    const valorCentavos = linhasNorm.length
+      ? totaisPropostaLinhas(linhasNorm).valorCentavos
+      : dto.valorCentavos;
+
     const proposta = await this.prisma.propostaComercial.create({
       data: {
         tenantId,
@@ -81,11 +109,25 @@ export class ProposalService {
         codigo,
         titulo: dto.titulo,
         descricao: dto.descricao,
-        valorCentavos: dto.valorCentavos,
+        valorCentavos,
         moeda: dto.moeda ?? "EUR",
         validadeAte: dto.validadeAte ? new Date(dto.validadeAte) : null,
         cursoId: dto.cursoId,
         notasInternas: dto.notasInternas,
+        ...(linhasNorm.length
+          ? {
+              linhas: {
+                create: linhasNorm.map((l, i) => ({
+                  ordem: i + 1,
+                  descricao: l.descricao,
+                  quantidade: l.quantidade,
+                  precoUnitCentavos: l.precoUnitCentavos,
+                  taxaIva: l.taxaIva,
+                  valorIvaCentavos: l.valorIvaCentavos,
+                })),
+              },
+            }
+          : {}),
       },
     });
 
@@ -225,11 +267,19 @@ export class ProposalService {
       include: {
         entidadeCliente: true,
         curso: true,
+        tenant: { select: { legalName: true, nif: true } },
+        linhas: { orderBy: { ordem: "asc" } },
       },
     });
 
     if (!proposta) {
       throw new NotFoundException("Proposta não encontrada.");
+    }
+
+    if (proposta.estado === "CANCELADA") {
+      throw new BadRequestException(
+        "Não é possível enviar uma proposta cancelada.",
+      );
     }
 
     const email = destinatario ?? proposta.entidadeCliente.email;
@@ -240,47 +290,113 @@ export class ProposalService {
       );
     }
 
+    const configRow =
+      (await this.prisma.configPropostaTenant.findUnique({ where: { tenantId } })) ??
+      (await this.prisma.configPropostaTenant.create({
+        data: { tenantId, ...DEFAULTS_PROPOSTA_TEMPLATE, validadeDiasPadrao: 30 },
+      }));
+
+    const { html, filename } = buildPropostaHtmlDocument({
+      codigo: proposta.codigo,
+      titulo: proposta.titulo,
+      subtitulo: proposta.subtitulo,
+      descricao: proposta.descricao,
+      moeda: proposta.moeda,
+      valorCentavos: proposta.valorCentavos,
+      validadeAte: proposta.validadeAte,
+      createdAt: proposta.createdAt,
+      tenant: proposta.tenant,
+      entidadeCliente: {
+        nome: proposta.entidadeCliente.nome,
+        nif: proposta.entidadeCliente.nif,
+        email: proposta.entidadeCliente.email,
+      },
+      curso: proposta.curso,
+      conteudo: extractPropostaConteudo(proposta),
+      config: configRowToTemplate(configRow),
+      linhas: proposta.linhas.map((l) => ({
+        descricao: l.descricao,
+        quantidade: Number(l.quantidade),
+        precoUnitCentavos: l.precoUnitCentavos,
+        taxaIva: Number(l.taxaIva),
+        valorIvaCentavos: l.valorIvaCentavos,
+      })),
+    });
+
+    const totais = proposta.linhas.length
+      ? totaisPropostaLinhas(
+          proposta.linhas.map((l) => ({
+            descricao: l.descricao,
+            quantidade: Number(l.quantidade),
+            precoUnitCentavos: l.precoUnitCentavos,
+            taxaIva: Number(l.taxaIva),
+          })),
+        )
+      : { valorCentavos: proposta.valorCentavos, ivaCentavos: 0 };
+    const totalComIva = (totais.valorCentavos + totais.ivaCentavos) / 100;
+
     // Template email
-    const portalUrl = "https://nexiforma.pt"; // TODO: CONFIG
+    const portalUrl = process.env.APP_PUBLIC_URL ?? "https://nexiforma.pt";
     const assunto = `Proposta Comercial – ${proposta.codigo} (NexiForma)`;
+    const valorLabel =
+      proposta.linhas.length > 0
+        ? `Total c/ IVA: €${totalComIva.toFixed(2)} (s/ IVA: €${(totais.valorCentavos / 100).toFixed(2)})`
+        : `Valor: €${(proposta.valorCentavos / 100).toFixed(2)}`;
+
     const texto =
       `Proposta: ${proposta.titulo}\n\n` +
       `Código: ${proposta.codigo}\n` +
-      `Valor: €${(proposta.valorCentavos / 100).toFixed(2)}\n` +
+      `${valorLabel}\n` +
       `Válida até: ${proposta.validadeAte?.toLocaleDateString("pt-PT") ?? "N/A"}\n\n` +
       (proposta.descricao ? `Descrição:\n${proposta.descricao}\n\n` : "") +
-      `Consulta a proposta no portal: ${portalUrl}/propostas/${proposta.id}`;
+      `Em anexo encontra o documento completo da proposta (${filename}).\n\n` +
+      `Consulta a proposta no portal: ${portalUrl}/portal/propostas`;
 
-    const html =
+    const htmlBody =
       `<h2>${proposta.titulo}</h2>` +
       `<p><strong>Código:</strong> ${proposta.codigo}</p>` +
-      `<p><strong>Valor:</strong> €${(proposta.valorCentavos / 100).toFixed(2)}</p>` +
+      `<p><strong>${proposta.linhas.length ? "Total c/ IVA" : "Valor"}:</strong> €${proposta.linhas.length ? totalComIva.toFixed(2) : (proposta.valorCentavos / 100).toFixed(2)}</p>` +
       (proposta.validadeAte
         ? `<p><strong>Válida até:</strong> ${proposta.validadeAte.toLocaleDateString("pt-PT")}</p>`
         : "") +
       (proposta.descricao ? `<p>${proposta.descricao.replace(/\n/g, "<br>")}</p>` : "") +
-      `<p><a href="${portalUrl}/propostas/${proposta.id}">Ver proposta</a></p>`;
+      `<p>Em anexo: documento completo da proposta (<strong>${filename}</strong>). Abra no browser e use «Imprimir» para PDF.</p>`;
 
     await this.mail.send({
       to: email,
       subject: assunto,
       text: texto,
-      html,
+      html: htmlBody,
+      attachments: [
+        {
+          filename,
+          content: html,
+          contentType: "text/html; charset=utf-8",
+        },
+      ],
     });
 
-    // Atualizar estado
+    // Primeiro envio: RASCUNHO → ENVIADA. Reenvios mantêm o estado actual.
+    const agora = new Date();
     await this.prisma.propostaComercial.update({
       where: { id: propostaId },
-      data: { estado: "ENVIADA" },
+      data: {
+        ...(proposta.estado === "RASCUNHO" ? { estado: "ENVIADA" as const } : {}),
+        enviadaPorUserId: user.sub,
+        enviadaEm: proposta.enviadaEm ?? agora,
+      },
     });
 
+    const reenvio = proposta.estado !== "RASCUNHO";
     this.logger.log(
-      `✓ Proposta enviada: ${proposta.codigo} → ${email}`,
+      `✓ Proposta ${reenvio ? "reenviada" : "enviada"}: ${proposta.codigo} → ${email}`,
     );
 
     return {
       sucesso: true,
-      message: `Proposta enviada para ${email}`,
+      message: reenvio
+        ? `Proposta reenviada para ${email}`
+        : `Proposta enviada para ${email}`,
     };
   }
 
@@ -305,8 +421,18 @@ export class ProposalService {
 
     await this.prisma.propostaComercial.update({
       where: { id: propostaId },
-      data: { estado: "ACEITE" },
+      data: {
+        estado: "ACEITE",
+        aceiteEm: proposta.aceiteEm ?? new Date(),
+      },
     });
+
+    await this.propostaNotificacoes.aoAlterarEstado(
+      tenantId,
+      propostaId,
+      proposta.estado,
+      "ACEITE",
+    );
 
     this.logger.log(`✓ Proposta aceite: ${proposta.codigo}`);
   }
@@ -331,8 +457,19 @@ export class ProposalService {
 
     await this.prisma.propostaComercial.update({
       where: { id: propostaId },
-      data: { estado: "REJEITADA" },
+      data: {
+        estado: "REJEITADA",
+        rejeitadaEm: proposta.rejeitadaEm ?? new Date(),
+      },
     });
+
+    await this.propostaNotificacoes.aoAlterarEstado(
+      tenantId,
+      propostaId,
+      proposta.estado,
+      "REJEITADA",
+      motivo,
+    );
 
     this.logger.log(
       `✓ Proposta rejeitada: ${proposta.codigo}${motivo ? ` – ${motivo}` : ""}`,

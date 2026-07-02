@@ -80,11 +80,11 @@ const VIEW_RULES: ViewRule[] = [
     hints: ["ações formativas", "catálogo UFCD"],
   },
   {
-    prefix: "/portal/entidades/",
-    label: "Detalhe da entidade cliente",
+    prefix: "/portal/clientes/",
+    label: "Detalhe do cliente",
     description: "Ficha B2B, contratos e histórico comercial.",
     area: "portal",
-    related: ["/portal/entidades", "/portal/propostas", "/portal/contratos"],
+    related: ["/portal/clientes", "/portal/propostas", "/portal/contratos"],
     hints: ["propostas", "contratos", "leads"],
   },
   {

@@ -11,7 +11,16 @@ import { PrismaService } from "../prisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import { EmailTemplates } from "./templates/email.templates";
 import { SmsTemplates } from "./templates/sms.templates";
-import { resolverEmailPresencaFormando } from "@nexiforma/shared";
+import {
+  resolverEmailNotificacaoFormando,
+  resolverEmailNotificacaoFormador,
+  resolverEmailPresencaFormando,
+} from "@nexiforma/shared";
+import {
+  GESTOR_COORDENADOR_ROLES,
+  GESTOR_ROLES,
+  resolverEmailNotificacaoUtilizador,
+} from "./notificacao-roles.util";
 
 @Injectable()
 export class NotificacoesExtendedService {
@@ -84,7 +93,13 @@ export class NotificacoesExtendedService {
     const sessao = await this.prisma.sessaoFormacao.findFirst({
       where: { id: sessaoId, tenantId },
       include: {
-        formador: { select: { nomeCompleto: true, email: true } },
+        formador: {
+          select: {
+            nomeCompleto: true,
+            email: true,
+            user: { select: { email: true } },
+          },
+        },
         cronograma: {
           select: {
             acaoFormacao: { select: { id: true, titulo: true } },
@@ -133,7 +148,10 @@ export class NotificacoesExtendedService {
     let enviados = 0;
 
     for (const m of matriculas) {
-      const email = m.formando.user?.email ?? m.formando.email;
+      const email = resolverEmailNotificacaoFormando({
+        emailContacto: m.formando.email,
+        emailConta: m.formando.user?.email,
+      });
       if (!email) continue;
 
       const emailReuniao = resolverEmailPresencaFormando({
@@ -171,8 +189,14 @@ export class NotificacoesExtendedService {
 
     const staffEmails = new Map<string, string>();
 
-    if (sessao.formador?.email) {
-      staffEmails.set(sessao.formador.email, sessao.formador.nomeCompleto);
+    const formadorEmail = sessao.formador
+      ? resolverEmailNotificacaoFormador({
+          emailPerfil: sessao.formador.email,
+          emailConta: sessao.formador.user?.email,
+        })
+      : null;
+    if (formadorEmail && sessao.formador) {
+      staffEmails.set(formadorEmail, sessao.formador.nomeCompleto);
     }
 
     for (const [email, nome] of staffEmails) {
@@ -216,7 +240,13 @@ export class NotificacoesExtendedService {
     const sessao = await this.prisma.sessaoFormacao.findFirst({
       where: { id: sessaoId, tenantId },
       include: {
-        formador: { select: { nomeCompleto: true, email: true } },
+        formador: {
+          select: {
+            nomeCompleto: true,
+            email: true,
+            user: { select: { email: true } },
+          },
+        },
       },
     });
     if (!sessao) return { enviados: 0 };
@@ -233,16 +263,23 @@ export class NotificacoesExtendedService {
     const portalUrl = `${portalBase}/portal/acoes`;
 
     const destinatarios = new Map<string, string>();
-    if (sessao.formador?.email) {
-      destinatarios.set(sessao.formador.email, sessao.formador.nomeCompleto);
+    if (sessao.formador) {
+      const formadorEmail = resolverEmailNotificacaoFormador({
+        emailPerfil: sessao.formador.email,
+        emailConta: sessao.formador.user?.email,
+      });
+      if (formadorEmail) {
+        destinatarios.set(formadorEmail, sessao.formador.nomeCompleto);
+      }
     }
 
     const gestores = await this.prisma.user.findMany({
-      where: { tenantId, active: true, role: { in: ["ADMIN", "COORDENADOR"] } },
-      select: { email: true, displayName: true },
+      where: { tenantId, active: true, role: { in: GESTOR_COORDENADOR_ROLES } },
+      select: { email: true, displayName: true, role: true },
     });
     for (const g of gestores) {
-      destinatarios.set(g.email, g.displayName);
+      const to = resolverEmailNotificacaoUtilizador(g.role, g.email);
+      if (to) destinatarios.set(to, g.displayName);
     }
 
     let enviados = 0;
@@ -336,16 +373,22 @@ export class NotificacoesExtendedService {
   ) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { legalName: true },
+      select: { legalName: true, metadata: true },
     });
+
+    type TenantAlertMeta = {
+      alertSmsPhone?: string;
+      alertTelegramChatId?: string;
+    };
+    const meta = (tenant?.metadata ?? {}) as TenantAlertMeta;
 
     const admins = await this.prisma.user.findMany({
       where: {
         tenantId,
         active: true,
-        role: "ADMIN",
+        role: { in: GESTOR_ROLES },
       },
-      select: { email: true, displayName: true },
+      select: { email: true, displayName: true, role: true },
     });
 
     const portalUrl =
@@ -360,28 +403,31 @@ export class NotificacoesExtendedService {
     });
 
     for (const admin of admins) {
-      // Email
+      const to = resolverEmailNotificacaoUtilizador(admin.role, admin.email);
+      if (!to) continue;
+
       await this.mail.send({
-        to: admin.email,
+        to,
         subject: emailTemplate.subject,
         text: emailTemplate.text,
         html: emailTemplate.html,
       });
 
-      // SMS (apenas para alertas críticos) – requer numero de telefone no perfil
-      if (
-        alertaData.severidade === "critico" &&
-        this.sms.isEnabled()
-      ) {
+      // SMS/Telegram (apenas alertas críticos) – número ou chat_id no metadata do tenant
+      if (alertaData.severidade === "critico" && this.sms.isEnabled()) {
         const smsBody = SmsTemplates.alertaCritico({
           entidade: tenant?.legalName ?? "entidade",
           mensagem: alertaData.mensagem,
         });
 
-        await this.sms.send({
-          to: admin.email,
-          body: smsBody,
-        });
+        const destino =
+          this.sms.getProvider() === "telegram"
+            ? meta.alertTelegramChatId
+            : meta.alertSmsPhone;
+
+        if (destino) {
+          await this.sms.send({ to: destino, body: smsBody });
+        }
       }
 
       this.logger.log(
@@ -445,9 +491,9 @@ export class NotificacoesExtendedService {
       where: {
         tenantId,
         active: true,
-        role: { in: ["ADMIN", "COORDENADOR"] },
+        role: { in: GESTOR_COORDENADOR_ROLES },
       },
-      select: { email: true, displayName: true },
+      select: { email: true, displayName: true, role: true },
     });
 
     const portalUrl =
@@ -462,8 +508,11 @@ export class NotificacoesExtendedService {
     });
 
     for (const coordenador of coordenadores) {
+      const to = resolverEmailNotificacaoUtilizador(coordenador.role, coordenador.email);
+      if (!to) continue;
+
       await this.mail.send({
-        to: coordenador.email,
+        to,
         subject: emailTemplate.subject,
         text: emailTemplate.text,
         html: emailTemplate.html,
@@ -475,5 +524,33 @@ export class NotificacoesExtendedService {
     }
 
     return { coordenadoresNotificados: coordenadores.length };
+  }
+
+  /**
+   * Avisar formador sobre CC/CCP a expirar ou expirado (email do perfil/conta).
+   */
+  async notificarFormadorQualificacao(
+    email: string,
+    nomeFormador: string,
+    mensagem: string,
+    severidade: "critico" | "aviso",
+  ) {
+    const portalUrl =
+      this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const emailTemplate = EmailTemplates.alertaCompliance({
+      entidade: "A sua qualificação",
+      severidade,
+      mensagem,
+      portalUrl: `${portalUrl}/portal/formadores`,
+    });
+
+    await this.mail.send({
+      to: email,
+      subject: emailTemplate.subject,
+      text: emailTemplate.text.replace("Entidade:", "Formador:"),
+      html: emailTemplate.html,
+    });
+
+    this.logger.log(`✓ Alerta qualificação enviado a ${nomeFormador} (${email})`);
   }
 }

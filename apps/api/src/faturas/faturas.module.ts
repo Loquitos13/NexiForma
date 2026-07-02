@@ -4,13 +4,21 @@ import { NotificacoesModule } from "../notificacoes/notificacoes.module";
 import { MailModule } from "../mail/mail.module";
 import { FaturasController } from "./faturas.controller";
 import { AtFaturasIntegrationService } from "./at-faturas-integration.service";
+import { AtSeriesIntegrationService } from "./at-series-integration.service";
 import { FaturaHtmlExportService } from "./fatura-html-export.service";
+import { FaturaPdfExportService } from "./fatura-pdf-export.service";
 import { FaturasService } from "./faturas.service";
 
 @Module({
   imports: [PrismaModule, NotificacoesModule, MailModule],
   controllers: [FaturasController],
-  providers: [FaturasService, FaturaHtmlExportService, AtFaturasIntegrationService],
+  providers: [
+    FaturasService,
+    FaturaHtmlExportService,
+    FaturaPdfExportService,
+    AtFaturasIntegrationService,
+    AtSeriesIntegrationService,
+  ],
   exports: [FaturasService],
 })
 export class FaturasModule {}

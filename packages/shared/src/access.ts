@@ -11,6 +11,7 @@ export const ROLE_ORDER: Record<JwtRole, number> = {
 
 export const CRM_PORTAL_PATHS = [
   "/portal/crm",
+  "/portal/clientes",
   "/portal/entidades",
   "/portal/parceiros",
   "/portal/propostas",

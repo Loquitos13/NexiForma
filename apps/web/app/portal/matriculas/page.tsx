@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 
 type AcaoOpt = { id: string; codigoInterno: string; titulo: string };
@@ -164,7 +165,7 @@ export default function MatriculasPage() {
                       {m.estado}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-500 hidden sm:table-cell">{new Date(m.createdAt).toLocaleDateString("pt-PT")}</td>
+                  <td className="px-4 py-3 text-xs text-slate-500 hidden sm:table-cell">{formatDatePt(m.createdAt)}</td>
                   {canManage ? (
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">

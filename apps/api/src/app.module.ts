@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
-import { APP_INTERCEPTOR } from "@nestjs/core";
+import { APP_FILTER, APP_INTERCEPTOR } from "@nestjs/core";
+import { ServerErrorAlertFilter } from "./common/server-error-alert.filter";
 import { ConfigModule } from "@nestjs/config";
 import { ThrottlerModule } from "@nestjs/throttler";
 import { resolveEnvFilePaths } from "./config/env-paths";
@@ -50,11 +51,13 @@ import { ConsentModule } from "./consent/consent.module";
 import { DocumentosModule } from "./documentos/documentos.module";
 import { RelatoriosModule } from "./relatorios/relatorios.module";
 import { PublicApiModule } from "./public-api/public-api.module";
+import { PublicSalesModule } from "./public-sales/public-sales.module";
 import { AvaliacoesModule } from "./avaliacoes/avaliacoes.module";
 import { CrmModule } from "./crm/crm.module";
 import { FaturasModule } from "./faturas/faturas.module";
 import { EnterpriseModule } from "./enterprise/enterprise.module";
 import { OpenApiModule } from "./openapi/openapi.module";
+import { FormacoesModule } from "./formacoes/formacoes.module";
 import { GuideModule } from "./guide/guide.module";
 import { ImpersonationReadonlyInterceptor } from "./auth/impersonation-readonly.interceptor";
 import { StructuredLogInterceptor } from "./observability/structured-log.interceptor";
@@ -117,6 +120,8 @@ import { StructuredLogInterceptor } from "./observability/structured-log.interce
     DocumentosModule,
     RelatoriosModule,
     PublicApiModule,
+    PublicSalesModule,
+    FormacoesModule,
     AvaliacoesModule,
     CrmModule,
     FaturasModule,
@@ -126,6 +131,10 @@ import { StructuredLogInterceptor } from "./observability/structured-log.interce
   ],
   controllers: [AppController],
   providers: [
+    {
+      provide: APP_FILTER,
+      useClass: ServerErrorAlertFilter,
+    },
     {
       provide: APP_INTERCEPTOR,
       useClass: TenantRlsInterceptor,
