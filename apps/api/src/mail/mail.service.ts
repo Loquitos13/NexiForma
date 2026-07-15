@@ -214,16 +214,30 @@ export class MailService implements OnModuleInit {
     });
   }
 
-  async sendPasswordReset(to: string, resetUrl: string, expiresMinutes: number) {
+  async sendPasswordReset(
+    to: string,
+    resetUrl: string,
+    expiresMinutes: number,
+    options?: { mfaRequired?: boolean; mfaAppLabel?: string },
+  ) {
+    const appLabel = options?.mfaAppLabel ?? "a tua app autenticadora";
+    const mfaNote = options?.mfaRequired
+      ? `\n\nA tua conta tem verificação em dois passos. Ao abrir o link, serás pedido o código de 6 dígitos em ${appLabel}.\n`
+      : "";
+    const mfaHtml = options?.mfaRequired
+      ? `<p style="color:#64748b;font-size:0.9em">Precisas do código de 6 dígitos em <strong>${appLabel}</strong> para concluir a redefinição.</p>`
+      : "";
     await this.send({
       to,
       subject: "NexiForma – redefinir palavra-passe",
       text:
         `Recebemos um pedido para redefinir a tua palavra-passe no NexiForma.\n\n` +
-        `Abre este link (válido ${expiresMinutes} minutos):\n${resetUrl}\n\n` +
-        `Se não fizeste este pedido, ignora este email.`,
+        `Abre este link (válido ${expiresMinutes} minutos):\n${resetUrl}\n` +
+        mfaNote +
+        `\nSe não fizeste este pedido, ignora este email.`,
       html:
         `<p>Recebemos um pedido para redefinir a tua palavra-passe.</p>` +
+        mfaHtml +
         `<p><a href="${resetUrl}">Redefinir palavra-passe</a></p>` +
         `<p style="color:#64748b;font-size:0.9em">O link expira em ${expiresMinutes} minutos. ` +
         `Se não fizeste este pedido, ignora este email.</p>`,

@@ -65,6 +65,10 @@ type Props = {
   readOnly?: boolean;
 };
 
+export function conteudoTemCamposPreenchidos(c: PropostaConteudoForm): boolean {
+  return Object.values(c).some((v) => v.trim().length > 0);
+}
+
 export function PropostaConteudoFields({ value, onChange, padroes, readOnly }: Props) {
   function setField(key: keyof PropostaConteudoForm, v: string) {
     onChange({ ...value, [key]: v });
@@ -88,9 +92,17 @@ export function PropostaConteudoFields({ value, onChange, padroes, readOnly }: P
     setField(key, padraoMap[key] ?? "");
   }
 
+  const secoesVisiveis = readOnly
+    ? SECOES.filter((sec) => value[sec.key].trim().length > 0)
+    : SECOES;
+
+  if (readOnly && secoesVisiveis.length === 0) {
+    return null;
+  }
+
   return (
     <div className="space-y-5">
-      {SECOES.map((sec) => (
+      {secoesVisiveis.map((sec) => (
         <div key={sec.key} className="space-y-1.5">
           <div className="flex items-center justify-between gap-2">
             <label className="text-sm font-medium text-slate-200">{sec.label}</label>
@@ -104,19 +116,24 @@ export function PropostaConteudoFields({ value, onChange, padroes, readOnly }: P
               </button>
             ) : null}
           </div>
-          {sec.hint ? <p className="text-xs text-slate-500">{sec.hint}</p> : null}
-          <Textarea
-            value={value[sec.key]}
-            onChange={(e) => setField(sec.key, e.target.value)}
-            rows={sec.rows}
-            readOnly={readOnly}
-            className="font-mono text-sm"
-            placeholder={
-              padroes && sec.key !== "subtitulo" && !value[sec.key]
-                ? "(vazio = texto padrão da empresa)"
-                : undefined
-            }
-          />
+          {!readOnly && sec.hint ? <p className="text-xs text-slate-500">{sec.hint}</p> : null}
+          {readOnly ? (
+            <p className="whitespace-pre-wrap rounded-lg border border-slate-700/40 bg-slate-950/40 px-3 py-2.5 text-sm leading-relaxed text-slate-300">
+              {value[sec.key]}
+            </p>
+          ) : (
+            <Textarea
+              value={value[sec.key]}
+              onChange={(e) => setField(sec.key, e.target.value)}
+              rows={sec.rows}
+              className="font-mono text-sm"
+              placeholder={
+                padroes && sec.key !== "subtitulo" && !value[sec.key]
+                  ? "(vazio = texto padrão da empresa)"
+                  : undefined
+              }
+            />
+          )}
         </div>
       ))}
     </div>

@@ -54,9 +54,9 @@ if (/EPERM|operation not permitted/i.test(out)) {
   console.error("  2. Fecha Prisma Studio se estiver aberto");
   console.error("  3. Volta a correr: npm run db:generate");
   console.error("");
-  console.error("Windows (API a correr - liberta a porta do .env, ex. 3001 ou 4000):");
+  console.error("Windows (libertar porta API - ajusta 3001 se o teu .env usar outra):");
   console.error(
-    '  Get-NetTCPConnection -LocalPort 3001 | Select OwningProcess | Stop-Process -Force',
+    '  Get-NetTCPConnection -LocalPort 3001 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }',
   );
 }
 

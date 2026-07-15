@@ -2,6 +2,7 @@ import {
   IsEmail,
   IsEnum,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -42,7 +43,7 @@ export class CreateLeadDto {
   nif?: string;
 
   @IsOptional()
-  @IsEnum(["WEBSITE", "REFERRAL", "FEIRA", "LINKEDIN", "TELEFONE", "OUTRO"])
+  @IsEnum(["WEBSITE", "REFERRAL", "FEIRA", "LINKEDIN", "TELEFONE", "IA", "OUTRO"])
   origem?: LeadOrigem;
 
   @IsOptional()
@@ -57,6 +58,14 @@ export class CreateLeadDto {
   @IsOptional()
   @IsUUID()
   atribuidoUserId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  entidadeClienteId?: string;
+
+  @IsOptional()
+  @IsObject()
+  customFields?: Record<string, unknown>;
 }
 
 export class UpdateLeadDto {
@@ -86,7 +95,7 @@ export class UpdateLeadDto {
   nif?: string;
 
   @IsOptional()
-  @IsEnum(["WEBSITE", "REFERRAL", "FEIRA", "LINKEDIN", "TELEFONE", "OUTRO"])
+  @IsEnum(["WEBSITE", "REFERRAL", "FEIRA", "LINKEDIN", "TELEFONE", "IA", "OUTRO"])
   origem?: LeadOrigem;
 
   @IsOptional()
@@ -105,6 +114,10 @@ export class UpdateLeadDto {
   @IsOptional()
   @IsUUID()
   atribuidoUserId?: string | null;
+
+  @IsOptional()
+  @IsObject()
+  customFields?: Record<string, unknown>;
 }
 
 export class MarcarLeadPerdidoDto {

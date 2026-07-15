@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import {
   BILLING_ADDON_CODES,
   BILLING_ADDON_LABELS,
-  BILLING_PLAN_CODES,
+  BILLING_CORE_PLAN_CODES,
   BILLING_PLAN_LABELS,
+  STANDALONE_MODULES,
   type BillingAddonCode,
   type BillingPlanCode,
 } from "@nexiforma/shared";
@@ -14,15 +15,18 @@ import { pushToast } from "@/components/ui/toast";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/ui/cn";
 
+export type SalesPlanInterest = BillingPlanCode | "custom" | "modules_only";
+
 export type SalesContactDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  defaultPlano?: BillingPlanCode | "custom";
+  defaultPlano?: SalesPlanInterest;
   defaultAddons?: BillingAddonCode[];
 };
 
-const PLAN_OPTIONS: Array<{ value: BillingPlanCode | "custom"; label: string }> = [
-  ...BILLING_PLAN_CODES.map((code) => ({ value: code, label: BILLING_PLAN_LABELS[code] })),
+const PLAN_OPTIONS: Array<{ value: SalesPlanInterest; label: string }> = [
+  ...BILLING_CORE_PLAN_CODES.map((code) => ({ value: code, label: BILLING_PLAN_LABELS[code] })),
+  { value: "modules_only", label: "Apenas módulo(s) - sem Core formação" },
   { value: "custom", label: "Pacote personalizado" },
 ];
 
@@ -36,12 +40,12 @@ export function SalesContactDialog({
   const [email, setEmail] = useState("");
   const [empresa, setEmpresa] = useState("");
   const [telefone, setTelefone] = useState("");
-  const [plano, setPlano] = useState<BillingPlanCode | "custom" | "">(
-    defaultPlano ?? "",
-  );
+  const [plano, setPlano] = useState<SalesPlanInterest | "">(defaultPlano ?? "");
   const [addons, setAddons] = useState<BillingAddonCode[]>(defaultAddons);
   const [mensagem, setMensagem] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const isModulesOnly = plano === "modules_only";
 
   useEffect(() => {
     if (open) {
@@ -65,6 +69,10 @@ export function SalesContactDialog({
       e.preventDefault();
       if (!nome.trim() || !email.trim()) {
         pushToast("error", "Indique nome e email para contacto.");
+        return;
+      }
+      if (isModulesOnly && addons.length === 0) {
+        pushToast("error", "Seleccione pelo menos um módulo para subscrição avulsa.");
         return;
       }
       setSubmitting(true);
@@ -109,6 +117,7 @@ export function SalesContactDialog({
       defaultPlano,
       email,
       empresa,
+      isModulesOnly,
       mensagem,
       nome,
       plano,
@@ -121,7 +130,7 @@ export function SalesContactDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         title="Falar com vendas"
-        description="Conte-nos sobre a sua entidade formadora. Respondemos com uma proposta adaptada ao modelo Core + Add-ons."
+        description="Core formativo, módulos avulsos (ex.: só CRM & Faturação) ou combinações - a proposta adapta-se ao que precisa."
         className="max-w-xl"
       >
         <form onSubmit={(e) => void submit(e)} className="space-y-4">
@@ -171,12 +180,10 @@ export function SalesContactDialog({
           </div>
 
           <label className="block space-y-1.5">
-            <span className="text-xs font-medium text-slate-400">Plano de interesse</span>
+            <span className="text-xs font-medium text-slate-400">Tipo de subscrição</span>
             <select
               value={plano}
-              onChange={(e) =>
-                setPlano(e.target.value as BillingPlanCode | "custom" | "")
-              }
+              onChange={(e) => setPlano(e.target.value as SalesPlanInterest | "")}
               className="w-full rounded-lg border border-slate-700/60 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/30"
             >
               <option value="">Selecionar…</option>
@@ -188,16 +195,27 @@ export function SalesContactDialog({
             </select>
           </label>
 
+          {isModulesOnly ? (
+            <p className="text-xs text-teal-300/90 rounded-lg border border-teal-500/20 bg-teal-500/5 px-3 py-2">
+              Subscrição só-módulos: activa apenas o que seleccionar abaixo, sem o pacote Core de
+              gestão formativa (LMS, dossiê, acções formativas completas).
+            </p>
+          ) : null}
+
           <fieldset className="space-y-2">
-            <legend className="text-xs font-medium text-slate-400">Add-ons de interesse</legend>
+            <legend className="text-xs font-medium text-slate-400">
+              {isModulesOnly ? "Módulo(s) a contratar *" : "Módulos de interesse"}
+            </legend>
             <div className="flex flex-wrap gap-2">
               {BILLING_ADDON_CODES.map((code) => {
                 const active = addons.includes(code);
+                const standalone = STANDALONE_MODULES.find((m) => m.code === code);
                 return (
                   <button
                     key={code}
                     type="button"
                     onClick={() => toggleAddon(code)}
+                    title={standalone?.description}
                     className={cn(
                       "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
                       active
@@ -218,7 +236,7 @@ export function SalesContactDialog({
               rows={4}
               value={mensagem}
               onChange={(e) => setMensagem(e.target.value)}
-              placeholder="Nº de formandos, integrações necessárias, prazo de arranque…"
+              placeholder="Nº de utilizadores, integrações necessárias, prazo de arranque…"
               className="w-full resize-y rounded-lg border border-slate-700/60 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/30"
             />
           </label>

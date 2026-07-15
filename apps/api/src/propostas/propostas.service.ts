@@ -1,8 +1,14 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import type { PropostaComercial, PropostaEstado } from "@nexiforma/database";
+import type { PropostaComercial, PropostaEstado, Prisma } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { PropostaNotificacoesService } from "../notificacoes/proposta-notificacoes.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
+import { parseDateRangeFilter } from "../common/date-range.util";
+import {
+  countsFromGroupBy,
+  parseListPagination,
+  type PaginatedList,
+} from "../common/paginated-list.util";
 import { requireTenantId } from "../common/tenant-scope";
 import type { CreatePropostaDto, UpdatePropostaDto } from "./dto/proposta.dto";
 import type { UpdateConfigPropostaDto } from "./dto/proposta-config.dto";
@@ -19,10 +25,73 @@ import {
   totaisPropostaLinhas,
 } from "./proposta-linhas.util";
 
+const PROPOSTA_LIST_INCLUDE = {
+  entidadeCliente: { select: { id: true, nome: true, nif: true, email: true } },
+  curso: { select: { designacao: true } },
+  fatura: { select: { id: true, estado: true } },
+  criadoPor: { select: { id: true, displayName: true, email: true } },
+  enviadaPor: { select: { id: true, displayName: true, email: true } },
+};
+
+export type PropostaListFilters = {
+  entidadeClienteId?: string;
+  estado?: string;
+  q?: string;
+  comercialUserId?: string;
+  dataInicio?: string;
+  dataFim?: string;
+  page?: string;
+  pageSize?: string;
+};
+
+function buildPropostaWhere(
+  tenantId: string,
+  filters?: PropostaListFilters,
+  opts?: { omitEstado?: boolean },
+): Prisma.PropostaComercialWhereInput {
+  const where: Prisma.PropostaComercialWhereInput = { tenantId };
+
+  if (filters?.entidadeClienteId) {
+    where.entidadeClienteId = filters.entidadeClienteId;
+  }
+  if (filters?.estado && !opts?.omitEstado) {
+    where.estado = filters.estado as PropostaEstado;
+  }
+  if (filters?.comercialUserId) {
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+      {
+        OR: [
+          { criadoPorUserId: filters.comercialUserId },
+          { enviadaPorUserId: filters.comercialUserId },
+        ],
+      },
+    ];
+  }
+  const createdRange = parseDateRangeFilter(filters?.dataInicio, filters?.dataFim);
+  if (createdRange) where.createdAt = createdRange;
+
+  if (filters?.q?.trim()) {
+    const q = filters.q.trim();
+    const nifDigits = q.replace(/\D/g, "");
+    const or: Prisma.PropostaComercialWhereInput[] = [
+      { entidadeCliente: { nome: { contains: q, mode: "insensitive" } } },
+    ];
+    if (nifDigits.length >= 3) {
+      or.push({ entidadeCliente: { nif: { contains: nifDigits } } });
+    }
+    where.OR = or;
+  }
+
+  return where;
+}
+
 const PROPOSTA_INCLUDE = {
   entidadeCliente: { select: { id: true, nome: true, nif: true, email: true } },
   curso: { select: { id: true, designacao: true, codigoUfcd: true, cargaHoras: true } },
   fatura: { select: { id: true, estado: true } },
+  criadoPor: { select: { id: true, displayName: true, email: true } },
+  enviadaPor: { select: { id: true, displayName: true, email: true } },
   linhas: { orderBy: { ordem: "asc" as const } },
 };
 
@@ -33,16 +102,38 @@ export class PropostasService {
     private readonly propostaNotificacoes: PropostaNotificacoesService,
   ) {}
 
-  list(user: RequestUser, entidadeClienteId?: string): Promise<PropostaComercial[]> {
+  async list(
+    user: RequestUser,
+    filters?: PropostaListFilters,
+  ): Promise<PaginatedList<PropostaComercial>> {
     const tenantId = requireTenantId(user);
-    return this.prisma.propostaComercial.findMany({
-      where: {
-        tenantId,
-        ...(entidadeClienteId ? { entidadeClienteId } : {}),
-      },
-      orderBy: { updatedAt: "desc" },
-      include: PROPOSTA_INCLUDE,
-    }) as Promise<PropostaComercial[]>;
+    const pagination = parseListPagination(filters?.page, filters?.pageSize);
+    const where = buildPropostaWhere(tenantId, filters);
+    const whereForCounts = buildPropostaWhere(tenantId, filters, { omitEstado: true });
+
+    const [total, items, countRows] = await Promise.all([
+      this.prisma.propostaComercial.count({ where }),
+      this.prisma.propostaComercial.findMany({
+        where,
+        orderBy: { updatedAt: "desc" },
+        skip: pagination.skip,
+        take: pagination.take,
+        include: PROPOSTA_LIST_INCLUDE,
+      }),
+      this.prisma.propostaComercial.groupBy({
+        by: ["estado"],
+        where: whereForCounts,
+        _count: { _all: true },
+      }),
+    ]);
+
+    return {
+      items: items as PropostaComercial[],
+      total,
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      countsByEstado: countsFromGroupBy(countRows),
+    };
   }
 
   async getOne(user: RequestUser, id: string): Promise<PropostaComercial> {
@@ -172,6 +263,7 @@ export class PropostasService {
         validadeAte,
         cursoId: dto.cursoId ?? null,
         notasInternas: dto.notasInternas?.trim() || null,
+        criadoPorUserId: user.sub,
         ...(linhasNorm.length
           ? {
               linhas: {

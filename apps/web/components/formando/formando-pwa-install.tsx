@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -10,6 +11,8 @@ type BeforeInstallPromptEvent = Event & {
 };
 
 export function FormandoPwaInstall() {
+  const pathname = usePathname();
+  const imersivo = /^\/portal\/formando\/aprendizagem\/[^/]+$/.test(pathname ?? "");
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [installed, setInstalled] = useState(false);
@@ -62,7 +65,7 @@ export function FormandoPwaInstall() {
     sessionStorage.setItem("nexi_pwa_install_dismissed", "1");
   }
 
-  if (installed || dismissed || !deferred) {
+  if (installed || dismissed || !deferred || imersivo) {
     return null;
   }
 

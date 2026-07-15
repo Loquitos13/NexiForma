@@ -1,3 +1,6 @@
+import { mapAcaoEstadoToSigo } from "@nexiforma/shared";
+import { validarFormandoSigo } from "../sigo/soap/sigo-formando-validation.util";
+
 export type SigoValidationMessage = {
   codigo: string;
   mensagem: string;
@@ -41,7 +44,13 @@ export function isValidUfcdCode(codigo: string | null | undefined): boolean {
 
 export type SigoPayloadForValidation = {
   entidadeFormadora: { nif: string; denominacao: string };
-  acaoFormacao: { codigoInterno: string; dataInicio: string; dataFim: string; titulo: string };
+  acaoFormacao: {
+    codigoInterno: string;
+    dataInicio: string;
+    dataFim: string;
+    titulo: string;
+    estado?: string;
+  };
   cursoModulo: {
     codigoUfcd: string | null;
     designacao: string;
@@ -49,7 +58,16 @@ export type SigoPayloadForValidation = {
     modalidade: string;
     objetivos: string | null;
   };
-  formandos: Array<{ nif: string; nome: string }>;
+  formandos: Array<{
+    nif: string;
+    nome: string;
+    matriculaId?: string;
+    tipoDocIdentificacao?: string;
+    numDocIdentificacao?: string;
+    dataNascimento?: string;
+    nacionalidade?: string;
+    habilitacaoLiteraria?: string;
+  }>;
   formadores: Array<{ nif: string; nome: string }>;
   planoFormativo: Array<{
     numeroSessao: number;
@@ -61,7 +79,10 @@ export type SigoPayloadForValidation = {
   checklistSigo: { items: Array<{ id: string; ok: boolean }> };
 };
 
-export function validateSigoPayload(payload: SigoPayloadForValidation) {
+export function validateSigoPayload(
+  payload: SigoPayloadForValidation,
+  opts?: { exigirCamposSoap?: boolean },
+) {
   const erros: SigoValidationMessage[] = [];
   const avisos: SigoValidationMessage[] = [];
 
@@ -127,6 +148,26 @@ export function validateSigoPayload(payload: SigoPayloadForValidation) {
     });
   }
 
+  const estadoInterno = payload.acaoFormacao.estado as
+    | "PLANEADA"
+    | "EM_CURSO"
+    | "CONCLUIDA"
+    | "CANCELADA"
+    | undefined;
+  if (estadoInterno === "CANCELADA") {
+    erros.push({
+      codigo: "ACAO_CANCELADA",
+      mensagem: "Acção cancelada – não pode ser submetida ao SIGO.",
+      campo: "acaoFormacao.estado",
+    });
+  } else if (estadoInterno && !mapAcaoEstadoToSigo(estadoInterno)) {
+    erros.push({
+      codigo: "ACAO_ESTADO_INVALIDO",
+      mensagem: `Estado da acção «${estadoInterno}» não mapeável para SIGO.`,
+      campo: "acaoFormacao.estado",
+    });
+  }
+
   if (payload.formandos.length === 0) {
     erros.push({
       codigo: "SEM_FORMANDOS",
@@ -147,6 +188,23 @@ export function validateSigoPayload(payload: SigoPayloadForValidation) {
         mensagem: `NIF inválido para «${f.nome}»: ${f.nif}`,
         campo: "formandos",
       });
+    }
+
+    if (opts?.exigirCamposSoap) {
+      erros.push(
+        ...validarFormandoSigo({
+          nif: f.nif,
+          nome: f.nome,
+          matriculaId: f.matriculaId,
+          sigo: {
+            tipoDocIdentificacao: f.tipoDocIdentificacao,
+            numDocIdentificacao: f.numDocIdentificacao,
+            dataNascimento: f.dataNascimento,
+            nacionalidade: f.nacionalidade,
+            habilitacaoLiteraria: f.habilitacaoLiteraria,
+          },
+        }),
+      );
     }
   }
 

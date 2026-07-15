@@ -19,8 +19,8 @@ export const bo = {
   main: {
     flex: 1,
     minWidth: 0,
+    maxWidth: "100%",
     padding: "1.5rem 1.35rem 3rem",
-    maxWidth: 1100,
   } satisfies CSSProperties,
   brand: {
     fontSize: "1.05rem",
@@ -66,6 +66,9 @@ export const bo = {
     background: "rgba(15,23,42,0.65)",
     border: "1px solid rgba(148,163,184,0.22)",
     marginBottom: "1rem",
+    minWidth: 0,
+    maxWidth: "100%",
+    overflowWrap: "anywhere" as const,
   } satisfies CSSProperties,
   h2: {
     margin: "0 0 0.65rem",

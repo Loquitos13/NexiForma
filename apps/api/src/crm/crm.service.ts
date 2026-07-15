@@ -41,7 +41,6 @@ export interface EntidadeClienteComHistorico {
   createdAt: string;
   totalPropostas: number;
   proposttasAceitadas: number;
-  totalFormandos: number;
   ultimaInteracao?: string;
 }
 
@@ -125,7 +124,6 @@ export class CrmService {
         where,
         include: {
           propostas: true,
-          formandos: true,
         },
         orderBy: { createdAt: "desc" },
         take: limit,
@@ -145,7 +143,6 @@ export class CrmService {
       proposttasAceitadas: (e.propostas ?? []).filter(
         (p) => p.estado === "ACEITE",
       ).length,
-      totalFormandos: e.formandos?.length ?? 0,
       ultimaInteracao: e.propostas?.[0]?.updatedAt?.toISOString(),
     }));
 
@@ -163,10 +160,6 @@ export class CrmService {
       include: {
         propostas: {
           orderBy: { createdAt: "desc" },
-          take: 10,
-        },
-        formandos: {
-          select: { id: true, nome: true, nif: true, email: true },
           take: 10,
         },
       },
@@ -265,7 +258,6 @@ export class CrmService {
   async obterEstatisticas(user: RequestUser): Promise<{
     totalEntidades: number;
     entidadesAtivas: number;
-    totalFormandos: number;
     totalPropostas: number;
     proposttasAceitadas: number;
     faturacaoTotalCentavos: number;
@@ -277,31 +269,28 @@ export class CrmService {
     leadsAbertos: number;
     leadsConvertidos: number;
     pipelineLeadsCentavos: number;
+    sugestoesIaPendentes: number;
+    interaccoesComerciais: number;
   }> {
     const tenantId = requireTenantId(user);
 
     const [
       totalEntidades,
-      entidadesComFormandos,
-      totalFormandos,
+      entidadesAtivas,
       propostas,
       faturacao,
       faturasPorEstado,
       valorFaturado,
       leadsPorEstado,
       pipelineLeads,
+      sugestoesIaPendentes,
+      interaccoesComerciais,
     ] = await Promise.all([
       this.prisma.entidadeCliente.count({ where: { tenantId } }),
       this.prisma.entidadeCliente.count({
         where: {
           tenantId,
-          formandos: { some: {} },
-        },
-      }),
-      this.prisma.formandoProfile.count({
-        where: {
-          tenantId,
-          entidadeClienteId: { not: null },
+          propostas: { some: { estado: { in: ["ENVIADA", "ACEITE"] } } },
         },
       }),
       this.prisma.propostaComercial.groupBy({
@@ -337,6 +326,10 @@ export class CrmService {
         },
         _sum: { valorEstimadoCentavos: true },
       }),
+      this.prisma.sugestaoIaComercial.count({
+        where: { tenantId, estado: "PENDENTE" },
+      }),
+      this.prisma.interaccaoComercial.count({ where: { tenantId } }),
     ]);
 
     const totalPropostas = propostas.reduce((acc, p) => acc + (p._count?.id ?? 0), 0);
@@ -359,8 +352,7 @@ export class CrmService {
 
     return {
       totalEntidades,
-      entidadesAtivas: entidadesComFormandos,
-      totalFormandos,
+      entidadesAtivas,
       totalPropostas,
       proposttasAceitadas,
       faturacaoTotalCentavos: faturacao._sum?.valorCentavos ?? 0,
@@ -372,6 +364,92 @@ export class CrmService {
       leadsAbertos,
       leadsConvertidos,
       pipelineLeadsCentavos: pipelineLeads._sum?.valorEstimadoCentavos ?? 0,
+      sugestoesIaPendentes,
+      interaccoesComerciais,
     };
+  }
+
+  /** Contagens por cliente para vistas Leads / Notas / Sugestões IA. */
+  async obterClientesResumo(
+    user: RequestUser,
+    tipo: "leads" | "notas" | "sugestoes" | "propostas",
+  ): Promise<
+    Array<{
+      id: string;
+      nome: string;
+      nif: string;
+      email: string | null;
+      total: number;
+    }>
+  > {
+    const tenantId = requireTenantId(user);
+
+    const entidades = await this.prisma.entidadeCliente.findMany({
+      where: { tenantId },
+      select: { id: true, nome: true, nif: true, email: true },
+      orderBy: { nome: "asc" },
+    });
+
+    if (tipo === "leads") {
+      const grupos = await this.prisma.leadComercial.groupBy({
+        by: ["entidadeClienteId"],
+        where: { tenantId, entidadeClienteId: { not: null } },
+        _count: { id: true },
+      });
+      const map = new Map(
+        grupos
+          .filter((g) => g.entidadeClienteId)
+          .map((g) => [g.entidadeClienteId!, g._count.id]),
+      );
+      return entidades
+        .map((e) => ({ ...e, total: map.get(e.id) ?? 0 }))
+        .filter((e) => e.total > 0);
+    }
+
+    if (tipo === "notas") {
+      const grupos = await this.prisma.interaccaoComercial.groupBy({
+        by: ["entidadeClienteId"],
+        where: { tenantId, entidadeClienteId: { not: null } },
+        _count: { id: true },
+      });
+      const map = new Map(
+        grupos
+          .filter((g) => g.entidadeClienteId)
+          .map((g) => [g.entidadeClienteId!, g._count.id]),
+      );
+      return entidades
+        .map((e) => ({ ...e, total: map.get(e.id) ?? 0 }))
+        .filter((e) => e.total > 0);
+    }
+
+    if (tipo === "propostas") {
+      const grupos = await this.prisma.propostaComercial.groupBy({
+        by: ["entidadeClienteId"],
+        where: { tenantId },
+        _count: { id: true },
+      });
+      const map = new Map(grupos.map((g) => [g.entidadeClienteId, g._count.id]));
+      return entidades
+        .map((e) => ({ ...e, total: map.get(e.id) ?? 0 }))
+        .filter((e) => e.total > 0);
+    }
+
+    const grupos = await this.prisma.sugestaoIaComercial.groupBy({
+      by: ["entidadeClienteId"],
+      where: {
+        tenantId,
+        entidadeClienteId: { not: null },
+        estado: { in: ["ACEITE", "REJEITADA"] },
+      },
+      _count: { id: true },
+    });
+    const map = new Map(
+      grupos
+        .filter((g) => g.entidadeClienteId)
+        .map((g) => [g.entidadeClienteId!, g._count.id]),
+    );
+    return entidades
+      .map((e) => ({ ...e, total: map.get(e.id) ?? 0 }))
+      .filter((e) => e.total > 0);
   }
 }

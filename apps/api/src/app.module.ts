@@ -1,8 +1,10 @@
 import { Module } from "@nestjs/common";
-import { APP_FILTER, APP_INTERCEPTOR } from "@nestjs/core";
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { ServerErrorAlertFilter } from "./common/server-error-alert.filter";
 import { ConfigModule } from "@nestjs/config";
 import { ThrottlerModule } from "@nestjs/throttler";
+import { ThrottlerBehindProxyGuard } from "./common/throttler-behind-proxy.guard";
+import { apiGlobalLimitPerMin, DDOS_WINDOW_MS } from "./common/ddos-throttle.config";
 import { resolveEnvFilePaths } from "./config/env-paths";
 import { ProductionConfigModule } from "./config/production-config.module";
 import { AppController } from "./app.controller";
@@ -52,14 +54,17 @@ import { DocumentosModule } from "./documentos/documentos.module";
 import { RelatoriosModule } from "./relatorios/relatorios.module";
 import { PublicApiModule } from "./public-api/public-api.module";
 import { PublicSalesModule } from "./public-sales/public-sales.module";
+import { SupportModule } from "./support/support.module";
 import { AvaliacoesModule } from "./avaliacoes/avaliacoes.module";
 import { CrmModule } from "./crm/crm.module";
 import { FaturasModule } from "./faturas/faturas.module";
 import { EnterpriseModule } from "./enterprise/enterprise.module";
 import { OpenApiModule } from "./openapi/openapi.module";
 import { FormacoesModule } from "./formacoes/formacoes.module";
+import { CalendarioModule } from "./calendario/calendario.module";
 import { GuideModule } from "./guide/guide.module";
 import { ImpersonationReadonlyInterceptor } from "./auth/impersonation-readonly.interceptor";
+import { MustChangePasswordInterceptor } from "./auth/must-change-password.interceptor";
 import { StructuredLogInterceptor } from "./observability/structured-log.interceptor";
 
 @Module({
@@ -72,8 +77,8 @@ import { StructuredLogInterceptor } from "./observability/structured-log.interce
     ThrottlerModule.forRoot([
       {
         name: "default",
-        ttl: 60_000,
-        limit: 500,
+        ttl: DDOS_WINDOW_MS,
+        limit: apiGlobalLimitPerMin(),
       },
     ]),
     PrismaModule,
@@ -121,7 +126,9 @@ import { StructuredLogInterceptor } from "./observability/structured-log.interce
     RelatoriosModule,
     PublicApiModule,
     PublicSalesModule,
+    SupportModule,
     FormacoesModule,
+    CalendarioModule,
     AvaliacoesModule,
     CrmModule,
     FaturasModule,
@@ -131,6 +138,10 @@ import { StructuredLogInterceptor } from "./observability/structured-log.interce
   ],
   controllers: [AppController],
   providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerBehindProxyGuard,
+    },
     {
       provide: APP_FILTER,
       useClass: ServerErrorAlertFilter,
@@ -142,6 +153,10 @@ import { StructuredLogInterceptor } from "./observability/structured-log.interce
     {
       provide: APP_INTERCEPTOR,
       useClass: ImpersonationReadonlyInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: MustChangePasswordInterceptor,
     },
     {
       provide: APP_INTERCEPTOR,

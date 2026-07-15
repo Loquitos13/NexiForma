@@ -23,6 +23,22 @@ describe("fatura-iva.util", () => {
     expect(t.ivaCentavos).toBe(2300);
   });
 
+  it("aplica desconto percentual na base e IVA", () => {
+    expect(
+      calcularValorIvaCentavos({
+        quantidade: 1,
+        precoUnitCentavos: 10000,
+        taxaIva: 23,
+        descontoPercent: 10,
+      }),
+    ).toBe(2070);
+    const t = calcularTotaisFatura([
+      { quantidade: 1, precoUnitCentavos: 10000, taxaIva: 23, descontoPercent: 10 },
+    ]);
+    expect(t.valorCentavos).toBe(9000);
+    expect(t.ivaCentavos).toBe(2070);
+  });
+
   it("aplica retenção na fonte ao total líquido", () => {
     expect(calcularTotalLiquidoCentavos(10000, 2300, 1150)).toBe(11150);
     expect(calcularTotalLiquidoCentavos(10000, 2300, 20000)).toBe(0);

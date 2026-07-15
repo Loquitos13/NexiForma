@@ -1,4 +1,15 @@
-import { IsEmail, IsOptional, IsString, Length, Matches } from "class-validator";
+import { Type } from "class-transformer";
+import {
+  IsBoolean,
+  IsEmail,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  Max,
+  Min,
+} from "class-validator";
 
 export class CreateEntidadeClienteDto {
   @IsString()
@@ -21,6 +32,17 @@ export class CreateEntidadeClienteDto {
   @IsOptional()
   @IsString()
   telefone?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isParceiro?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  descontoPercent?: number;
 }
 
 export class UpdateEntidadeClienteDto {
@@ -41,4 +63,15 @@ export class UpdateEntidadeClienteDto {
   @IsOptional()
   @IsString()
   telefone?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isParceiro?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  descontoPercent?: number | null;
 }

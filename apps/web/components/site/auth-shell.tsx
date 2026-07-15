@@ -35,20 +35,21 @@ export function AuthShell({
 
         <div
           className={cn(
-            "w-full rounded-2xl border shadow-2xl backdrop-blur-sm",
+            "w-full overflow-hidden rounded-2xl shadow-2xl ring-1",
             isPlatform
-              ? "bg-[#0f0b1a]/90 border-purple-500/15 shadow-purple-500/5"
-              : "bg-[#0f172a]/90 border-slate-700/30 shadow-blue-500/5",
+              ? "bg-[#0f0b1a]/90 ring-purple-500/15 shadow-purple-500/5"
+              : "bg-[#0f172a]/90 ring-slate-700/30 shadow-blue-500/5",
           )}
         >
           <div
+            aria-hidden
             className={cn(
-              "h-1 rounded-t-2xl",
+              "h-1 w-full",
               isPlatform ? "bg-gradient-to-r from-purple-600 to-violet-500" : "bg-gradient-to-r from-blue-600 to-teal-500",
             )}
           />
 
-          <div className="px-7 py-7">
+          <div className="px-7 py-7 backdrop-blur-sm">
             <div className="mb-6">
               <h2 className="text-xl font-bold text-slate-50 tracking-tight">{title}</h2>
               {subtitle ? (

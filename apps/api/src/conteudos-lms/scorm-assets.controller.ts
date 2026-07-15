@@ -6,10 +6,12 @@ import {
   Res,
 } from "@nestjs/common";
 import type { Request, Response } from "express";
+import { Public } from "../auth/decorators/public.decorator";
 import { ScormAssetAuthService } from "./scorm-asset-auth.service";
 import { ScormPackageService } from "./scorm-package.service";
 
 /** Serve ficheiros estáticos de pacotes SCORM (cookie de sessão curta). */
+@Public()
 @Controller("conteudos-lms/scorm/assets")
 export class ScormAssetsController {
   constructor(

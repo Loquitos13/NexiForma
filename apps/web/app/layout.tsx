@@ -27,6 +27,7 @@ export const viewport: Viewport = {
   themeColor: "#070b12",
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -35,7 +36,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt">
+    <html lang="pt" data-scroll-behavior="smooth">
       <body>
         <AppProviders>
           {children}

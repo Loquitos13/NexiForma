@@ -16,6 +16,8 @@ import {
 
 } from "./at-tax-codes.util";
 
+import { calcularBaseLinhaCentavos } from "./fatura-iva.util";
+
 import { formatarAtSystemEntryDate } from "./fatura-assinatura-at.util";
 
 import { buildSaftPtMasterFilesXml } from "./saft-pt-master-files.util";
@@ -63,6 +65,8 @@ export type SaftPtFaturaInput = {
     quantidade: number;
 
     precoUnitCentavos: number;
+
+    descontoPercent?: number;
 
     taxaIva: number;
 
@@ -276,7 +280,12 @@ export function buildSaftPtXml(input: SaftPtExportInput): string {
 
         .map((l, idx) => {
 
-          const lineNet = Math.round(l.quantidade * l.precoUnitCentavos);
+          const lineNet = calcularBaseLinhaCentavos({
+            quantidade: l.quantidade,
+            precoUnitCentavos: l.precoUnitCentavos,
+            taxaIva: Number(l.taxaIva),
+            descontoPercent: Number(l.descontoPercent ?? 0),
+          });
 
           const taxCode = resolverTaxCodeIva(Number(l.taxaIva));
 

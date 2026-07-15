@@ -70,6 +70,7 @@ import type {
 } from "./dto/fatura.dto";
 import { ConfigService } from "@nestjs/config";
 import { buildSaftPtXml } from "./saft-pt-export.util";
+import { normalizeMoradaOpcional, resolveMoradaCarga, resolveMoradaDescarga } from "./faturacao-moradas.util";
 import { mergeFaturaSearchWhere } from "./fatura-search.util";
 import {
   assertDadosClienteCompletos,
@@ -258,6 +259,7 @@ export class FaturasService {
         quantidade: Number(l.quantidade),
         precoUnitCentavos: l.precoUnitCentavos,
         taxaIva: Number(l.taxaIva),
+        descontoPercent: Number(l.descontoPercent ?? 0),
         codigoIsencaoIva: l.codigoIsencaoIva,
       }));
 
@@ -271,6 +273,21 @@ export class FaturasService {
         ? Math.max(0, dto.retencaoCentavos)
         : existing.retencaoCentavos;
 
+    const entidade = await this.prisma.entidadeCliente.findFirst({
+      where: { id: existing.entidadeClienteId, tenantId },
+      select: { nome: true, nif: true, moradaFiscal: true },
+    });
+    if (!entidade) {
+      throw new NotFoundException("Entidade cliente não encontrada.");
+    }
+    assertDadosClienteCompletos(entidade);
+
+    const destinatarioSync = {
+      destinatarioNome: entidade.nome,
+      destinatarioNif: entidade.nif,
+      destinatarioMorada: entidade.moradaFiscal!.trim(),
+    };
+
     await this.prisma.$transaction(async (tx) => {
       await tx.faturaLinha.deleteMany({ where: { faturaId: id } });
       await tx.faturaComercial.update({
@@ -282,18 +299,15 @@ export class FaturasService {
                 ? new Date(dto.dataVencimento)
                 : null
               : existing.dataVencimento,
-          destinatarioNome:
-            dto.destinatarioNome !== undefined
-              ? dto.destinatarioNome.trim()
-              : existing.destinatarioNome,
-          destinatarioNif:
-            dto.destinatarioNif !== undefined
-              ? dto.destinatarioNif.trim()
-              : existing.destinatarioNif,
-          destinatarioMorada:
-            dto.destinatarioMorada !== undefined
-              ? dto.destinatarioMorada?.trim() || null
-              : existing.destinatarioMorada,
+          ...destinatarioSync,
+          moradaCarga:
+            dto.moradaCarga !== undefined
+              ? normalizeMoradaOpcional(dto.moradaCarga)
+              : existing.moradaCarga,
+          moradaDescarga:
+            dto.moradaDescarga !== undefined
+              ? normalizeMoradaOpcional(dto.moradaDescarga)
+              : existing.moradaDescarga,
           notas: dto.notas !== undefined ? dto.notas?.trim() || null : existing.notas,
           valorCentavos: totais.valorCentavos,
           ivaCentavos: totais.ivaCentavos,
@@ -305,6 +319,7 @@ export class FaturasService {
               quantidade: l.quantidade,
               precoUnitCentavos: l.precoUnitCentavos,
               taxaIva: l.taxaIva,
+              descontoPercent: l.descontoPercent ?? 0,
               valorIvaCentavos: calcularValorIvaCentavos(l),
               codigoIsencaoIva: l.codigoIsencaoIva,
             })),
@@ -1192,12 +1207,15 @@ export class FaturasService {
       destinatarioNome: original.destinatarioNome,
       destinatarioNif: original.destinatarioNif,
       destinatarioMorada: original.destinatarioMorada,
+      moradaCarga: original.moradaCarga,
+      moradaDescarga: original.moradaDescarga,
       retencaoCentavos: original.retencaoCentavos,
       linhas: original.linhas.map((l) => ({
         descricao: `Anulação parcial/total: ${l.descricao}`,
         quantidade: Number(l.quantidade),
         precoUnitCentavos: l.precoUnitCentavos,
         taxaIva: Number(l.taxaIva),
+        descontoPercent: Number(l.descontoPercent ?? 0),
         codigoIsencaoIva: l.codigoIsencaoIva,
       })),
     });
@@ -1246,12 +1264,15 @@ export class FaturasService {
       destinatarioNome: string;
       destinatarioNif: string;
       destinatarioMorada: string | null;
+      moradaCarga?: string | null;
+      moradaDescarga?: string | null;
       retencaoCentavos?: number;
       linhas: Array<{
         descricao: string;
         quantidade: number;
         precoUnitCentavos: number;
         taxaIva: number;
+        descontoPercent?: number;
         codigoIsencaoIva?: string | null;
       }>;
     },
@@ -1273,6 +1294,8 @@ export class FaturasService {
         destinatarioNome: input.destinatarioNome,
         destinatarioNif: input.destinatarioNif,
         destinatarioMorada: input.destinatarioMorada,
+        moradaCarga: input.moradaCarga ?? null,
+        moradaDescarga: input.moradaDescarga ?? null,
         valorCentavos: totais.valorCentavos,
         ivaCentavos: totais.ivaCentavos,
         retencaoCentavos: input.retencaoCentavos ?? 0,
@@ -1283,6 +1306,7 @@ export class FaturasService {
             quantidade: l.quantidade,
             precoUnitCentavos: l.precoUnitCentavos,
             taxaIva: l.taxaIva,
+            descontoPercent: l.descontoPercent ?? 0,
             valorIvaCentavos: calcularValorIvaCentavos(l),
             codigoIsencaoIva: l.codigoIsencaoIva ?? null,
           })),
@@ -1312,6 +1336,7 @@ export class FaturasService {
       quantidade: l.quantidade ?? 1,
       precoUnitCentavos: l.precoUnitCentavos,
       taxaIva,
+      descontoPercent: Math.min(100, Math.max(0, l.descontoPercent ?? 0)),
       codigoIsencaoIva,
     };
   }
@@ -1463,6 +1488,7 @@ export class FaturasService {
         quantidade: unknown;
         precoUnitCentavos: number;
         taxaIva: unknown;
+        descontoPercent?: unknown;
         valorIvaCentavos: number;
         codigoIsencaoIva?: string | null;
       }>;
@@ -1506,6 +1532,7 @@ export class FaturasService {
         descricao: l.descricao,
         quantidade: Number(l.quantidade),
         precoUnitCentavos: l.precoUnitCentavos,
+        descontoPercent: Number(l.descontoPercent ?? 0),
         taxaIva: Number(l.taxaIva),
         valorIvaCentavos: l.valorIvaCentavos,
         codigoMotivoIsencao: l.codigoIsencaoIva,
@@ -1798,6 +1825,7 @@ export class FaturasService {
             descricao: l.descricao,
             quantidade: Number(l.quantidade),
             precoUnitCentavos: l.precoUnitCentavos,
+            descontoPercent: Number(l.descontoPercent ?? 0),
             taxaIva: Number(l.taxaIva),
             valorIvaCentavos: l.valorIvaCentavos,
             codigoIsencaoIva: l.codigoIsencaoIva,

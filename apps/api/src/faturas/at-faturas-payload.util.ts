@@ -13,6 +13,7 @@ import {
   resolverTaxCodeIva,
   resolverTaxExemptionCode,
 } from "./at-tax-codes.util";
+import { calcularBaseLinhaCentavos } from "./fatura-iva.util";
 
 export type AtInvoiceStatus = "N" | "A" | "F" | "S";
 
@@ -20,6 +21,7 @@ export type AtFaturaLinhaInput = {
   descricao: string;
   quantidade: number;
   precoUnitCentavos: number;
+  descontoPercent?: number;
   taxaIva: number;
   valorIvaCentavos: number;
   codigoMotivoIsencao?: string | null;
@@ -88,7 +90,12 @@ export function agruparLinhasPorTaxa(linhas: AtFaturaLinhaInput[]): AtLinhaResum
     const taxa = Number(l.taxaIva);
     const motivo = resolverTaxExemptionCode(taxa, l.codigoMotivoIsencao);
     const key = `${taxa}|${motivo ?? ""}`;
-    const base = Math.round(Number(l.quantidade) * l.precoUnitCentavos);
+    const base = calcularBaseLinhaCentavos({
+      quantidade: Number(l.quantidade),
+      precoUnitCentavos: l.precoUnitCentavos,
+      taxaIva: taxa,
+      descontoPercent: l.descontoPercent,
+    });
     const prev = map.get(key) ?? {
       taxaIva: taxa,
       baseCentavos: 0,

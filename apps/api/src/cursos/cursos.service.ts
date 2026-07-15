@@ -3,6 +3,7 @@ import type { Curso } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { FormadorScopeService } from "../common/formador-scope.service";
+import { FormadorNotificacoesService } from "../notificacoes/formador-notificacoes.service";
 import { requireTenantId } from "../common/tenant-scope";
 import type { CreateCursoDto } from "./dto/create-curso.dto";
 import type { UpdateCursoDto } from "./dto/update-curso.dto";
@@ -12,6 +13,7 @@ export class CursosService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly formadorScope: FormadorScopeService,
+    private readonly formadorNotificacoes: FormadorNotificacoesService,
   ) {}
 
   async list(user: RequestUser) {
@@ -63,9 +65,9 @@ export class CursosService {
     return curso;
   }
 
-  create(user: RequestUser, dto: CreateCursoDto): Promise<Curso> {
+  async create(user: RequestUser, dto: CreateCursoDto): Promise<Curso> {
     const tenantId = requireTenantId(user);
-    return this.prisma.curso.create({
+    const curso = await this.prisma.curso.create({
       data: {
         tenantId,
         codigoUfcd: dto.codigoUfcd ?? null,
@@ -75,6 +77,8 @@ export class CursosService {
         objetivos: dto.objetivos ?? null,
       },
     });
+    void this.formadorNotificacoes.notifyCursoCrud(tenantId, curso.id, curso.designacao, "criado");
+    return curso;
   }
 
   async update(user: RequestUser, id: string, dto: UpdateCursoDto) {
@@ -83,7 +87,7 @@ export class CursosService {
     if (!existing) {
       throw new NotFoundException("Curso não encontrado.");
     }
-    return this.prisma.curso.update({
+    const updated = await this.prisma.curso.update({
       where: { id },
       data: {
         ...(dto.codigoUfcd !== undefined ? { codigoUfcd: dto.codigoUfcd || null } : {}),
@@ -93,5 +97,12 @@ export class CursosService {
         ...(dto.objetivos !== undefined ? { objetivos: dto.objetivos || null } : {}),
       },
     });
+    void this.formadorNotificacoes.notifyCursoCrud(
+      tenantId,
+      updated.id,
+      updated.designacao,
+      "atualizado",
+    );
+    return updated;
   }
 }

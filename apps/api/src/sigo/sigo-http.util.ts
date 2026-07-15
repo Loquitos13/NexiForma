@@ -68,3 +68,53 @@ export async function sigoHttpRequest(
 export function interpolatePath(template: string, params: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => params[key] ?? "");
 }
+
+export type SigoHttpBinaryResult = {
+  statusCode: number;
+  body: Buffer;
+  contentType: string;
+};
+
+/** Pedido HTTP binário (PDF certificados SIGO). */
+export async function sigoHttpRequestBinary(
+  url: string,
+  init: RequestInit,
+  options: SigoHttpOptions,
+): Promise<SigoHttpBinaryResult> {
+  const maxRetries = options.maxRetries ?? 0;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), options.timeoutMs);
+    try {
+      const res = await fetch(url, {
+        ...init,
+        headers: {
+          ...(init.headers ?? {}),
+          ...(options.headers ?? {}),
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      const bytes = await res.arrayBuffer();
+      const contentType =
+        res.headers.get("content-type")?.split(";")[0]?.trim() ?? "application/octet-stream";
+      return {
+        statusCode: res.status,
+        body: Buffer.from(bytes),
+        contentType,
+      };
+    } catch (err) {
+      clearTimeout(timer);
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < maxRetries) {
+        await sleep(500 * 2 ** attempt);
+        continue;
+      }
+      throw lastError;
+    }
+  }
+
+  throw lastError ?? new Error("Pedido SIGO binário falhou.");
+}

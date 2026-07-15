@@ -12,6 +12,7 @@ import {
   type FaturaDocumentoInput,
 } from "./fatura-documento-html.util";
 import { FaturaPdfExportService } from "./fatura-pdf-export.service";
+import { resolveMoradaCarga, resolveMoradaDescarga } from "./faturacao-moradas.util";
 
 export type FaturaDocumentoPackage = {
   html: string;
@@ -124,10 +125,13 @@ export class FaturaHtmlExportService {
         morada: row.destinatarioMorada,
         email: row.entidadeCliente.email,
       },
+      moradaCarga: resolveMoradaCarga(row.moradaCarga, config?.moradaFiscal),
+      moradaDescarga: resolveMoradaDescarga(row.moradaDescarga, row.destinatarioMorada),
       linhas: row.linhas.map((l) => ({
         descricao: l.descricao,
         quantidade: Number(l.quantidade),
         precoUnitCentavos: l.precoUnitCentavos,
+        descontoPercent: Number(l.descontoPercent ?? 0),
         taxaIva: Number(l.taxaIva),
         valorIvaCentavos: l.valorIvaCentavos,
         codigoIsencaoIva: l.codigoIsencaoIva,

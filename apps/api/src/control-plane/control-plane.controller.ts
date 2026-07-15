@@ -28,8 +28,11 @@ import {
   CreateSubscriptionKeyDto,
   CreateTenantDto,
   ImpersonateDto,
+  InviteManagerDto,
   UpdateTenantDto,
   UpdateTenantStatusDto,
+  UpdateTenantSubscriptionDto,
+  UpdatePlatformMeDto,
 } from "./dto/control-plane.dto";
 
 @Controller("control-plane")
@@ -47,8 +50,38 @@ export class ControlPlaneController {
     return this.cp.platformMetrics();
   }
 
+  @Get("dashboard")
+  dashboard() {
+    return this.cp.platformDashboard();
+  }
+
+  @Get("crm/tenants")
+  crmTenants() {
+    return this.cp.listCrmTenants();
+  }
+
+  @Get("account")
+  getAccount(@CurrentUser() user: RequestUser) {
+    return this.cp.getPlatformAccount(user);
+  }
+
+  @Patch("account")
+  updateAccount(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: UpdatePlatformMeDto,
+    @Req() req: Request,
+  ) {
+    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    return this.cp.updatePlatformAccount(user, dto, ip);
+  }
+
+  @Get("subscription-plans")
+  listSubscriptionPlans(): Promise<Record<string, unknown>[]> {
+    return this.cp.listSubscriptionPlans();
+  }
+
   @Get("tenants")
-  listTenants() {
+  listTenants(): Promise<Record<string, unknown>[]> {
     return this.cp.listTenants();
   }
 
@@ -59,7 +92,7 @@ export class ControlPlaneController {
     @Req() req: Request,
   ): Promise<Record<string, unknown>> {
     const ip = typeof req.ip === "string" ? req.ip : undefined;
-    return this.cp.createTenant(user, dto, ip);
+    return this.cp.createTenant(user, dto, ip, req);
   }
 
   @Get("tenants/:id")
@@ -103,6 +136,28 @@ export class ControlPlaneController {
   ): Promise<Record<string, unknown>> {
     const ip = typeof req.ip === "string" ? req.ip : undefined;
     return this.cp.updateTenantStatus(user, id, dto.status, ip);
+  }
+
+  @Patch("tenants/:id/subscription")
+  updateSubscription(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: UpdateTenantSubscriptionDto,
+    @Req() req: Request,
+  ): Promise<Record<string, unknown>> {
+    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    return this.cp.updateTenantSubscription(user, id, dto, ip);
+  }
+
+  @Post("tenants/:id/manager-invite")
+  inviteManager(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: InviteManagerDto,
+    @Req() req: Request,
+  ): Promise<Record<string, unknown>> {
+    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    return this.cp.inviteTenantManager(user, id, dto, ip, req);
   }
 
   @Post("tenants/:id/impersonate")

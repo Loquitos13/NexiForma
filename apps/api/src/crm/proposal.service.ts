@@ -7,12 +7,15 @@
  */
 
 import {
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  forwardRef,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import { MailService } from "../mail/mail.service";
 import { PropostaNotificacoesService } from "../notificacoes/proposta-notificacoes.service";
@@ -20,6 +23,10 @@ import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 import type { PropostaEstado } from "@nexiforma/database";
 import { buildPropostaHtmlDocument } from "../propostas/proposta-html.util";
+import {
+  gerarTokenRespostaProposta,
+  validarTokenRespostaProposta,
+} from "../propostas/proposta-resposta.util";
 import {
   DEFAULTS_PROPOSTA_TEMPLATE,
   configRowToTemplate,
@@ -30,6 +37,9 @@ import {
   totaisPropostaLinhas,
 } from "../propostas/proposta-linhas.util";
 import type { PropostaLinhaDto } from "../propostas/dto/proposta-linha.dto";
+import { CrmAuditService } from "./crm-audit.service";
+import { CrmWebhooksService } from "./crm-webhooks.service";
+import { CrmAutomationService } from "./crm-automation.service";
 
 export interface PropostaComercialDto {
   entidadeClienteId: string;
@@ -52,7 +62,53 @@ export class ProposalService {
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
     private readonly propostaNotificacoes: PropostaNotificacoesService,
+    private readonly config: ConfigService,
+    private readonly audit: CrmAuditService,
+    private readonly webhooks: CrmWebhooksService,
+    @Inject(forwardRef(() => CrmAutomationService))
+    private readonly automation: CrmAutomationService,
   ) {}
+
+  private respostaSecret(): string {
+    return (
+      this.config.get<string>("PROPOSTA_RESPOSTA_SECRET") ??
+      this.config.get<string>("JWT_SECRET") ??
+      "dev-change-me-at-least-32-characters-long____"
+    );
+  }
+
+  private expiracaoRespostaProposta(validadeAte: Date | null): Date {
+    if (validadeAte) {
+      const fim = new Date(validadeAte);
+      fim.setHours(23, 59, 59, 999);
+      fim.setDate(fim.getDate() + 7);
+      return fim;
+    }
+    const limite = new Date();
+    limite.setDate(limite.getDate() + 90);
+    return limite;
+  }
+
+  private buildLinksRespostaProposta(
+    propostaId: string,
+    tenantId: string,
+    validadeAte: Date | null,
+    portalUrl: string,
+  ): { aceitarUrl: string; rejeitarUrl: string; token: string } {
+    const exp = this.expiracaoRespostaProposta(validadeAte);
+    const token = gerarTokenRespostaProposta(
+      this.respostaSecret(),
+      propostaId,
+      tenantId,
+      exp,
+    );
+    const base = `${portalUrl}/proposta/responder?token=${encodeURIComponent(token)}`;
+    return {
+      token,
+      aceitarUrl: `${base}&acao=aceitar`,
+      rejeitarUrl: `${base}&acao=rejeitar`,
+    };
+  }
 
   /**
    * Criar nova proposta
@@ -114,6 +170,7 @@ export class ProposalService {
         validadeAte: dto.validadeAte ? new Date(dto.validadeAte) : null,
         cursoId: dto.cursoId,
         notasInternas: dto.notasInternas,
+        criadoPorUserId: user.sub,
         ...(linhasNorm.length
           ? {
               linhas: {
@@ -132,6 +189,19 @@ export class ProposalService {
     });
 
     this.logger.log(`✓ Proposta criada: ${proposta.codigo}`);
+
+    void this.audit.log({
+      user,
+      tenantId,
+      action: "crm.proposta.created",
+      resourceType: "PropostaComercial",
+      resourceId: proposta.id,
+      payload: { codigo: proposta.codigo },
+    });
+    void this.webhooks.emit(tenantId, "proposta.created", {
+      id: proposta.id,
+      codigo: proposta.codigo,
+    });
 
     return proposta;
   }
@@ -165,7 +235,12 @@ export class ProposalService {
     const [propostas, total] = await Promise.all([
       this.prisma.propostaComercial.findMany({
         where,
-        include: { curso: { select: { designacao: true } } },
+        include: {
+          entidadeCliente: { select: { id: true, nome: true, nif: true, email: true } },
+          curso: { select: { designacao: true } },
+          criadoPor: { select: { id: true, displayName: true, email: true } },
+          enviadaPor: { select: { id: true, displayName: true, email: true } },
+        },
         orderBy: { createdAt: "desc" },
         take: limit,
         skip: offset,
@@ -343,6 +418,13 @@ export class ProposalService {
         ? `Total c/ IVA: €${totalComIva.toFixed(2)} (s/ IVA: €${(totais.valorCentavos / 100).toFixed(2)})`
         : `Valor: €${(proposta.valorCentavos / 100).toFixed(2)}`;
 
+    const links = this.buildLinksRespostaProposta(
+      propostaId,
+      tenantId,
+      proposta.validadeAte,
+      portalUrl,
+    );
+
     const texto =
       `Proposta: ${proposta.titulo}\n\n` +
       `Código: ${proposta.codigo}\n` +
@@ -350,7 +432,8 @@ export class ProposalService {
       `Válida até: ${proposta.validadeAte?.toLocaleDateString("pt-PT") ?? "N/A"}\n\n` +
       (proposta.descricao ? `Descrição:\n${proposta.descricao}\n\n` : "") +
       `Em anexo encontra o documento completo da proposta (${filename}).\n\n` +
-      `Consulta a proposta no portal: ${portalUrl}/portal/propostas`;
+      `Para aceitar a proposta:\n${links.aceitarUrl}\n\n` +
+      `Para recusar a proposta:\n${links.rejeitarUrl}\n`;
 
     const htmlBody =
       `<h2>${proposta.titulo}</h2>` +
@@ -360,7 +443,11 @@ export class ProposalService {
         ? `<p><strong>Válida até:</strong> ${proposta.validadeAte.toLocaleDateString("pt-PT")}</p>`
         : "") +
       (proposta.descricao ? `<p>${proposta.descricao.replace(/\n/g, "<br>")}</p>` : "") +
-      `<p>Em anexo: documento completo da proposta (<strong>${filename}</strong>). Abra no browser e use «Imprimir» para PDF.</p>`;
+      `<p>Em anexo: documento completo da proposta (<strong>${filename}</strong>). Abra no browser e use «Imprimir» para PDF.</p>` +
+      `<p style="margin-top:24px">` +
+      `<a href="${links.aceitarUrl}" style="display:inline-block;padding:12px 20px;background:#0d9488;color:#fff;text-decoration:none;border-radius:6px;margin-right:12px">Aceitar proposta</a>` +
+      `<a href="${links.rejeitarUrl}" style="display:inline-block;padding:12px 20px;background:#64748b;color:#fff;text-decoration:none;border-radius:6px">Recusar proposta</a>` +
+      `</p>`;
 
     await this.mail.send({
       to: email,
@@ -392,6 +479,22 @@ export class ProposalService {
       `✓ Proposta ${reenvio ? "reenviada" : "enviada"}: ${proposta.codigo} → ${email}`,
     );
 
+    if (!reenvio) {
+      void this.audit.log({
+        user,
+        tenantId,
+        action: "crm.proposta.sent",
+        resourceType: "PropostaComercial",
+        resourceId: propostaId,
+        payload: { codigo: proposta.codigo, destinatario: email },
+      });
+      void this.webhooks.emit(tenantId, "proposta.sent", {
+        id: propostaId,
+        codigo: proposta.codigo,
+      });
+      void this.automation.onPropostaSent(tenantId, propostaId);
+    }
+
     return {
       sucesso: true,
       message: reenvio
@@ -401,11 +504,83 @@ export class ProposalService {
   }
 
   /**
-   * Aceitar proposta (por admin/coordenador)
+   * Pré-visualização pública da proposta (link no email).
    */
+  async previewRespostaProposta(token: string) {
+    let parsed: { propostaId: string; tenantId: string };
+    try {
+      parsed = validarTokenRespostaProposta(this.respostaSecret(), token);
+    } catch (err) {
+      throw new BadRequestException(
+        err instanceof Error ? err.message : "Link inválido.",
+      );
+    }
+
+    const proposta = await this.prisma.propostaComercial.findFirst({
+      where: { id: parsed.propostaId, tenantId: parsed.tenantId },
+      include: {
+        entidadeCliente: { select: { nome: true } },
+        tenant: { select: { legalName: true } },
+      },
+    });
+
+    if (!proposta) {
+      throw new NotFoundException("Proposta não encontrada.");
+    }
+
+    return {
+      codigo: proposta.codigo,
+      titulo: proposta.titulo,
+      estado: proposta.estado,
+      valorCentavos: proposta.valorCentavos,
+      moeda: proposta.moeda,
+      validadeAte: proposta.validadeAte?.toISOString() ?? null,
+      cliente: proposta.entidadeCliente.nome,
+      formador: proposta.tenant.legalName,
+      jaRespondida: proposta.estado === "ACEITE" || proposta.estado === "REJEITADA",
+    };
+  }
+
+  /**
+   * Resposta do cliente via link no email (aceitar ou recusar).
+   */
+  async responderPropostaPorToken(
+    token: string,
+    acao: "aceitar" | "rejeitar",
+    motivo?: string,
+  ) {
+    let parsed: { propostaId: string; tenantId: string };
+    try {
+      parsed = validarTokenRespostaProposta(this.respostaSecret(), token);
+    } catch (err) {
+      throw new BadRequestException(
+        err instanceof Error ? err.message : "Link inválido.",
+      );
+    }
+
+    if (acao === "aceitar") {
+      return this.finalizarAceite(parsed.tenantId, parsed.propostaId);
+    }
+    return this.finalizarRejeicao(parsed.tenantId, parsed.propostaId, motivo);
+  }
+
+  /** @deprecated Aceite é feito pelo cliente via link no email. */
   async aceitarProposta(user: RequestUser, propostaId: string): Promise<void> {
     const tenantId = requireTenantId(user);
+    await this.finalizarAceite(tenantId, propostaId);
+  }
 
+  /** @deprecated Recusa é feita pelo cliente via link no email. */
+  async rejeitarProposta(
+    user: RequestUser,
+    propostaId: string,
+    motivo?: string,
+  ): Promise<void> {
+    const tenantId = requireTenantId(user);
+    await this.finalizarRejeicao(tenantId, propostaId, motivo);
+  }
+
+  private async finalizarAceite(tenantId: string, propostaId: string) {
     const proposta = await this.prisma.propostaComercial.findFirst({
       where: { id: propostaId, tenantId },
     });
@@ -415,8 +590,13 @@ export class ProposalService {
     }
 
     if (proposta.estado === "ACEITE") {
-      this.logger.log(`Proposta ${propostaId} já estava aceite.`);
-      return;
+      return { sucesso: true, estado: "ACEITE" as const, already: true };
+    }
+
+    if (proposta.estado !== "ENVIADA") {
+      throw new BadRequestException(
+        "Esta proposta já não está disponível para aceitação.",
+      );
     }
 
     await this.prisma.propostaComercial.update({
@@ -427,6 +607,8 @@ export class ProposalService {
       },
     });
 
+    await this.converterLeadsAssociados(tenantId, proposta.entidadeClienteId);
+
     await this.propostaNotificacoes.aoAlterarEstado(
       tenantId,
       propostaId,
@@ -434,25 +616,31 @@ export class ProposalService {
       "ACEITE",
     );
 
-    this.logger.log(`✓ Proposta aceite: ${proposta.codigo}`);
+    this.logger.log(`✓ Proposta aceite pelo cliente: ${proposta.codigo}`);
+    return { sucesso: true, estado: "ACEITE" as const, already: false };
   }
 
-  /**
-   * Rejeitar proposta
-   */
-  async rejeitarProposta(
-    user: RequestUser,
+  private async finalizarRejeicao(
+    tenantId: string,
     propostaId: string,
     motivo?: string,
-  ): Promise<void> {
-    const tenantId = requireTenantId(user);
-
+  ) {
     const proposta = await this.prisma.propostaComercial.findFirst({
       where: { id: propostaId, tenantId },
     });
 
     if (!proposta) {
       throw new NotFoundException("Proposta não encontrada.");
+    }
+
+    if (proposta.estado === "REJEITADA") {
+      return { sucesso: true, estado: "REJEITADA" as const, already: true };
+    }
+
+    if (proposta.estado !== "ENVIADA") {
+      throw new BadRequestException(
+        "Esta proposta já não está disponível para recusa.",
+      );
     }
 
     await this.prisma.propostaComercial.update({
@@ -472,7 +660,47 @@ export class ProposalService {
     );
 
     this.logger.log(
-      `✓ Proposta rejeitada: ${proposta.codigo}${motivo ? ` – ${motivo}` : ""}`,
+      `✓ Proposta recusada pelo cliente: ${proposta.codigo}${motivo ? ` – ${motivo}` : ""}`,
+    );
+    return { sucesso: true, estado: "REJEITADA" as const, already: false };
+  }
+
+  /** Converte leads ligados à entidade quando o cliente aceita a proposta. */
+  private async converterLeadsAssociados(
+    tenantId: string,
+    entidadeClienteId: string,
+  ) {
+    const entidade = await this.prisma.entidadeCliente.findFirst({
+      where: { id: entidadeClienteId, tenantId },
+    });
+    if (!entidade) return;
+
+    const leads = await this.prisma.leadComercial.findMany({
+      where: {
+        tenantId,
+        estado: { notIn: ["CONVERTIDO", "PERDIDO"] },
+        OR: [
+          { entidadeClienteId },
+          ...(entidade.nif ? [{ nif: entidade.nif.replace(/\D/g, "") }] : []),
+        ],
+      },
+    });
+
+    if (!leads.length) return;
+
+    const agora = new Date();
+    await this.prisma.leadComercial.updateMany({
+      where: { id: { in: leads.map((l) => l.id) } },
+      data: {
+        estado: "CONVERTIDO",
+        entidadeClienteId: entidade.id,
+        nif: entidade.nif,
+        convertidoEm: agora,
+      },
+    });
+
+    this.logger.log(
+      `✓ ${leads.length} lead(s) convertido(s) automaticamente após aceite (${entidade.nome})`,
     );
   }
 }

@@ -3,8 +3,8 @@ import { Skeleton, SkeletonCircle } from "@/components/ui/skeleton";
 
 export function PlataformaShellSkeleton() {
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0c0a14]">
-      <aside className="flex w-[220px] flex-shrink-0 flex-col border-r border-purple-500/15 bg-[#0c0a14]/95">
+    <div className="portal-app-shell flex-row bg-[#0c0a14]">
+      <aside className="hidden h-full min-h-0 w-64 flex-shrink-0 flex-col border-r border-purple-500/15 bg-[#0c0a14]/95 lg:flex">
         <div className="flex items-center gap-2.5 px-4 py-5">
           <SkeletonCircle className="h-7 w-7" />
           <div className="space-y-1.5">
@@ -24,7 +24,7 @@ export function PlataformaShellSkeleton() {
           <SkeletonCircle className="h-7 w-7" />
           <Skeleton className="h-8 w-20 rounded-lg" />
         </div>
-        <main className="flex-1 overflow-y-auto">
+        <main className="portal-main portal-scroll-main">
           <div className="mx-auto max-w-5xl px-6 py-6">
             <PageContentSkeleton variant="table" />
           </div>

@@ -504,7 +504,7 @@ export class NotificacoesExtendedService {
       totalAcoes: inspecaoData.totalAcoes,
       acoesProntas: inspecaoData.acoesProntas,
       alerta: inspecaoData.alertas,
-      portalUrl: `${portalUrl}/portal/inspecao`,
+      portalUrl: `${portalUrl}/portal/dossie`,
     });
 
     for (const coordenador of coordenadores) {

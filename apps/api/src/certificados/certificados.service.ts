@@ -9,6 +9,7 @@ import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 import { CertificadoVerificacaoService } from "./certificado-verificacao.service";
 import { NotificacoesExtendedService } from "../notificacoes/notificacoes-extended.service";
+import { SigoAccessService } from "../sigo/sigo-access.service";
 import { resolverEmailNotificacaoFormando } from "@nexiforma/shared";
 
 const PRESENCA_MINIMA_DEFAULT = 60;
@@ -19,6 +20,7 @@ export class CertificadosService {
     private readonly prisma: PrismaService,
     private readonly verificacao: CertificadoVerificacaoService,
     private readonly notificacoes: NotificacoesExtendedService,
+    private readonly sigoAccess: SigoAccessService,
   ) {}
 
   async listByAcao(user: RequestUser, acaoId: string) {
@@ -59,12 +61,32 @@ export class CertificadosService {
           where: { matriculaId: r.matriculaId },
           select: { codigoPublico: true, emitidoEm: true, revogadoEm: true },
         });
+        const sigo = await this.prisma.sigoCertificadoFormando.findFirst({
+          where: { tenantId, matriculaId: r.matriculaId, estado: "DISPONIVEL" },
+          orderBy: { sincronizadoEm: "desc" },
+          select: {
+            id: true,
+            numeroCertificado: true,
+            emitidoEm: true,
+            storageKey: true,
+            sigoReferencia: true,
+          },
+        });
         return {
           ...r,
           taxaPresenca: stats.taxaPresenca,
           elegivelCertificado: elegivel,
           limiarPresenca: PRESENCA_MINIMA_DEFAULT,
           codigoVerificacao: verif?.revogadoEm ? null : verif?.codigoPublico ?? null,
+          certificadoSigo: sigo
+            ? {
+                id: sigo.id,
+                numeroCertificado: sigo.numeroCertificado,
+                emitidoEm: sigo.emitidoEm,
+                temFicheiro: Boolean(sigo.storageKey),
+                referencia: sigo.sigoReferencia,
+              }
+            : null,
         };
       }),
     );
@@ -82,6 +104,9 @@ export class CertificadosService {
 
   async buildCertificadoHtml(user: RequestUser, matriculaId: string) {
     const tenantId = requireTenantId(user);
+    if (user.role !== "formando") {
+      await this.sigoAccess.assertAcao(user, tenantId, "emitirCertificadoLocal");
+    }
     const matricula = await this.prisma.matricula.findFirst({
       where: { id: matriculaId, tenantId },
       include: {

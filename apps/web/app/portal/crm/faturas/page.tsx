@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Download, Pencil, Plus, Building2, Search } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
+import { withPortalFrom } from "@/lib/ui/portal-back-nav";
 import {
   fmtEuro,
   fmtFaturaRef,
@@ -60,6 +62,7 @@ const ESTADOS: Array<FaturaEstado | "TODAS"> = [
 const NOVA_ENTIDADE_RETURN = "/portal/crm/faturas";
 
 export default function CrmFaturasPage() {
+  const pathname = usePathname();
   const { canManageCrm } = useTenantRole();
   const [faturas, setFaturas] = useState<Fatura[]>([]);
   const [entidades, setEntidades] = useState<EntidadeOpt[]>([]);
@@ -153,7 +156,7 @@ export default function CrmFaturasPage() {
     }
     const data = (await res.json()) as { id: string };
     setCreateOpen(false);
-    window.location.href = `/portal/crm/faturas/${data.id}`;
+    window.location.href = withPortalFrom(`/portal/crm/faturas/${data.id}`, pathname);
   }
 
   const filtered = useMemo(() => faturas, [faturas]);
@@ -178,7 +181,7 @@ export default function CrmFaturasPage() {
       cell: (f) => (
         <div>
           <Link
-            href={`/portal/crm/faturas/${f.id}`}
+            href={withPortalFrom(`/portal/crm/faturas/${f.id}`, pathname)}
             className="font-medium text-slate-100 hover:text-blue-300"
           >
             {fmtFaturaRef(f.serie, f.numero)}
@@ -198,7 +201,7 @@ export default function CrmFaturasPage() {
       cell: (f) => (
         <div className="text-sm">
           <Link
-            href={`/portal/clientes/${f.entidadeCliente.id}`}
+            href={withPortalFrom(`/portal/clientes/${f.entidadeCliente.id}`, pathname)}
             className="text-slate-300 hover:text-blue-300"
           >
             {f.entidadeCliente.nome}
@@ -366,7 +369,7 @@ export default function CrmFaturasPage() {
             }
             rowActions={(f) => (
               <div className="flex justify-end">
-                <Link href={`/portal/crm/faturas/${f.id}`}>
+                <Link href={withPortalFrom(`/portal/crm/faturas/${f.id}`, pathname)}>
                   <Button size="sm" variant="secondary">
                     <Pencil className="h-3.5 w-3.5" />
                     {f.estado === "RASCUNHO" ? "Editar" : "Abrir"}

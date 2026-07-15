@@ -43,13 +43,22 @@ export interface ButtonProps
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, children, ...props }, ref) => {
+    const cnClass = cn(buttonVariants({ variant, size, className }));
+
+    if (asChild && React.isValidElement(children)) {
+      const child = children as React.ReactElement<{ className?: string; ref?: React.Ref<unknown> }>;
+      return React.cloneElement(child, {
+        ...props,
+        className: cn(cnClass, child.props.className),
+        ref: ref as React.Ref<unknown>,
+      });
+    }
+
     return (
-      <button
-        className={cn(buttonVariants({ variant, size, className }))}
-        ref={ref}
-        {...props}
-      />
+      <button className={cnClass} ref={ref} {...props}>
+        {children}
+      </button>
     );
   },
 );

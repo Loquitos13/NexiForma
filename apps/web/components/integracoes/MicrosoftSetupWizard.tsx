@@ -9,9 +9,11 @@ type OAuthReadiness = {
   mode: string;
   ready: boolean;
   missing: string[];
+  m365TenantId?: string | null;
 };
 
 type Props = {
+  enabled?: boolean;
   teamsDraft: Record<string, string>;
   onTeamsDraftChange: (draft: Record<string, string>) => void;
   onSaveTeams: () => Promise<void>;
@@ -54,6 +56,7 @@ const STEPS = [
 ] as const;
 
 export function MicrosoftSetupWizard({
+  enabled = true,
   teamsDraft,
   onTeamsDraftChange,
   onSaveTeams,
@@ -81,13 +84,18 @@ export function MicrosoftSetupWizard({
     }
   }, []);
 
-  useEffect(() => { void loadStatus(); }, [loadStatus]);
+  useEffect(() => {
+    if (!enabled) return;
+    void loadStatus();
+  }, [enabled, loadStatus]);
+
+  if (!enabled) return null;
 
   const tenantFilled = Boolean(teamsDraft.tenantId?.trim() && teamsDraft.organizerId?.trim());
   const stepDone = (id: string) => {
     if (id === "azure") return done.azure || oauthStatus?.platformTeamsAppConfigured;
     if (id === "consent") return done.consent;
-    if (id === "tenant") return tenantFilled;
+    if (id === "tenant") return tenantFilled || Boolean(oauthStatus?.teams.m365TenantId);
     if (id === "test") return testOk || oauthStatus?.teams.ready;
     if (id === "activate") return oauthStatus?.teams.mode === "OAUTH";
     return false;

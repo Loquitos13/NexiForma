@@ -1,4 +1,9 @@
-import { getNexiBackendBaseUrl, resolveUpstreamAuthorization } from "./auth-bff";
+import {
+  APP_PUBLIC_URL_HEADER,
+  getNexiBackendBaseUrl,
+  resolveIncomingAppPublicUrl,
+  resolveUpstreamAuthorization,
+} from "./auth-bff";
 
 /** Não faz proxy das rotas de auth (cookies BFF apenas em `/api/auth/*`). */
 const SKIP_AUTH_ROUTE = /^auth(\/|$)/i;
@@ -34,12 +39,45 @@ function copyIngressHeaders(from: Headers, to: Headers): void {
   if (acceptLang) {
     to.set("accept-language", acceptLang);
   }
-  for (const hop of ["x-forwarded-for", "x-real-ip", "forwarded"] as const) {
+  for (const hop of [
+    "x-forwarded-for",
+    "x-real-ip",
+    "forwarded",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+  ] as const) {
     const v = from.get(hop);
     if (v) {
       to.set(hop, v);
     }
   }
+  const origin = from.get("origin");
+  if (origin) {
+    to.set("origin", origin);
+  }
+}
+
+const PROXY_TIMEOUT_CAP_MS = 600_000;
+
+/** Rotas de análise IA / PDF podem exceder 60s - alinhar com NEXIGUIA_LLM_TIMEOUT_MS. */
+function resolveUpstreamTimeoutMs(path: string): number {
+  const isDev = process.env.NODE_ENV === "development";
+  const defaultMs = Number(
+    process.env.NEXI_BACKEND_PROXY_TIMEOUT_MS ?? (isDev ? "12000" : "60000"),
+  );
+  if (!/^relatorios\/insights/i.test(path)) {
+    return defaultMs;
+  }
+
+  const explicit = process.env.NEXI_BACKEND_PROXY_INSIGHTS_TIMEOUT_MS;
+  if (explicit) {
+    return Math.min(Number(explicit), PROXY_TIMEOUT_CAP_MS);
+  }
+
+  const llmMs = Number(process.env.NEXIGUIA_LLM_TIMEOUT_MS ?? "120000");
+  // PDF/descrições por gráfico usam pelo menos 120s na API + margem para dashboard/PDF.
+  const apiBudget = Math.max(llmMs, 120_000);
+  return Math.min(apiBudget + 30_000, PROXY_TIMEOUT_CAP_MS);
 }
 
 /**
@@ -82,6 +120,11 @@ export async function proxyV1ToNest(req: Request, pathSegments: string[]): Promi
     if (authz) headers.set("authorization", authz);
   }
 
+  const appPublicUrl = resolveIncomingAppPublicUrl(req);
+  if (appPublicUrl) {
+    headers.set(APP_PUBLIC_URL_HEADER, appPublicUrl);
+  }
+
   let body: ArrayBuffer | undefined;
   if (method !== "GET" && method !== "HEAD") {
     const ctype = req.headers.get("content-type");
@@ -94,6 +137,8 @@ export async function proxyV1ToNest(req: Request, pathSegments: string[]): Promi
     }
   }
 
+  const upstreamTimeoutMs = resolveUpstreamTimeoutMs(path);
+
   let upstream: Response;
   try {
     upstream = await fetch(url, {
@@ -102,13 +147,14 @@ export async function proxyV1ToNest(req: Request, pathSegments: string[]): Promi
       body: body ?? null,
       cache: "no-store",
       redirect: "manual",
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(upstreamTimeoutMs),
     });
   } catch (err) {
     const reason = err instanceof Error ? err.message : "upstream_error";
+    const base = getNexiBackendBaseUrl();
     return new Response(
       JSON.stringify({
-        message: `API indisponível (${reason}).`,
+        message: `API indisponível em ${base} (${reason}). Confirma que a API está a correr (npm run dev:api).`,
         statusCode: 503,
       }),
       { status: 503, headers: { "content-type": "application/json; charset=utf-8" } },

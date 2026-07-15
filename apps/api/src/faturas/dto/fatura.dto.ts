@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
@@ -31,6 +32,13 @@ export class FaturaLinhaDto {
   @IsNumber()
   @Min(0)
   taxaIva?: number;
+
+  /** Desconto comercial na linha (%). */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  descontoPercent?: number;
 
   /** Obrigatório quando taxaIva = 0 (códigos AT M01–M99). */
   @IsOptional()
@@ -68,6 +76,16 @@ export class CreateFaturaDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(500)
+  moradaCarga?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  moradaDescarga?: string | null;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(2000)
   notas?: string;
 
@@ -96,6 +114,16 @@ export class UpdateFaturaDto {
   @IsString()
   @MaxLength(500)
   destinatarioMorada?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  moradaCarga?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  moradaDescarga?: string | null;
 
   @IsOptional()
   @IsString()

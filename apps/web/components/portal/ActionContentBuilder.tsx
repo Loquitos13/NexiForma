@@ -22,7 +22,9 @@ import { parseApiError } from "@/lib/ui/backoffice";
 import { isModuloStorageRef, validarModuloConteudoCompleto } from "@nexiforma/shared";
 import { ModuloStoredMedia } from "@/components/lms/ModuloStoredMedia";
 import { Alert, Button } from "@/components/ui";
+import { QuizPerguntaEditor } from "@/components/portal/QuizPerguntaEditor";
 import { FormandoPortalMockup } from "@/components/portal/FormandoPortalMockup";
+import { UNIDADE_FLAT_ID } from "@/components/formando/formando-percurso-types";
 
 export type UnidadeNode = {
   id: string;
@@ -98,6 +100,21 @@ function tipoMeta(tipo: ModuloNode["tipo"]) {
   return TIPOS.find((x) => x.tipo === tipo) ?? TIPOS[3];
 }
 
+function pickInitialUnidadeId(
+  unidadeRows: UnidadeNode[],
+  moduleRows: ModuloNode[],
+  prev: string | null,
+): string | null {
+  const flat = moduleRows.filter((m) => !m.moduloUnidadeId);
+  if (prev === UNIDADE_FLAT_ID) return flat.length > 0 ? UNIDADE_FLAT_ID : unidadeRows[0]?.id ?? null;
+  if (prev && unidadeRows.some((u) => u.id === prev)) return prev;
+  if (flat.length > 0 && unidadeRows.length === 0) return UNIDADE_FLAT_ID;
+  if (flat.length > 0 && unidadeRows.every((u) => moduleRows.filter((m) => m.moduloUnidadeId === u.id).length === 0)) {
+    return UNIDADE_FLAT_ID;
+  }
+  return unidadeRows[0]?.id ?? (flat.length > 0 ? UNIDADE_FLAT_ID : null);
+}
+
 const UPLOAD_ACCEPT =
   "video/*,.mp4,.webm,.mov,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.odt,.odp,.csv,.rtf,image/*";
 
@@ -119,15 +136,33 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
   const fileRef = useRef<HTMLInputElement>(null);
   const bulkUploadRef = useRef<HTMLInputElement>(null);
 
-  const conteudosUnidade = useMemo(
-    () =>
-      modulos
-        .filter((m) => m.moduloUnidadeId === selectedUnidadeId)
-        .sort((a, b) => a.ordem - b.ordem),
-    [modulos, selectedUnidadeId],
+  const flatModulos = useMemo(
+    () => modulos.filter((m) => !m.moduloUnidadeId).sort((a, b) => a.ordem - b.ordem),
+    [modulos],
   );
 
-  const selectedUnidade = unidades.find((u) => u.id === selectedUnidadeId) ?? null;
+  const conteudosUnidade = useMemo(() => {
+    if (selectedUnidadeId === UNIDADE_FLAT_ID) return flatModulos;
+    return modulos
+      .filter((m) => m.moduloUnidadeId === selectedUnidadeId)
+      .sort((a, b) => a.ordem - b.ordem);
+  }, [modulos, selectedUnidadeId, flatModulos]);
+
+  const selectedUnidade = useMemo(() => {
+    if (selectedUnidadeId === UNIDADE_FLAT_ID) {
+      return {
+        id: UNIDADE_FLAT_ID,
+        codigo: null,
+        titulo: "Percurso directo",
+        descricao: "Conteúdos do fluxo guiado ou sem módulo associado",
+        cargaHoras: null,
+        formadorId: null,
+        ordem: -1,
+        notaMinima: null,
+      } satisfies UnidadeNode;
+    }
+    return unidades.find((u) => u.id === selectedUnidadeId) ?? null;
+  }, [selectedUnidadeId, unidades]);
   const selectedConteudo = conteudosUnidade.find((m) => m.id === selectedConteudoId) ?? null;
 
   const loadAll = useCallback(async () => {
@@ -144,12 +179,11 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
         headers: { accept: "application/json" },
       }),
     ]);
-    if (uRes.ok) {
-      const rows = (await uRes.json()) as UnidadeNode[];
-      setUnidades(rows);
-      setSelectedUnidadeId((prev) => prev ?? rows[0]?.id ?? null);
-    }
-    if (mRes.ok) setModulos((await mRes.json()) as ModuloNode[]);
+    const uRows = uRes.ok ? ((await uRes.json()) as UnidadeNode[]) : [];
+    const mRows = mRes.ok ? ((await mRes.json()) as ModuloNode[]) : [];
+    setUnidades(uRows);
+    setModulos(mRows);
+    setSelectedUnidadeId((prev) => pickInitialUnidadeId(uRows, mRows, prev));
   }, [cursoId]);
 
   useEffect(() => {
@@ -250,7 +284,7 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
       headers: { "Content-Type": "application/json", accept: "application/json" },
       body: JSON.stringify({
         cursoId,
-        moduloUnidadeId: selectedUnidadeId,
+        moduloUnidadeId: selectedUnidadeId === UNIDADE_FLAT_ID ? undefined : selectedUnidadeId,
         titulo: `Novo ${tipo}`,
         tipo,
         ordem: conteudosUnidade.length,
@@ -389,6 +423,41 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
     let lastId: string | null = null;
 
     for (const file of list) {
+      if (selectedUnidadeId === UNIDADE_FLAT_ID) {
+        const tipo = file.type.startsWith("video/") ? "VIDEO" : "PDF";
+        const createRes = await bffFetch("/api/v1/conteudos-lms/modulos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", accept: "application/json" },
+          body: JSON.stringify({
+            cursoId,
+            titulo: file.name.replace(/\.[^.]+$/, ""),
+            tipo,
+            ordem: flatModulos.length + ok,
+            publicado: false,
+          }),
+        });
+        if (!createRes.ok) {
+          setError(await parseApiError(createRes));
+          break;
+        }
+        const created = (await createRes.json()) as ModuloNode;
+        const fd = new FormData();
+        fd.append("file", file);
+        const up = await bffFetch(`/api/v1/conteudos-lms/modulos/${created.id}/upload`, {
+          method: "POST",
+          body: fd,
+        });
+        if (!up.ok) {
+          setError(await parseApiError(up));
+          break;
+        }
+        const updated = (await up.json()) as ModuloNode;
+        setModulos((p) => [...p.filter((m) => m.id !== updated.id), updated]);
+        lastId = updated.id;
+        ok++;
+        continue;
+      }
+
       const fd = new FormData();
       fd.append("file", file);
       fd.append("cursoId", cursoId);
@@ -458,6 +527,7 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
         setSelectedConteudoId(id);
         const m = modulos.find((x) => x.id === id);
         if (m?.moduloUnidadeId) setSelectedUnidadeId(m.moduloUnidadeId);
+        else setSelectedUnidadeId(UNIDADE_FLAT_ID);
         setPreviewViewerId(null);
         setEditTarget("conteudo");
         setRightPanel("edit");
@@ -485,7 +555,7 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
       {error ? <Alert variant="error">{error}</Alert> : null}
       {msg ? <Alert variant="success">{msg}</Alert> : null}
 
-      <div className="flex h-[min(72vh,620px)] max-h-[620px] w-full max-w-full flex-col overflow-hidden rounded-2xl border border-slate-700/40 bg-slate-950/40">
+      <div className="flex h-[min(80vh,760px)] max-h-[760px] w-full max-w-full flex-col overflow-hidden rounded-2xl border border-slate-700/40 bg-slate-950/40">
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row overflow-hidden">
           {/* Módulos (unidades) */}
           <aside className="shrink-0 border-b lg:border-b-0 lg:border-r border-slate-700/30 lg:w-56 overflow-y-auto overflow-x-hidden p-3">
@@ -505,12 +575,44 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
             </div>
             <p className="text-[11px] text-slate-600 mb-3 truncate">{cursoTitulo ?? "Curso"}</p>
 
-            {unidades.length === 0 ? (
+            {unidades.length === 0 && flatModulos.length === 0 ? (
               <p className="text-xs text-slate-500 py-4 text-center">
                 Cria o primeiro módulo (ex.: Introdução à segurança alimentar).
               </p>
             ) : (
               <div className="space-y-1.5">
+                {flatModulos.length > 0 ? (
+                  <div
+                    className={`flex items-stretch rounded-xl border transition-colors ${
+                      selectedUnidadeId === UNIDADE_FLAT_ID
+                        ? "border-blue-500/40 bg-blue-500/10 ring-1 ring-blue-500/20"
+                        : "border-slate-700/30 bg-slate-900/40"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedUnidadeId(UNIDADE_FLAT_ID);
+                        setSelectedConteudoId(null);
+                        setEditTarget("conteudo");
+                        setRightPanel("edit");
+                      }}
+                      className="flex min-w-0 flex-1 items-start gap-2 px-2.5 py-2.5 text-left"
+                    >
+                      <BookMarked
+                        className={`h-4 w-4 shrink-0 mt-0.5 ${
+                          selectedUnidadeId === UNIDADE_FLAT_ID ? "text-blue-400" : "text-slate-500"
+                        }`}
+                      />
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-100 line-clamp-2">Percurso directo</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          {flatModulos.length} conteúdo(s) · fluxo guiado
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+                ) : null}
                 {unidades.map((u, idx) => {
                   const active = selectedUnidadeId === u.id;
                   const count = modulos.filter((m) => m.moduloUnidadeId === u.id).length;
@@ -560,17 +662,13 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
             )}
           </aside>
 
-          {/* Conteúdos do módulo seleccionado */}
-          <div
-            className={`flex min-h-0 min-w-0 flex-col overflow-hidden ${
-              rightPanel === "preview" ? "lg:max-w-[36%] lg:flex-none lg:w-[36%]" : "flex-1"
-            }`}
-          >
+          {/* Lista de conteúdos do módulo seleccionado */}
+          <div className="flex min-h-0 min-w-0 w-full shrink-0 flex-col overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-700/30 lg:w-72 xl:w-80">
             <div className="shrink-0 flex items-center justify-between gap-2 border-b border-slate-700/30 px-4 py-2">
               <p className="text-xs font-medium text-slate-400 truncate">
                 {selectedUnidade ? selectedUnidade.titulo : "Selecciona um módulo"}
               </p>
-              <div className="flex rounded-lg border border-slate-700/40 p-0.5 shrink-0">
+              <div className="flex rounded-lg border border-slate-700/40 p-0.5 shrink-0 lg:hidden">
                 <button type="button" onClick={() => setRightPanel("edit")}
                   className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium ${rightPanel === "edit" ? "bg-slate-700 text-slate-100" : "text-slate-500"}`}>
                   <Pencil className="h-3 w-3" />Editar
@@ -709,173 +807,165 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
             </div>
           </div>
 
-          {/* Mockup ao vivo + editor */}
-          <aside className={`hidden lg:flex shrink-0 min-h-0 flex-col border-t lg:border-t-0 lg:border-l border-slate-700/30 overflow-hidden ${
-            rightPanel === "preview" ? "flex-1 min-w-[280px]" : "lg:w-80 xl:w-[22rem]"
-          }`}>
-            <div className="flex flex-col h-full min-h-0">
-              <div className="shrink-0 px-3 py-2 border-b border-slate-700/40 bg-slate-900/50 flex items-center justify-between gap-2">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  Mockup · ao vivo
-                </p>
-                <span className="text-[9px] text-teal-500/80">actualiza em tempo real</span>
-              </div>
-              <div className={`min-h-0 overflow-hidden ${rightPanel === "edit" && canEdit ? "flex-[3]" : "flex-1"}`}>
-                <FormandoPortalMockup {...mockupProps} className="h-full rounded-none" />
-              </div>
-
-              {rightPanel === "edit" && canEdit ? (
-                editTarget === "unidade" && selectedUnidade ? (
-                  <div className="flex-[2] min-h-0 overflow-y-auto border-t border-slate-700/40 p-4 space-y-3 bg-slate-950/60">
-                    <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-                      <BookMarked className="h-4 w-4 text-teal-400" />Editar módulo
-                    </h3>
+          {/* Editor (centro) + mockup (direita) — desktop */}
+          <div className="hidden lg:flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-r border-slate-700/30 bg-slate-950/30">
+              {canEdit ? (
+              editTarget === "unidade" && selectedUnidade && selectedUnidadeId !== UNIDADE_FLAT_ID ? (
+                <div className="min-h-0 flex-1 overflow-y-auto p-5 space-y-4">
+                  <h3 className="text-base font-semibold text-slate-200 flex items-center gap-2">
+                    <BookMarked className="h-4 w-4 text-teal-400" />
+                    Editar módulo
+                  </h3>
+                  <label className="block max-w-xl">
+                    <span className="text-xs text-slate-400 mb-1 block">Código (cronograma DGERT)</span>
+                    <input className={inputClass} value={selectedUnidade.codigo ?? ""}
+                      placeholder="Ex: FPA, AC"
+                      onChange={(e) => setUnidades((p) => p.map((u) => u.id === selectedUnidade.id ? { ...u, codigo: e.target.value.toUpperCase() } : u))}
+                      onBlur={() => void updateUnidade(selectedUnidade.id, { codigo: selectedUnidade.codigo ?? "" })} />
+                  </label>
+                  <label className="block max-w-xl">
+                    <span className="text-xs text-slate-400 mb-1 block">Título do módulo</span>
+                    <input className={inputClass} value={selectedUnidade.titulo}
+                      onChange={(e) => setUnidades((p) => p.map((u) => u.id === selectedUnidade.id ? { ...u, titulo: e.target.value } : u))}
+                      onBlur={() => void updateUnidade(selectedUnidade.id, { titulo: selectedUnidade.titulo })} />
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
                     <label className="block">
-                      <span className="text-xs text-slate-400 mb-1 block">Código (cronograma DGERT)</span>
-                      <input className={inputClass} value={selectedUnidade.codigo ?? ""}
-                        placeholder="Ex: FPA, AC"
-                        onChange={(e) => setUnidades((p) => p.map((u) => u.id === selectedUnidade.id ? { ...u, codigo: e.target.value.toUpperCase() } : u))}
-                        onBlur={() => void updateUnidade(selectedUnidade.id, { codigo: selectedUnidade.codigo ?? "" })} />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs text-slate-400 mb-1 block">Título do módulo</span>
-                      <input className={inputClass} value={selectedUnidade.titulo}
-                        onChange={(e) => setUnidades((p) => p.map((u) => u.id === selectedUnidade.id ? { ...u, titulo: e.target.value } : u))}
-                        onBlur={() => void updateUnidade(selectedUnidade.id, { titulo: selectedUnidade.titulo })} />
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="block">
-                        <span className="text-xs text-slate-400 mb-1 block">Horas do módulo</span>
-                        <input type="number" min={0} className={inputClass} value={selectedUnidade.cargaHoras ?? ""}
-                          onChange={(e) => {
-                            const v = e.target.value === "" ? null : Number(e.target.value);
-                            setUnidades((p) => p.map((u) => u.id === selectedUnidade.id ? { ...u, cargaHoras: v } : u));
-                          }}
-                          onBlur={() => void updateUnidade(selectedUnidade.id, { cargaHoras: selectedUnidade.cargaHoras })} />
-                      </label>
-                      <label className="block">
-                        <span className="text-xs text-slate-400 mb-1 block">Formador</span>
-                        <select className={inputClass} value={selectedUnidade.formadorId ?? ""}
-                          onChange={(e) => {
-                            const v = e.target.value || null;
-                            setUnidades((p) => p.map((u) => u.id === selectedUnidade.id ? { ...u, formadorId: v } : u));
-                            void updateUnidade(selectedUnidade.id, { formadorId: v });
-                          }}>
-                          <option value="">-</option>
-                          {formadores.map((f) => (
-                            <option key={f.id} value={f.id}>{f.nomeCompleto}</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                    <label className="block">
-                      <span className="text-xs text-slate-400 mb-1 block">Descrição (opcional)</span>
-                      <textarea rows={3} className={`${inputClass} resize-y min-h-[64px]`}
-                        value={selectedUnidade.descricao ?? ""}
-                        onChange={(e) => setUnidades((p) => p.map((u) => u.id === selectedUnidade.id ? { ...u, descricao: e.target.value } : u))}
-                        onBlur={() => void updateUnidade(selectedUnidade.id, { descricao: selectedUnidade.descricao ?? "" })} />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs text-slate-400 mb-1 block">Nota mínima para desbloquear o módulo seguinte (%)</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        className={inputClass}
-                        value={selectedUnidade.notaMinima ?? 60}
+                      <span className="text-xs text-slate-400 mb-1 block">Horas do módulo</span>
+                      <input type="number" min={0} className={inputClass} value={selectedUnidade.cargaHoras ?? ""}
                         onChange={(e) => {
-                          const v = Math.min(100, Math.max(0, Number(e.target.value) || 0));
-                          setUnidades((p) => p.map((u) => u.id === selectedUnidade.id ? { ...u, notaMinima: v } : u));
+                          const v = e.target.value === "" ? null : Number(e.target.value);
+                          setUnidades((p) => p.map((u) => u.id === selectedUnidade.id ? { ...u, cargaHoras: v } : u));
                         }}
-                        onBlur={() => void updateUnidade(selectedUnidade.id, { notaMinima: selectedUnidade.notaMinima ?? 60 })}
-                      />
-                      <p className="text-[10px] text-slate-600 mt-1">
-                        O formando precisa desta média no módulo para aceder ao seguinte.
-                      </p>
+                        onBlur={() => void updateUnidade(selectedUnidade.id, { cargaHoras: selectedUnidade.cargaHoras })} />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-slate-400 mb-1 block">Formador</span>
+                      <select className={inputClass} value={selectedUnidade.formadorId ?? ""}
+                        onChange={(e) => {
+                          const v = e.target.value || null;
+                          setUnidades((p) => p.map((u) => u.id === selectedUnidade.id ? { ...u, formadorId: v } : u));
+                          void updateUnidade(selectedUnidade.id, { formadorId: v });
+                        }}>
+                        <option value="">-</option>
+                        {formadores.map((f) => (
+                          <option key={f.id} value={f.id}>{f.nomeCompleto}</option>
+                        ))}
+                      </select>
                     </label>
                   </div>
-                ) : selectedConteudo ? (
-                  <div className="flex-[2] min-h-0 flex flex-col overflow-hidden border-t border-slate-700/40 bg-slate-950/60">
-                    <div className="shrink-0 px-4 py-2 border-b border-slate-700/40">
-                      <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-                        <Pencil className="h-3.5 w-3.5 text-blue-400" />Editar conteúdo
-                      </h3>
-                    </div>
-                    <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
-                      <label className="block">
-                        <span className="text-xs text-slate-400 mb-1 block">Título</span>
-                        <input className={inputClass} value={selectedConteudo.titulo}
-                          onChange={(e) => setModulos((p) => p.map((x) => x.id === selectedConteudo.id ? { ...x, titulo: e.target.value } : x))}
-                          onBlur={() => void updateConteudo(selectedConteudo.id, { titulo: selectedConteudo.titulo })} />
-                      </label>
-                      {selectedConteudo.tipo === "WEBINAR" ? (
-                        <input placeholder="URL webinar" className={inputClass} value={selectedConteudo.urlOuRef ?? ""}
-                          onChange={(e) => setModulos((p) => p.map((x) => x.id === selectedConteudo.id ? { ...x, urlOuRef: e.target.value } : x))}
-                          onBlur={() => void updateConteudo(selectedConteudo.id, { urlOuRef: selectedConteudo.urlOuRef ?? "" })} />
-                      ) : null}
-                      {selectedConteudo.tipo === "TEXTO" ? (
-                        <textarea rows={4} className={`${inputClass} resize-y min-h-[80px]`} value={selectedConteudo.conteudoHtml ?? ""}
-                          onChange={(e) => setModulos((p) => p.map((x) => x.id === selectedConteudo.id ? { ...x, conteudoHtml: e.target.value } : x))}
-                          onBlur={() => void updateConteudo(selectedConteudo.id, { conteudoHtml: selectedConteudo.conteudoHtml ?? "" })} />
-                      ) : null}
-                      {selectedConteudo.tipo === "VIDEO" || selectedConteudo.tipo === "PDF" ? (
-                        <>
-                          {(() => {
-                            const meta = fileMeta(selectedConteudo);
-                            const isStored = isModuloStorageRef(selectedConteudo.urlOuRef);
-                            const externalUrl =
-                              !isStored &&
-                              (selectedConteudo.urlOuRef?.startsWith("http://") ||
-                                selectedConteudo.urlOuRef?.startsWith("https://"))
-                                ? selectedConteudo.urlOuRef
-                                : null;
-                            const hasFile = isStored || !!externalUrl || !!meta.fileName;
-                            return (
-                              <div className="rounded-lg border border-slate-700/40 bg-slate-900/50 p-3 space-y-3">
-                                {isStored && selectedConteudo.urlOuRef ? (
-                                  <ModuloStoredMedia
-                                    moduloId={selectedConteudo.id}
-                                    urlOuRef={selectedConteudo.urlOuRef}
-                                    tipo={selectedConteudo.tipo === "VIDEO" ? "VIDEO" : "PDF"}
-                                    mimeType={meta.mimeType}
-                                    fileName={meta.fileName}
-                                    variant="preview"
-                                    showActions
-                                  />
-                                ) : null}
-                                {!isStored && externalUrl && selectedConteudo.tipo === "VIDEO" ? (
-                                  <video controls className="w-full rounded-lg max-h-40 bg-black" src={externalUrl} />
-                                ) : null}
-                                {!isStored && externalUrl && selectedConteudo.tipo === "PDF" && meta.mimeType?.startsWith("image/") ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img src={externalUrl} alt={meta.fileName ?? "Documento"} className="max-h-40 rounded-lg mx-auto" />
-                                ) : null}
-                                {hasFile ? (
-                                  <div className="text-xs text-slate-400 space-y-1">
-                                    <p className="truncate"><span className="text-slate-500">Ficheiro:</span> {meta.fileName ?? externalUrl}</p>
-                                    {meta.sizeBytes ? <p><span className="text-slate-500">Tamanho:</span> {formatBytes(meta.sizeBytes)}</p> : null}
-                                    {!isStored && externalUrl ? (
-                                      <a href={externalUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 inline-block">
-                                        Abrir ficheiro
-                                      </a>
-                                    ) : null}
-                                  </div>
-                                ) : (
-                                  <p className="text-xs text-slate-500">Nenhum ficheiro carregado.</p>
-                                )}
-                                <input ref={fileRef} type="file" className="hidden"
-                                  accept={selectedConteudo.tipo === "VIDEO" ? "video/*,.mp4,.webm,.mov" : UPLOAD_ACCEPT}
-                                  onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadFicheiro(f, selectedConteudo.id); e.target.value = ""; }} />
-                                <Button type="button" variant="secondary" size="sm" className="w-full" disabled={busy} onClick={() => fileRef.current?.click()}>
-                                  <Upload className="h-3.5 w-3.5" />
-                                  {meta.fileName ? "Substituir ficheiro" : "Carregar ficheiro"}
-                                </Button>
-                              </div>
-                            );
-                          })()}
-                        </>
-                      ) : null}
-                      {selectedConteudo.tipo === "QUIZ" ? (
+                  <label className="block max-w-2xl">
+                    <span className="text-xs text-slate-400 mb-1 block">Descrição (opcional)</span>
+                    <textarea rows={4} className={`${inputClass} resize-y min-h-[96px]`}
+                      value={selectedUnidade.descricao ?? ""}
+                      onChange={(e) => setUnidades((p) => p.map((u) => u.id === selectedUnidade.id ? { ...u, descricao: e.target.value } : u))}
+                      onBlur={() => void updateUnidade(selectedUnidade.id, { descricao: selectedUnidade.descricao ?? "" })} />
+                  </label>
+                  <label className="block max-w-xs">
+                    <span className="text-xs text-slate-400 mb-1 block">Nota mínima para desbloquear o módulo seguinte (%)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      className={inputClass}
+                      value={selectedUnidade.notaMinima ?? 60}
+                      onChange={(e) => {
+                        const v = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+                        setUnidades((p) => p.map((u) => u.id === selectedUnidade.id ? { ...u, notaMinima: v } : u));
+                      }}
+                      onBlur={() => void updateUnidade(selectedUnidade.id, { notaMinima: selectedUnidade.notaMinima ?? 60 })}
+                    />
+                    <p className="text-[10px] text-slate-600 mt-1">
+                      O formando precisa desta média no módulo para aceder ao seguinte.
+                    </p>
+                  </label>
+                </div>
+              ) : selectedConteudo ? (
+                <div className="min-h-0 flex flex-1 flex-col overflow-hidden">
+                  <div className="shrink-0 px-5 py-3 border-b border-slate-700/40 bg-slate-900/40">
+                    <h3 className="text-base font-semibold text-slate-200 flex items-center gap-2">
+                      <Pencil className="h-4 w-4 text-blue-400" />
+                      Editar conteúdo
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 truncate">{selectedConteudo.titulo}</p>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
+                    <label className="block">
+                      <span className="text-xs text-slate-400 mb-1 block">Título</span>
+                      <input className={inputClass} value={selectedConteudo.titulo}
+                        onChange={(e) => setModulos((p) => p.map((x) => x.id === selectedConteudo.id ? { ...x, titulo: e.target.value } : x))}
+                        onBlur={() => void updateConteudo(selectedConteudo.id, { titulo: selectedConteudo.titulo })} />
+                    </label>
+                    {selectedConteudo.tipo === "WEBINAR" ? (
+                      <input placeholder="URL webinar" className={inputClass} value={selectedConteudo.urlOuRef ?? ""}
+                        onChange={(e) => setModulos((p) => p.map((x) => x.id === selectedConteudo.id ? { ...x, urlOuRef: e.target.value } : x))}
+                        onBlur={() => void updateConteudo(selectedConteudo.id, { urlOuRef: selectedConteudo.urlOuRef ?? "" })} />
+                    ) : null}
+                    {selectedConteudo.tipo === "TEXTO" ? (
+                      <textarea rows={8} className={`${inputClass} resize-y min-h-[160px]`} value={selectedConteudo.conteudoHtml ?? ""}
+                        onChange={(e) => setModulos((p) => p.map((x) => x.id === selectedConteudo.id ? { ...x, conteudoHtml: e.target.value } : x))}
+                        onBlur={() => void updateConteudo(selectedConteudo.id, { conteudoHtml: selectedConteudo.conteudoHtml ?? "" })} />
+                    ) : null}
+                    {selectedConteudo.tipo === "VIDEO" || selectedConteudo.tipo === "PDF" ? (
+                      <>
+                        {(() => {
+                          const meta = fileMeta(selectedConteudo);
+                          const isStored = isModuloStorageRef(selectedConteudo.urlOuRef);
+                          const externalUrl =
+                            !isStored &&
+                            (selectedConteudo.urlOuRef?.startsWith("http://") ||
+                              selectedConteudo.urlOuRef?.startsWith("https://"))
+                              ? selectedConteudo.urlOuRef
+                              : null;
+                          const hasFile = isStored || !!externalUrl || !!meta.fileName;
+                          return (
+                            <div className="rounded-lg border border-slate-700/40 bg-slate-900/50 p-4 space-y-3">
+                              {isStored && selectedConteudo.urlOuRef ? (
+                                <ModuloStoredMedia
+                                  moduloId={selectedConteudo.id}
+                                  urlOuRef={selectedConteudo.urlOuRef}
+                                  tipo={selectedConteudo.tipo === "VIDEO" ? "VIDEO" : "PDF"}
+                                  mimeType={meta.mimeType}
+                                  fileName={meta.fileName}
+                                  variant="preview"
+                                  showActions
+                                />
+                              ) : null}
+                              {!isStored && externalUrl && selectedConteudo.tipo === "VIDEO" ? (
+                                <video controls className="w-full rounded-lg max-h-56 bg-black" src={externalUrl} />
+                              ) : null}
+                              {!isStored && externalUrl && selectedConteudo.tipo === "PDF" && meta.mimeType?.startsWith("image/") ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={externalUrl} alt={meta.fileName ?? "Documento"} className="max-h-56 rounded-lg mx-auto" />
+                              ) : null}
+                              {hasFile ? (
+                                <div className="text-xs text-slate-400 space-y-1">
+                                  <p className="truncate"><span className="text-slate-500">Ficheiro:</span> {meta.fileName ?? externalUrl}</p>
+                                  {meta.sizeBytes ? <p><span className="text-slate-500">Tamanho:</span> {formatBytes(meta.sizeBytes)}</p> : null}
+                                  {!isStored && externalUrl ? (
+                                    <a href={externalUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 inline-block">
+                                      Abrir ficheiro
+                                    </a>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <p className="text-xs text-slate-500">Nenhum ficheiro carregado.</p>
+                              )}
+                              <input ref={fileRef} type="file" className="hidden"
+                                accept={selectedConteudo.tipo === "VIDEO" ? "video/*,.mp4,.webm,.mov" : UPLOAD_ACCEPT}
+                                onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadFicheiro(f, selectedConteudo.id); e.target.value = ""; }} />
+                              <Button type="button" variant="secondary" size="sm" className="w-full sm:w-auto" disabled={busy} onClick={() => fileRef.current?.click()}>
+                                <Upload className="h-3.5 w-3.5" />
+                                {meta.fileName ? "Substituir ficheiro" : "Carregar ficheiro"}
+                              </Button>
+                            </div>
+                          );
+                        })()}
+                      </>
+                    ) : null}
+                    {selectedConteudo.tipo === "QUIZ" ? (
+                      <div className="space-y-3">
                         <label className="flex items-center gap-2 text-xs text-slate-400">
                           <input type="checkbox" checked={selectedConteudo.notaMinima != null}
                             onChange={(e) => {
@@ -885,24 +975,65 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
                             }} />
                           Quiz com nota mínima
                         </label>
-                      ) : null}
-                      <Button type="button" variant="danger" size="sm" className="w-full" onClick={() => void deleteConteudo(selectedConteudo.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />Eliminar conteúdo
-                      </Button>
-                    </div>
+                        <QuizPerguntaEditor moduloId={selectedConteudo.id} canEdit={canEdit} />
+                      </div>
+                    ) : null}
+                    <Button type="button" variant="danger" size="sm" className="w-full sm:w-auto" onClick={() => void deleteConteudo(selectedConteudo.id)}>
+                      <Trash2 className="h-3.5 w-3.5" />Eliminar conteúdo
+                    </Button>
                   </div>
-                ) : (
-                  <div className="shrink-0 border-t border-slate-700/40 px-4 py-3 text-center bg-slate-950/60">
-                    <p className="text-[11px] text-slate-500">Selecciona um módulo ou conteúdo para editar abaixo do mockup.</p>
-                  </div>
-                )
-              ) : null}
+                </div>
+              ) : (
+                <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
+                  <Pencil className="h-10 w-10 text-slate-600 mb-3" />
+                  <p className="text-sm text-slate-400">Selecciona um conteúdo na lista para editar.</p>
+                </div>
+              )
+            ) : (
+                <div className="flex flex-1 items-center justify-center p-8 text-sm text-slate-500">
+                  Sem permissão para editar conteúdos.
+                </div>
+              )}
             </div>
-          </aside>
+
+            <div className="flex min-h-0 w-80 xl:w-96 shrink-0 flex-col overflow-hidden bg-slate-950/50">
+              <div className="shrink-0 px-3 py-2 border-b border-slate-700/40 bg-slate-900/50 flex items-center justify-between gap-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  Mockup · ao vivo
+                </p>
+                <span className="text-[9px] text-teal-500/80">formando</span>
+              </div>
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <FormandoPortalMockup {...mockupProps} className="h-full rounded-none" />
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="lg:hidden shrink-0 border-t border-slate-700/30 h-[min(40vh,340px)] overflow-hidden">
-          <FormandoPortalMockup {...mockupProps} className="h-full" />
+        {/* Mobile: mockup ou editor abaixo da lista */}
+        <div className="lg:hidden shrink-0 border-t border-slate-700/30 overflow-hidden">
+          {rightPanel === "preview" ? (
+            <div className="h-[min(40vh,340px)]">
+              <FormandoPortalMockup {...mockupProps} className="h-full" />
+            </div>
+          ) : selectedConteudo && canEdit ? (
+            <div className="max-h-[min(50vh,420px)] overflow-y-auto p-4 space-y-3 border-t border-slate-700/30 bg-slate-950/60">
+              <h3 className="text-sm font-semibold text-slate-200">Editar conteúdo</h3>
+              <label className="block">
+                <span className="text-xs text-slate-400 mb-1 block">Título</span>
+                <input className={inputClass} value={selectedConteudo.titulo}
+                  onChange={(e) => setModulos((p) => p.map((x) => x.id === selectedConteudo.id ? { ...x, titulo: e.target.value } : x))}
+                  onBlur={() => void updateConteudo(selectedConteudo.id, { titulo: selectedConteudo.titulo })} />
+              </label>
+              {selectedConteudo.tipo === "QUIZ" ? (
+                <QuizPerguntaEditor moduloId={selectedConteudo.id} canEdit={canEdit} />
+              ) : null}
+            </div>
+          ) : (
+            <div className="h-[min(28vh,240px)]">
+              <FormandoPortalMockup {...mockupProps} className="h-full" />
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -205,6 +205,8 @@ export type RelatorioInsightsRequest = {
   secao: "financeiro" | "comercial" | "empresarial";
   /** PDF completo com análise expandida e descrições de gráficos. */
   modoPdf?: boolean;
+  /** Descrições IA por gráfico (Enterprise, sem gerar PDF). */
+  incluirDescricoesGraficos?: boolean;
 };
 
 export type RelatorioDescricaoGrafico = {

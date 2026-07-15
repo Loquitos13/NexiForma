@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { resolverEmailNotificacaoFormando } from "@nexiforma/shared";
+import { normalizarPerfisAcesso, podeExecutarAcaoSigo, resolverEmailNotificacaoFormando } from "@nexiforma/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { MailService } from "../mail/mail.service";
 import { ComplianceAlertasService } from "../compliance/compliance-alertas.service";
@@ -238,6 +238,19 @@ export class NotificacoesService {
 
   async enviarCertificadosDisponiveis(user: RequestUser, acaoId: string) {
     const tenantId = requireTenantId(user);
+    const userRow = await this.prisma.user.findFirst({
+      where: { id: user.sub },
+      select: { role: true },
+    });
+    const cfg = await this.prisma.configSigoTenant.findUnique({
+      where: { tenantId },
+      select: { perfisAcesso: true },
+    });
+    const perfis = normalizarPerfisAcesso(cfg?.perfisAcesso);
+    if (!podeExecutarAcaoSigo(userRow?.role, perfis, "notificarFormandos")) {
+      throw new ForbiddenException("O teu perfil não pode notificar formandos sobre certificados.");
+    }
+
     const acao = await this.prisma.acaoFormacao.findFirst({
       where: { id: acaoId, tenantId },
       select: { id: true },

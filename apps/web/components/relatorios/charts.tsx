@@ -26,9 +26,22 @@ import type {
 } from "@nexiforma/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { fmtEuro } from "@/lib/crm/shared";
+import { cn } from "@/lib/ui/cn";
+import { chartAxisForWidth } from "@/lib/dashboard/chart-axis";
+import type { WidgetWidthCols } from "@/lib/dashboard/widget-catalog";
 import { centavosToEuro } from "./format";
 
 const CHART_COLORS = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f87171", "#2dd4bf"];
+
+export type ChartSize = "compact" | "default";
+
+function chartShellHeight(size: ChartSize | undefined, tier: "xl" | "lg" | "md"): string {
+  const map = {
+    default: { xl: "h-72", lg: "h-64", md: "h-56" },
+    compact: { xl: "h-52", lg: "h-48", md: "h-44" },
+  };
+  return map[size ?? "default"][tier];
+}
 
 /** Evita focus no SVG ao clicar (Recharts v3 accessibilityLayer + tabIndex=0). */
 const CHART_A11Y_OFF = { accessibilityLayer: false } as const;
@@ -103,69 +116,92 @@ export function SerieEuroChart({
   serie,
   serieSecundaria,
   secLabel = "IVA",
+  embedded = false,
+  chartSize,
+  fillContainer = false,
+  widthCols,
 }: {
   title: string;
   serie: RelatorioSerieMensal[];
   serieSecundaria?: RelatorioSerieMensal[];
   secLabel?: string;
+  embedded?: boolean;
+  chartSize?: ChartSize;
+  fillContainer?: boolean;
+  widthCols?: WidgetWidthCols;
 }) {
+  const axis = widthCols ? chartAxisForWidth(widthCols) : null;
   const data = serie.map((s, i) => ({
     label: s.label,
     faturacao: centavosToEuro(s.valor),
     secundario: serieSecundaria ? centavosToEuro(serieSecundaria[i]?.valor ?? 0) : undefined,
   }));
 
+  const chart = (
+    <ChartShell className={cn(fillContainer ? "h-full w-full" : "w-full", !fillContainer && chartShellHeight(chartSize, "xl"))}>
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart
+          {...CHART_A11Y_OFF}
+          data={data}
+          margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+        >
+          <defs>
+            <linearGradient id="fatGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.35} />
+              <stop offset="100%" stopColor="#60a5fa" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.4} />
+          <XAxis
+            dataKey="label"
+            tick={{ fill: "#64748b", fontSize: axis?.tickFontSize ?? 10 }}
+            interval={axis?.xInterval ?? 1}
+            angle={axis?.angle ?? 0}
+            height={axis?.xHeight ?? 30}
+          />
+          <YAxis
+            tick={{ fill: "#64748b", fontSize: axis?.tickFontSize ?? 10 }}
+            tickFormatter={(v) => `${v}€`}
+            width={axis?.yWidth ?? 48}
+          />
+          <Tooltip content={<ChartTooltipEuro />} cursor={false} trigger="hover" />
+          {!axis?.hideLegend ? (
+            <Legend wrapperStyle={{ fontSize: 10, color: "#94a3b8" }} />
+          ) : null}
+          <Area
+            type="monotone"
+            dataKey="faturacao"
+            name="Faturação"
+            stroke="#60a5fa"
+            fill="url(#fatGrad)"
+            strokeWidth={2}
+            activeDot={{ r: 4, strokeWidth: 2, stroke: "#60a5fa", fill: "#0f172a" }}
+          />
+          {serieSecundaria ? (
+            <Line
+              type="monotone"
+              dataKey="secundario"
+              name={secLabel}
+              stroke="#34d399"
+              strokeWidth={2}
+              dot={false}
+            />
+          ) : null}
+        </AreaChart>
+      </ResponsiveContainer>
+    </ChartShell>
+  );
+
+  if (embedded || fillContainer) return chart;
+
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ChartShell className="h-72 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart
-              {...CHART_A11Y_OFF}
-              data={data}
-              margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-            >
-              <defs>
-                <linearGradient id="fatGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#60a5fa" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.4} />
-              <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 10 }} interval={1} />
-              <YAxis
-                tick={{ fill: "#64748b", fontSize: 10 }}
-                tickFormatter={(v) => `${v}€`}
-                width={48}
-              />
-              <Tooltip content={<ChartTooltipEuro />} cursor={false} trigger="hover" />
-              <Legend wrapperStyle={{ fontSize: 11, color: "#94a3b8" }} />
-              <Area
-                type="monotone"
-                dataKey="faturacao"
-                name="Faturação"
-                stroke="#60a5fa"
-                fill="url(#fatGrad)"
-                strokeWidth={2}
-                activeDot={{ r: 4, strokeWidth: 2, stroke: "#60a5fa", fill: "#0f172a" }}
-              />
-              {serieSecundaria ? (
-                <Line
-                  type="monotone"
-                  dataKey="secundario"
-                  name={secLabel}
-                  stroke="#34d399"
-                  strokeWidth={2}
-                  dot={false}
-                />
-              ) : null}
-            </AreaChart>
-          </ResponsiveContainer>
-        </ChartShell>
-      </CardContent>
+      {title ? (
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+        </CardHeader>
+      ) : null}
+      <CardContent>{chart}</CardContent>
     </Card>
   );
 }
@@ -173,10 +209,17 @@ export function SerieEuroChart({
 export function SerieCountChart({
   title,
   series,
+  chartSize,
+  fillContainer = false,
+  widthCols,
 }: {
   title: string;
   series: { key: string; label: string; data: RelatorioSerieMensal[]; color: string }[];
+  chartSize?: ChartSize;
+  fillContainer?: boolean;
+  widthCols?: WidgetWidthCols;
 }) {
+  const axis = widthCols ? chartAxisForWidth(widthCols) : null;
   const labels = series[0]?.data.map((d) => d.label) ?? [];
   const data = labels.map((label, i) => {
     const row: Record<string, string | number> = { label };
@@ -186,40 +229,48 @@ export function SerieCountChart({
     return row;
   });
 
+  const chart = (
+    <ChartShell className={cn(fillContainer ? "h-full w-full" : "w-full", !fillContainer && chartShellHeight(chartSize, "xl"))}>
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart {...CHART_A11Y_OFF} data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.4} />
+          <XAxis
+            dataKey="label"
+            tick={{ fill: "#64748b", fontSize: axis?.tickFontSize ?? 10 }}
+            interval={axis?.xInterval ?? 1}
+            angle={axis?.angle ?? 0}
+            height={axis?.xHeight ?? 30}
+          />
+          <YAxis tick={{ fill: "#64748b", fontSize: axis?.tickFontSize ?? 10 }} width={axis?.yWidth ?? 32} />
+          <Tooltip content={<ChartTooltipNum />} cursor={false} trigger="hover" />
+          {!axis?.hideLegend ? <Legend wrapperStyle={{ fontSize: 10, color: "#94a3b8" }} /> : null}
+          {series.map((s) => (
+            <Line
+              key={s.key}
+              type="monotone"
+              dataKey={s.key}
+              name={s.label}
+              stroke={s.color}
+              strokeWidth={2}
+              dot={{ r: 2, strokeWidth: 0 }}
+              activeDot={{ r: 4, strokeWidth: 2, stroke: s.color, fill: "#0f172a" }}
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </ChartShell>
+  );
+
+  if (fillContainer) return chart;
+
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ChartShell className="h-72 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              {...CHART_A11Y_OFF}
-              data={data}
-              margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.4} />
-              <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 10 }} interval={1} />
-              <YAxis tick={{ fill: "#64748b", fontSize: 10 }} width={32} />
-              <Tooltip content={<ChartTooltipNum />} cursor={false} trigger="hover" />
-              <Legend wrapperStyle={{ fontSize: 11, color: "#94a3b8" }} />
-              {series.map((s) => (
-                <Line
-                  key={s.key}
-                  type="monotone"
-                  dataKey={s.key}
-                  name={s.label}
-                  stroke={s.color}
-                  strokeWidth={2}
-                  dot={{ r: 3, strokeWidth: 0 }}
-                  activeDot={{ r: 5, strokeWidth: 2, stroke: s.color, fill: "#0f172a" }}
-                />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartShell>
-      </CardContent>
+      {title ? (
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+        </CardHeader>
+      ) : null}
+      <CardContent className={title ? undefined : "pt-4"}>{chart}</CardContent>
     </Card>
   );
 }
@@ -228,11 +279,18 @@ export function FunilBarChart({
   title,
   funil,
   euro = false,
+  chartSize,
+  fillContainer = false,
+  widthCols,
 }: {
   title: string;
   funil: RelatorioFunil[];
   euro?: boolean;
+  chartSize?: ChartSize;
+  fillContainer?: boolean;
+  widthCols?: WidgetWidthCols;
 }) {
+  const axis = widthCols ? chartAxisForWidth(widthCols) : null;
   const data = funil
     .filter((f) => f.quantidade > 0 || f.valorCentavos > 0)
     .map((f) => ({
@@ -241,37 +299,38 @@ export function FunilBarChart({
       valor: centavosToEuro(f.valorCentavos),
     }));
 
+  const chart = (
+    <ChartShell className={cn(fillContainer ? "h-full w-full" : "w-full", !fillContainer && chartShellHeight(chartSize, "lg"))}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart {...CHART_A11Y_OFF} data={data} layout="vertical" margin={{ top: 2, right: 8, left: 0, bottom: 2 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} horizontal={false} />
+          <XAxis type="number" tick={{ fill: "#64748b", fontSize: axis?.tickFontSize ?? 10 }} />
+          <YAxis
+            type="category"
+            dataKey="name"
+            tick={{ fill: "#94a3b8", fontSize: axis?.tickFontSize ?? 10 }}
+            width={axis?.yAxisCategoryWidth ?? 88}
+          />
+          <Tooltip {...tooltipStyle} cursor={false} trigger="hover" />
+          <Bar dataKey="quantidade" name="Qtd" fill="#60a5fa" radius={[0, 4, 4, 0]} />
+          {euro && widthCols && widthCols >= 8 ? (
+            <Bar dataKey="valor" name="Valor (€)" fill="#34d399" radius={[0, 4, 4, 0]} />
+          ) : null}
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartShell>
+  );
+
+  if (fillContainer) return chart;
+
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ChartShell className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              {...CHART_A11Y_OFF}
-              data={data}
-              layout="vertical"
-              margin={{ top: 4, right: 16, left: 8, bottom: 4 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} horizontal={false} />
-              <XAxis type="number" tick={{ fill: "#64748b", fontSize: 10 }} />
-              <YAxis
-                type="category"
-                dataKey="name"
-                tick={{ fill: "#94a3b8", fontSize: 11 }}
-                width={88}
-              />
-              <Tooltip {...tooltipStyle} cursor={false} trigger="hover" />
-              <Bar dataKey="quantidade" name="Quantidade" fill="#60a5fa" radius={[0, 4, 4, 0]} />
-              {euro ? (
-                <Bar dataKey="valor" name="Valor (€)" fill="#34d399" radius={[0, 4, 4, 0]} />
-              ) : null}
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartShell>
-      </CardContent>
+      {title ? (
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+        </CardHeader>
+      ) : null}
+      <CardContent className={title ? undefined : "pt-4"}>{chart}</CardContent>
     </Card>
   );
 }
@@ -279,41 +338,56 @@ export function FunilBarChart({
 export function OrigemPieChart({
   title,
   items,
+  chartSize,
+  fillContainer = false,
+  widthCols,
 }: {
   title: string;
   items: { label: string; quantidade: number }[];
+  chartSize?: ChartSize;
+  fillContainer?: boolean;
+  widthCols?: WidgetWidthCols;
 }) {
   const data = items.filter((i) => i.quantidade > 0);
+  const inner = widthCols && widthCols <= 4 ? 28 : widthCols && widthCols <= 6 ? 36 : 48;
+  const outer = widthCols && widthCols <= 4 ? 52 : widthCols && widthCols <= 6 ? 64 : 80;
+  const hideLegend = widthCols != null && widthCols <= 4;
+
+  const chart = (
+    <ChartShell className={cn(fillContainer ? "h-full w-full" : "w-full", !fillContainer && chartShellHeight(chartSize, "lg"))}>
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart {...CHART_A11Y_OFF}>
+          <Pie
+            data={data}
+            dataKey="quantidade"
+            nameKey="label"
+            cx="50%"
+            cy="50%"
+            innerRadius={inner}
+            outerRadius={outer}
+            paddingAngle={2}
+          >
+            {data.map((_, i) => (
+              <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+            ))}
+          </Pie>
+          <Tooltip {...tooltipStyle} cursor={false} trigger="hover" />
+          {!hideLegend ? <Legend wrapperStyle={{ fontSize: 10, color: "#94a3b8" }} /> : null}
+        </PieChart>
+      </ResponsiveContainer>
+    </ChartShell>
+  );
+
+  if (fillContainer) return chart;
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ChartShell className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart {...CHART_A11Y_OFF}>
-              <Pie
-                data={data}
-                dataKey="quantidade"
-                nameKey="label"
-                cx="50%"
-                cy="50%"
-                innerRadius={48}
-                outerRadius={80}
-                paddingAngle={2}
-              >
-                {data.map((_, i) => (
-                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip {...tooltipStyle} cursor={false} trigger="hover" />
-              <Legend wrapperStyle={{ fontSize: 11, color: "#94a3b8" }} />
-            </PieChart>
-          </ResponsiveContainer>
-        </ChartShell>
-      </CardContent>
+      {title ? (
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+        </CardHeader>
+      ) : null}
+      <CardContent className={title ? undefined : "pt-4"}>{chart}</CardContent>
     </Card>
   );
 }
@@ -321,33 +395,56 @@ export function OrigemPieChart({
 export function PipelineEuroChart({
   title,
   serie,
+  chartSize,
+  fillContainer = false,
+  widthCols,
 }: {
   title: string;
   serie: RelatorioSerieMensal[];
+  chartSize?: ChartSize;
+  fillContainer?: boolean;
+  widthCols?: WidgetWidthCols;
 }) {
+  const axis = widthCols ? chartAxisForWidth(widthCols) : null;
   const data = serie.map((s) => ({
     label: s.label,
     pipeline: centavosToEuro(s.valor),
   }));
 
+  const chart = (
+    <ChartShell className={cn(fillContainer ? "h-full w-full" : "w-full", !fillContainer && chartShellHeight(chartSize, "md"))}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart {...CHART_A11Y_OFF} data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.4} />
+          <XAxis
+            dataKey="label"
+            tick={{ fill: "#64748b", fontSize: axis?.tickFontSize ?? 10 }}
+            interval={axis?.xInterval ?? 1}
+            angle={axis?.angle ?? 0}
+            height={axis?.xHeight ?? 30}
+          />
+          <YAxis
+            tick={{ fill: "#64748b", fontSize: axis?.tickFontSize ?? 10 }}
+            tickFormatter={(v) => `${v}€`}
+            width={axis?.yWidth ?? 40}
+          />
+          <Tooltip content={<ChartTooltipEuro />} cursor={false} trigger="hover" />
+          <Bar dataKey="pipeline" name="Pipeline" fill="#a78bfa" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartShell>
+  );
+
+  if (fillContainer) return chart;
+
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ChartShell className="h-56 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart {...CHART_A11Y_OFF} data={data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.4} />
-              <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 10 }} interval={1} />
-              <YAxis tick={{ fill: "#64748b", fontSize: 10 }} tickFormatter={(v) => `${v}€`} width={48} />
-              <Tooltip content={<ChartTooltipEuro />} cursor={false} trigger="hover" />
-              <Bar dataKey="pipeline" name="Pipeline" fill="#a78bfa" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartShell>
-      </CardContent>
+      {title ? (
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+        </CardHeader>
+      ) : null}
+      <CardContent className={title ? undefined : "pt-4"}>{chart}</CardContent>
     </Card>
   );
 }
@@ -378,7 +475,7 @@ export function FluxoCaixaChart({ fluxo }: { fluxo: RelatorioFluxoCaixa }) {
                   return (
                     <div className="rounded-lg border border-slate-700/60 bg-slate-950/95 px-3 py-2 text-xs">
                       <p className="font-medium text-slate-300">{label}</p>
-                      <p className="text-emerald-400">{fmtEuro(Math.round((payload[0]?.value ?? 0) * 100))}</p>
+                      <p className="text-emerald-400">{fmtEuro(Math.round(Number(payload[0]?.value ?? 0) * 100))}</p>
                       <p className="text-slate-400">{docs} documento(s)</p>
                     </div>
                   );
@@ -433,10 +530,12 @@ export function FunilEtapasChart({ title, etapas }: { title: string; etapas: Rel
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
+      {title ? (
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+        </CardHeader>
+      ) : null}
+      <CardContent className={title ? undefined : "pt-4"}>
         <ChartShell className="h-56 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart {...CHART_A11Y_OFF} data={data}>

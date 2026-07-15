@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Patch, Query, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { SkipThrottle } from "@nestjs/throttler";
+import { Public } from "../auth/decorators/public.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/decorators/roles.decorator";
@@ -13,18 +14,21 @@ export class TenantSsoController {
   constructor(private readonly sso: TenantSsoService) {}
 
   @SkipThrottle()
+  @Public()
   @Get("auth/sso/config")
   publicConfig(@Query("slug") slug: string) {
     return this.sso.getPublicConfig(slug?.trim() ?? "");
   }
 
   @SkipThrottle()
+  @Public()
   @Get("auth/sso/start")
   start(@Query("slug") slug: string, @Res() res: Response) {
     return this.sso.startLogin(slug?.trim() ?? "", res);
   }
 
   @SkipThrottle()
+  @Public()
   @Get("auth/sso/callback")
   callback(
     @Query("code") code: string,

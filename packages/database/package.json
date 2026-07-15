@@ -30,6 +30,8 @@
 
     "migrate:deploy": "node ../../scripts/load-root-env.mjs prisma migrate deploy",
 
+    "rls:apply": "node ../../scripts/apply-rls.mjs",
+
     "migrate:resolve": "node ../../scripts/load-root-env.mjs prisma migrate resolve",
 
     "studio": "node ../../scripts/load-root-env.mjs prisma studio",

@@ -19,50 +19,53 @@ export function PortalPushRegister() {
       return;
     }
 
-    void (async () => {
-      if (!("serviceWorker" in navigator)) return;
-      try {
-        await navigator.serviceWorker.register("/sw.js", { scope: "/" });
-      } catch {
-        return;
-      }
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+        } catch {
+          return;
+        }
 
-      const keyRes = await bffFetch("/api/v1/notificacoes/push/vapid-public-key", {
-        headers: { accept: "application/json" },
-      });
-      if (!keyRes.ok) return;
-      const { enabled, publicKey } = (await keyRes.json()) as {
-        enabled?: boolean;
-        publicKey?: string | null;
-      };
-      if (!enabled || !publicKey) return;
+        const keyRes = await bffFetch("/api/v1/notificacoes/push/vapid-public-key", {
+          headers: { accept: "application/json" },
+        });
+        if (!keyRes.ok) return;
+        const { enabled, publicKey } = (await keyRes.json()) as {
+          enabled?: boolean;
+          publicKey?: string | null;
+        };
+        if (!enabled || !publicKey) return;
 
-      const permission = await Notification.requestPermission();
-      if (permission !== "granted") return;
+        const reg = await navigator.serviceWorker.ready;
+        const existing = await reg.pushManager.getSubscription();
+        if (existing) return;
 
-      const reg = await navigator.serviceWorker.ready;
-      let sub = await reg.pushManager.getSubscription();
-      if (!sub) {
-        sub = await reg.pushManager.subscribe({
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") return;
+
+        const sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(publicKey),
         });
-      }
 
-      const json = sub.toJSON();
-      if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return;
+        const json = sub.toJSON();
+        if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return;
 
-      await bffFetch("/api/v1/notificacoes/push/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          endpoint: json.endpoint,
-          keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
-        }),
+        await bffFetch("/api/v1/notificacoes/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", accept: "application/json" },
+          body: JSON.stringify({
+            endpoint: json.endpoint,
+            keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
+          }),
+        });
+      })().catch(() => {
+        /* push opcional */
       });
-    })().catch(() => {
-      /* push opcional */
-    });
+    }, 4000);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   return null;

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { parseApiError } from "@/lib/ui/backoffice";
+import Link from "next/link";
 
 type AcaoOpt = { id: string; codigoInterno: string; titulo: string };
 type TurmaOpt = { id: string; codigo: string; nome: string };
@@ -71,7 +73,7 @@ export default function MatriculasPage() {
       body: JSON.stringify({ turmaId, formandoId }),
     });
     setBusy(false);
-    if (!r.ok) { setError("Erro ao inscrever. Verifica se ja esta inscrito."); return; }
+    if (!r.ok) { setError(await parseApiError(r)); return; }
     setMsg("Formando inscrito com sucesso.");
     setFormandoId("");
     await load();
@@ -124,6 +126,19 @@ export default function MatriculasPage() {
                   <option value="">Seleccionar...</option>
                   {formandos.map((f) => <option key={f.id} value={f.id}>{f.nome} (NIF {f.nif})</option>)}
                 </select>
+                {formandos.length === 0 ? (
+                  <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+                    Sem formandos na lista. Convida em{" "}
+                    <Link href="/portal/utilizadores" className="text-blue-400 hover:text-blue-300">
+                      Utilizadores
+                    </Link>{" "}
+                    (cargo FORMANDO + NIF) ou regista em{" "}
+                    <Link href="/portal/formandos" className="text-blue-400 hover:text-blue-300">
+                      Formandos
+                    </Link>
+                    .
+                  </p>
+                ) : null}
                 <button onClick={() => void inscrever()} disabled={busy || !formandoId}
                   className="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium transition-colors flex-shrink-0">
                   Inscrever

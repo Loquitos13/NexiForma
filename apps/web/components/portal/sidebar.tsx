@@ -1,14 +1,27 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { NexiFormaLogoAnimated } from "@/components/brand/NexiFormaLogoAnimated";
 import { cn } from "@/lib/ui/cn";
-import { NAV_GROUPS, filterGroups } from "@/lib/ui/nav-items";
-import type { JwtRole } from "@nexiforma/shared";
+import {
+  NAV_GROUPS,
+  filterGroups,
+  isNavGroupCollapsible,
+  navGroupTitle,
+  type NavGroup,
+  type NavItem,
+} from "@/lib/ui/nav-items";
+import { CrmSugestoesNavBadge } from "@/components/crm/crm-sugestoes-panel";
+import type { JwtRole, TenantEntitlements } from "@nexiforma/shared";
 
 interface SidebarProps {
   pathname: string;
   role: JwtRole | null;
+  entitlements?: TenantEntitlements | null;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
 function isActive(href: string, pathname: string) {
@@ -23,61 +36,210 @@ function isActive(href: string, pathname: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+function groupHasActiveItem(items: NavItem[], pathname: string) {
+  return items.some((item) => isActive(item.href, pathname));
+}
+
 function NavIcon({ name }: { name?: string }) {
   const d = ICON_PATHS[name ?? ""] ?? ICON_PATHS.Circle;
   return (
-    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <svg className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d={d} />
     </svg>
   );
 }
 
-export function Sidebar({ pathname, role }: SidebarProps) {
-  const groups = filterGroups(NAV_GROUPS, role);
-
+function NavLink({
+  item,
+  pathname,
+  entitlements,
+  onNavigate,
+  nested = false,
+}: {
+  item: NavItem;
+  pathname: string;
+  entitlements?: TenantEntitlements | null;
+  onNavigate?: () => void;
+  nested?: boolean;
+}) {
+  const active = isActive(item.href, pathname);
   return (
-    <aside className="flex h-full min-h-0 w-60 flex-shrink-0 flex-col border-r border-slate-700/40 bg-slate-950/90">
-      <div className="flex items-center gap-2.5 px-4 py-5">
-        <NexiFormaLogoAnimated
-          size={32}
-          variant="reveal"
-          loop
-          className="shrink-0 drop-shadow-[0_0_14px_rgba(255,71,171,0.32)]"
-        />
-        <div>
-          <div className="text-sm font-bold text-slate-100">NexiForma</div>
-          <div className="text-[10px] text-slate-500">Gestao de formacao</div>
+    <Link
+      href={item.href}
+      onClick={onNavigate}
+      className={cn(
+        "flex items-center gap-2.5 rounded-lg text-sm transition-colors",
+        nested ? "px-3 py-1.5" : "px-3 py-2",
+        active
+          ? "bg-blue-600/20 font-semibold text-blue-300"
+          : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200",
+      )}
+    >
+      <NavIcon name={item.icon} />
+      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+      {item.href === "/portal/crm/sugestoes-ia" && entitlements?.canAccessCrm ? (
+        <CrmSugestoesNavBadge enabled />
+      ) : null}
+    </Link>
+  );
+}
+
+function NavSection({
+  group,
+  pathname,
+  entitlements,
+  onNavigate,
+}: {
+  group: NavGroup;
+  pathname: string;
+  entitlements?: TenantEntitlements | null;
+  onNavigate?: () => void;
+}) {
+  const collapsible = isNavGroupCollapsible(group);
+  const title = navGroupTitle(group);
+  const hasActive = groupHasActiveItem(group.items, pathname);
+  const storageKey = `portal-nav:${group.module ?? group.label}`;
+
+  const [open, setOpen] = useState(() => hasActive);
+
+  useEffect(() => {
+    if (hasActive) setOpen(true);
+  }, [hasActive]);
+
+  useEffect(() => {
+    if (!collapsible) return;
+    try {
+      const stored = sessionStorage.getItem(storageKey);
+      if (stored === "1") setOpen(true);
+      if (stored === "0") setOpen(false);
+    } catch {
+      /* ignore */
+    }
+  }, [collapsible, storageKey]);
+
+  const toggle = () => {
+    setOpen((prev) => {
+      const next = !prev;
+      try {
+        sessionStorage.setItem(storageKey, next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
+  if (!collapsible) {
+    return (
+      <div className="mb-4">
+        <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+          {title}
+        </div>
+        <div className="space-y-0.5">
+          {group.items.map((item) => (
+            <NavLink
+              key={item.href}
+              item={item}
+              pathname={pathname}
+              entitlements={entitlements}
+              onNavigate={onNavigate}
+            />
+          ))}
         </div>
       </div>
+    );
+  }
 
-      <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-        {groups.map((group) => (
-          <div key={group.label} className="mb-4">
-            <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-              {group.label}
-            </div>
-            {group.items.map((item) => {
-              const active = isActive(item.href, pathname);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
-                    active
-                      ? "bg-blue-600/20 text-blue-300 font-semibold"
-                      : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200",
-                  )}
-                >
-                  <NavIcon name={item.icon} />
-                  {item.label}
-                </Link>
-              );
-            })}
+  return (
+    <div className="mb-2">
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        className={cn(
+          "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+          hasActive
+            ? "bg-slate-800/70 text-slate-100"
+            : "text-slate-300 hover:bg-slate-800/50 hover:text-slate-100",
+        )}
+      >
+        <NavIcon name={group.icon} />
+        <span className="min-w-0 flex-1 truncate text-left">{title}</span>
+        <span className="shrink-0 rounded-md bg-slate-800/80 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-500">
+          {group.items.length}
+        </span>
+        <ChevronDown
+          className={cn("h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200", open && "rotate-180")}
+          aria-hidden
+        />
+      </button>
+      {open ? (
+        <div className="mt-0.5 ml-3 space-y-0.5 border-l border-slate-800/80 pl-2">
+          {group.items.map((item) => (
+            <NavLink
+              key={item.href}
+              item={item}
+              pathname={pathname}
+              entitlements={entitlements}
+              onNavigate={onNavigate}
+              nested
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function Sidebar({ pathname, role, entitlements, mobileOpen, onMobileClose }: SidebarProps) {
+  const groups = useMemo(
+    () => filterGroups(NAV_GROUPS, role, entitlements),
+    [role, entitlements],
+  );
+
+  return (
+    <>
+      {mobileOpen ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-black/60 lg:hidden"
+          aria-label="Fechar menu"
+          onClick={onMobileClose}
+        />
+      ) : null}
+      <aside
+        className={cn(
+          "portal-fixed-drawer flex h-full min-h-0 w-[min(88vw,17rem)] flex-col border-r border-slate-700/40 bg-slate-950/95 transition-transform duration-300 lg:w-64 lg:flex-shrink-0",
+          mobileOpen ? "translate-x-0" : "max-lg:-translate-x-full",
+        )}
+        aria-hidden={!mobileOpen ? undefined : false}
+      >
+        <div className="flex items-center gap-2.5 px-4 py-5">
+          <NexiFormaLogoAnimated
+            size={32}
+            variant="reveal"
+            loop
+            className="shrink-0 drop-shadow-[0_0_14px_rgba(255,71,171,0.32)]"
+          />
+          <div className="min-w-0">
+            <div className="truncate text-sm font-bold text-slate-100">NexiForma</div>
+            <div className="text-[10px] text-slate-500">Gestao de formacao</div>
           </div>
-        ))}
-      </nav>
-    </aside>
+        </div>
+
+        <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          {groups.map((group) => (
+            <NavSection
+              key={`${group.module ?? group.label}`}
+              group={group}
+              pathname={pathname}
+              entitlements={entitlements}
+              onNavigate={onMobileClose}
+            />
+          ))}
+        </nav>
+      </aside>
+    </>
   );
 }
 
@@ -97,6 +259,8 @@ const ICON_PATHS: Record<string, string> = {
   GraduationCap: "M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5",
   Library: "M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0012 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18M12 6.75h.008v.008H12V6.75z",
   UserPlus: "M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM3 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 019.374 21c-2.331 0-4.512-.645-6.374-1.766z",
+  MessageSquare: "M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z",
+  Sparkles: "M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z",
   Users: "M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z",
   UserCheck: "M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z",
   ClipboardCheck: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
@@ -111,5 +275,9 @@ const ICON_PATHS: Record<string, string> = {
   UserCog: "M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z",
   Plug: "M14.25 6.087c0-.355.186-.676.401-.959.221-.29.349-.634.349-1.003 0-1.036-1.007-1.875-2.25-1.875s-2.25.84-2.25 1.875c0 .369.128.713.349 1.003.215.283.401.604.401.959v0a.64.64 0 01-.657.643 48.39 48.39 0 01-4.163-.3c.186 1.613.293 3.25.315 4.907a.656.656 0 01-.658.663v0c-.355 0-.676-.186-.959-.401a1.647 1.647 0 00-1.003-.349c-1.036 0-1.875 1.007-1.875 2.25s.84 2.25 1.875 2.25c.369 0 .713-.128 1.003-.349.283-.215.604-.401.959-.401v0c.31 0 .555.26.532.57a48.039 48.039 0 01-.642 5.056c1.518.19 3.058.309 4.616.354a.64.64 0 00.657-.643v0c0-.355-.186-.676-.401-.959a1.647 1.647 0 01-.349-1.003c0-1.035 1.008-1.875 2.25-1.875 1.243 0 2.25.84 2.25 1.875 0 .369-.128.713-.349 1.003-.215.283-.401.604-.401.959v0c0 .333.277.599.61.58a48.1 48.1 0 005.427-.63 48.05 48.05 0 00.582-4.717.532.532 0 00-.533-.57v0c-.355 0-.676.186-.959.401-.29.221-.634.349-1.003.349-1.035 0-1.875-1.007-1.875-2.25s.84-2.25 1.875-2.25c.37 0 .713.128 1.003.349.283.215.604.401.959.401v0a.656.656 0 00.658-.663 48.422 48.422 0 00-.37-5.36c-1.886.342-3.81.574-5.766.689a.578.578 0 01-.61-.58v0z",
   CreditCard: "M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z",
+  Video: "m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z",
+  Key: "M15.75 5.25a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z",
+  Globe: "M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5a17.92 17.92 0 0 1-8.716-2.247m0 0A8.966 8.966 0 0 1 3 12c0-1.264.26-2.467.732-3.562",
+  LifeBuoy: "M16.712 4.33a9.027 9.027 0 0 1 1.652 1.306c.51.51.94 1.087 1.306 1.652M16.712 4.33l-3.16 3.162m3.16-3.162a9.027 9.027 0 0 0-1.306-1.652 9.027 9.027 0 0 0-1.652-1.306m0 0L12 7.5M4.33 16.712a9.027 9.027 0 0 1-1.306-1.652 9.027 9.027 0 0 1-1.652-1.306m0 0L7.5 12m-3.828 3.828a9.027 9.027 0 0 0 1.652 1.306 9.027 9.027 0 0 0 1.306 1.652m0 0L12 16.5m-3.828-3.828L12 7.5m0 0 3.828 3.828M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
   Circle: "M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
 };

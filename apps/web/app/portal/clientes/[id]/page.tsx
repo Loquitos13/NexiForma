@@ -1,29 +1,35 @@
 "use client";
 
-import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { ArrowLeft, Building2, FileText, Mail, Pencil, Phone, Users } from "lucide-react";
+import { Building2, Pencil } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
 import {
   Alert,
-  Badge,
   Button,
-  buttonVariants,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
   Dialog,
   DialogContent,
   Input,
   PageHeader,
   Textarea,
 } from "@/components/ui";
+import { PortalBackButton } from "@/components/ui/portal-back-button";
 import { PageContentSkeleton } from "@/components/ui/page-skeleton";
-import { cn } from "@/lib/ui/cn";
+import { EntidadeCrmInsights } from "@/components/crm/entidade-crm-insights";
+import { ClienteFichaLeads } from "@/components/crm/cliente-ficha-leads";
+import { ClienteFichaSugestoes } from "@/components/crm/cliente-ficha-sugestoes";
+import {
+  ClienteFichaNav,
+  parseClienteFichaTab,
+  type ClienteFichaTab,
+} from "@/components/crm/cliente-ficha-nav";
+import { ClienteFichaDados } from "@/components/crm/cliente-ficha-dados";
+import { ClienteFichaFaturas } from "@/components/crm/cliente-ficha-faturas";
+import { ClienteFichaPropostas } from "@/components/crm/cliente-ficha-propostas";
+import { useClienteFichaData } from "@/components/crm/use-cliente-ficha-data";
+import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
 
 type Cliente = {
   id: string;
@@ -32,14 +38,21 @@ type Cliente = {
   moradaFiscal: string | null;
   email: string | null;
   telefone: string | null;
-  _count?: { formandos: number; propostas: number };
+  _count?: { propostas: number };
 };
 
 export default function ClienteDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tab = parseClienteFichaTab(searchParams.get("tab"));
   const { canManageCrm, canManage } = useTenantRole();
-  const canGerirClientes = canManageCrm || canManage;
+  const { entitlements } = useTenantEntitlements();
+  const hasCrmMod = entitlements?.canAccessCrm ?? canManageCrm;
+  const hasFaturacaoMod = entitlements?.canAccessFaturacao ?? false;
+  const canGerirClientes = canManage || hasCrmMod || hasFaturacaoMod;
+  const canVerCrmFicha = canGerirClientes;
 
   const [cliente, setCliente] = useState<Cliente | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,6 +67,42 @@ export default function ClienteDetailPage() {
     email: "",
     telefone: "",
   });
+
+  const { data: ficha, loading: fichaLoading, refresh: refreshFicha } = useClienteFichaData(
+    id,
+    canVerCrmFicha,
+    canManage,
+  );
+
+  useEffect(() => {
+    if (tab === "faturas" && !canManage) {
+      router.replace(`/portal/clientes/${id}?tab=dados`);
+    }
+  }, [tab, canManage, id, router]);
+
+  useEffect(() => {
+    if (
+      tab === "notas-comerciais" ||
+      tab === "sugestoes-ia" ||
+      tab === "leads" ||
+      tab === "dados"
+    ) {
+      void refreshFicha();
+    }
+  }, [tab, refreshFicha]);
+
+  const setTab = useCallback(
+    (next: ClienteFichaTab) => {
+      const q = new URLSearchParams(searchParams.toString());
+      if (next === "dados") q.delete("tab");
+      else q.set("tab", next);
+      const qs = q.toString();
+      router.replace(qs ? `/portal/clientes/${id}?${qs}` : `/portal/clientes/${id}`, {
+        scroll: false,
+      });
+    },
+    [id, router, searchParams],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,19 +136,18 @@ export default function ClienteDetailPage() {
 
   useEffect(() => {
     if (!cliente || !canGerirClientes) return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("editar") === "1") {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("editar") === "1") {
       fillForm(cliente);
       setDialogOpen(true);
-      window.history.replaceState({}, "", `/portal/clientes/${cliente.id}`);
+      urlParams.delete("editar");
+      const qs = urlParams.toString();
+      window.history.replaceState({}, "", qs ? `/portal/clientes/${cliente.id}?${qs}` : `/portal/clientes/${cliente.id}`);
     }
   }, [cliente, canGerirClientes]);
 
   function closeEditDialog() {
     setDialogOpen(false);
-    if (window.location.search.includes("editar=1")) {
-      window.history.replaceState({}, "", `/portal/clientes/${id}`);
-    }
   }
 
   async function submitEdit(e: FormEvent) {
@@ -136,9 +184,7 @@ export default function ClienteDetailPage() {
   if (error && !cliente) {
     return (
       <>
-        <Link href="/portal/clientes" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "mb-4")}>
-          <ArrowLeft className="h-4 w-4" /> Voltar
-        </Link>
+        <PortalBackButton fallbackHref="/portal/clientes" fallbackLabel="Clientes" />
         <Alert variant="error">{error ?? "Cliente não encontrado."}</Alert>
       </>
     );
@@ -147,9 +193,7 @@ export default function ClienteDetailPage() {
   if (!cliente) {
     return (
       <>
-        <Link href="/portal/clientes" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "mb-4")}>
-          <ArrowLeft className="h-4 w-4" /> Voltar
-        </Link>
+        <PortalBackButton fallbackHref="/portal/clientes" fallbackLabel="Clientes" />
         <Alert variant="error">Cliente não encontrado.</Alert>
       </>
     );
@@ -157,9 +201,7 @@ export default function ClienteDetailPage() {
 
   return (
     <>
-      <Link href="/portal/clientes" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "mb-4")}>
-        <ArrowLeft className="h-4 w-4" /> Clientes
-      </Link>
+      <PortalBackButton fallbackHref="/portal/clientes" fallbackLabel="Clientes" />
 
       {error ? <Alert variant="error" className="mb-4">{error}</Alert> : null}
       {msg ? <Alert variant="success" className="mb-4">{msg}</Alert> : null}
@@ -168,89 +210,83 @@ export default function ClienteDetailPage() {
         title={cliente.nome}
         description={`NIF ${cliente.nif}`}
         actions={
-          <div className="flex flex-wrap gap-2">
-            {canGerirClientes ? (
-              <Button size="sm" variant="secondary" onClick={openEditDialog}>
-                <Pencil className="h-4 w-4" />
-                Editar
-              </Button>
-            ) : null}
-            <Link
-              href={`/portal/propostas?entidade=${cliente.id}&nova=1`}
-              className={cn(buttonVariants({ size: "sm" }))}
-            >
-              <FileText className="h-4 w-4" />
-              Nova proposta
-            </Link>
-          </div>
+          canGerirClientes ? (
+            <Button size="sm" variant="secondary" onClick={openEditDialog}>
+              <Pencil className="h-4 w-4" />
+              Editar
+            </Button>
+          ) : null
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
-        <Card>
-          <CardContent className="pt-5 flex items-center gap-3">
-            <Users className="h-8 w-8 text-amber-400/80" />
-            <div>
-              <p className="text-2xl font-bold text-slate-100">{cliente._count?.formandos ?? 0}</p>
-              <p className="text-xs text-slate-500">Formandos associados</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-5 flex items-center gap-3">
-            <FileText className="h-8 w-8 text-violet-400/80" />
-            <div>
-              <p className="text-2xl font-bold text-slate-100">{cliente._count?.propostas ?? 0}</p>
-              <p className="text-xs text-slate-500">Propostas comerciais</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-5">
-            <p className="text-xs text-slate-500 uppercase tracking-wide mb-2">Morada fiscal</p>
-            <p className="text-sm text-slate-300 whitespace-pre-line">
-              {cliente.moradaFiscal?.trim() || "- Em falta (obrigatório para faturação)"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-5">
-            <p className="text-xs text-slate-500 uppercase tracking-wide mb-2">Contacto</p>
-            {cliente.email && (
-              <p className="text-sm text-slate-300 flex items-center gap-2">
-                <Mail className="h-3.5 w-3.5 text-slate-500" />
-                {cliente.email}
-              </p>
-            )}
-            {cliente.telefone && (
-              <p className="text-sm text-slate-300 flex items-center gap-2 mt-1">
-                <Phone className="h-3.5 w-3.5 text-slate-500" />
-                {cliente.telefone}
-              </p>
-            )}
-            {!cliente.email && !cliente.telefone && (
-              <Badge variant="default">Sem contacto registado</Badge>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      {canVerCrmFicha ? (
+        <>
+          <ClienteFichaNav
+            active={tab}
+            onChange={setTab}
+            showCrmTabs={hasCrmMod}
+            showFaturacaoTabs={hasFaturacaoMod && canManage}
+            badges={{
+              faturas: ficha.faturas.length,
+              propostas: ficha.propostas.length,
+              leads: ficha.leadsCount,
+              notas: ficha.interaccoes.length,
+              sugestoes: ficha.sugestoesPendentes,
+            }}
+          />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Acções</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Link
-            href={`/portal/propostas?entidade=${cliente.id}`}
-            className={cn(buttonVariants({ variant: "secondary" }))}
-          >
-            Ver propostas
-          </Link>
-          <Button variant="secondary" disabled title="Ligação a formandos corporativos - próxima fase">
-            Gerir formandos B2B
-          </Button>
-        </CardContent>
-      </Card>
+          {tab === "dados" ? (
+            <ClienteFichaDados cliente={cliente} ficha={ficha} loading={fichaLoading} />
+          ) : null}
+
+          {tab === "faturas" && hasFaturacaoMod && canManage ? (
+            <ClienteFichaFaturas
+              entidadeId={cliente.id}
+              faturas={ficha.faturas}
+              loading={fichaLoading}
+              canCreate={canManage}
+            />
+          ) : null}
+
+          {tab === "propostas" && hasCrmMod ? (
+            <ClienteFichaPropostas
+              entidadeId={cliente.id}
+              propostas={ficha.propostas}
+              loading={fichaLoading}
+              showAutoria={canManageCrm}
+            />
+          ) : null}
+
+          {tab === "leads" && hasCrmMod && canManageCrm ? (
+            <ClienteFichaLeads entidadeId={cliente.id} />
+          ) : null}
+
+          {tab === "notas-comerciais" && hasCrmMod && canManageCrm ? (
+            <EntidadeCrmInsights
+              entidadeClienteId={cliente.id}
+              contextoNome={cliente.nome}
+              onMutate={() => void refreshFicha()}
+            />
+          ) : null}
+
+          {tab === "sugestoes-ia" && hasCrmMod && canManageCrm ? (
+            <ClienteFichaSugestoes entidadeId={cliente.id} />
+          ) : null}
+        </>
+      ) : (
+        <ClienteFichaDados
+          cliente={cliente}
+          ficha={{
+            propostas: [],
+            faturas: [],
+            interaccoes: [],
+            sugestoesPendentes: 0,
+            leadsCount: 0,
+            sugestoesTotal: 0,
+          }}
+          loading={false}
+        />
+      )}
 
       <Dialog open={dialogOpen} onOpenChange={(open) => (open ? setDialogOpen(true) : closeEditDialog())}>
         <DialogContent

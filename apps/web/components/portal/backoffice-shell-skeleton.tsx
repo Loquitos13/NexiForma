@@ -3,7 +3,7 @@ import { Skeleton, SkeletonCircle } from "@/components/ui/skeleton";
 
 function SidebarSkeleton() {
   return (
-    <aside className="flex h-full min-h-0 w-60 flex-shrink-0 flex-col border-r border-slate-700/40 bg-slate-950/90">
+    <aside className="hidden h-full min-h-0 w-64 flex-shrink-0 flex-col border-r border-slate-700/40 bg-slate-950/90 lg:flex">
       <div className="flex items-center gap-2.5 px-4 py-5">
         <SkeletonCircle className="h-8 w-8" />
         <div className="min-w-0 flex-1 space-y-2">
@@ -37,12 +37,12 @@ function SessionBarSkeleton() {
 
 export function BackofficeShellSkeleton() {
   return (
-    <div className="flex h-screen min-h-0 overflow-hidden bg-[#070b12]">
+    <div className="portal-app-shell flex-row bg-[#070b12]">
       <SidebarSkeleton />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <SessionBarSkeleton />
-        <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-6xl px-6 py-6">
+        <main className="portal-main portal-scroll-main">
+          <div className="mx-auto max-w-6xl px-3 py-4 sm:px-6 sm:py-6">
             <PageContentSkeleton variant="default" />
           </div>
         </main>

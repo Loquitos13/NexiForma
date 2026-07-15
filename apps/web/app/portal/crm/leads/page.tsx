@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import {
   ArrowRight,
   Building2,
   FileText,
   Plus,
-  Search,
   UserPlus,
   X,
+  Sparkles,
 } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
@@ -32,12 +33,27 @@ import {
 } from "@/components/ui";
 import {
   fmtEuro,
+  fmtCrmAutor,
   generateLeadCodigo,
   leadEstadoLabel,
   leadOrigemLabel,
   type LeadEstado,
   type LeadOrigem,
 } from "@/lib/crm/shared";
+import { ContextSugestoesBadge, CrmSugestoesPanel } from "@/components/crm/crm-sugestoes-panel";
+import { CrmContextNav, LEADS_NAV } from "@/components/crm/crm-context-nav";
+import {
+  CrmListFilters,
+  crmListFiltersToParams,
+  emptyCrmListFilters,
+  type CrmListFiltersValue,
+} from "@/components/crm/crm-list-filters";
+import { withPortalFrom } from "@/lib/ui/portal-back-nav";
+import { CrmContextInsights, useSugestoesPendentesPorLead } from "@/components/crm/entidade-crm-insights";
+import { ListPagination } from "@/components/crm/list-pagination";
+import { parsePaginatedList } from "@/lib/crm/paginated-list";
+import { KanbanHelpLink, LeadsKanbanBoard } from "@/components/crm/leads-kanban";
+import { LayoutGrid, List } from "lucide-react";
 
 type Lead = {
   id: string;
@@ -53,9 +69,28 @@ type Lead = {
   notas: string | null;
   motivoPerda: string | null;
   entidadeCliente: { id: string; nome: string; nif: string } | null;
+  criadoPor: { displayName: string } | null;
   atribuido: { displayName: string } | null;
   updatedAt: string;
 };
+
+function leadTemNifValido(nif: string | null | undefined): boolean {
+  const digits = (nif ?? "").replace(/\D/g, "");
+  if (digits.length !== 9) return false;
+  let soma = 0;
+  for (let i = 0; i < 8; i++) {
+    soma += parseInt(digits[i]!, 10) * (9 - i);
+  }
+  const checkDigit = 11 - (soma % 11);
+  const expectedDigit = checkDigit === 10 || checkDigit === 11 ? 0 : checkDigit;
+  return parseInt(digits[8]!, 10) === expectedDigit;
+}
+
+function leadPodeCriarProposta(l: Lead): boolean {
+  if (l.estado === "PERDIDO") return false;
+  if (l.estado === "CONVERTIDO") return !!l.entidadeCliente;
+  return leadTemNifValido(l.nif);
+}
 
 const ESTADOS: (LeadEstado | "TODAS")[] = [
   "TODAS",
@@ -72,11 +107,13 @@ const ORIGENS: LeadOrigem[] = [
   "FEIRA",
   "LINKEDIN",
   "TELEFONE",
+  "IA",
   "OUTRO",
 ];
 
 const emptyForm = {
   codigo: "",
+  entidadeClienteId: "",
   empresaNome: "",
   contactoNome: "",
   email: "",
@@ -87,29 +124,97 @@ const emptyForm = {
   notas: "",
 };
 
+type ClienteOpt = {
+  id: string;
+  nome: string;
+  nif: string;
+  email: string | null;
+  telefone: string | null;
+};
+
+const MANUAL_CLIENTE = "__manual__";
+
 export default function CrmLeadsPage() {
-  const { canManageCrm } = useTenantRole();
+  const pathname = usePathname();
+  const { canManageCrm, canManage } = useTenantRole();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [estadoFilter, setEstadoFilter] = useState<LeadEstado | "TODAS">("TODAS");
-  const [search, setSearch] = useState("");
+  const [listFilters, setListFilters] = useState<CrmListFiltersValue>(emptyCrmListFilters);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState<Record<string, number>>({ TODAS: 0 });
+  const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
+  const pageSize = viewMode === "kanban" ? 200 : 50;
   const [createOpen, setCreateOpen] = useState(false);
   const [perdidoOpen, setPerdidoOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
+  const [notasOpen, setNotasOpen] = useState(false);
   const [activeLead, setActiveLead] = useState<Lead | null>(null);
+  const sugestoesPorLead = useSugestoesPendentesPorLead();
   const [motivoPerda, setMotivoPerda] = useState("");
   const [convertNif, setConvertNif] = useState("");
   const [form, setForm] = useState(emptyForm);
+  const [clientes, setClientes] = useState<ClienteOpt[]>([]);
+
+  const loadClientes = useCallback(async () => {
+    const res = await bffFetch("/api/v1/entidades-cliente", { headers: { accept: "application/json" } });
+    if (res.ok) setClientes((await res.json()) as ClienteOpt[]);
+  }, []);
+
+  useEffect(() => {
+    if (createOpen) void loadClientes();
+  }, [createOpen, loadClientes]);
+
+  function seleccionarCliente(clienteId: string) {
+    if (!clienteId) {
+      setForm((f) => ({
+        ...f,
+        entidadeClienteId: "",
+        empresaNome: "",
+        email: "",
+        telefone: "",
+        nif: "",
+      }));
+      return;
+    }
+    if (clienteId === MANUAL_CLIENTE) {
+      setForm((f) => ({
+        ...f,
+        entidadeClienteId: MANUAL_CLIENTE,
+        empresaNome: "",
+        email: "",
+        telefone: "",
+        nif: "",
+      }));
+      return;
+    }
+    const c = clientes.find((x) => x.id === clienteId);
+    if (!c) return;
+    setForm((f) => ({
+      ...f,
+      entidadeClienteId: c.id,
+      empresaNome: c.nome,
+      email: c.email ?? "",
+      telefone: c.telefone ?? "",
+      nif: c.nif,
+    }));
+  }
+
+  const empresaManual =
+    form.entidadeClienteId === MANUAL_CLIENTE || form.entidadeClienteId === "";
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams();
-    if (estadoFilter !== "TODAS") params.set("estado", estadoFilter);
-    if (search.trim()) params.set("q", search.trim());
+    const params = crmListFiltersToParams(listFilters, canManage, {
+      estado: estadoFilter !== "TODAS" ? estadoFilter : undefined,
+      page: String(page),
+      pageSize: String(pageSize),
+    });
     const q = params.toString() ? `?${params}` : "";
     const res = await bffFetch(`/api/v1/crm/leads${q}`, {
       headers: { accept: "application/json" },
@@ -118,10 +223,18 @@ export default function CrmLeadsPage() {
     if (!res.ok) {
       setError(await parseApiError(res));
       setLeads([]);
+      setTotal(0);
       return;
     }
-    setLeads((await res.json()) as Lead[]);
-  }, [estadoFilter, search]);
+    const data = parsePaginatedList<Lead>(await res.json());
+    setLeads(data.items);
+    setTotal(data.total);
+    if (data.countsByEstado) setCounts(data.countsByEstado);
+  }, [estadoFilter, listFilters, canManage, page, viewMode]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [estadoFilter, listFilters]);
 
   useEffect(() => {
     void load();
@@ -135,26 +248,28 @@ export default function CrmLeadsPage() {
     }
   }, [canManageCrm]);
 
-  const counts = useMemo(() => {
-    const c: Record<string, number> = { TODAS: leads.length };
-    for (const e of ESTADOS) {
-      if (e !== "TODAS") c[e] = leads.filter((l) => l.estado === e).length;
-    }
-    return c;
-  }, [leads]);
-
   async function onCreate(e: FormEvent) {
     e.preventDefault();
+    if (!form.empresaNome.trim()) {
+      setError("Seleccione um cliente ou indique o nome da empresa.");
+      return;
+    }
     setBusy(true);
     setError(null);
     const valorCentavos = form.valorEuros
       ? Math.round(parseFloat(form.valorEuros.replace(",", ".")) * 100)
       : 0;
+    const entidadeId =
+      form.entidadeClienteId &&
+      form.entidadeClienteId !== MANUAL_CLIENTE
+        ? form.entidadeClienteId
+        : undefined;
     const res = await bffFetch("/api/v1/crm/leads", {
       method: "POST",
       headers: { "Content-Type": "application/json", accept: "application/json" },
       body: JSON.stringify({
         codigo: form.codigo || undefined,
+        entidadeClienteId: entidadeId,
         empresaNome: form.empresaNome,
         contactoNome: form.contactoNome || undefined,
         email: form.email || undefined,
@@ -255,6 +370,7 @@ export default function CrmLeadsPage() {
       cell: (l) => (
         <div>
           <span className="font-medium text-slate-100">{l.empresaNome}</span>
+          <ContextSugestoesBadge count={sugestoesPorLead[l.id] ?? 0} />
           <p className="text-xs text-slate-500 mt-0.5">{l.codigo}</p>
           {l.contactoNome ? (
             <p className="text-xs text-slate-400">{l.contactoNome}</p>
@@ -290,6 +406,20 @@ export default function CrmLeadsPage() {
       ),
     },
     {
+      key: "criadoPor",
+      header: "Registado por",
+      cell: (l) => (
+        <span className="text-sm text-slate-300">{fmtCrmAutor(l.criadoPor)}</span>
+      ),
+    },
+    {
+      key: "atribuido",
+      header: "Responsável",
+      cell: (l) => (
+        <span className="text-sm text-slate-400">{fmtCrmAutor(l.atribuido)}</span>
+      ),
+    },
+    {
       key: "estado",
       header: "Estado",
       cell: (l) => (
@@ -297,7 +427,7 @@ export default function CrmLeadsPage() {
           <LeadEstadoBadge estado={l.estado} />
           {l.entidadeCliente ? (
             <Link
-              href={`/portal/clientes/${l.entidadeCliente.id}`}
+              href={withPortalFrom(`/portal/clientes/${l.entidadeCliente.id}?tab=leads`, pathname)}
               className="text-[10px] text-blue-400/90 mt-1 block hover:underline"
             >
               {l.entidadeCliente.nome}
@@ -319,37 +449,59 @@ export default function CrmLeadsPage() {
 
   return (
     <div className="space-y-5">
+      <CrmContextNav tabs={LEADS_NAV} ariaLabel="Secções Leads" />
       <PageHeader
         title="Leads comerciais"
         description="Oportunidades antes de se tornarem entidades cliente e propostas."
         actions={
-          <Button size="sm" onClick={() => {
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant={viewMode === "list" ? "secondary" : "ghost"}
+              onClick={() => setViewMode("list")}
+              aria-pressed={viewMode === "list"}
+            >
+              <List className="h-3.5 w-3.5" /> Lista
+            </Button>
+            <Button
+              size="sm"
+              variant={viewMode === "kanban" ? "secondary" : "ghost"}
+              onClick={() => {
+                setViewMode("kanban");
+                setEstadoFilter("TODAS");
+              }}
+              aria-pressed={viewMode === "kanban"}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" /> Kanban
+            </Button>
+            <Button size="sm" onClick={() => {
             setForm({ ...emptyForm, codigo: generateLeadCodigo() });
             setCreateOpen(true);
           }}>
             <Plus className="h-3.5 w-3.5" />
             Novo lead
           </Button>
+          </div>
         }
       />
+
+      <CrmSugestoesPanel context="leads" />
 
       {error ? <Alert variant="error">{error}</Alert> : null}
       {msg ? <Alert variant="success">{msg}</Alert> : null}
 
       <div className="flex flex-wrap gap-3 items-center">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <input
-            className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900/80 border border-slate-700/60 text-sm text-slate-200"
-            placeholder="Pesquisar empresa, email, código…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+        <CrmListFilters
+          value={listFilters}
+          onChange={setListFilters}
+          gestor={canManage}
+          searchPlaceholder="Pesquisar NIF, empresa, email ou código…"
+        />
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {ESTADOS.map((e) => (
+        {viewMode === "list"
+          ? ESTADOS.map((e) => (
           <button
             key={e}
             type="button"
@@ -365,9 +517,23 @@ export default function CrmLeadsPage() {
               {counts[e] ?? 0}
             </Badge>
           </button>
-        ))}
+        ))
+          : null}
       </div>
 
+      {viewMode === "kanban" ? (
+        <>
+          <KanbanHelpLink />
+          <LeadsKanbanBoard
+            leads={leads}
+            onMoved={() => void load()}
+            onSelect={(l) => {
+              setActiveLead(l as Lead);
+              setNotasOpen(true);
+            }}
+          />
+        </>
+      ) : (
       <Card>
         <CardContent className="p-0">
           <DataTable
@@ -378,6 +544,18 @@ export default function CrmLeadsPage() {
             emptyMessage="Sem leads - registe a primeira oportunidade comercial."
             rowActions={(l) => (
               <div className="flex flex-wrap justify-end gap-1">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    setActiveLead(l);
+                    setNotasOpen(true);
+                  }}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Notas & IA
+                </Button>
                 {l.estado === "NOVO" ? (
                   <Button
                     size="sm"
@@ -426,12 +604,17 @@ export default function CrmLeadsPage() {
                     </Button>
                   </>
                 ) : null}
-                {l.estado === "CONVERTIDO" && l.entidadeCliente ? (
+                {leadPodeCriarProposta(l) ? (
                   <Button
                     size="sm"
                     variant="secondary"
                     disabled={busy}
                     onClick={() => void criarProposta(l)}
+                    title={
+                      l.estado !== "CONVERTIDO"
+                        ? "A conversão em cliente ocorre automaticamente quando o cliente aceitar a proposta"
+                        : undefined
+                    }
                   >
                     <FileText className="h-3.5 w-3.5" />
                     Proposta
@@ -440,18 +623,47 @@ export default function CrmLeadsPage() {
               </div>
             )}
           />
+          <ListPagination
+            className="border-t border-slate-700/40 px-4 py-3"
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+          />
         </CardContent>
       </Card>
+      )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent title="Novo lead">
           <form onSubmit={(e) => void onCreate(e)} className="space-y-3">
-            <Input
-              label="Empresa *"
-              value={form.empresaNome}
-              onChange={(e) => setForm((f) => ({ ...f, empresaNome: e.target.value }))}
+            <Select
+              label="Cliente *"
+              value={form.entidadeClienteId}
+              onChange={(e) => seleccionarCliente(e.target.value)}
               required
-            />
+            >
+              <option value="">- Seleccionar cliente -</option>
+              {clientes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome} (NIF {c.nif})
+                </option>
+              ))}
+              <option value={MANUAL_CLIENTE}>Outra empresa (manual)</option>
+            </Select>
+            {empresaManual ? (
+              <Input
+                label="Empresa *"
+                value={form.empresaNome}
+                onChange={(e) => setForm((f) => ({ ...f, empresaNome: e.target.value }))}
+                required
+              />
+            ) : (
+              <p className="text-sm text-slate-400 rounded-lg bg-slate-800/50 px-3 py-2">
+                <span className="text-slate-200 font-medium">{form.empresaNome}</span>
+                {form.nif ? <span className="text-slate-500"> · NIF {form.nif}</span> : null}
+              </p>
+            )}
             <Input
               label="Contacto"
               value={form.contactoNome}
@@ -557,6 +769,21 @@ export default function CrmLeadsPage() {
               Converter
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={notasOpen} onOpenChange={setNotasOpen}>
+        <DialogContent
+          title={activeLead ? `Notas & sugestões - ${activeLead.empresaNome}` : "Notas comerciais"}
+          description="Regista a reunião; a IA gera sugestões automaticamente neste lead."
+          className="max-w-3xl max-h-[90vh] overflow-y-auto"
+        >
+          {activeLead ? (
+            <CrmContextInsights
+              leadComercialId={activeLead.id}
+              contextoNome={activeLead.empresaNome}
+            />
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>

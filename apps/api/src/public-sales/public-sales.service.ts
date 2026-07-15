@@ -39,6 +39,10 @@ export class PublicSalesService {
     if (inbox) {
       const addons =
         dto.addonsInteresse?.length ? dto.addonsInteresse.join(", ") : "-";
+      const planoLabel =
+        dto.planoInteresse === "modules_only"
+          ? "Apenas módulo(s) avulso(s)"
+          : (dto.planoInteresse ?? "-");
       const body = [
         `Novo pedido de contacto comercial (#${lead.id})`,
         "",
@@ -46,8 +50,8 @@ export class PublicSalesService {
         `Email: ${lead.email}`,
         `Empresa: ${lead.empresa ?? "-"}`,
         `Telefone: ${lead.telefone ?? "-"}`,
-        `Plano: ${lead.planoInteresse ?? "-"}`,
-        `Add-ons: ${addons}`,
+        `Plano: ${planoLabel}`,
+        `Módulos: ${addons}`,
         `Origem: ${lead.origem}`,
         "",
         "Mensagem:",

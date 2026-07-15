@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -55,5 +56,14 @@ export class FormandosController {
     @Body() dto: UpdateFormandoDto,
   ): Promise<FormandoProfile> {
     return this.formandos.update(user, id, dto);
+  }
+
+  @Delete(":id")
+  @Roles("tenant_manager")
+  remove(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return this.formandos.remove(user, id);
   }
 }

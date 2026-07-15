@@ -1,9 +1,14 @@
-import { Controller, Get, Req, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Req, UseGuards } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
+import { Public } from "../auth/decorators/public.decorator";
+import { apiStrictLimitPerMin, DDOS_WINDOW_MS } from "../common/ddos-throttle.config";
 import { PrismaService } from "../prisma/prisma.service";
 import { ApiKeyGuard, type ApiKeyRequest } from "./api-key.guard";
 
 type ReqWithKey = { apiKey: ApiKeyRequest };
 
+@Public()
+@Throttle({ default: { limit: apiStrictLimitPerMin(), ttl: DDOS_WINDOW_MS } })
 @Controller("public/v1")
 export class PublicApiController {
   constructor(private readonly prisma: PrismaService) {}
@@ -85,7 +90,7 @@ export class PublicApiController {
         id: true,
         estado: true,
         dataInscricao: true,
-        formando: { select: { nome: true, email: true, nif: true } },
+        formando: { select: { nome: true } },
         turma: { select: { codigo: true, nome: true } },
       },
       orderBy: { dataInscricao: "desc" },

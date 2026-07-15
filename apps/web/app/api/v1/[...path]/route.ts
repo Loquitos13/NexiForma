@@ -3,6 +3,8 @@ import type { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+/** Análise IA / PDF pode demorar vários minutos (Ollama local). */
+export const maxDuration = 600;
 
 type RouteCtx = { params: Promise<{ path?: string[] }> };
 

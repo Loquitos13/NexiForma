@@ -1,4 +1,10 @@
 import { getAccessToken, setAccessToken } from "./access-token";
+import {
+  isAccessTokenExpired,
+  markSessionExpired,
+  isAuthenticatedAppPath,
+} from "./session-lifecycle";
+import { tokenKindMismatchForPath } from "./jwt-role";
 
 export type BffFetchInit = RequestInit & {
   /**
@@ -81,8 +87,15 @@ export async function bffFetch(
 
   while (true) {
     let token = getAccessToken();
-    if (authRetry401 && !token && attempt === 0) {
-      token = await refreshViaBffCookies();
+    if (authRetry401 && attempt === 0) {
+      const path = typeof window !== "undefined" ? window.location.pathname : "";
+      if (token && path && tokenKindMismatchForPath(path, token)) {
+        setAccessToken(null);
+        token = null;
+      }
+      if (!token || isAccessTokenExpired(token)) {
+        token = await refreshViaBffCookies();
+      }
     }
 
     const headers = buildAuthHeaders(restInit, token, authRetry401);
@@ -101,6 +114,9 @@ export async function bffFetch(
     const tok = await refreshViaBffCookies();
     if (!tok) {
       setAccessToken(null);
+      if (typeof window !== "undefined" && isAuthenticatedAppPath(window.location.pathname)) {
+        markSessionExpired({ returnTo: window.location.pathname });
+      }
       return res;
     }
 

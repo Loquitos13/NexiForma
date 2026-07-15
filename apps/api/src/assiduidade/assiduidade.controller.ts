@@ -1,4 +1,5 @@
 import { Body, Controller, Headers, Param, Post, UseGuards } from "@nestjs/common";
+import { Public } from "../auth/decorators/public.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/decorators/roles.decorator";
@@ -26,6 +27,7 @@ export class AssiduidadeController {
     return this.assiduidade.sincronizarSessao(user, sessaoId, dto);
   }
 
+  @Public()
   @Post("webhooks/zoom")
   zoomWebhook(
     @Body() dto: ZoomWebhookDto,
@@ -34,6 +36,7 @@ export class AssiduidadeController {
     return this.queue.enqueueZoom(dto, token);
   }
 
+  @Public()
   @Post("webhooks/teams")
   teamsWebhook(
     @Body() dto: TeamsWebhookDto,

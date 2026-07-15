@@ -6,6 +6,7 @@ import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
 import { openMeetingUrl } from "@/lib/client/open-meeting-url";
 import { syncAccessTokenToLocalStorage } from "@/lib/client/access-token";
+import { parseApiError } from "@/lib/ui/backoffice";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { lerPresencaAtiva, guardarPresencaAtiva } from "@/lib/lms/presenca-storage";
 import {
@@ -16,6 +17,8 @@ import {
 } from "@/lib/lms/use-presenca-sessao";
 import { TempoPresencaAoVivo } from "@/components/lms/tempo-presenca-ao-vivo";
 import { SessaoLiveHero } from "@/components/formando/sessao-live-hero";
+import { FormandoCursoView } from "@/components/formando/formando-curso-view";
+import type { PercursoFormando } from "@/components/formando/formando-percurso-types";
 import { Alert } from "@/components/ui";
 
 type PresencaResumo = {
@@ -76,18 +79,7 @@ type UnidadeItem = {
   tituloModuloAnterior: string | null;
 };
 
-type PercursoBlock = {
-  unidades: UnidadeItem[];
-  tarefas: ModuloItem[];
-  prazoLms?: {
-    limite: string;
-    diasRestantes: number | null;
-    percentualConclusao: number;
-    emAtraso: boolean;
-    cumpridoNoPrazo: boolean;
-    completo: boolean;
-  } | null;
-};
+type PercursoBlock = PercursoFormando;
 
 const tipoIcon: Record<string, string> = {
   VIDEO: "M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 2.25z",
@@ -218,13 +210,9 @@ export function FormandoAprendizagemView({ matriculaId }: Props) {
   const load = useCallback(async () => {
     setError(null);
     const r = await bffFetch("/api/v1/lms/minhas-sessoes", { headers: { accept: "application/json" } });
-    if (r.status === 403) {
-      setError("Esta área é reservada a formandos. Inicia sessão com uma conta de formando.");
-      setBlock(null);
-      return;
-    }
     if (!r.ok) {
-      setError("Erro ao carregar sessoes.");
+      setError(await parseApiError(r));
+      setBlock(null);
       return;
     }
     const blocks = (await r.json()) as MinhasSessoes[];
@@ -353,6 +341,59 @@ export function FormandoAprendizagemView({ matriculaId }: Props) {
   const totalMods = percurso?.tarefas.length ?? 0;
   const doneMods = percurso?.tarefas.filter((t) => t.concluido).length ?? 0;
   const progressPct = totalMods > 0 ? Math.round((doneMods / totalMods) * 100) : 0;
+  const modoCurso = totalMods > 0 && !!block && !!percurso;
+
+  const topSlotCurso = block ? (
+    <div className="space-y-2 border-b border-slate-700/30 bg-slate-950/90 px-4 py-3">
+      {error ? <Alert variant="error">{error}</Alert> : null}
+      {msg ? <Alert variant="success">{msg}</Alert> : null}
+      <SessaoLiveHero blocks={[block]} />
+      {active && relogio ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-teal-500/25 bg-teal-500/10 px-4 py-2 text-sm">
+          <span className="font-medium text-teal-300">
+            Em sessão · <span className="font-mono">{relogio.tempoTotalFormatado}</span>
+          </span>
+          {active.salaOnline ? (
+            <a
+              href={active.salaOnline.joinUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-teal-400 underline"
+            >
+              Abrir {active.salaOnline.provider}
+            </a>
+          ) : null}
+        </div>
+      ) : null}
+      {percurso?.prazoLms ? (
+        <div
+          className={`rounded-lg border px-3 py-2 text-xs ${
+            percurso.prazoLms.emAtraso
+              ? "border-red-500/30 bg-red-950/30 text-red-300"
+              : percurso.prazoLms.cumpridoNoPrazo
+                ? "border-emerald-500/30 bg-emerald-950/25 text-emerald-300"
+                : "border-slate-600/40 bg-slate-900/50 text-slate-400"
+          }`}
+        >
+          Prazo LMS: {percurso.prazoLms.limite} · {percurso.prazoLms.percentualConclusao}%
+          {percurso.prazoLms.emAtraso ? " · em atraso" : ""}
+        </div>
+      ) : null}
+    </div>
+  ) : null;
+
+  if (modoCurso) {
+    return (
+      <FormandoCursoView
+        matriculaId={matriculaId}
+        cursoId={block.cursoId}
+        tituloCurso={block.acao}
+        percurso={percurso}
+        onRefresh={load}
+        topSlot={topSlotCurso}
+      />
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto px-5 py-8 space-y-8">
@@ -599,6 +640,26 @@ export function FormandoAprendizagemView({ matriculaId }: Props) {
                           </div>
                         );
                       })}
+                      {percurso.tarefas.filter((m) => !m.moduloUnidadeId).length > 0 ? (
+                        <div>
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-2 pl-3 border-l-2 border-blue-500/50">
+                            <h5 className="text-sm font-semibold text-blue-400">Percurso directo</h5>
+                          </div>
+                          <div className="space-y-2">
+                            {percurso.tarefas
+                              .filter((m) => !m.moduloUnidadeId)
+                              .sort((a, b) => a.ordem - b.ordem)
+                              .map((mod) => (
+                                <ModuloRow
+                                  key={mod.id}
+                                  mod={mod}
+                                  matriculaId={block.matriculaId}
+                                  cursoId={block.cursoId}
+                                />
+                              ))}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
                     <div className="space-y-2">

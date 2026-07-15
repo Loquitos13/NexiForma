@@ -55,6 +55,13 @@ export class ImpersonationService {
     const jwtJti = randomUUID();
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
+    /** Sessão única: termina refresh de plataforma e impersonações anteriores do superadmin. */
+    await this.auth.revokeAllRefreshSessionsForSubject("platform", actor.sub);
+    await this.prisma.impersonationSession.updateMany({
+      where: { superAdminId: actor.sub, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
     const auditRow = await this.audit.log({
       actorType: "SUPERADMIN_USER",
       actorId: actor.sub,

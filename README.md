@@ -31,8 +31,10 @@ npm run db:seed    # opcional – tenant `demo`, super-admin e utilizadores exem
 Se a BD já estiver actualizada – **API e Web em paralelo** (recomendado):
 
 ```powershell
-npm run dev          # arranca API (:4000) + Web (:3000) no mesmo terminal
+npm run dev          # API (API_PORT, ex. 3001) + Web (WEB_PORT, ex. 3000)
 ```
+
+Abrir **sempre** `http://localhost:3000` (Web). A API (`http://127.0.0.1:3001/v1`) não serve `/api/auth/*` - essas rotas são do BFF Next.js.
 
 **NexiGuia com LLM local (opcional):**
 
@@ -57,16 +59,20 @@ Notificações usam **só email**. Guia passo a passo: **[docs/EMAIL_SMTP_SETUP.
 Ou em janelas separadas:
 
 ```powershell
-npm run dev:api    # porta 4000 – obrigatório antes do login
+npm run dev:api    # API_PORT no .env (ex. 3001)
 ```
 
 Web (outra janela):
 
 ```powershell
-npm run dev:web    # porta 3000 (ou 3002 se 3000 ocupada)
+npm run dev:web    # WEB_PORT no .env (defeito 3000)
 ```
 
-Se o login devolver *API indisponível* / `ECONNREFUSED`, a API não está a correr – confirma `http://127.0.0.1:4000/v1/health` → `200`.
+Se aparecer `EADDRINUSE` na porta 3000, feche o `node`/`next dev` anterior ou defina `WEB_PORT=3002` e `APP_PUBLIC_URL=http://localhost:3002` no `.env`.
+
+Se o login devolver *404* em `/api/auth/*`, está a abrir a **API** no browser - use a **Web** em `APP_PUBLIC_URL`.
+
+Se o login devolver *API indisponível* / `ECONNREFUSED`, a API não está a correr – confirma `http://127.0.0.1:<API_PORT>/v1/health` → `200`.
 
 ## Autenticação (JWT + refresh)
 
@@ -368,7 +374,7 @@ Utilizadores de exemplo após `npm run db:seed`:
 
 | Função | Email | Notas |
 |--------|-------|-------|
-| Super admin | `super@nexiforma.local` | `/login` (slug vazio) · password `super123#` → `/plataforma` |
+| Super admin | `admin@formafuturoportugal.pt` | `/login` (slug vazio) · password `super123#` → `/plataforma` |
 | Gestão tenant | `manager@demo.local` | slug `demo` em `/login` · password `manager123` → `/portal` |
 | Formador | `formador@demo.local` | slug `demo` · password `trainer123` → `/portal` (nav limitada) |
 | Comercial | `comercial@demo.local` | slug `demo` · password `com123` → `/portal/crm` (só CRM) |

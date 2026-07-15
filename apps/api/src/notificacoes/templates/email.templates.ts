@@ -512,7 +512,7 @@ export class EmailTemplates {
     };
   }
 
-  /** Gestor inicial quando superadmin cria tenant. */
+  /** Gestor inicial quando superadmin cria tenant (conta já com password). */
   static tenantGestorBemVindo(params: {
     nomeGestor: string;
     entidadeFormadora: string;
@@ -541,15 +541,48 @@ export class EmailTemplates {
     };
   }
 
+  /** Convite por email quando superadmin cria tenant sem password (activar conta). */
+  static tenantGestorConvite(params: {
+    nomeGestor: string;
+    entidadeFormadora: string;
+    slug: string;
+    inviteUrl: string;
+    loginUrl: string;
+  }): EmailTemplate {
+    return {
+      subject: `Convite NexiForma – ${params.entidadeFormadora}`,
+      text:
+        `Olá ${params.nomeGestor},\n\n` +
+        `Foste convidado(a) a gerir a entidade formadora «${params.entidadeFormadora}» no NexiForma.\n\n` +
+        `Identificador da entidade (slug): ${params.slug}\n` +
+        `Guarda este identificador - precisas dele para iniciar sessão.\n\n` +
+        `Activar conta e definir palavra-passe:\n${params.inviteUrl}\n\n` +
+        `Depois de activar, entra em:\n${params.loginUrl}\n\n` +
+        `O link expira em 7 dias.\n\n` +
+        `–\nNexiForma\n`,
+      html:
+        `<p>Olá <strong>${params.nomeGestor}</strong>,</p>` +
+        `<p>Foste convidado(a) a gerir <strong>${params.entidadeFormadora}</strong> no NexiForma.</p>` +
+        `<p>Identificador da entidade: <code style="background:#f1f5f9;padding:2px 8px;border-radius:4px;">${params.slug}</code></p>` +
+        `<p style="font-size:13px;color:#64748b;">Guarda este identificador - precisas dele no ecrã de login.</p>` +
+        `<p><a href="${params.inviteUrl}" style="background:#2563eb;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;">Activar conta</a></p>` +
+        `<p style="font-size:13px;color:#64748b;">Após activar: <a href="${params.loginUrl}">iniciar sessão</a> (slug pré-preenchido).</p>` +
+        `<p style="font-size:12px;color:#94a3b8;">O link expira em 7 dias.</p>` +
+        `<p>–<br>NexiForma</p>`,
+    };
+  }
+
   static erroPlataforma(params: {
     modulo: string;
     tenantLabel: string;
     resumo: string;
     detalhe?: string;
     htmlDetalhe?: string;
+    statusCode?: number;
   }): EmailTemplate {
+    const httpLabel = params.statusCode ? `HTTP ${params.statusCode}` : "Erro";
     return {
-      subject: `[NexiForma] Erro – ${params.modulo}`,
+      subject: `[NexiForma] ${httpLabel} – ${params.modulo}`,
       text:
         `Erro na plataforma NexiForma\n\n` +
         `Módulo: ${params.modulo}\n` +
@@ -568,6 +601,41 @@ export class EmailTemplates {
             ? `<li><pre style="white-space:pre-wrap;font-size:12px;">${params.detalhe}</pre></li>`
             : "") +
           `</ul>`),
+    };
+  }
+
+  static lembreteCalendario(params: {
+    nome: string;
+    titulo: string;
+    corpo: string;
+    tipo: string;
+    link: string;
+  }): EmailTemplate {
+    const labels: Record<string, string> = {
+      CRIACAO: "Novo evento no calendário",
+      SEMANA_ANTES: "Lembrete – evento em 1 semana",
+      DIA_ANTES: "Lembrete – evento amanhã",
+      HORA_EVENTO: "Lembrete – evento em 1 hora",
+    };
+    const label = labels[params.tipo] ?? "Lembrete de calendário";
+    return {
+      subject: `📅 ${label}: ${params.titulo}`,
+      text:
+        `Olá ${params.nome},\n\n` +
+        `${label}\n\n` +
+        `${params.titulo}\n` +
+        `${params.corpo}\n\n` +
+        `Ver calendário: ${params.link}\n\n` +
+        `–\nNexiForma\n`,
+      html:
+        `<p>Olá <strong>${params.nome}</strong>,</p>` +
+        `<p><strong>${label}</strong></p>` +
+        `<div style="background:#f1f5f9;padding:12px;border-left:4px solid #2563eb;margin:16px 0;">` +
+        `<p style="margin:0 0 8px;"><strong>${params.titulo}</strong></p>` +
+        `<p style="margin:0;">${params.corpo}</p>` +
+        `</div>` +
+        `<p><a href="${params.link}" style="background:#2563eb;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;">Abrir calendário</a></p>` +
+        `<p>–<br>NexiForma</p>`,
     };
   }
 }

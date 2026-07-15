@@ -173,11 +173,31 @@ function svgHorizontalBars(
   return `<svg width="100%" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${rows}</svg>`;
 }
 
-function chartBox(title: string, svg: string, descricao?: string): string {
-  const desc = descricao
-    ? `<p class="chart-desc">${escapeHtml(descricao)}</p>`
-    : "";
-  return `<div class="chart-box"><div class="chart-title">${escapeHtml(title)}</div>${desc}${svg}</div>`;
+function chartIaLabel(engine: RelatorioInsightsResponse["engine"]): string {
+  return engine === "llm" ? "Análise IA" : "Análise automática";
+}
+
+function formatDescricaoHtml(descricao: string): string {
+  return descricao
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => `<p class="chart-desc">${escapeHtml(p).replace(/\n/g, "<br/>")}</p>`)
+    .join("");
+}
+
+function chartIaAnalysisBlock(descricao: string, engine: RelatorioInsightsResponse["engine"]): string {
+  return `<div class="chart-ia-analysis"><span class="chart-ia-label">${chartIaLabel(engine)}</span>${formatDescricaoHtml(descricao)}</div>`;
+}
+
+function chartBox(
+  title: string,
+  svg: string,
+  descricao: string | undefined,
+  engine: RelatorioInsightsResponse["engine"],
+): string {
+  const desc = descricao?.trim() ? chartIaAnalysisBlock(descricao, engine) : "";
+  return `<div class="chart-box"><div class="chart-title">${escapeHtml(title)}</div>${svg}${desc}</div>`;
 }
 
 function descricaoGrafico(
@@ -185,27 +205,29 @@ function descricaoGrafico(
   insights: RelatorioInsightsResponse,
   fallback?: string,
 ): string | undefined {
-  const found = insights.descricoesGraficos?.find(
-    (d) => d.titulo.toLowerCase().includes(titulo.toLowerCase().slice(0, 12)) ||
-      titulo.toLowerCase().includes(d.titulo.toLowerCase().slice(0, 12)),
+  const items = insights.descricoesGraficos ?? [];
+  const tituloNorm = titulo.toLowerCase().trim();
+  const exact = items.find((d) => d.titulo.toLowerCase().trim() === tituloNorm);
+  if (exact?.descricao?.trim()) return exact.descricao;
+  const fuzzy = items.find(
+    (d) =>
+      d.titulo.toLowerCase().includes(tituloNorm.slice(0, 12)) ||
+      tituloNorm.includes(d.titulo.toLowerCase().slice(0, 12)),
   );
-  return found?.descricao ?? fallback;
+  return fuzzy?.descricao?.trim() ?? fallback;
 }
 
 function analiseExpandidaBlock(insights: RelatorioInsightsResponse): string {
   if (!insights.analiseDetalhada?.trim()) return "";
-  return `<div class="analise-expandida"><div class="section-title">Análise detalhada</div><p>${escapeHtml(insights.analiseDetalhada)}</p></div>`;
+  return `<div class="analise-expandida"><div class="section-title">Análise detalhada</div>${formatDescricaoHtml(insights.analiseDetalhada)}</div>`;
 }
 
-function descricoesExtraBlock(insights: RelatorioInsightsResponse): string {
-  const items = insights.descricoesGraficos ?? [];
-  if (!items.length) return "";
-  return `<div class="section-title">Interpretação dos gráficos</div><ul class="chart-desc-list">${items
-    .map((d) => `<li><strong>${escapeHtml(d.titulo)}:</strong> ${escapeHtml(d.descricao)}</li>`)
-    .join("")}</ul>`;
-}
-
-function funilHorizontal(title: string, funil: RelatorioFunil[], euro = false): string {
+function funilHorizontal(
+  title: string,
+  funil: RelatorioFunil[],
+  insights: RelatorioInsightsResponse,
+  euro = false,
+): string {
   const items = funil
     .filter((f) => f.quantidade > 0)
     .map((f) => ({
@@ -214,7 +236,7 @@ function funilHorizontal(title: string, funil: RelatorioFunil[], euro = false): 
       suffix: euro ? `${f.quantidade} · ${fmtEuro(f.valorCentavos)}` : String(f.quantidade),
     }));
   if (!items.length) return "";
-  return chartBox(title, svgHorizontalBars(items));
+  return chartBox(title, svgHorizontalBars(items), descricaoGrafico(title, insights), insights.engine);
 }
 
 function topClientesTable(fin: RelatorioFinanceiro): string {
@@ -241,6 +263,7 @@ function buildFinanceiro(fin: RelatorioFinanceiro, insights: RelatorioInsightsRe
       { name: "IVA (€)", color: "#6366f1", values: iva },
     ]),
     descricaoGrafico(tituloSerie, insights),
+    insights.engine,
   );
   const tituloEstado = "Faturas por estado";
   return `${kpiGrid(fin.kpis)}
@@ -253,10 +276,9 @@ function buildFinanceiro(fin: RelatorioFinanceiro, insights: RelatorioInsightsRe
         value: f.quantidade,
         suffix: `${f.quantidade} · ${fmtEuro(f.valorCentavos)}`,
       })),
-    ), descricaoGrafico(tituloEstado, insights))}
-    ${financeiroAvancadoBlock(fin)}
-    ${topClientesTable(fin)}
-    ${descricoesExtraBlock(insights)}`;
+    ), descricaoGrafico(tituloEstado, insights), insights.engine)}
+    ${financeiroAvancadoBlock(fin, insights)}
+    ${topClientesTable(fin)}`;
 }
 
 function conversaoPropostasBlock(c: RelatorioComercial["conversaoPropostas"]): string {
@@ -274,19 +296,22 @@ function conversaoPropostasBlock(c: RelatorioComercial["conversaoPropostas"]): s
   </div>`;
 }
 
-function financeiroAvancadoBlock(fin: RelatorioFinanceiro): string {
+function financeiroAvancadoBlock(fin: RelatorioFinanceiro, insights: RelatorioInsightsResponse): string {
   const av = fin.avancado;
+  const tituloFluxo = "Fluxo de caixa projetado (30/60/90 dias)";
   const fluxo = chartBox(
-    "Fluxo de caixa projetado (30/60/90 dias)",
+    tituloFluxo,
     svgVerticalBars([
       { label: "30d", value: Math.round(av.fluxoCaixaProjecao.dias30.receberCentavos / 100), color: "#10b981" },
       { label: "60d", value: Math.round(av.fluxoCaixaProjecao.dias60.receberCentavos / 100), color: "#059669" },
       { label: "90d", value: Math.round(av.fluxoCaixaProjecao.dias90.receberCentavos / 100), color: "#047857" },
     ]),
-    av.fluxoCaixaProjecao.nota,
+    descricaoGrafico("Fluxo de caixa projetado", insights) ?? av.fluxoCaixaProjecao.nota,
+    insights.engine,
   );
+  const tituloAging = "Aging de recebíveis";
   const aging = chartBox(
-    "Aging de recebíveis",
+    tituloAging,
     svgHorizontalBars(
       av.agingRecebiveis.map((b) => ({
         label: b.label,
@@ -294,6 +319,8 @@ function financeiroAvancadoBlock(fin: RelatorioFinanceiro): string {
         suffix: `${fmtEuro(b.valorCentavos)} · ${b.quantidade} doc.`,
       })),
     ),
+    descricaoGrafico(tituloAging, insights),
+    insights.engine,
   );
   const margemRows = av.margemPorServico
     .map(
@@ -301,10 +328,12 @@ function financeiroAvancadoBlock(fin: RelatorioFinanceiro): string {
         `<tr><td>${escapeHtml(m.descricao)}</td><td>${escapeHtml(fmtEuro(m.faturadoCentavos))}</td><td>${m.quantidade}</td></tr>`,
     )
     .join("");
+  const margemDesc = descricaoGrafico("Receita por serviço", insights);
   const margem =
     margemRows.length > 0
       ? `<div class="section-title">Receita por serviço / linha</div>
-    <table><thead><tr><th>Descrição</th><th>Faturado</th><th>Qtd.</th></tr></thead><tbody>${margemRows}</tbody></table>`
+    <table><thead><tr><th>Descrição</th><th>Faturado</th><th>Qtd.</th></tr></thead><tbody>${margemRows}</tbody></table>
+    ${margemDesc?.trim() ? chartIaAnalysisBlock(margemDesc, insights.engine) : ""}`
       : "";
   const resumo = `<div class="compliance">
     <div class="section-title">Indicadores de liquidez</div>
@@ -318,16 +347,17 @@ function financeiroAvancadoBlock(fin: RelatorioFinanceiro): string {
   return `<div class="section-title">Análise financeira avançada</div>${resumo}${fluxo}${aging}${margem}`;
 }
 
-function empresarialAvancadoBlock(emp: RelatorioEmpresarial): string {
+function empresarialAvancadoBlock(emp: RelatorioEmpresarial, insights: RelatorioInsightsResponse): string {
   const gargalos = emp.avancado.gargalosOperacionais
     .map(
       (g) =>
         `<tr><td>${escapeHtml(g.label)}</td><td>${g.valor}</td><td>${escapeHtml(g.severidade)}</td><td>${escapeHtml(g.detalhe ?? "-")}</td></tr>`,
     )
     .join("");
+  const analiseGargalos = descricaoGrafico("Gargalos operacionais", insights);
   return `<div class="section-title">Gargalos operacionais</div>
     <table><thead><tr><th>Área</th><th>Valor</th><th>Severidade</th><th>Detalhe</th></tr></thead><tbody>${gargalos}</tbody></table>
-    <p class="chart-desc">${escapeHtml(emp.avancado.notaMetas)}</p>`;
+    ${analiseGargalos?.trim() ? chartIaAnalysisBlock(analiseGargalos, insights.engine) : `<p class="chart-desc">${escapeHtml(emp.avancado.notaMetas)}</p>`}`;
 }
 
 function buildComercial(com: RelatorioComercial, insights: RelatorioInsightsResponse): string {
@@ -340,6 +370,7 @@ function buildComercial(com: RelatorioComercial, insights: RelatorioInsightsResp
       { name: "Propostas", color: "#10b981", values: com.seriePropostas.map((s) => s.valor) },
     ]),
     descricaoGrafico(tituloSerie, insights),
+    insights.engine,
   );
   const tituloPipe = "Pipeline estimado (12 meses, €)";
   const pipeline = chartBox(
@@ -354,7 +385,8 @@ function buildComercial(com: RelatorioComercial, insights: RelatorioInsightsResp
         },
       ],
     ),
-    descricaoGrafico(tituloPipe, insights),
+    descricaoGrafico("Pipeline estimado", insights),
+    insights.engine,
   );
   const av = com.avancado;
   const tempo = av.tempoAceiteProposta;
@@ -372,6 +404,7 @@ function buildComercial(com: RelatorioComercial, insights: RelatorioInsightsResp
       com.origemLeads.filter((o) => o.quantidade > 0).map((o) => ({ label: o.label, value: o.quantidade, color: "#3b82f6" })),
     ),
     descricaoGrafico("Leads por origem", insights),
+    insights.engine,
   );
   return `${kpiGrid(com.kpis)}
     ${conversaoPropostasBlock(com.conversaoPropostas)}
@@ -379,11 +412,10 @@ function buildComercial(com: RelatorioComercial, insights: RelatorioInsightsResp
     ${analiseExpandidaBlock(insights)}
     ${lineChart}
     ${pipeline}
-    ${funilHorizontal("Funil de leads", com.funilLeads)}
-    ${funilHorizontal("Funil de propostas", com.funilPropostas, true)}
+    ${funilHorizontal("Funil de leads", com.funilLeads, insights)}
+    ${funilHorizontal("Funil de propostas", com.funilPropostas, insights, true)}
     ${origem}
-    ${avancadoHtml}
-    ${descricoesExtraBlock(insights)}`;
+    ${avancadoHtml}`;
 }
 
 function buildEmpresarial(emp: RelatorioEmpresarial, insights: RelatorioInsightsResponse): string {
@@ -394,8 +426,9 @@ function buildEmpresarial(emp: RelatorioEmpresarial, insights: RelatorioInsights
       emp.serieMatriculas.map((s) => ({ label: s.label, value: s.valor, color: "#14b8a6" })),
     ),
     descricaoGrafico(tituloMat, insights),
+    insights.engine,
   );
-  const tituloAcoes = "Acções de formação por estado";
+  const tituloAcoes = "Acções formativas por estado";
   const acoes = chartBox(
     tituloAcoes,
     svgHorizontalBars(
@@ -405,6 +438,7 @@ function buildEmpresarial(emp: RelatorioEmpresarial, insights: RelatorioInsights
       })),
     ),
     descricaoGrafico(tituloAcoes, insights),
+    insights.engine,
   );
   const comp = emp.compliance;
   const complianceHtml = `<div class="compliance">
@@ -425,8 +459,7 @@ function buildEmpresarial(emp: RelatorioEmpresarial, insights: RelatorioInsights
     ${matChart}
     ${acoes}
     ${complianceHtml}
-    ${empresarialAvancadoBlock(emp)}
-    ${descricoesExtraBlock(insights)}`;
+    ${empresarialAvancadoBlock(emp, insights)}`;
 }
 
 const SECAO_TITULO: Record<RelatorioPdfInput["secao"], string> = {
@@ -466,11 +499,13 @@ export function buildRelatorioPdfHtml(input: RelatorioPdfInput): string {
   .section-title { font-size: 12px; font-weight: 700; margin: 16px 0 8px; color: #334155; }
   .chart-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; page-break-inside: avoid; }
   .chart-title { font-size: 11px; font-weight: 600; color: #475569; margin-bottom: 8px; }
-  .chart-desc { font-size: 9.5px; line-height: 1.5; color: #64748b; margin: 0 0 8px; }
-  .chart-desc-list { font-size: 10px; line-height: 1.55; margin-bottom: 16px; }
-  .chart-desc-list li { margin: 6px 0; }
+  .chart-ia-analysis { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e2e8f0; }
+  .chart-ia-label { display: block; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #7c3aed; margin-bottom: 6px; }
+  .chart-desc { font-size: 9.5px; line-height: 1.6; color: #475569; margin: 0 0 8px; text-align: justify; }
+  .chart-desc:last-child { margin-bottom: 0; }
   .analise-expandida { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
-  .analise-expandida p { margin: 0; line-height: 1.6; color: #334155; font-size: 10.5px; }
+  .analise-expandida p { margin: 0 0 8px; line-height: 1.65; color: #334155; font-size: 10.5px; text-align: justify; }
+  .analise-expandida p:last-child { margin-bottom: 0; }
   table { width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 14px; }
   th, td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; }
   th { background: #f1f5f9; font-weight: 600; }

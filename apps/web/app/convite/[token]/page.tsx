@@ -4,6 +4,11 @@ import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { AuthShell } from "@/components/site/auth-shell";
 import { PasswordInput } from "@/components/ui/password-input";
+import {
+  persistLoginPreferences,
+  persistTenantSlug,
+  setRememberLogin,
+} from "@/lib/client/login-preferences";
 
 const inputClass =
   "w-full px-3.5 py-2.5 rounded-xl bg-slate-900/80 border border-slate-700/60 text-slate-100 text-sm placeholder:text-slate-500 outline-none transition-all duration-200 focus:border-blue-500/70 focus:ring-2 focus:ring-blue-500/15";
@@ -30,13 +35,27 @@ export default function AcceptInvitePage() {
       const data = (await res.json().catch(() => null)) as {
         message?: string | string[];
         tenantSlug?: string;
+        email?: string;
       } | null;
       if (!res.ok) {
         const m = Array.isArray(data?.message) ? data.message.join(", ") : data?.message;
         setError(m ?? "Convite invalido ou expirado.");
         return;
       }
-      router.push(`/login?slug=${encodeURIComponent(data?.tenantSlug ?? "")}`);
+      const slug = data?.tenantSlug ?? "";
+      if (slug) persistTenantSlug(slug);
+      if (data?.email) {
+        setRememberLogin(true);
+        persistLoginPreferences({
+          remember: true,
+          tenantSlug: slug,
+          email: data.email,
+        });
+      }
+      const q = new URLSearchParams();
+      if (slug) q.set("slug", slug);
+      if (data?.email) q.set("email", data.email);
+      router.push(q.size ? `/login?${q.toString()}` : "/login");
     } catch {
       setError("Nao foi possivel activar a conta. Tenta novamente.");
     } finally {

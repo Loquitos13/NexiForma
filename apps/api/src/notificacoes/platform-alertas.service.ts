@@ -6,6 +6,7 @@ import {
   alertFingerprint,
   buildErroServidorDetalhe,
   buildErroServidorHtml,
+  severityFromStatusCode,
   shouldDedupAlert,
   type ErroServidorContext,
 } from "./platform-alertas.util";
@@ -39,7 +40,7 @@ export class PlatformAlertasService {
     return this.notificarErroServidor(input);
   }
 
-  /** Erro HTTP 5xx ou excepção não tratada - mensagem exacta + contexto. */
+  /** Erro HTTP 4xx/5xx ou excepção não tratada - mensagem exacta + contexto. */
   async notificarErroServidor(input: ErroServidorContext) {
     if (!this.alertsEnabled()) {
       return { enviados: 0, disabled: true };
@@ -63,6 +64,28 @@ export class PlatformAlertasService {
     const detalheTexto = buildErroServidorDetalhe(ctx);
     const detalheHtml = buildErroServidorHtml(ctx);
 
+    try {
+      await this.prisma.platformHttpAlert.create({
+        data: {
+          statusCode: input.statusCode ?? 500,
+          httpMethod: input.httpMethod,
+          httpPath: input.httpPath,
+          modulo: input.modulo,
+          resumo: input.resumo.slice(0, 4000),
+          corpo: input.responseBody?.slice(0, 8000),
+          stack: input.stack?.slice(0, 8000) ?? input.detalhe?.slice(0, 8000),
+          tenantId: input.tenantId,
+          tenantSlug: input.tenantSlug,
+          userEmail: input.userEmail,
+          userId: input.userId,
+          severity: severityFromStatusCode(input.statusCode),
+          fingerprint,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(`Falha ao persistir alerta HTTP: ${String(err)}`);
+    }
+
     const admins = await this.prisma.platformUser.findMany({
       where: { active: true },
       select: { email: true, displayName: true },
@@ -74,7 +97,7 @@ export class PlatformAlertasService {
     }
 
     const subjectSuffix = input.httpPath
-      ? `${input.httpMethod ?? "HTTP"} ${input.httpPath}`
+      ? `${input.httpMethod ?? "HTTP"} ${input.httpPath} → ${input.statusCode ?? 500}`
       : input.modulo;
 
     const tpl = EmailTemplates.erroPlataforma({
@@ -83,6 +106,7 @@ export class PlatformAlertasService {
       resumo: input.resumo,
       detalhe: detalheTexto,
       htmlDetalhe: detalheHtml,
+      statusCode: input.statusCode,
     });
 
     const delivery = this.mail.getDeliveryStatus();
@@ -93,7 +117,7 @@ export class PlatformAlertasService {
       try {
         await this.mail.send({
           to: admin.email,
-          subject: `${tpl.subject} - ${subjectSuffix}`.slice(0, 180),
+          subject: `[NexiForma HTTP ${input.statusCode ?? 500}] ${subjectSuffix}`.slice(0, 180),
           text: tpl.text,
           html: tpl.html,
         });

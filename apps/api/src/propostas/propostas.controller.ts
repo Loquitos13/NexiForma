@@ -52,8 +52,24 @@ export class PropostasController {
   list(
     @CurrentUser() user: RequestUser,
     @Query("entidadeClienteId") entidadeClienteId?: string,
-  ) {
-    return this.propostas.list(user, entidadeClienteId);
+    @Query("estado") estado?: string,
+    @Query("q") q?: string,
+    @Query("comercialUserId") comercialUserId?: string,
+    @Query("dataInicio") dataInicio?: string,
+    @Query("dataFim") dataFim?: string,
+    @Query("page") page?: string,
+    @Query("pageSize") pageSize?: string,
+  ): Promise<unknown> {
+    return this.propostas.list(user, {
+      entidadeClienteId,
+      estado,
+      q,
+      comercialUserId,
+      dataInicio,
+      dataFim,
+      page,
+      pageSize,
+    });
   }
 
   @Get(":id/proposta.html")
@@ -76,13 +92,13 @@ export class PropostasController {
 
   @Get(":id")
   @Roles("tenant_manager", "comercial")
-  detail(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
+  detail(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string): Promise<unknown> {
     return this.propostas.getOne(user, id);
   }
 
   @Post()
   @Roles("tenant_manager", "comercial")
-  create(@CurrentUser() user: RequestUser, @Body() dto: CreatePropostaDto) {
+  create(@CurrentUser() user: RequestUser, @Body() dto: CreatePropostaDto): Promise<unknown> {
     return this.propostas.create(user, dto);
   }
 
@@ -92,7 +108,7 @@ export class PropostasController {
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() dto: UpdatePropostaDto,
-  ) {
+  ): Promise<unknown> {
     return this.propostas.update(user, id, dto);
   }
 

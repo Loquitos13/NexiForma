@@ -1,6 +1,10 @@
 import { Controller, Get } from "@nestjs/common";
+import { SkipThrottle } from "@nestjs/throttler";
 import { APP_NAME } from "@nexiforma/shared";
+import { Public } from "./auth/decorators/public.decorator";
 
+@Public()
+@SkipThrottle()
 @Controller()
 export class AppController {
   @Get()

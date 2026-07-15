@@ -34,6 +34,20 @@ function extractMessage(exception: unknown): string {
   return String(exception);
 }
 
+function extractResponseBody(exception: unknown): string | undefined {
+  if (!(exception instanceof HttpException)) return undefined;
+  const res = exception.getResponse();
+  if (typeof res === "string") return res.slice(0, 4000);
+  if (typeof res === "object" && res !== null) {
+    try {
+      return JSON.stringify(res, null, 0).slice(0, 4000);
+    } catch {
+      return String(res).slice(0, 4000);
+    }
+  }
+  return undefined;
+}
+
 function sanitizePayload(body: unknown): string | undefined {
   if (body == null) return undefined;
   if (typeof body !== "object") return String(body).slice(0, 1500);
@@ -57,8 +71,14 @@ function sanitizePayload(body: unknown): string | undefined {
   }
 }
 
+/** Erros de RBAC/sessão - não alertar superadmin (fluxo normal do cliente). */
+function shouldSkipSuperAdminAlert(status: number): boolean {
+  return status === HttpStatus.FORBIDDEN || status === HttpStatus.UNAUTHORIZED;
+}
+
 /**
- * Envia email ao superadmin em erros HTTP 5xx (e excepções não tratadas).
+ * Envia email ao superadmin em erros HTTP 4xx e 5xx (e excepções não tratadas).
+ * Exclui 403, refresh de sessão e outros 401 de autenticação esperados.
  */
 @Catch()
 export class ServerErrorAlertFilter extends BaseExceptionFilter implements ExceptionFilter {
@@ -122,12 +142,16 @@ export class ServerErrorAlertFilter extends BaseExceptionFilter implements Excep
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    if (status < 500) return;
+    if (status < 400) return;
 
     const message = extractMessage(exception);
+    const responseBody = extractResponseBody(exception);
     const stack = exception instanceof Error ? exception.stack : undefined;
     const method = req.method;
     const path = req.originalUrl ?? req.url;
+
+    if (shouldSkipSuperAdminAlert(status)) return;
+
     const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
     const user = req.user;
 
@@ -136,6 +160,8 @@ export class ServerErrorAlertFilter extends BaseExceptionFilter implements Excep
         modulo: "api-http",
         resumo: message,
         detalhe: stack,
+        stack,
+        responseBody,
         httpMethod: method,
         httpPath: path,
         statusCode: status,

@@ -3,11 +3,27 @@ import { NextResponse } from "next/server";
 
 /** URL base da API Nest (só servidor; não deve ser obrigatório no cliente). */
 export function getNexiBackendBaseUrl(): string {
-  const raw =
-    process.env.API_URL?.trim() ||
-    process.env.NEXT_PUBLIC_API_URL?.trim() ||
-    "http://127.0.0.1:4000";
-  return normalizeBackendUrl(raw);
+  const explicit =
+    process.env.API_URL?.trim() || process.env.NEXT_PUBLIC_API_URL?.trim();
+  const port = process.env.API_PORT?.trim();
+
+  if (explicit) {
+    if (port && process.env.NODE_ENV === "development") {
+      try {
+        const u = new URL(explicit.startsWith("http") ? explicit : `http://${explicit}`);
+        const host = u.hostname === "localhost" ? "127.0.0.1" : u.hostname;
+        if ((host === "127.0.0.1" || host === "localhost") && u.port && u.port !== port) {
+          return normalizeBackendUrl(`http://127.0.0.1:${port}`);
+        }
+      } catch {
+        /* mantém explicit */
+      }
+    }
+    return normalizeBackendUrl(explicit);
+  }
+
+  const resolvedPort = port || "4000";
+  return normalizeBackendUrl(`http://127.0.0.1:${resolvedPort}`);
 }
 
 /** Evita ECONNREFUSED no Windows quando `localhost` resolve para ::1 e a API escuta só em IPv4. */
@@ -114,6 +130,26 @@ export type ProxyAuthOptions = {
   incoming: Request;
 };
 
+/** Cabeçalho enviado à API para links em email usarem o mesmo host do pedido. */
+export const APP_PUBLIC_URL_HEADER = "x-nexiforma-app-public-url";
+
+/** Origem pública do pedido ao Next (ex.: http://192.168.1.86:3000). */
+export function resolveIncomingAppPublicUrl(req: Request): string | undefined {
+  try {
+    const url = new URL(req.url);
+    if (url.origin && url.origin !== "null") {
+      return url.origin;
+    }
+  } catch {
+    /* ignore */
+  }
+  const fwdHost = req.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = fwdHost ?? req.headers.get("host")?.trim();
+  if (!host) return undefined;
+  const proto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ?? "http";
+  return `${proto}://${host}`;
+}
+
 /**
  * Encaminha para `GET` ou `POST` na API Nest e devolve `NextResponse` com cookies reescritas.
  */
@@ -130,11 +166,18 @@ export async function proxyAuthToNest(opts: ProxyAuthOptions): Promise<NextRespo
   if (authz) {
     headers.set("authorization", authz);
   }
-  for (const hop of ["x-forwarded-for", "x-real-ip", "forwarded"] as const) {
+  for (const hop of ["x-forwarded-for", "x-real-ip", "forwarded", "x-forwarded-host", "x-forwarded-proto"] as const) {
     const v = opts.incoming.headers.get(hop);
     if (v) {
       headers.set(hop, v);
     }
+  }
+  const appPublicUrl = resolveIncomingAppPublicUrl(opts.incoming);
+  if (appPublicUrl) {
+    headers.set(APP_PUBLIC_URL_HEADER, appPublicUrl);
+  }
+  if (opts.incoming.headers.get("origin")) {
+    headers.set("origin", opts.incoming.headers.get("origin")!);
   }
   if (opts.method === "POST" && opts.body !== undefined) {
     headers.set("content-type", "application/json");

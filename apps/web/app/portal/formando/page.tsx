@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, GraduationCap } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { parseApiError } from "@/lib/ui/backoffice";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert } from "@/components/ui";
 import { SessaoLiveHero } from "@/components/formando/sessao-live-hero";
@@ -52,13 +53,9 @@ export default function FormandoPortalPage() {
   const load = useCallback(async () => {
     setError(null);
     const r = await bffFetch("/api/v1/lms/minhas-sessoes", { headers: { accept: "application/json" } });
-    if (r.status === 403) {
-      setError("Esta área é reservada a formandos. Inicia sessão com uma conta de formando.");
-      setBlocks([]);
-      return;
-    }
     if (!r.ok) {
-      setError("Erro ao carregar inscrições.");
+      setError(await parseApiError(r));
+      setBlocks([]);
       return;
     }
     const data = (await r.json()) as MinhasSessoes[];
@@ -107,9 +104,9 @@ export default function FormandoPortalPage() {
 
       {error ? <Alert variant="error">{error}</Alert> : null}
 
-      {!blocks ? (
+      {blocks === null ? (
         <p className="text-sm text-slate-500 text-center py-10">A carregar inscrições…</p>
-      ) : blocks.length === 0 ? (
+      ) : !error && blocks.length === 0 ? (
         <Card className="border-dashed border-slate-700/50">
           <CardContent className="py-12 text-center space-y-3">
             <GraduationCap className="h-10 w-10 text-slate-600 mx-auto" />

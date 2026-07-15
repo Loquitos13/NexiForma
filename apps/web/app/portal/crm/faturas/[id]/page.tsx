@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Ban, FileText, Mail, RefreshCw, Save, Send, Upload } from "lucide-react";
+import { Ban, FileText, Mail, RefreshCw, Save, Send, Upload } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { downloadResponseAsFile } from "@/lib/client/download-response";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
@@ -11,6 +11,7 @@ import {
   calcularTotaisLinhas,
   formatarEurosInput,
   parseEurosInput,
+  parsePercentInput,
 } from "@/lib/crm/fatura-calculos";
 import { fmtFaturaRef, type FaturaEstado } from "@/lib/crm/shared";
 import { FaturaEstadoBadge } from "@/components/crm/fatura-estado-badge";
@@ -21,6 +22,7 @@ import {
 } from "@/components/crm/fatura-inline-editor";
 import { AT_MOTIVO_ISENCAO_DEFAULT } from "@nexiforma/shared";
 import { Alert, Button, PageHeader, Textarea } from "@/components/ui";
+import { PortalBackButton } from "@/components/ui/portal-back-button";
 
 type FaturaDetalhe = {
   id: string;
@@ -34,6 +36,9 @@ type FaturaDetalhe = {
   destinatarioNome: string;
   destinatarioNif: string;
   destinatarioMorada: string | null;
+  moradaCarga?: string | null;
+  moradaDescarga?: string | null;
+  entidadeCliente?: { id: string; nome: string; nif: string };
   valorCentavos: number;
   ivaCentavos: number;
   retencaoCentavos?: number;
@@ -49,6 +54,7 @@ type FaturaDetalhe = {
     quantidade: number | string;
     precoUnitCentavos: number;
     taxaIva: number | string;
+    descontoPercent?: number | string | null;
     codigoIsencaoIva?: string | null;
   }>;
   pedidosAnulacao?: Array<{
@@ -88,6 +94,8 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
   const [destNome, setDestNome] = useState("");
   const [destNif, setDestNif] = useState("");
   const [destMorada, setDestMorada] = useState("");
+  const [moradaCarga, setMoradaCarga] = useState("");
+  const [moradaDescarga, setMoradaDescarga] = useState("");
   const [dataVencimento, setDataVencimento] = useState("");
   const [notas, setNotas] = useState("");
   const [retencaoEuros, setRetencaoEuros] = useState("0.00");
@@ -114,6 +122,7 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
         quantidade: Number.parseFloat(l.quantidade.replace(",", ".")) || 0,
         precoUnitCentavos: parseEurosInput(l.precoEuros),
         taxaIva: Number.parseFloat(l.taxaIva.replace(",", ".")) || 0,
+        descontoPercent: parsePercentInput(l.descontoPercent),
       }));
     return calcularTotaisLinhas(parsed);
   }, [linhas]);
@@ -137,6 +146,8 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
     setDestNome(f.destinatarioNome);
     setDestNif(f.destinatarioNif);
     setDestMorada(f.destinatarioMorada ?? "");
+    setMoradaCarga(f.moradaCarga ?? "");
+    setMoradaDescarga(f.moradaDescarga ?? "");
     setDataVencimento(f.dataVencimento?.slice(0, 10) ?? "");
     setNotas(f.notas ?? "");
     setRetencaoEuros(formatarEurosInput(f.retencaoCentavos ?? 0));
@@ -168,6 +179,7 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
           quantidade: Number.parseFloat(l.quantidade.replace(",", ".")) || 1,
           precoUnitCentavos: parseEurosInput(l.precoEuros),
           taxaIva,
+          descontoPercent: parsePercentInput(l.descontoPercent),
           codigoIsencaoIva:
             taxaIva <= 0
               ? (l.codigoIsencaoIva.trim() || AT_MOTIVO_ISENCAO_DEFAULT)
@@ -175,9 +187,8 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
         };
       });
     return {
-      destinatarioNome: destNome.trim(),
-      destinatarioNif: destNif.trim(),
-      destinatarioMorada: destMorada.trim() || null,
+      moradaCarga: moradaCarga.trim() || null,
+      moradaDescarga: moradaDescarga.trim() || null,
       dataVencimento: dataVencimento || null,
       notas: notas.trim() || null,
       retencaoCentavos: parseEurosInput(retencaoEuros),
@@ -187,10 +198,6 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
 
   async function guardar(): Promise<boolean> {
     if (!faturaId || !editavel) return false;
-    if (!destNome.trim() || !destNif.trim()) {
-      setError("Nome e NIF do destinatário são obrigatórios.");
-      return false;
-    }
     const payload = buildPayload();
     if (payload.linhas.length === 0) {
       setError("Adicione pelo menos um produto/serviço.");
@@ -427,6 +434,7 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
 
   return (
     <div className="space-y-4 pb-10">
+      <PortalBackButton fallbackHref="/portal/crm/faturas" fallbackLabel="Faturas" />
       <PageHeader
         title={titulo}
         description={
@@ -436,10 +444,6 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
         }
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="secondary" onClick={() => router.push("/portal/crm/faturas")}>
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Lista
-            </Button>
             {editavel ? (
               <>
                 <Button size="sm" variant="secondary" disabled={busy} onClick={() => void guardar()}>
@@ -607,9 +611,11 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
         destNome={destNome}
         destNif={destNif}
         destMorada={destMorada}
-        onDestNome={setDestNome}
-        onDestNif={setDestNif}
-        onDestMorada={setDestMorada}
+        clienteId={fatura.entidadeCliente?.id}
+        moradaCarga={moradaCarga}
+        moradaDescarga={moradaDescarga}
+        onMoradaCarga={setMoradaCarga}
+        onMoradaDescarga={setMoradaDescarga}
         tipoDocumento={fatura.serie.tipo === "FT" ? "FATURA" : fatura.serie.tipo}
         tipoSerie={fatura.serie.tipo}
         numeroDocumento={

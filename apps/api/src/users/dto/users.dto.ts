@@ -1,4 +1,15 @@
-import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import {
+  IsArray,
+  IsBoolean,
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  MinLength,
+  ValidateIf,
+} from "class-validator";
 import type { TenantUserRole } from "@nexiforma/database";
 
 const ROLES: TenantUserRole[] = [
@@ -20,6 +31,25 @@ export class InviteUserDto {
   @IsString()
   @MaxLength(120)
   displayName!: string;
+
+  /** Obrigatório quando `role` é FORMANDO — ficha DGERT para inscrições. */
+  @ValidateIf((o: InviteUserDto) => o.role === "FORMANDO")
+  @IsString()
+  @MinLength(9)
+  @MaxLength(9)
+  nif?: string;
+
+  @ValidateIf((o: InviteUserDto) => o.role === "FORMANDO")
+  @IsOptional()
+  @IsString()
+  @MaxLength(48)
+  telefone?: string;
+
+  /** Matricular já na turma (opcional). */
+  @ValidateIf((o: InviteUserDto) => o.role === "FORMANDO")
+  @IsOptional()
+  @IsUUID()
+  turmaId?: string;
 }
 
 export class AcceptInviteDto {
@@ -43,7 +73,17 @@ export class UpdateUserDto {
   active?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  mfaRequired?: boolean;
+
+  @IsOptional()
   @IsString()
   @MaxLength(120)
   displayName?: string;
+}
+
+export class EnforceMfaDto {
+  @IsArray()
+  @IsUUID("4", { each: true })
+  userIds!: string[];
 }

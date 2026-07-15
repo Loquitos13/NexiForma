@@ -39,7 +39,7 @@ export class IntegracoesController {
     @Query("provider") provider: "ZOOM" | "TEAMS",
   ) {
     if (provider !== "ZOOM" && provider !== "TEAMS") {
-      provider = "ZOOM";
+      provider = "TEAMS";
     }
     return this.integracoes.criarReuniao(user, sessaoId, provider);
   }

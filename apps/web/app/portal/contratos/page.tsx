@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { parsePaginatedList } from "@/lib/crm/paginated-list";
 
 type Contrato = {
   id: string;
@@ -42,16 +43,17 @@ export default function ContratosPage() {
   // Contratos are derived from propostas ACEITE
   const load = useCallback(async () => {
     setError(null);
-    const r = await bffFetch("/api/v1/propostas", { headers: { accept: "application/json" } });
+    const r = await bffFetch("/api/v1/propostas?estado=ACEITE&pageSize=100", {
+      headers: { accept: "application/json" },
+    });
     if (!r.ok) { setError("Erro ao carregar."); return; }
-    const propostas = (await r.json()) as Array<{
+    const propostas = parsePaginatedList<{
       id: string; codigo: string; titulo: string; estado: string; valorCentavos: number;
       validadeAte: string | null; createdAt: string;
       entidadeCliente: { nome: string };
-    }>;
+    }>(await r.json()).items;
     setContratos(
       propostas
-        .filter((p) => p.estado === "ACEITE")
         .map((p) => ({
           id: p.id,
           codigo: p.codigo,

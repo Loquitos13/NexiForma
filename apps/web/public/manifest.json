@@ -27,5 +27,20 @@
       "type": "image/png",
       "purpose": "maskable"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "CRM Leads",
+      "short_name": "Leads",
+      "description": "Pipeline comercial – kanban de leads",
+      "url": "/portal/crm/leads",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Notas comerciais",
+      "short_name": "Notas",
+      "url": "/portal/crm/interaccoes",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
   ]
 }

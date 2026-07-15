@@ -1,17 +1,14 @@
 import { ForbiddenException, Injectable } from "@nestjs/common";
 import { resolveTenantEntitlements, type TenantEntitlements } from "@nexiforma/shared";
 import { PrismaService } from "../prisma/prisma.service";
+import { findCurrentTenantSubscription } from "./current-subscription.util";
 
 @Injectable()
 export class BillingEntitlementsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async forTenant(tenantId: string): Promise<TenantEntitlements> {
-    const sub = await this.prisma.tenantSubscription.findFirst({
-      where: { tenantId },
-      orderBy: { createdAt: "desc" },
-      include: { plan: { select: { code: true } } },
-    });
+    const sub = await findCurrentTenantSubscription(this.prisma, tenantId);
     return resolveTenantEntitlements(sub?.plan?.code, sub?.customAddons);
   }
 

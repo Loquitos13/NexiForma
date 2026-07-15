@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { bffFetch } from "@/lib/client/bff-fetch";
-import { isModuloStorageRef, parseVimeoVideoId, parseYoutubeVideoId, resolveModuloConteudoUrl } from "@nexiforma/shared";
+import { isModuloStorageRef, parseVimeoVideoId, parseYoutubeVideoId, resolveModuloConteudoUrl, sanitizeLmsHtml } from "@nexiforma/shared";
 import { ModuloStoredMedia } from "@/components/lms/ModuloStoredMedia";
 import { ExternalVideoEmbed } from "@/components/lms/ExternalVideoEmbed";
 import { useAutoConcluirModulo } from "@/lib/lms/use-auto-concluir-modulo";
@@ -295,7 +295,7 @@ export default function ConteudoViewerPage() {
             <div
               ref={textoRef}
               className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-6 prose prose-invert prose-sm max-w-none max-h-[70vh] overflow-y-auto"
-              dangerouslySetInnerHTML={{ __html: modulo.conteudoHtml }}
+              dangerouslySetInnerHTML={{ __html: sanitizeLmsHtml(modulo.conteudoHtml) ?? "" }}
             />
           ) : (
             <div className="text-center py-12 rounded-2xl bg-slate-900/30 border border-slate-700/20">

@@ -171,8 +171,8 @@ export const GUIDE_KNOWLEDGE: GuideKnowledgeEntry[] = [
     id: "rgpd",
     keywords: ["rgpd", "gdpr", "dados pessoais", "privacidade", "consentimento"],
     answer:
-      "RGPD gere consentimentos e direitos dos titulares. Formandos podem exportar os seus dados no perfil. Gestores configuram políticas na área RGPD do portal.",
-    related: ["/portal/rgpd", "/portal/formando/perfil"],
+      "RGPD gere consentimentos e direitos dos titulares. Todos os utilizadores podem consultar as suas definições RGPD no portal. Formandos acedem em Privacidade; restantes roles em Conta → RGPD.",
+    related: ["/portal/rgpd", "/portal/formando/rgpd", "/portal/formando/perfil"],
   },
   {
     id: "integracoes",

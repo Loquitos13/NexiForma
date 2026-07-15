@@ -28,7 +28,10 @@ export class ApiKeyGuard implements CanActivate {
     }
 
     const prefix = "nf_live_";
-    const pepper = this.config.get<string>("SUBSCRIPTION_KEY_PEPPER") ?? "";
+    const pepper = this.config.get<string>("SUBSCRIPTION_KEY_PEPPER");
+    if (!pepper?.trim()) {
+      throw new UnauthorizedException("Configuração de API keys incompleta.");
+    }
     const keyHash = createHash("sha256").update(`${raw}${pepper}`).digest("hex");
 
     const row = await this.prisma.tenantSubscriptionKey.findFirst({

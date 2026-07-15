@@ -11,6 +11,7 @@ export type TarefaPercurso = {
   ordem: number;
   publicado?: boolean;
   notaMinima?: number | null;
+  prerequisitoModuloId?: string | null;
 };
 
 export type ModuloPercurso = {
@@ -84,7 +85,27 @@ export function moduloDesbloqueado(
   return scoreAnterior >= minima;
 }
 
-/** Tarefa acessível se o módulo (secção) estiver desbloqueado. */
+/** Pré-requisito concluído (progresso + nota mínima quando aplicável). */
+function prerequisitoConcluido(
+  tarefas: TarefaPercurso[],
+  progressos: ProgressoPercurso[],
+  prerequisitoId: string,
+): boolean {
+  const prereq = tarefas.find((t) => t.id === prerequisitoId);
+  if (!prereq) return true;
+
+  const prog = progressos.find((p) => p.moduloId === prerequisitoId);
+  if (!prog?.concluidoEm) return false;
+
+  if (prereq.notaMinima != null) {
+    const pont = pontuacaoTarefa(prog, prereq);
+    if (pont == null || pont < prereq.notaMinima) return false;
+  }
+
+  return true;
+}
+
+/** Tarefa acessível se o módulo (secção) estiver desbloqueado e o pré-requisito cumprido. */
 export function tarefaDesbloqueada(
   unidades: ModuloPercurso[],
   tarefas: TarefaPercurso[],
@@ -93,8 +114,20 @@ export function tarefaDesbloqueada(
 ): boolean {
   const tarefa = tarefas.find((t) => t.id === tarefaId);
   if (!tarefa || tarefa.publicado === false) return false;
-  if (!tarefa.moduloUnidadeId) return true;
-  return moduloDesbloqueado(unidades, tarefas, progressos, tarefa.moduloUnidadeId);
+
+  if (tarefa.moduloUnidadeId) {
+    if (!moduloDesbloqueado(unidades, tarefas, progressos, tarefa.moduloUnidadeId)) {
+      return false;
+    }
+  }
+
+  if (tarefa.prerequisitoModuloId) {
+    if (!prerequisitoConcluido(tarefas, progressos, tarefa.prerequisitoModuloId)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export function notaMinimaParaDesbloquearProximo(unidade: ModuloPercurso): number {

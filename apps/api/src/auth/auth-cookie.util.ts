@@ -29,6 +29,10 @@ function cookieSameSite(config?: ConfigService): "strict" | "lax" | "none" {
   if (ss === "strict" || ss === "lax" || ss === "none") {
     return ss;
   }
+  // Produção: strict reduz envio de cookie em navegação cross-site (MITM/CSRF).
+  if (config.get<string>("NODE_ENV") === "production") {
+    return "strict";
+  }
   return "lax";
 }
 

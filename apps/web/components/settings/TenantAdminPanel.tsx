@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useTheme } from '@/contexts/ThemeContext';
+import { bffFetch } from '@/lib/client/bff-fetch';
 
 interface TenantBranding {
   logoUrl?: string;
@@ -48,27 +49,24 @@ export const TenantAdminPanel: React.FC = () => {
 
   const carregarDados = async () => {
     try {
-      const token = localStorage.getItem('token');
-
-      // Carregar branding
-      const brandingRes = await fetch('/api/settings/tenant/branding', {
-        headers: { 'Authorization': `Bearer ${token}` },
+      const brandingRes = await bffFetch('/api/settings/tenant/branding', {
+        headers: { accept: 'application/json' },
       });
       if (brandingRes.ok) {
         const data = await brandingRes.json();
         setBranding(data.branding);
       }
 
-      // Carregar plano atual
-      const planoRes = await fetch('/api/settings/tenant/plano', {
-        headers: { 'Authorization': `Bearer ${token}` },
+      const planoRes = await bffFetch('/api/settings/tenant/plano', {
+        headers: { accept: 'application/json' },
       });
       if (planoRes.ok) {
         setPlanoAtual(await planoRes.json());
       }
 
-      // Carregar planos disponíveis
-      const planosRes = await fetch('/api/settings/planos');
+      const planosRes = await bffFetch('/api/settings/planos', {
+        headers: { accept: 'application/json' },
+      });
       if (planosRes.ok) {
         setPlanosDisponiveis(await planosRes.json());
       }
@@ -89,13 +87,9 @@ export const TenantAdminPanel: React.FC = () => {
   const handleSaveBranding = async () => {
     setSaving(true);
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/settings/tenant/branding', {
+      const response = await bffFetch('/api/settings/tenant/branding', {
         method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json', accept: 'application/json' },
         body: JSON.stringify(branding),
       });
 

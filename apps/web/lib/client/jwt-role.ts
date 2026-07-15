@@ -9,6 +9,8 @@ export type JwtPayloadSlice = {
   role?: JwtRole;
   kind?: JwtKind;
   impersonating?: boolean;
+  tenantSlug?: string | null;
+  email?: string;
 };
 
 export function decodeJwtPayload(accessToken: string | null | undefined): JwtPayloadSlice | null {
@@ -45,4 +47,20 @@ export function resolvePostLoginPath(
 ): string {
   const payload = decodeJwtPayload(accessToken);
   return resolvePath(payload?.role, payload?.kind, next);
+}
+
+/** Token de plataforma no portal (ou inverso) após impersonação/chave sem gravar JWT. */
+export function tokenKindMismatchForPath(
+  pathname: string,
+  accessToken: string | null | undefined,
+): boolean {
+  const kind = decodeJwtPayload(accessToken)?.kind;
+  if (!kind) return false;
+  if (pathname.startsWith("/portal") || pathname.startsWith("/formando")) {
+    return kind === "platform";
+  }
+  if (pathname.startsWith("/plataforma")) {
+    return kind === "tenant";
+  }
+  return false;
 }

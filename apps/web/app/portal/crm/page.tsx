@@ -1,18 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Building2,
   FileText,
   GraduationCap,
   TrendingUp,
-  Users,
   ArrowRight,
   Plus,
   UserPlus,
+  Sparkles,
+  MessageSquare,
 } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
 import {
   Alert,
@@ -29,11 +31,11 @@ import {
 import { cn } from "@/lib/ui/cn";
 import { PropostaEstadoBadge } from "@/components/crm/proposta-estado-badge";
 import { fmtEuro, propostaEstadoLabel, type PropostaEstado } from "@/lib/crm/shared";
+import { parsePaginatedList } from "@/lib/crm/paginated-list";
 
 type Estatisticas = {
   totalEntidades: number;
   entidadesAtivas: number;
-  totalFormandos: number;
   totalPropostas: number;
   proposttasAceitadas: number;
   faturacaoTotalCentavos: number;
@@ -45,7 +47,11 @@ type Estatisticas = {
   leadsAbertos: number;
   leadsConvertidos: number;
   pipelineLeadsCentavos: number;
+  sugestoesIaPendentes: number;
+  interaccoesComerciais: number;
 };
+
+type PropostaResumoRow = { estado: string; _count: { _all: number } };
 
 type Proposta = {
   id: string;
@@ -60,8 +66,10 @@ type Proposta = {
 const PIPELINE: PropostaEstado[] = ["RASCUNHO", "ENVIADA", "ACEITE", "REJEITADA"];
 
 export default function CrmDashboardPage() {
+  const { canManage } = useTenantRole();
   const [stats, setStats] = useState<Estatisticas | null>(null);
   const [propostas, setPropostas] = useState<Proposta[]>([]);
+  const [pipelineCounts, setPipelineCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,14 +77,23 @@ export default function CrmDashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [sRes, pRes] = await Promise.all([
+      const [sRes, pRes, rRes] = await Promise.all([
         bffFetch("/api/v1/crm/estatisticas", { headers: { accept: "application/json" } }),
-        bffFetch("/api/v1/propostas", { headers: { accept: "application/json" } }),
+        bffFetch("/api/v1/propostas?pageSize=8", { headers: { accept: "application/json" } }),
+        bffFetch("/api/v1/propostas/resumo", { headers: { accept: "application/json" } }),
       ]);
       if (sRes.ok) setStats((await sRes.json()) as Estatisticas);
       else if (sRes.status !== 404) setError(await parseApiError(sRes));
-      if (pRes.ok) setPropostas((await pRes.json()) as Proposta[]);
-      else if (pRes.status !== 404) setError(await parseApiError(pRes));
+      if (pRes.ok) {
+        const data = parsePaginatedList<Proposta>(await pRes.json());
+        setPropostas(data.items);
+      } else if (pRes.status !== 404) setError(await parseApiError(pRes));
+      if (rRes.ok) {
+        const rows = (await rRes.json()) as PropostaResumoRow[];
+        const counts: Record<string, number> = {};
+        for (const row of rows) counts[row.estado] = row._count._all;
+        setPipelineCounts(counts);
+      }
     } catch {
       setError("Erro ao carregar dados do CRM.");
     }
@@ -92,22 +109,7 @@ export default function CrmDashboardPage() {
       ? Math.round((stats.proposttasAceitadas / stats.totalPropostas) * 100)
       : 0;
 
-  const pipelineCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const e of PIPELINE) counts[e] = 0;
-    for (const p of propostas) {
-      if (counts[p.estado] !== undefined) counts[p.estado]++;
-    }
-    return counts;
-  }, [propostas]);
-
-  const recentes = useMemo(
-    () =>
-      [...propostas]
-        .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))
-        .slice(0, 8),
-    [propostas],
-  );
+  const recentes = propostas;
 
   const COLS: Column<Proposta>[] = [
     {
@@ -163,14 +165,14 @@ export default function CrmDashboardPage() {
           icon={<Building2 className="h-5 w-5 text-blue-400" />}
           label="Clientes"
           value={stats?.totalEntidades ?? 0}
-          sub={`${stats?.entidadesAtivas ?? 0} activos`}
+          sub={`${stats?.entidadesAtivas ?? 0} com proposta activa`}
           loading={loading}
         />
         <KpiCard
-          icon={<Users className="h-5 w-5 text-amber-400" />}
-          label="Formandos B2B"
-          value={stats?.totalFormandos ?? 0}
-          sub="ligados a entidades"
+          icon={<MessageSquare className="h-5 w-5 text-amber-400" />}
+          label="Notas comerciais"
+          value={stats?.interaccoesComerciais ?? 0}
+          sub="registos de contacto"
           loading={loading}
         />
         <KpiCard
@@ -190,6 +192,7 @@ export default function CrmDashboardPage() {
         />
       </div>
 
+      {canManage ? (
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6">
         <KpiCard
           icon={<FileText className="h-5 w-5 text-teal-400" />}
@@ -220,6 +223,7 @@ export default function CrmDashboardPage() {
           <p className="text-sm font-medium text-blue-300">SAF-T PT →</p>
         </Link>
       </div>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6">
         <KpiCard
@@ -238,11 +242,25 @@ export default function CrmDashboardPage() {
         />
         <Link
           href="/portal/crm/leads"
-          className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-5 flex flex-col justify-center hover:border-indigo-500/30 transition-colors sm:col-span-2"
+          className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-5 flex flex-col justify-center hover:border-indigo-500/30 transition-colors"
         >
           <p className="text-xs uppercase tracking-wide text-slate-500 mb-1">Pipeline comercial</p>
           <p className="text-sm font-medium text-indigo-300 flex items-center gap-1">
             Gerir leads <ArrowRight className="h-3.5 w-3.5" />
+          </p>
+        </Link>
+        <Link
+          href="/portal/crm/sugestoes-ia"
+          className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-5 flex flex-col justify-center hover:border-violet-500/30 transition-colors relative"
+        >
+          {(stats?.sugestoesIaPendentes ?? 0) > 0 ? (
+            <Badge className="absolute top-3 right-3" variant="purple">
+              {stats?.sugestoesIaPendentes}
+            </Badge>
+          ) : null}
+          <p className="text-xs uppercase tracking-wide text-slate-500 mb-1">Inbox IA</p>
+          <p className="text-sm font-medium text-violet-300 flex items-center gap-1">
+            <Sparkles className="h-3.5 w-3.5" /> Sugestões pendentes
           </p>
         </Link>
       </div>
@@ -295,10 +313,20 @@ export default function CrmDashboardPage() {
               <UserPlus className="h-4 w-4" />
               Registar lead
             </Link>
-            <Link href="/portal/crm/faturas" className={cn(buttonVariants({ variant: "secondary" }), "w-full justify-start")}>
-              <FileText className="h-4 w-4" />
-              Faturação
+            <Link href="/portal/crm/interaccoes" className={cn(buttonVariants({ variant: "secondary" }), "w-full justify-start")}>
+              <MessageSquare className="h-4 w-4" />
+              Nota de reunião (IA)
             </Link>
+            <Link href="/portal/crm/sugestoes-ia" className={cn(buttonVariants({ variant: "secondary" }), "w-full justify-start")}>
+              <Sparkles className="h-4 w-4" />
+              Inbox sugestões IA
+            </Link>
+            {canManage ? (
+              <Link href="/portal/crm/faturas" className={cn(buttonVariants({ variant: "secondary" }), "w-full justify-start")}>
+                <FileText className="h-4 w-4" />
+                Faturação
+              </Link>
+            ) : null}
             <Link href="/portal/formadores" className={cn(buttonVariants({ variant: "secondary" }), "w-full justify-start")}>
               <GraduationCap className="h-4 w-4" />
               Credenciais formadores (CC/CCP)

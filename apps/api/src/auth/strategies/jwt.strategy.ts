@@ -103,6 +103,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
       impersonationSessionId,
       readOnlyImpersonation,
       jwtJti,
+      mustChangePassword: optionalBool(raw["mustChangePassword"]),
     };
   }
 }

@@ -14,6 +14,13 @@ type FormandoCert = {
   taxaPresenca: number | null;
   elegivelCertificado: boolean;
   codigoVerificacao?: string | null;
+  certificadoSigo?: {
+    id: string;
+    numeroCertificado: string | null;
+    emitidoEm: string | null;
+    temFicheiro: boolean;
+    referencia: string;
+  } | null;
 };
 
 export default function CertificadosPage() {
@@ -47,6 +54,10 @@ export default function CertificadosPage() {
   }, []);
 
   useEffect(() => { if (acaoId) void load(acaoId); }, [acaoId, load]);
+
+  function downloadSigo(certificadoId: string) {
+    window.open(`/api/v1/sigo/certificados/${certificadoId}/download`, "_blank", "noopener,noreferrer");
+  }
 
   async function imprimir(matriculaId: string) {
     const r = await bffFetch(`/api/v1/certificados/matricula/${matriculaId}/certificado.html`, { headers: { accept: "text/html" } });
@@ -126,6 +137,7 @@ export default function CertificadosPage() {
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Turma</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Presenca</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Verificacao</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">SIGO</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -150,6 +162,31 @@ export default function CertificadosPage() {
                   <td className="px-4 py-3">
                     {f.codigoVerificacao ? (
                       <code className="text-xs text-blue-300">{f.codigoVerificacao}</code>
+                    ) : (
+                      <span className="text-slate-600 text-xs">–</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {f.certificadoSigo ? (
+                      <div className="space-y-1">
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-300">
+                          Oficial SIGO
+                        </span>
+                        {f.certificadoSigo.numeroCertificado ? (
+                          <p className="text-[10px] text-slate-500">{f.certificadoSigo.numeroCertificado}</p>
+                        ) : null}
+                        {f.certificadoSigo.temFicheiro ? (
+                          <button
+                            type="button"
+                            onClick={() => downloadSigo(f.certificadoSigo!.id)}
+                            className="block text-[11px] text-teal-400 hover:text-teal-300"
+                          >
+                            Descarregar PDF
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-slate-600">PDF pendente</span>
+                        )}
+                      </div>
                     ) : (
                       <span className="text-slate-600 text-xs">–</span>
                     )}

@@ -21,6 +21,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 import { MailService } from "../mail/mail.service";
+import { findCurrentTenantSubscription } from "./current-subscription.util";
 
 @Injectable()
 export class BillingService {
@@ -42,17 +43,14 @@ export class BillingService {
 
   async getSubscription(user: RequestUser): Promise<Record<string, unknown>> {
     const tenantId = requireTenantId(user);
-    const sub = await this.prisma.tenantSubscription.findFirst({
-      where: { tenantId },
-      orderBy: { createdAt: "desc" },
-      include: { plan: true },
-    });
+    const sub = await findCurrentTenantSubscription(this.prisma, tenantId);
     if (!sub) {
-      return { status: "none", plan: null };
+      return { status: "none", plan: null, planCode: null };
     }
     return {
       status: sub.status,
       plan: sub.plan,
+      planCode: sub.plan.code,
       currentPeriodEnd: sub.currentPeriodEnd,
       cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
       billingEmail: sub.billingEmail,
@@ -61,7 +59,7 @@ export class BillingService {
 
   listPlans(): Promise<Record<string, unknown>[]> {
     return this.prisma.subscriptionPlan.findMany({
-      where: { active: true },
+      where: { active: true, code: { not: "modular" } },
       orderBy: { priceCentsMonthly: "asc" },
     });
   }
@@ -93,10 +91,7 @@ export class BillingService {
       );
     }
 
-    let sub = await this.prisma.tenantSubscription.findFirst({
-      where: { tenantId },
-      orderBy: { createdAt: "desc" },
-    });
+    let sub = await findCurrentTenantSubscription(this.prisma, tenantId);
 
     let customerId = sub?.externalCustomerId ?? undefined;
     if (!customerId) {
@@ -251,11 +246,7 @@ export class BillingService {
   }
 
   private async findSubId(tenantId: string): Promise<string | null> {
-    const s = await this.prisma.tenantSubscription.findFirst({
-      where: { tenantId },
-      orderBy: { createdAt: "desc" },
-      select: { id: true },
-    });
+    const s = await findCurrentTenantSubscription(this.prisma, tenantId);
     return s?.id ?? null;
   }
 }

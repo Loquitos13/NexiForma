@@ -1,9 +1,11 @@
 import { Controller, Get, Header } from "@nestjs/common";
 import { SkipThrottle } from "@nestjs/throttler";
+import { Public } from "../auth/decorators/public.decorator";
 import { PUBLIC_OPENAPI_SPEC } from "./public-openapi.document";
 import { TENANT_WEBSITE_SYNC_OPENAPI_SPEC } from "./tenant-website-sync.openapi.document";
 import { FORMACOES_WEBSITE_INTEGRATION_OPENAPI_SPEC } from "./formacoes-website-integration.openapi.document";
 
+@Public()
 @Controller("docs")
 export class OpenApiController {
   @SkipThrottle()

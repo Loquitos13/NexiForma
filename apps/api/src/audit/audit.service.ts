@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { AuditActorType, Prisma } from "@nexiforma/database";
+import type { AuditActorType, GlobalAuditLog, Prisma } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
 
 export type AuditEntry = {
@@ -14,12 +14,28 @@ export type AuditEntry = {
   payload?: Prisma.InputJsonValue;
 };
 
+function serializeAuditRow(row: GlobalAuditLog): Record<string, unknown> {
+  return {
+    id: row.id.toString(),
+    occurredAt: row.occurredAt,
+    actorType: row.actorType,
+    actorId: row.actorId,
+    actorIp: row.actorIp != null ? String(row.actorIp) : null,
+    action: row.action,
+    resourceType: row.resourceType,
+    resourceId: row.resourceId,
+    targetTenantId: row.targetTenantId,
+    targetUserId: row.targetUserId,
+    payload: row.payload ?? undefined,
+  };
+}
+
 @Injectable()
 export class AuditService {
   constructor(private readonly prisma: PrismaService) {}
 
   async log(entry: AuditEntry): Promise<Record<string, unknown>> {
-    return this.prisma.globalAuditLog.create({
+    const row = await this.prisma.globalAuditLog.create({
       data: {
         actorType: entry.actorType,
         actorId: entry.actorId,
@@ -31,16 +47,18 @@ export class AuditService {
         targetUserId: entry.targetUserId ?? null,
         payload: entry.payload ?? undefined,
       },
-    }) as Promise<Record<string, unknown>>;
+    });
+    return serializeAuditRow(row);
   }
 
-  list(opts: { tenantId?: string; limit?: number; cursor?: bigint }): Promise<Record<string, unknown>[]> {
+  async list(opts: { tenantId?: string; limit?: number; cursor?: bigint }): Promise<Record<string, unknown>[]> {
     const take = Math.min(opts.limit ?? 50, 200);
-    return this.prisma.globalAuditLog.findMany({
+    const rows = await this.prisma.globalAuditLog.findMany({
       where: opts.tenantId ? { targetTenantId: opts.tenantId } : undefined,
       orderBy: { occurredAt: "desc" },
       take,
       ...(opts.cursor ? { skip: 1, cursor: { id: opts.cursor } } : {}),
-    }) as Promise<Record<string, unknown>[]>;
+    });
+    return rows.map(serializeAuditRow);
   }
 }

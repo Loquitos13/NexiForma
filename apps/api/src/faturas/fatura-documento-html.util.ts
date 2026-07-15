@@ -1,5 +1,4 @@
 import {
-  AT_MOTIVO_ISENCAO_DEFAULT,
   formatarMotivoIsencaoAt,
 } from "@nexiforma/shared";
 
@@ -7,6 +6,7 @@ export type FaturaDocumentoLinha = {
   descricao: string;
   quantidade: number;
   precoUnitCentavos: number;
+  descontoPercent: number;
   taxaIva: number;
   valorIvaCentavos: number;
   codigoIsencaoIva: string | null;
@@ -35,6 +35,8 @@ export type FaturaDocumentoInput = {
     morada: string | null;
     email: string | null;
   };
+  moradaCarga: string;
+  moradaDescarga: string;
   linhas: FaturaDocumentoLinha[];
   notas: string | null;
   valorCentavos: number;
@@ -72,7 +74,10 @@ function fmtData(iso: Date): string {
 }
 
 function linhaBase(l: FaturaDocumentoLinha): number {
-  return Math.round(l.quantidade * l.precoUnitCentavos);
+  const bruto = Math.round(l.quantidade * l.precoUnitCentavos);
+  const desc = Math.min(100, Math.max(0, l.descontoPercent ?? 0));
+  if (desc <= 0) return bruto;
+  return Math.round(bruto * (1 - desc / 100));
 }
 
 function linhaTotal(l: FaturaDocumentoLinha): number {
@@ -113,23 +118,18 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
   const linhasHtml = input.linhas
     .map((l, idx) => {
       const ref = refPorLinha.get(idx);
-      const isento = l.taxaIva <= 0;
-      const motivo =
-        l.codigoIsencaoIva?.trim() ||
-        (isento ? AT_MOTIVO_ISENCAO_DEFAULT : "");
-      const motivoLabel = isento && motivo ? formatarMotivoIsencaoAt(motivo) : "";
       const ivaCell = ref
         ? `${l.taxaIva.toFixed(2)} <sup style="color:#7c3aed">(${ref})</sup>`
         : l.taxaIva.toFixed(2);
+      const descCell = (l.descontoPercent ?? 0).toFixed(2).replace(".", ",");
 
       return `<tr>
         <td>
           <div class="line-desc">${escapeHtml(l.descricao)}</div>
-          ${motivoLabel ? `<div class="line-motivo">${escapeHtml(motivoLabel)}</div>` : ""}
         </td>
         <td class="num">${fmtQuantidade(l.quantidade)}</td>
         <td class="num">${fmtEuro(l.precoUnitCentavos)}</td>
-        <td class="num muted">0,00</td>
+        <td class="num ${l.descontoPercent > 0 ? "" : "muted"}">${descCell}</td>
         <td class="num">${ivaCell}</td>
         <td class="num bold">${fmtEuro(linhaTotal(l))}</td>
       </tr>`;
@@ -432,6 +432,17 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
         ${input.destinatario.morada ? `<p class="muted">${escapeHtml(input.destinatario.morada).replace(/\n/g, "<br/>")}</p>` : ""}
         <p><span class="muted">NIF </span>${escapeHtml(input.destinatario.nif)}</p>
         ${input.destinatario.email ? `<p>${escapeHtml(input.destinatario.email)}</p>` : ""}
+      </div>
+    </div>
+
+    <div class="parties moradas-transporte">
+      <div class="party">
+        <p class="party-label">Morada de carga</p>
+        <p class="muted">${escapeHtml(input.moradaCarga).replace(/\n/g, "<br/>")}</p>
+      </div>
+      <div class="party">
+        <p class="party-label">Morada de descarga</p>
+        <p class="muted">${escapeHtml(input.moradaDescarga).replace(/\n/g, "<br/>")}</p>
       </div>
     </div>
 

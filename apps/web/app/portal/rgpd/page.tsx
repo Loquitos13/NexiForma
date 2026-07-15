@@ -4,9 +4,8 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { ConsentAdminPanel } from "@/components/consent/consent-admin-panel";
-import { useConsentSettings } from "@/components/consent/consent-gate";
+import { MyRgpdSettings } from "@/components/consent/my-rgpd-settings";
 import { EmptyState, LoadingBlock, PageShell, StatusBadge } from "@/components/portal/page-shell";
-import { Button } from "@/components/ui/button";
 import { bo, parseApiError } from "@/lib/ui/backoffice";
 
 type Pedido = {
@@ -20,20 +19,20 @@ type Pedido = {
 
 export default function RgpdPage() {
   const { canManage } = useTenantRole();
-  const consent = useConsentSettings();
   const [rows, setRows] = useState<Pedido[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [form, setForm] = useState({ subjectId: "", subjectType: "formando", tipo: "EXPORT" });
 
   const load = useCallback(async () => {
+    if (!canManage) return;
     setLoading(true);
     const res = await bffFetch("/api/v1/rgpd/pedidos", { headers: { accept: "application/json" } });
     if (!res.ok) setError(await parseApiError(res));
     else setRows((await res.json()) as Pedido[]);
     setLoading(false);
-  }, []);
+  }, [canManage]);
 
   useEffect(() => {
     void load();
@@ -61,24 +60,19 @@ export default function RgpdPage() {
     e === "PROCESSADO" ? "#4ade80" : e === "REJEITADO" ? "#f87171" : "#fbbf24";
 
   return (
-    <PageShell title="RGPD" subtitle="Consentimentos, exportação e anonimização de dados.">
-      {consent.modal}
+    <PageShell
+      title="RGPD"
+      subtitle={
+        canManage
+          ? "Consentimentos, exportação e anonimização de dados."
+          : "Consulta e gere o teu consentimento sobre tratamento de dados pessoais."
+      }
+    >
       {error ? <p style={bo.alert}>{error}</p> : null}
       {msg ? <p style={bo.ok}>{msg}</p> : null}
 
       <div style={{ ...bo.card, marginBottom: "1rem" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "0.75rem", marginBottom: "1rem" }}>
-          <h2 style={bo.h2}>O meu consentimento</h2>
-          {consent.canUse ? (
-            <Button type="button" size="sm" variant="secondary" onClick={consent.openSettings}>
-              Alterar decisão RGPD
-            </Button>
-          ) : null}
-        </div>
-        <p style={{ fontSize: "0.875rem", color: "#94a3b8", margin: 0 }}>
-          Apenas tu decides se aceitas ou recusas o tratamento de dados. A decisão fica registada
-          para efeitos de conformidade.
-        </p>
+        <MyRgpdSettings />
       </div>
 
       {canManage ? (
@@ -131,37 +125,39 @@ export default function RgpdPage() {
         </form>
       ) : null}
 
-      <div style={{ ...bo.card, marginTop: "1rem" }}>
-        <h2 style={bo.h2}>Histórico</h2>
-        {loading ? (
-          <LoadingBlock />
-        ) : rows.length === 0 ? (
-          <EmptyState message="Sem pedidos RGPD registados." />
-        ) : (
-          <table style={bo.table}>
-            <thead>
-              <tr>
-                <th style={bo.th}>Tipo</th>
-                <th style={bo.th}>Sujeito</th>
-                <th style={bo.th}>Estado</th>
-                <th style={bo.th}>Data</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <td style={bo.td}>{r.tipo}</td>
-                  <td style={bo.td}>{r.subjectType}</td>
-                  <td style={bo.td}>
-                    <StatusBadge label={r.estado} color={estadoColor(r.estado)} />
-                  </td>
-                  <td style={bo.td}>{new Date(r.createdAt).toLocaleString("pt-PT")}</td>
+      {canManage ? (
+        <div style={{ ...bo.card, marginTop: "1rem" }}>
+          <h2 style={bo.h2}>Histórico</h2>
+          {loading ? (
+            <LoadingBlock />
+          ) : rows.length === 0 ? (
+            <EmptyState message="Sem pedidos RGPD registados." />
+          ) : (
+            <table style={bo.table}>
+              <thead>
+                <tr>
+                  <th style={bo.th}>Tipo</th>
+                  <th style={bo.th}>Sujeito</th>
+                  <th style={bo.th}>Estado</th>
+                  <th style={bo.th}>Data</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.id}>
+                    <td style={bo.td}>{r.tipo}</td>
+                    <td style={bo.td}>{r.subjectType}</td>
+                    <td style={bo.td}>
+                      <StatusBadge label={r.estado} color={estadoColor(r.estado)} />
+                    </td>
+                    <td style={bo.td}>{new Date(r.createdAt).toLocaleString("pt-PT")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ) : null}
     </PageShell>
   );
 }

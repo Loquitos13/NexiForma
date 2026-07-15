@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
+import { validarModuloConteudoCompleto } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { parseApiError } from "@/lib/ui/backoffice";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 
 type CursoOpt = { id: string; designacao: string; codigoUfcd: string };
@@ -93,6 +95,12 @@ export default function ConteudosPage() {
     setBusy(true);
     setError(null);
     setMsg(null);
+    const draft = {
+      tipo,
+      urlOuRef: urlOuRef.trim() || null,
+      conteudoHtml: conteudoHtml.trim() || null,
+    };
+    const check = validarModuloConteudoCompleto(draft);
     const r = await bffFetch("/api/v1/conteudos-lms/modulos", {
       method: "POST",
       headers: { "Content-Type": "application/json", accept: "application/json" },
@@ -101,14 +109,14 @@ export default function ConteudosPage() {
         titulo: titulo.trim(),
         tipo,
         ordem: modulos.length,
-        urlOuRef: urlOuRef.trim() || undefined,
-        conteudoHtml: conteudoHtml.trim() || undefined,
-        publicado: true,
+        urlOuRef: draft.urlOuRef || undefined,
+        conteudoHtml: draft.conteudoHtml || undefined,
+        publicado: check.ok,
       }),
     });
     setBusy(false);
     if (!r.ok) {
-      setError("Erro ao criar modulo.");
+      setError(await parseApiError(r));
       return;
     }
     setMsg("Modulo criado.");

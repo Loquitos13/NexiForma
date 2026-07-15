@@ -2,11 +2,19 @@
 
 import Link from "next/link";
 import { MicrosoftSetupWizard } from "@/components/integracoes/MicrosoftSetupWizard";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
 import { EmptyState, LoadingBlock, PageShell, StatusBadge } from "@/components/portal/page-shell";
+import { RateLimitRetryBanner } from "@/components/portal/rate-limit-retry";
 import { bo, parseApiError } from "@/lib/ui/backoffice";
+import { useRateLimitCooldown } from "@/lib/client/use-rate-limit-cooldown";
+import {
+  INTEGRATION_PLUGINS,
+  isIntegrationPluginAllowed,
+  type IntegrationPluginId,
+} from "@nexiforma/shared";
 
 type Integracao = {
   provider: string;
@@ -15,8 +23,6 @@ type Integracao = {
   config: Record<string, unknown> | null;
   provisionedByPlatform?: boolean;
 };
-
-type SessaoOpt = { id: string; numeroSessao: number; lmsAtivo: boolean };
 
 type OAuthReadiness = {
   provider: string;
@@ -39,76 +45,113 @@ const OAUTH_FIELDS: Record<string, { key: string; label: string; secret?: boolea
   ],
 };
 
+const PLUGIN_BADGE: Record<IntegrationPluginId, string> = {
+  salas_online: "Formação Teams",
+  moodle: "Formação Core",
+};
+
 export default function IntegracoesPage() {
-  const { canManage, isStaff } = useTenantRole();
+  const { canManage } = useTenantRole();
+  const { entitlements, loading: entLoading } = useTenantEntitlements();
+
+  const hasSalasOnline = Boolean(
+    entitlements && isIntegrationPluginAllowed("salas_online", entitlements),
+  );
+  const hasMoodle = Boolean(entitlements && isIntegrationPluginAllowed("moodle", entitlements));
+
+  const visiblePlugins = useMemo(
+    () =>
+      entitlements
+        ? INTEGRATION_PLUGINS.filter((p) => isIntegrationPluginAllowed(p.id, entitlements))
+        : [],
+    [entitlements],
+  );
+
   const [rows, setRows] = useState<Integracao[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [moodlePreview, setMoodlePreview] = useState<string | null>(null);
   const [oauthDraft, setOauthDraft] = useState<Record<string, Record<string, string>>>({});
-  const [sessoes, setSessoes] = useState<SessaoOpt[]>([]);
-  const [testSessaoId, setTestSessaoId] = useState("");
   const [busy, setBusy] = useState(false);
   const [oauthStatus, setOauthStatus] = useState<{ zoom: OAuthReadiness; teams: OAuthReadiness } | null>(
     null,
   );
+  const [rateLimited, setRateLimited] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const { remainingSec, isCoolingDown, applyFromResponse, clearCooldown } = useRateLimitCooldown();
+
+  const handleApiError = useCallback(
+    async (res: Response) => {
+      if (res.status === 429) {
+        setRateLimited(true);
+        applyFromResponse(res);
+      }
+      setError(await parseApiError(res));
+    },
+    [applyFromResponse],
+  );
 
   const loadOAuthStatus = useCallback(async () => {
     const res = await bffFetch("/api/v1/integracoes/oauth/status", { headers: { accept: "application/json" } });
-    if (res.ok) setOauthStatus((await res.json()) as { zoom: OAuthReadiness; teams: OAuthReadiness });
-  }, []);
+    if (res.ok) {
+      setOauthStatus((await res.json()) as { zoom: OAuthReadiness; teams: OAuthReadiness });
+      return true;
+    }
+    await handleApiError(res);
+    return false;
+  }, [handleApiError]);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     const res = await bffFetch("/api/v1/integracoes", { headers: { accept: "application/json" } });
-    if (!res.ok) setError(await parseApiError(res));
-    else {
-      const data = (await res.json()) as Integracao[];
-      setRows(data);
-      const draft: Record<string, Record<string, string>> = {};
-      for (const r of data) {
-        if (r.provider === "ZOOM" || r.provider === "TEAMS") {
-          draft[r.provider] = Object.fromEntries(
-            Object.entries(r.config ?? {}).map(([k, v]) => [k, String(v ?? "")]),
-          );
-        }
-      }
-      setOauthDraft(draft);
+    if (!res.ok) {
+      await handleApiError(res);
+      setLoading(false);
+      return false;
     }
+    const data = (await res.json()) as Integracao[];
+    setRows(data);
+    setRateLimited(false);
+    clearCooldown();
+    const draft: Record<string, Record<string, string>> = {};
+    for (const r of data) {
+      if (r.provider === "ZOOM" || r.provider === "TEAMS") {
+        draft[r.provider] = Object.fromEntries(
+          Object.entries(r.config ?? {}).map(([k, v]) => [k, String(v ?? "")]),
+        );
+      }
+    }
+    setOauthDraft(draft);
     setLoading(false);
-  }, []);
+    return true;
+  }, [clearCooldown, handleApiError]);
 
-  const loadSessoes = useCallback(async () => {
-    const acoesRes = await bffFetch("/api/v1/acoes-formacao", { headers: { accept: "application/json" } });
-    if (!acoesRes.ok) return;
-    const acoes = (await acoesRes.json()) as { id: string }[];
-    const first = acoes[0];
-    if (!first) return;
-    const cronRes = await bffFetch(`/api/v1/cronogramas?acaoFormacaoId=${encodeURIComponent(first.id)}`, {
-      headers: { accept: "application/json" },
-    });
-    if (!cronRes.ok) return;
-    const crons = (await cronRes.json()) as { id: string }[];
-    const cron = crons[0];
-    if (!cron) return;
-    const sessRes = await bffFetch(`/api/v1/sessoes-formacao?cronogramaId=${encodeURIComponent(cron.id)}`, {
-      headers: { accept: "application/json" },
-    });
-    if (!sessRes.ok) return;
-    const list = (await sessRes.json()) as SessaoOpt[];
-    setSessoes(list);
-    if (list.length && !testSessaoId) setTestSessaoId(list.find((s) => s.numeroSessao === 2)?.id ?? list[0].id);
-  }, [testSessaoId]);
+  const reloadAll = useCallback(async () => {
+    if (isCoolingDown) return;
+    setRetrying(true);
+    setError(null);
+    const okList = await load();
+    let okOAuth = true;
+    if (hasSalasOnline) okOAuth = await loadOAuthStatus();
+    if (okList && (!hasSalasOnline || okOAuth)) {
+      setRateLimited(false);
+      clearCooldown();
+    }
+    setRetrying(false);
+  }, [clearCooldown, hasSalasOnline, isCoolingDown, load, loadOAuthStatus]);
 
   useEffect(() => {
-    void load();
-    void loadSessoes();
-    void loadOAuthStatus();
-  }, [load, loadSessoes, loadOAuthStatus]);
+    if (entLoading || visiblePlugins.length === 0) return;
+    void (async () => {
+      await load();
+      if (hasSalasOnline) await loadOAuthStatus();
+    })();
+  }, [entLoading, hasSalasOnline, visiblePlugins.length, load, loadOAuthStatus]);
 
   async function activarOAuthReal() {
-    if (!canManage) return;
+    if (!canManage || !hasSalasOnline) return;
     setBusy(true);
     setMsg(null);
     setError(null);
@@ -117,7 +160,7 @@ export default function IntegracoesPage() {
       headers: { accept: "application/json" },
     });
     setBusy(false);
-    if (!res.ok) setError(await parseApiError(res));
+    if (!res.ok) await handleApiError(res);
     else {
       const data = (await res.json()) as { message?: string };
       setMsg(data.message ?? "OAuth activo.");
@@ -127,30 +170,43 @@ export default function IntegracoesPage() {
 
   async function setMode(provider: string, mode: string, config?: Record<string, unknown>) {
     if (!canManage) return;
+    if ((provider === "ZOOM" || provider === "TEAMS") && !hasSalasOnline) return;
+    if (provider === "MOODLE" && !hasMoodle) return;
     setMsg(null);
     setError(null);
     const res = await bffFetch("/api/v1/integracoes", {
       method: "POST",
       headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({
-        provider,
-        mode,
-        config: config ?? {},
-      }),
+      body: JSON.stringify({ provider, mode, config: config ?? {} }),
     });
-    if (!res.ok) setError(await parseApiError(res));
+    if (!res.ok) await handleApiError(res);
     else {
-      setMsg(`${provider} actualizado para ${mode}.`);
+      if (provider === "TEAMS" && mode === "DISABLED") {
+        setMsg("Credenciais Teams guardadas. Testa a ligação e depois activa OAuth.");
+      } else {
+        setMsg(`${provider} actualizado para ${mode}.`);
+      }
       await load();
     }
   }
 
   async function saveOAuth(provider: string) {
     const draft = oauthDraft[provider] ?? {};
-    await setMode(provider, "OAUTH", draft);
+    const row = rows.find((r) => r.provider === provider);
+    const config =
+      provider === "TEAMS"
+        ? {
+            tenantId: draft.tenantId?.trim() ?? "",
+            organizerId: draft.organizerId?.trim() ?? "",
+          }
+        : draft;
+    // Guardar credenciais; OAuth activa-se no passo «Activar OAUTH Teams»
+    const mode = row?.mode === "OAUTH" ? "OAUTH" : "DISABLED";
+    await setMode(provider, mode, config);
   }
 
   async function testar(provider: "ZOOM" | "TEAMS") {
+    if (!hasSalasOnline) return;
     setMsg(null);
     setError(null);
     setBusy(true);
@@ -159,36 +215,16 @@ export default function IntegracoesPage() {
       headers: { accept: "application/json" },
     });
     setBusy(false);
-    if (!res.ok) setError(await parseApiError(res));
+    if (!res.ok) await handleApiError(res);
     else {
       const data = (await res.json()) as { message?: string };
       setMsg(data.message ?? `${provider} OK.`);
     }
   }
 
-  async function criarSalaTeste(provider: "ZOOM" | "TEAMS") {
-    if (!testSessaoId) {
-      setError("Selecciona uma sessão para teste.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    const res = await bffFetch(
-      `/api/v1/integracoes/sessoes/${testSessaoId}/reuniao?provider=${provider}`,
-      { method: "POST", headers: { accept: "application/json" } },
-    );
-    setBusy(false);
-    if (!res.ok) {
-      setError(await parseApiError(res));
-      return;
-    }
-    const data = (await res.json()) as { joinUrl: string; mode?: string; provider: string };
-    setMsg(`Sala ${data.provider} criada – entra com a tua conta ${data.provider === "TEAMS" ? "Microsoft" : "Zoom"}.`);
-    window.open(data.joinUrl, "_blank", "noopener,noreferrer");
-  }
-
   async function syncMoodle(e: FormEvent) {
     e.preventDefault();
+    if (!hasMoodle) return;
     setMoodlePreview(null);
     const res = await bffFetch("/api/v1/integracoes/moodle/sync", { headers: { accept: "application/json" } });
     if (!res.ok) setError(await parseApiError(res));
@@ -196,190 +232,314 @@ export default function IntegracoesPage() {
   }
 
   const modeColor = (m: string) => (m === "OAUTH" ? "#4ade80" : "#94a3b8");
-
-  const zoomMode = rows.find((r) => r.provider === "ZOOM")?.mode ?? "DISABLED";
-  const teamsMode = rows.find((r) => r.provider === "TEAMS")?.mode ?? "DISABLED";
+  const salasRows = rows.filter((r) => r.provider === "ZOOM" || r.provider === "TEAMS");
+  const moodleRow = rows.find((r) => r.provider === "MOODLE");
+  const zoomMode = salasRows.find((r) => r.provider === "ZOOM")?.mode ?? "DISABLED";
+  const teamsMode = salasRows.find((r) => r.provider === "TEAMS")?.mode ?? "DISABLED";
   const oauthReady = oauthStatus?.zoom.ready || oauthStatus?.teams.ready;
   const realActive = zoomMode === "OAUTH" || teamsMode === "OAUTH";
 
+  if (entLoading) {
+    return (
+      <PageShell title="Plugins" subtitle="Catálogo de integrações disponíveis na plataforma.">
+        <LoadingBlock />
+      </PageShell>
+    );
+  }
+
+  if (!visiblePlugins.length) {
+    return (
+      <PageShell title="Loja de plugins" subtitle="Integrações activas na tua subscrição.">
+        <EmptyState message="Nenhum plugin disponível no plano actual. Active Formação Core ou Formação Teams em Facturação." />
+        <Link href="/portal/billing" className="text-sm text-blue-400 hover:underline">
+          Ver subscrição
+        </Link>
+      </PageShell>
+    );
+  }
+
   return (
     <PageShell
-      title="Integrações"
-      subtitle="Zoom, Teams e Moodle – salas online e sincronização LMS."
+      title="Loja de plugins"
+      subtitle="Integrações incluídas no teu plano. Configura e activa cada plugin."
     >
-      {error ? <p style={bo.alert}>{error}</p> : null}
+      {rateLimited && error ? (
+        <RateLimitRetryBanner
+          message={error}
+          remainingSec={remainingSec}
+          onRetry={() => void reloadAll()}
+          retrying={retrying}
+        />
+      ) : error ? (
+        <p style={bo.alert}>{error}</p>
+      ) : null}
       {msg ? <p style={bo.ok}>{msg}</p> : null}
 
-      {canManage ? (
-        <MicrosoftSetupWizard
-          teamsDraft={oauthDraft.TEAMS ?? {}}
-          onTeamsDraftChange={(d) => setOauthDraft((prev) => ({ ...prev, TEAMS: d }))}
-          onSaveTeams={() => saveOAuth("TEAMS")}
-          onTestTeams={() => testar("TEAMS")}
-          onActivateOAuth={() => activarOAuthReal()}
-          busy={busy}
-        />
-      ) : null}
-
-      <div style={{ ...bo.card, marginBottom: "1rem", border: "1px solid rgba(74,222,128,0.35)" }}>
-        <h2 style={bo.h2}>Salas reais (Zoom / Teams)</h2>
-        <p style={{ color: "#94a3b8", fontSize: "0.88rem", margin: "0 0 0.75rem", lineHeight: 1.55 }}>
-          Formador e formandos entram com <strong>conta Microsoft ou Zoom</strong> no link da reunião.
-          <strong> Teams:</strong> preenche só tenant M365 + email do organizador (a app Microsoft é da NexiForma).
-          <strong> Zoom:</strong> credenciais da conta Zoom do cliente. Depois activa OAUTH e cria a sala.
-        </p>
-        {oauthStatus ? (
-          <ul style={{ color: "#cbd5e1", fontSize: "0.85rem", margin: "0 0 0.75rem", paddingLeft: "1.2rem" }}>
-            <li>
-              <strong>Zoom</strong> – {oauthStatus.zoom.ready ? "OAuth configurado" : oauthStatus.zoom.missing.join(", ")}
-            </li>
-            <li>
-              <strong>Teams</strong> – {oauthStatus.teams.ready ? "OAuth configurado" : oauthStatus.teams.missing.join(", ")}
-            </li>
-          </ul>
-        ) : null}
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
-          {canManage ? (
-            <button
-              type="button"
-              style={bo.btnTeal}
-              disabled={busy || !oauthReady}
-              onClick={() => void activarOAuthReal()}
+      <div
+        style={{
+          display: "grid",
+          gap: "1.25rem",
+          gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+        }}
+      >
+        {visiblePlugins.map((plugin) => {
+          const unlocked = true;
+          return (
+          <section
+            key={plugin.id}
+            style={{
+              ...bo.card,
+              border: "1px solid rgba(148,163,184,0.25)",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                flexWrap: "wrap",
+                gap: "0.5rem",
+                marginBottom: "0.75rem",
+              }}
             >
-              Activar salas reais (OAUTH)
-            </button>
-          ) : null}
-          {realActive ? (
-            <StatusBadge label="Salas reais activas" color="#4ade80" />
-          ) : oauthReady ? (
-            <StatusBadge label="Credenciais detectadas" color="#4ade80" />
-          ) : (
-            <StatusBadge label="Credenciais em falta no .env" color="#f87171" />
-          )}
-        </div>
-        {!canManage && !realActive ? (
-          <p style={{ color: "#64748b", fontSize: "0.82rem", margin: "0.65rem 0 0" }}>
-            Pede ao gestor para preencher o `.env` e activar OAUTH.
-          </p>
-        ) : null}
-      </div>
-
-      {loading ? (
-        <LoadingBlock />
-      ) : (
-        <div style={{ display: "grid", gap: "0.85rem" }}>
-          {rows.map((r) => (
-            <div key={r.provider} style={bo.card}>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: "0.5rem",
-                }}
-              >
-                <h2 style={bo.h2}>{r.provider}</h2>
-                <StatusBadge label={r.mode} color={modeColor(r.mode)} />
+              <div>
+                <h2 style={{ ...bo.h2, marginBottom: "0.25rem" }}>{plugin.title}</h2>
+                <p style={{ color: "#94a3b8", fontSize: "0.88rem", margin: 0, lineHeight: 1.5 }}>
+                  {plugin.description}
+                </p>
               </div>
-              <p style={{ color: "#94a3b8", fontSize: "0.85rem", margin: "0 0 0.75rem" }}>
-                {r.provider === "MOODLE"
-                  ? "Sincronização de cursos via Web Services (LTI em roadmap)."
-                  : r.provider === "TEAMS"
-                    ? "OAUTH = reuniões reais via Microsoft Graph."
-                    : "OAUTH = reuniões reais Zoom Server-to-Server."}
-              </p>
-              {canManage ? (
-                <>
-                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.65rem" }}>
-                    {(["DISABLED", "OAUTH"] as const).map((m) => (
+              <StatusBadge label={PLUGIN_BADGE[plugin.id]} color="#38bdf8" />
+            </div>
+
+            {plugin.id === "salas_online" ? (
+              <>
+                {canManage && unlocked ? (
+                  <MicrosoftSetupWizard
+                    enabled
+                    teamsDraft={oauthDraft.TEAMS ?? {}}
+                    onTeamsDraftChange={(d) => setOauthDraft((prev) => ({ ...prev, TEAMS: d }))}
+                    onSaveTeams={() => saveOAuth("TEAMS")}
+                    onTestTeams={() => testar("TEAMS")}
+                    onActivateOAuth={() => activarOAuthReal()}
+                    busy={busy}
+                  />
+                ) : null}
+
+                {unlocked ? (
+                <div style={{ ...bo.card, marginTop: "0.75rem", border: "1px solid rgba(74,222,128,0.35)" }}>
+                  <h3 style={{ ...bo.h2, fontSize: "1rem" }}>Salas online – Microsoft Teams</h3>
+                  <p style={{ color: "#94a3b8", fontSize: "0.85rem", margin: "0 0 0.75rem", lineHeight: 1.55 }}>
+                    As formações online criam reuniões Teams no cronograma. Formador e formandos entram com conta
+                    Microsoft no link da sessão.
+                  </p>
+                  {oauthStatus ? (
+                    <ul style={{ color: "#cbd5e1", fontSize: "0.85rem", margin: "0 0 0.75rem", paddingLeft: "1.2rem" }}>
+                      <li>
+                        <strong>Zoom</strong> –{" "}
+                        {oauthStatus.zoom.ready ? "OAuth configurado" : oauthStatus.zoom.missing.join(", ")}
+                      </li>
+                      <li>
+                        <strong>Teams</strong> –{" "}
+                        {oauthStatus.teams.ready ? "OAuth configurado" : oauthStatus.teams.missing.join(", ")}
+                      </li>
+                    </ul>
+                  ) : loading ? (
+                    <LoadingBlock />
+                  ) : null}
+                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                    {canManage ? (
                       <button
-                        key={m}
                         type="button"
-                        style={r.mode === m ? bo.btn : bo.btnSecondary}
-                        onClick={() => void setMode(r.provider, m, oauthDraft[r.provider])}
+                        style={bo.btnTeal}
+                        disabled={busy || !oauthReady}
+                        onClick={() => void activarOAuthReal()}
                       >
-                        {m}
-                      </button>
-                    ))}
-                    {r.provider === "ZOOM" || r.provider === "TEAMS" ? (
-                      <button
-                        type="button"
-                        style={bo.btnSecondary}
-                        disabled={busy || r.mode === "DISABLED"}
-                        onClick={() => void testar(r.provider as "ZOOM" | "TEAMS")}
-                      >
-                        Testar ligação
+                        Activar salas reais (OAUTH)
                       </button>
                     ) : null}
+                    {realActive ? (
+                      <StatusBadge label="Salas reais activas" color="#4ade80" />
+                    ) : oauthReady ? (
+                      <StatusBadge label="Credenciais detectadas" color="#4ade80" />
+                    ) : (
+                      <StatusBadge label="Credenciais em falta" color="#f87171" />
+                    )}
                   </div>
-                  {r.mode === "OAUTH" && (r.provider === "ZOOM" || r.provider === "TEAMS") ? (
-                    <div style={{ display: "grid", gap: "0.45rem", maxWidth: 420, marginTop: "0.5rem" }}>
-                      {r.provisionedByPlatform ? (
-                        <p style={{ color: "#fde047", fontSize: "0.82rem", margin: 0, lineHeight: 1.45 }}>
-                          Integração configurada pela NexiForma – usa «Testar ligação» e «Criar sala Teams real» abaixo.
-                        </p>
-                      ) : (
-                        <>
-                          {OAUTH_FIELDS[r.provider].map((f) => (
-                            <label key={f.key} style={bo.label}>
-                              {f.label}
-                              <input
-                                style={bo.input}
-                                type={f.secret ? "password" : "text"}
-                                value={oauthDraft[r.provider]?.[f.key] ?? ""}
-                                onChange={(e) =>
-                                  setOauthDraft((prev) => ({
-                                    ...prev,
-                                    [r.provider]: { ...prev[r.provider], [f.key]: e.target.value },
-                                  }))
-                                }
-                              />
-                            </label>
-                          ))}
-                          {r.provider === "TEAMS" ? (
-                            <p style={{ color: "#64748b", fontSize: "0.78rem", margin: 0, lineHeight: 1.45 }}>
-                              App Client ID e Secret são geridos pela plataforma NexiForma – não precisas de os preencher.
-                            </p>
-                          ) : null}
-                          <button type="button" style={bo.btnSecondary} onClick={() => void saveOAuth(r.provider)}>
-                            Guardar credenciais OAuth
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  ) : null}
-                </>
-              ) : r.provider === "ZOOM" || r.provider === "TEAMS" ? (
-                <button
-                  type="button"
-                  style={bo.btnSecondary}
-                  disabled={busy || r.mode === "DISABLED"}
-                  onClick={() => void testar(r.provider as "ZOOM" | "TEAMS")}
-                >
-                  Testar ligação
-                </button>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      )}
+                </div>
+                ) : null}
 
-      <div style={{ ...bo.card, marginTop: "1rem" }}>
-        <h2 style={bo.h2}>Moodle – sincronizar cursos</h2>
-        <form onSubmit={syncMoodle}>
-          <button type="submit" style={bo.btnTeal}>
-            Executar sync
-          </button>
-        </form>
-        {moodlePreview ? (
-          <pre style={{ marginTop: "0.75rem", fontSize: "0.78rem", color: "#cbd5e1", overflow: "auto" }}>
-            {moodlePreview}
-          </pre>
-        ) : (
-          <EmptyState message="Active integração Moodle (OAUTH) e execute sync para ver cursos." />
-        )}
+                {loading && unlocked ? (
+                  <LoadingBlock />
+                ) : unlocked ? (
+                  <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.75rem" }}>
+                    {salasRows.map((r) => (
+                      <div key={r.provider} style={{ ...bo.card, background: "rgba(15,23,42,0.45)" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                            gap: "0.5rem",
+                          }}
+                        >
+                          <h3 style={{ ...bo.h2, fontSize: "1rem" }}>{r.provider}</h3>
+                          <StatusBadge label={r.mode} color={modeColor(r.mode)} />
+                        </div>
+                        {canManage ? (
+                          <>
+                            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", margin: "0.65rem 0" }}>
+                              {(["DISABLED", "OAUTH"] as const).map((m) => (
+                                <button
+                                  key={m}
+                                  type="button"
+                                  style={r.mode === m ? bo.btn : bo.btnSecondary}
+                                  onClick={() => void setMode(r.provider, m, oauthDraft[r.provider])}
+                                >
+                                  {m}
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                style={bo.btnSecondary}
+                                disabled={busy || r.mode === "DISABLED"}
+                                onClick={() => void testar(r.provider as "ZOOM" | "TEAMS")}
+                              >
+                                Testar ligação
+                              </button>
+                            </div>
+                            {r.mode === "OAUTH" ? (
+                              <div style={{ display: "grid", gap: "0.45rem", maxWidth: 420 }}>
+                                {r.provisionedByPlatform ? (
+                                  <p style={{ color: "#fde047", fontSize: "0.82rem", margin: 0 }}>
+                                    Integração configurada pela NexiForma – usa «Testar ligação».
+                                  </p>
+                                ) : (
+                                  <>
+                                    {OAUTH_FIELDS[r.provider].map((f) => (
+                                      <label key={f.key} style={bo.label}>
+                                        {f.label}
+                                        <input
+                                          style={bo.input}
+                                          type={f.secret ? "password" : "text"}
+                                          value={oauthDraft[r.provider]?.[f.key] ?? ""}
+                                          onChange={(e) =>
+                                            setOauthDraft((prev) => ({
+                                              ...prev,
+                                              [r.provider]: { ...prev[r.provider], [f.key]: e.target.value },
+                                            }))
+                                          }
+                                        />
+                                      </label>
+                                    ))}
+                                    <button type="button" style={bo.btnSecondary} onClick={() => void saveOAuth(r.provider)}>
+                                      Guardar credenciais OAuth
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            ) : null}
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            style={bo.btnSecondary}
+                            disabled={busy || r.mode === "DISABLED"}
+                            onClick={() => void testar(r.provider as "ZOOM" | "TEAMS")}
+                          >
+                            Testar ligação
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.75rem" }}>
+                    {(["ZOOM", "TEAMS"] as const).map((provider) => (
+                      <div key={provider} style={{ ...bo.card, background: "rgba(15,23,42,0.45)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <h3 style={{ ...bo.h2, fontSize: "1rem" }}>{provider}</h3>
+                          <StatusBadge label="DISABLED" color="#94a3b8" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : null}
+
+            {plugin.id === "moodle" ? (
+              <div>
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.65rem" }}>
+                  <h3 style={{ ...bo.h2, fontSize: "1rem", margin: 0 }}>Moodle</h3>
+                  <StatusBadge
+                    label={unlocked ? (moodleRow?.mode ?? "DISABLED") : "DISABLED"}
+                    color={modeColor(unlocked ? (moodleRow?.mode ?? "DISABLED") : "DISABLED")}
+                  />
+                </div>
+                {unlocked ? (
+                  <>
+                    {canManage ? (
+                      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.65rem" }}>
+                        {(["DISABLED", "OAUTH"] as const).map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            style={(moodleRow?.mode ?? "DISABLED") === m ? bo.btn : bo.btnSecondary}
+                            onClick={() => void setMode("MOODLE", m)}
+                          >
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    <form onSubmit={syncMoodle}>
+                      <button
+                        type="submit"
+                        style={bo.btnTeal}
+                        disabled={!canManage && (moodleRow?.mode ?? "DISABLED") === "DISABLED"}
+                      >
+                        Executar sync
+                      </button>
+                    </form>
+                    {moodlePreview ? (
+                      <pre style={{ marginTop: "0.75rem", fontSize: "0.78rem", color: "#cbd5e1", overflow: "auto" }}>
+                        {moodlePreview}
+                      </pre>
+                    ) : (
+                      <EmptyState message="Active o plugin Moodle (OAUTH) e execute sync para ver cursos." />
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.65rem" }}>
+                      {(["DISABLED", "OAUTH"] as const).map((m) => (
+                        <button key={m} type="button" style={m === "DISABLED" ? bo.btn : bo.btnSecondary} disabled>
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                    <button type="button" style={bo.btnTeal} disabled>
+                      Executar sync
+                    </button>
+                    <EmptyState message="Active o plugin Moodle (OAUTH) e execute sync para ver cursos." />
+                  </>
+                )}
+              </div>
+            ) : null}
+          </section>
+          );
+        })}
       </div>
+
+      <p style={{ color: "#64748b", fontSize: "0.82rem", marginTop: "1.25rem" }}>
+        Precisa de mais integrações?{" "}
+        <Link href="/portal/billing" className="underline hover:text-slate-300">
+          Gerir subscrição
+        </Link>
+      </p>
     </PageShell>
   );
 }

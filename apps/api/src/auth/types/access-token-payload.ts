@@ -13,6 +13,8 @@ export interface AccessTokenPayload {
   impersonationSessionId?: string;
   readOnlyImpersonation?: boolean;
   jwtJti?: string;
+  /** Password temporária - bloqueia API até redefinição. */
+  mustChangePassword?: boolean;
 }
 
 export type RequestUser = AccessTokenPayload;

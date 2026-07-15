@@ -9,6 +9,11 @@ export const ROLE_ORDER: Record<JwtRole, number> = {
   super_admin: 3,
 };
 
+export const CRM_FATURACAO_PORTAL_PATHS = [
+  "/portal/crm/faturas",
+  "/portal/crm/faturacao",
+] as const;
+
 export const CRM_PORTAL_PATHS = [
   "/portal/crm",
   "/portal/clientes",
@@ -17,8 +22,8 @@ export const CRM_PORTAL_PATHS = [
   "/portal/propostas",
   "/portal/contratos",
   "/portal/crm/leads",
-  "/portal/crm/faturas",
-  "/portal/crm/faturacao",
+  "/portal/crm/interaccoes",
+  "/portal/crm/sugestoes-ia",
 ] as const;
 
 export function roleSatisfies(userRole: JwtRole | null | undefined, required: JwtRole): boolean {
@@ -56,21 +61,106 @@ export function isTenantStaff(role: JwtRole | null | undefined): boolean {
   return role === "tenant_manager" || role === "formador";
 }
 
+export function isCrmFaturacaoPortalPath(pathname: string): boolean {
+  return CRM_FATURACAO_PORTAL_PATHS.some(
+    (href) => pathname === href || pathname.startsWith(`${href}/`),
+  );
+}
+
 export function isCrmPortalPath(pathname: string): boolean {
+  return (
+    CRM_PORTAL_PATHS.some(
+      (href) => pathname === href || pathname.startsWith(`${href}/`),
+    ) ||
+    isCrmFaturacaoPortalPath(pathname)
+  );
+}
+
+/** Rotas CRM acessíveis ao papel comercial (sem faturação). */
+export function isComercialCrmPortalPath(pathname: string): boolean {
+  if (isCrmFaturacaoPortalPath(pathname)) return false;
   return CRM_PORTAL_PATHS.some(
     (href) => pathname === href || pathname.startsWith(`${href}/`),
   );
 }
 
-/** Dashboard por defeito após login. */
-export function defaultDashboardPath(
+/** Dashboard / landing por defeito após login, por papel. */
+export function roleLandingPath(
   role: JwtRole | null | undefined,
   kind: JwtKind | null | undefined,
 ): string {
   if (isSuperAdmin(role, kind)) return "/plataforma";
   if (isFormando(role)) return "/portal/formando";
   if (isComercial(role)) return "/portal/crm";
+  if (isFormador(role) || isTenantManager(role)) return "/portal";
   return "/portal";
+}
+
+/** @deprecated Preferir `roleLandingPath`. */
+export function defaultDashboardPath(
+  role: JwtRole | null | undefined,
+  kind: JwtKind | null | undefined,
+): string {
+  return roleLandingPath(role, kind);
+}
+
+const FORMADOR_PORTAL_PREFIXES = [
+  "/portal/calendario",
+  "/portal/cursos",
+  "/portal/acoes",
+  "/portal/catalogo-ufcd",
+  "/portal/conteudos",
+  "/portal/rgpd",
+] as const;
+
+export function isFormandoPortalPath(path: string): boolean {
+  const normalized = normalizePortalPathname(path);
+  return normalized === "/portal/formando" || normalized.startsWith("/portal/formando/");
+}
+
+function normalizePortalPathname(path: string): string {
+  const base = path.split("?")[0]?.split("#")[0] ?? path;
+  if (base.length > 1 && base.endsWith("/")) return base.slice(0, -1);
+  return base;
+}
+
+/** RBAC de rotas do portal (sem entitlements - usado no redirect pós-login). */
+export function isPortalPathAllowedByRole(
+  pathname: string,
+  role: JwtRole | null | undefined,
+): boolean {
+  const path = normalizePortalPathname(pathname);
+  if (!role) return false;
+
+  if (path.startsWith("/portal/demo/")) return true;
+
+  if (isSuperAdmin(role)) {
+    return path.startsWith("/plataforma");
+  }
+
+  if (isFormando(role)) {
+    return isFormandoPortalPath(path);
+  }
+
+  if (isComercial(role)) {
+    if (isFormandoPortalPath(path)) return false;
+    return path.startsWith("/portal/rgpd") || isComercialCrmPortalPath(path);
+  }
+
+  if (isTenantManager(role)) {
+    if (isFormandoPortalPath(path)) return false;
+    return path === "/portal" || path.startsWith("/portal/");
+  }
+
+  if (isFormador(role)) {
+    if (isFormandoPortalPath(path)) return false;
+    if (path === "/portal") return true;
+    return FORMADOR_PORTAL_PREFIXES.some(
+      (prefix) => path === prefix || path.startsWith(`${prefix}/`),
+    );
+  }
+
+  return false;
 }
 
 /** Valida destino `next` após autenticação. */
@@ -79,28 +169,24 @@ export function resolvePostLoginPath(
   kind: JwtKind | null | undefined,
   next: string | null | undefined,
 ): string {
-  const fallback = defaultDashboardPath(role, kind);
-  if (!next) return fallback;
+  const landing = roleLandingPath(role, kind);
+  if (!next) return landing;
 
-  if (next.startsWith("/plataforma")) {
-    return isSuperAdmin(role, kind) ? next : fallback;
+  const normalized = normalizePortalPathname(next);
+
+  if (normalized.startsWith("/plataforma")) {
+    return isSuperAdmin(role, kind) ? next : landing;
   }
 
-  if (!next.startsWith("/portal")) return fallback;
+  if (!normalized.startsWith("/portal")) return landing;
 
   if (isSuperAdmin(role, kind)) return "/plataforma";
 
-  if (isFormando(role)) {
-    return next.startsWith("/portal/formando") || next.startsWith("/portal/demo/")
-      ? next
-      : "/portal/formando";
+  if (isPortalPathAllowedByRole(normalized, role)) {
+    return next;
   }
 
-  if (isComercial(role)) {
-    return isCrmPortalPath(next) ? next : "/portal/crm";
-  }
-
-  return next;
+  return landing;
 }
 
 export function canAccessPlatformArea(

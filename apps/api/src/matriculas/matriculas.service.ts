@@ -12,12 +12,16 @@ import {
   turmaExigeEmailPresenca,
 } from "../common/formando-presenca.util";
 import { requireTenantId } from "../common/tenant-scope";
+import { FormadorNotificacoesService } from "../notificacoes/formador-notificacoes.service";
 import type { CreateMatriculaDto } from "./dto/create-matricula.dto";
 import type { UpdateMatriculaDto } from "./dto/update-matricula.dto";
 
 @Injectable()
 export class MatriculasService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly formadorNotificacoes: FormadorNotificacoesService,
+  ) {}
 
   /** Lista matrículas de uma turma. */
   async listByTurma(user: RequestUser, turmaId: string) {
@@ -90,13 +94,30 @@ export class MatriculasService {
       throw new ConflictException("Este formando já está matriculado nesta turma.");
     }
 
-    return this.prisma.matricula.create({
+    const matricula = await this.prisma.matricula.create({
       data: {
         tenantId,
         turmaId: dto.turmaId,
         formandoId: dto.formandoId,
       },
     });
+
+    const ctx = await this.prisma.turma.findFirst({
+      where: { id: dto.turmaId, tenantId },
+      select: {
+        codigo: true,
+        acaoFormacao: { select: { id: true, titulo: true } },
+      },
+    });
+    if (ctx?.acaoFormacao) {
+      void this.formadorNotificacoes.notifyMatriculaNova(tenantId, ctx.acaoFormacao.id, {
+        formandoNome: formando.nome,
+        turmaCodigo: ctx.codigo,
+        acaoTitulo: ctx.acaoFormacao.titulo,
+      });
+    }
+
+    return matricula;
   }
 
   async updateEstado(user: RequestUser, id: string, dto: UpdateMatriculaDto) {

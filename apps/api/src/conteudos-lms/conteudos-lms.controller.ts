@@ -128,6 +128,12 @@ export class ConteudosLmsController {
     return this.conteudos.listProgresso(user, matriculaId);
   }
 
+  @Get("formador/progresso-resumo")
+  @Roles("formador")
+  resumoProgressoFormador(@CurrentUser() user: RequestUser) {
+    return this.conteudos.resumoProgressoFormador(user);
+  }
+
   @Patch("progresso/:moduloId")
   @Roles("formando", "tenant_manager", "formador")
   updateProgresso(

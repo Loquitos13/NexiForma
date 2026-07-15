@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FileDown, Loader2, Sparkles } from "lucide-react";
 import type { RelatorioInsightsRequest, RelatorioInsightsResponse } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { persistChartInsightsCache } from "@/components/relatorios/chart-insights-cache";
 import { downloadResponseAsFile } from "@/lib/client/download-response";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
@@ -23,6 +24,7 @@ export function ReportInsightsPanel({ secao, className }: Props) {
   async function gerar() {
     setLoading(true);
     setError(null);
+    setData(null);
     try {
       const res = await bffFetch("/api/v1/relatorios/insights", {
         method: "POST",
@@ -33,7 +35,9 @@ export function ReportInsightsPanel({ secao, className }: Props) {
         setError(await parseApiError(res));
         return;
       }
-      setData((await res.json()) as RelatorioInsightsResponse);
+      const payload = (await res.json()) as RelatorioInsightsResponse;
+      setData(payload);
+      persistChartInsightsCache(secao, payload.descricoesGraficos);
     } catch {
       setError("Não foi possível gerar a análise.");
     } finally {
@@ -71,7 +75,7 @@ export function ReportInsightsPanel({ secao, className }: Props) {
             Análise inteligente
           </CardTitle>
           <p className="text-xs text-slate-500 mt-1">
-            Interpretação automática dos dados. Exporte PDF com KPIs, gráficos e recomendações.
+            Interpretação automática dos dados. Exportar PDF com KPIs, gráficos e recomendações.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">

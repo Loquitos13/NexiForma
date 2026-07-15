@@ -27,11 +27,18 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+function isCacheableRequest(url) {
+  return (
+    (url.protocol === "http:" || url.protocol === "https:") &&
+    url.origin === self.location.origin
+  );
+}
+
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   const url = new URL(event.request.url);
-  if (shouldBypassCache(url)) return;
+  if (shouldBypassCache(url) || !isCacheableRequest(url)) return;
 
   event.respondWith(
     fetch(event.request)

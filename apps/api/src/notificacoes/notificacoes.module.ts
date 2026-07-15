@@ -7,6 +7,7 @@ import { NotificacoesService } from "./notificacoes.service";
 import { NotificacoesExtendedService } from "./notificacoes-extended.service";
 import { NotificacoesSchedulerService } from "./notificacoes-scheduler.service";
 import { PortalNotificacoesService } from "./portal-notificacoes.service";
+import { FormadorNotificacoesService } from "./formador-notificacoes.service";
 import { PropostaNotificacoesService } from "./proposta-notificacoes.service";
 import { PlatformAlertasService } from "./platform-alertas.service";
 import { PlatformTenantNotificacoesService } from "./platform-tenant-notificacoes.service";
@@ -25,6 +26,7 @@ import { SmsService } from "./sms.service";
     NotificacoesExtendedService,
     NotificacoesSchedulerService,
     PortalNotificacoesService,
+    FormadorNotificacoesService,
     PropostaNotificacoesService,
     PlatformAlertasService,
     PlatformTenantNotificacoesService,
@@ -35,6 +37,7 @@ import { SmsService } from "./sms.service";
     NotificacoesService,
     NotificacoesExtendedService,
     PortalNotificacoesService,
+    FormadorNotificacoesService,
     PropostaNotificacoesService,
     PlatformAlertasService,
     PlatformTenantNotificacoesService,

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Bell } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { cn } from "@/lib/ui/cn";
 
 type Notif = {
   id: string;
@@ -21,6 +22,16 @@ export function PortalNotificationsBell() {
   const [items, setItems] = useState<Notif[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const refreshCount = useCallback(async () => {
+    const cRes = await bffFetch("/api/v1/notificacoes/portal/nao-lidas", {
+      headers: { accept: "application/json" },
+    });
+    if (cRes.ok) {
+      const c = (await cRes.json()) as { count?: number };
+      setCount(c.count ?? 0);
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     const [cRes, lRes] = await Promise.all([
       bffFetch("/api/v1/notificacoes/portal/nao-lidas", { headers: { accept: "application/json" } }),
@@ -36,10 +47,15 @@ export function PortalNotificationsBell() {
   }, []);
 
   useEffect(() => {
-    void refresh();
-    const t = setInterval(() => void refresh(), 60_000);
+    void refreshCount();
+  }, [refreshCount]);
+
+  useEffect(() => {
+    if (!open && count === 0) return;
+    const intervalMs = count > 0 ? 30_000 : 60_000;
+    const t = setInterval(() => void (open ? refresh() : refreshCount()), intervalMs);
     return () => clearInterval(t);
-  }, [refresh]);
+  }, [open, count, refresh, refreshCount]);
 
   async function openPanel() {
     setOpen((v) => !v);
@@ -63,10 +79,16 @@ export function PortalNotificationsBell() {
       <button
         type="button"
         onClick={() => void openPanel()}
-        className="relative rounded-md p-1.5 text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-        title="Notificações"
+        className={cn(
+          "relative rounded-md p-1.5 transition-colors",
+          count > 0
+            ? "portal-bell-glow text-amber-300 hover:text-amber-200"
+            : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200",
+        )}
+        title={count > 0 ? `${count} notificação(ões) por ler` : "Notificações"}
+        aria-label={count > 0 ? `Notificações, ${count} por ler` : "Notificações"}
       >
-        <Bell className="h-4 w-4" />
+        <Bell className={cn("h-4 w-4", count > 0 && "drop-shadow-[0_0_6px_rgba(251,191,36,0.85)]")} />
         {count > 0 ? (
           <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
             {count > 9 ? "9+" : count}
@@ -75,7 +97,7 @@ export function PortalNotificationsBell() {
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-xl border border-slate-700/60 bg-slate-900 shadow-xl">
+        <div className="absolute right-0 top-full z-50 mt-2 w-[min(20rem,calc(100vw-1.5rem))] rounded-xl border border-slate-700/60 bg-slate-900 shadow-xl">
           <div className="border-b border-slate-700/50 px-3 py-2 text-xs font-semibold text-slate-300">
             Notificações
           </div>

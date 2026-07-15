@@ -6,6 +6,7 @@ import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 import type { CreateFormandoDto } from "./dto/create-formando.dto";
 import type { UpdateFormandoDto } from "./dto/update-formando.dto";
+import { ensureFormandoProfilesForTenant } from "../common/formando-user-link.util";
 
 @Injectable()
 export class FormandosService {
@@ -42,14 +43,25 @@ export class FormandosService {
       userId: string | null;
       entidadeClienteId: string | null;
       user: { email: string } | null;
+      metadata: unknown;
       _count: { matriculas: number };
     },
+    opts: { pendingInviteEmails: Set<string> },
   ) {
     const emailPresencaEfectivo = resolverEmailPresencaFormando({
       emailPresenca: f.emailPresenca,
       emailConta: f.user?.email,
       emailContacto: f.email,
     });
+    const emailKey = f.email?.trim().toLowerCase() ?? "";
+    const contaEstado = f.userId
+      ? "activa"
+      : emailKey && opts.pendingInviteEmails.has(emailKey)
+        ? "convite_pendente"
+        : "sem_conta";
+    const nifProvisorio = Boolean(
+      f.metadata && typeof f.metadata === "object" && (f.metadata as { nifProvisorio?: boolean }).nifProvisorio,
+    );
     return {
       id: f.id,
       nome: f.nome,
@@ -62,12 +74,31 @@ export class FormandosService {
       createdAt: f.createdAt,
       userId: f.userId,
       entidadeClienteId: f.entidadeClienteId,
+      contaEstado,
+      nifProvisorio,
       _count: f._count,
     };
   }
 
   async list(user: RequestUser) {
     const tenantId = requireTenantId(user);
+    await ensureFormandoProfilesForTenant(this.prisma, tenantId);
+
+    const pendingInviteEmails = new Set(
+      (
+        await this.prisma.tenantInvite.findMany({
+          where: {
+            tenantId,
+            role: "FORMANDO",
+            acceptedAt: null,
+            expiresAt: { gt: new Date() },
+          },
+          select: { email: true },
+          take: 200,
+        })
+      ).map((i) => i.email.trim().toLowerCase()),
+    );
+
     const rows = await this.prisma.formandoProfile.findMany({
       where: { tenantId },
       orderBy: { nome: "asc" },
@@ -83,10 +114,11 @@ export class FormandosService {
         userId: true,
         entidadeClienteId: true,
         user: { select: { email: true } },
+        metadata: true,
         _count: { select: { matriculas: true } },
       },
     });
-    return rows.map((f) => this.mapFormandoListRow(f));
+    return rows.map((f) => this.mapFormandoListRow(f, { pendingInviteEmails }));
   }
 
   async create(user: RequestUser, dto: CreateFormandoDto): Promise<FormandoProfile> {
@@ -112,6 +144,19 @@ export class FormandosService {
 
     await this.assertEmailPresencaUnico(tenantId, dto.emailPresenca);
 
+    const emailContacto = dto.email?.trim().toLowerCase();
+    const linkedUser = emailContacto
+      ? await this.prisma.user.findFirst({
+          where: {
+            tenantId,
+            role: "FORMANDO",
+            email: { equals: emailContacto, mode: "insensitive" },
+            formandoProfile: null,
+          },
+          select: { id: true },
+        })
+      : null;
+
     return this.prisma.formandoProfile.create({
       data: {
         tenantId,
@@ -121,6 +166,7 @@ export class FormandosService {
         emailPresenca: dto.emailPresenca?.trim() || null,
         telefone: dto.telefone?.trim() || null,
         entidadeClienteId: dto.entidadeClienteId ?? null,
+        userId: linkedUser?.id ?? null,
       },
     });
   }
@@ -170,5 +216,48 @@ export class FormandosService {
         ...(dto.telefone !== undefined ? { telefone: dto.telefone?.trim() || null } : {}),
       },
     });
+  }
+
+  async remove(user: RequestUser, id: string) {
+    const tenantId = requireTenantId(user);
+    const formando = await this.prisma.formandoProfile.findFirst({
+      where: { id, tenantId },
+      select: {
+        id: true,
+        email: true,
+        userId: true,
+        _count: { select: { matriculas: true } },
+      },
+    });
+    if (!formando) {
+      throw new NotFoundException("Formando não encontrado.");
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const email = formando.email?.trim();
+      if (email) {
+        await tx.tenantInvite.deleteMany({
+          where: {
+            tenantId,
+            role: "FORMANDO",
+            acceptedAt: null,
+            email: { equals: email, mode: "insensitive" },
+          },
+        });
+      }
+      if (formando.userId) {
+        await tx.user.update({
+          where: { id: formando.userId },
+          data: { active: false },
+        });
+      }
+      await tx.formandoProfile.delete({ where: { id } });
+    });
+
+    return {
+      ok: true,
+      matriculasRemovidas: formando._count.matriculas,
+      contaDesactivada: Boolean(formando.userId),
+    };
   }
 }

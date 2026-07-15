@@ -20,6 +20,7 @@ import { IntegracoesService } from "../integracoes/integracoes.service";
 import { isModalidadeOnline, resolveSalaOnline } from "../lms/sessao-sala.util";
 import type { CreateSessaoFormacaoDto } from "./dto/create-sessao-formacao.dto";
 import type { UpdateSessaoFormacaoDto } from "./dto/update-sessao-formacao.dto";
+import { CalendarioNotificacoesService } from "../calendario/calendario-notificacoes.service";
 
 function toPgDate(raw: string, field: string): Date {
   const d = new Date(raw);
@@ -45,6 +46,7 @@ export class SessoesFormacaoService {
     private readonly lms: LmsService,
     private readonly assiduidade: AssiduidadeService,
     private readonly formadorScope: FormadorScopeService,
+    private readonly calendarioNotificacoes: CalendarioNotificacoesService,
     @Inject(forwardRef(() => IntegracoesService))
     private readonly integracoes: IntegracoesService,
   ) {}
@@ -177,9 +179,16 @@ export class SessoesFormacaoService {
 
     if (isModalidadeOnline(dto.modalidade)) {
       await this.ensureSalaOnline(tenantId, created);
-      return this.prisma.sessaoFormacao.findFirstOrThrow({ where: { id: created.id } });
+      const finalSessao = await this.prisma.sessaoFormacao.findFirstOrThrow({ where: { id: created.id } });
+      void this.calendarioNotificacoes.onSessaoCriada(finalSessao.id, tenantId).catch((err) =>
+        this.logger.warn(`Calendário sessão: ${String(err)}`),
+      );
+      return finalSessao;
     }
 
+    void this.calendarioNotificacoes.onSessaoCriada(created.id, tenantId).catch((err) =>
+      this.logger.warn(`Calendário sessão: ${String(err)}`),
+    );
     return created;
   }
 

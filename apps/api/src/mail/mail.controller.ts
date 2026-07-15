@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
+import { Public } from "../auth/decorators/public.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/decorators/roles.decorator";
@@ -13,6 +14,7 @@ export class MailController {
   ) {}
 
   /** Webhook SNS para bounces/complaints AWS SES (sem JWT). */
+  @Public()
   @Post("webhooks/ses")
   sesSnsWebhook(@Body() body: Record<string, unknown>) {
     return this.webhooks.handleSesSns(body as never);

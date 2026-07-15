@@ -299,6 +299,13 @@ export const GUIDE_DESTINATIONS: GuideDestination[] = [
     formandoOnly: true,
   },
   {
+    href: "/portal/formando/rgpd",
+    label: "Privacidade RGPD",
+    description: "Consulta e alteração do consentimento sobre dados pessoais.",
+    keywords: ["rgpd", "gdpr", "privacidade", "consentimento", "dados pessoais"],
+    formandoOnly: true,
+  },
+  {
     href: "/portal/formando/perfil",
     label: "Perfil formando",
     description: "Dados pessoais e RGPD.",

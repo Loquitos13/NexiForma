@@ -1,17 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import {
-  Check,
   Download,
   FileText,
   Mail,
   Plus,
   Receipt,
   Send,
-  X,
 } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { downloadResponseAsFile } from "@/lib/client/download-response";
@@ -33,6 +31,16 @@ import {
   type Column,
 } from "@/components/ui";
 import { PropostaEstadoBadge } from "@/components/crm/proposta-estado-badge";
+import { CrmContextNav, PROPOSTAS_NAV } from "@/components/crm/crm-context-nav";
+import {
+  CrmListFilters,
+  crmListFiltersToParams,
+  emptyCrmListFilters,
+  type CrmListFiltersValue,
+} from "@/components/crm/crm-list-filters";
+import { ListPagination } from "@/components/crm/list-pagination";
+import { parsePaginatedList } from "@/lib/crm/paginated-list";
+import { withPortalFrom } from "@/lib/ui/portal-back-nav";
 import {
   PropostaLinhasEditor,
   linhasPropostaParaApi,
@@ -42,6 +50,7 @@ import {
 import {
   fmtDate,
   fmtEuro,
+  fmtPropostaAutoria,
   generatePropostaCodigo,
   propostaEstadoLabel,
   type PropostaEstado,
@@ -56,8 +65,11 @@ type Proposta = {
   estado: string;
   valorCentavos: number;
   validadeAte: string | null;
+  enviadaEm?: string | null;
   entidadeCliente: { id: string; nome: string; nif: string; email: string | null };
   curso: { designacao: string } | null;
+  criadoPor?: { displayName: string } | null;
+  enviadaPor?: { displayName: string } | null;
   fatura?: { id: string; estado: string } | null;
 };
 
@@ -82,6 +94,7 @@ function podeFaturarProposta(p: Proposta, gestor: boolean): boolean {
 
 export default function PropostasPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const { canManageCrm, canManage } = useTenantRole();
   const [estadoFilter, setEstadoFilter] = useState<string>("TODAS");
   const [entidadeFilter, setEntidadeFilter] = useState("");
@@ -94,10 +107,8 @@ export default function PropostasPage() {
   const [busy, setBusy] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [enviarOpen, setEnviarOpen] = useState(false);
-  const [rejeitarOpen, setRejeitarOpen] = useState(false);
   const [activeProposta, setActiveProposta] = useState<Proposta | null>(null);
   const [enviarEmail, setEnviarEmail] = useState("");
-  const [rejeitarMotivo, setRejeitarMotivo] = useState("");
   const [pendingEnviarId, setPendingEnviarId] = useState<string | null>(null);
   const [form, setForm] = useState({
     entidadeClienteId: "",
@@ -109,6 +120,11 @@ export default function PropostasPage() {
     cursoId: "",
   });
   const [linhas, setLinhas] = useState<PropostaLinhaForm[]>([novaPropostaLinha()]);
+  const [listFilters, setListFilters] = useState<CrmListFiltersValue>(emptyCrmListFilters);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState<Record<string, number>>({ TODAS: 0 });
+  const pageSize = 50;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -129,14 +145,25 @@ export default function PropostasPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const q = entidadeFilter ? `?entidadeClienteId=${entidadeFilter}` : "";
+    const params = crmListFiltersToParams(listFilters, canManage, {
+      entidadeClienteId: entidadeFilter || undefined,
+      estado: estadoFilter !== "TODAS" ? estadoFilter : undefined,
+      page: String(page),
+      pageSize: String(pageSize),
+    });
+    const q = params.toString() ? `?${params}` : "";
     const [pRes, eRes, cRes] = await Promise.all([
       bffFetch(`/api/v1/propostas${q}`, { headers: { accept: "application/json" } }),
       bffFetch("/api/v1/entidades-cliente", { headers: { accept: "application/json" } }),
       bffFetch("/api/v1/cursos", { headers: { accept: "application/json" } }),
     ]);
     if (!pRes.ok) setError(await parseApiError(pRes));
-    else setPropostas((await pRes.json()) as Proposta[]);
+    else {
+      const data = parsePaginatedList<Proposta>(await pRes.json());
+      setPropostas(data.items);
+      setTotal(data.total);
+      if (data.countsByEstado) setCounts(data.countsByEstado);
+    }
     if (eRes.ok) {
       const ents = (await eRes.json()) as EntidadeOpt[];
       setEntidades(ents);
@@ -151,7 +178,11 @@ export default function PropostasPage() {
     }
     if (cRes.ok) setCursos((await cRes.json()) as CursoOpt[]);
     setLoading(false);
-  }, [entidadeFilter]);
+  }, [entidadeFilter, listFilters, canManage, estadoFilter, page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [entidadeFilter, listFilters, estadoFilter]);
 
   useEffect(() => {
     void load();
@@ -178,19 +209,6 @@ export default function PropostasPage() {
       router.replace("/portal/propostas", { scroll: false });
     })();
   }, [pendingEnviarId, loading, propostas, router]);
-
-  const filtered = useMemo(() => {
-    if (estadoFilter === "TODAS") return propostas;
-    return propostas.filter((p) => p.estado === estadoFilter);
-  }, [propostas, estadoFilter]);
-
-  const counts = useMemo(() => {
-    const c: Record<string, number> = { TODAS: propostas.length };
-    for (const e of ESTADOS) {
-      if (e !== "TODAS") c[e] = propostas.filter((p) => p.estado === e).length;
-    }
-    return c;
-  }, [propostas]);
 
   async function criar(e: FormEvent) {
     e.preventDefault();
@@ -233,7 +251,7 @@ export default function PropostasPage() {
         cursoId: "",
       }));
       setLinhas([novaPropostaLinha()]);
-      router.push(`/portal/propostas/${created.id}`);
+      router.push(withPortalFrom(`/portal/propostas/${created.id}`, pathname));
     }
     setBusy(false);
   }
@@ -242,12 +260,6 @@ export default function PropostasPage() {
     setActiveProposta(p);
     setEnviarEmail(p.entidadeCliente.email ?? "");
     setEnviarOpen(true);
-  }
-
-  function openRejeitar(p: Proposta) {
-    setActiveProposta(p);
-    setRejeitarMotivo("");
-    setRejeitarOpen(true);
   }
 
   async function enviarProposta(e: FormEvent) {
@@ -267,27 +279,12 @@ export default function PropostasPage() {
     }
     setMsg(
       activeProposta.estado === "RASCUNHO"
-        ? "Proposta enviada por email ao cliente."
+        ? "Proposta enviada por email. O cliente recebe links para aceitar ou recusar - a conversão em cliente ocorre automaticamente ao aceitar."
         : "Proposta reenviada por email ao cliente.",
     );
     setEnviarOpen(false);
     setActiveProposta(null);
     await load();
-  }
-
-  async function aceitarProposta(id: string) {
-    setBusy(true);
-    setError(null);
-    const res = await bffFetch(`/api/v1/propostas/${id}/aceitar`, {
-      method: "POST",
-      headers: { accept: "application/json" },
-    });
-    setBusy(false);
-    if (!res.ok) setError(await parseApiError(res));
-    else {
-      setMsg("Proposta marcada como aceite.");
-      await load();
-    }
   }
 
   async function imprimirProposta(id: string) {
@@ -340,32 +337,12 @@ export default function PropostasPage() {
     window.location.href = `/portal/crm/faturas/${data.id}`;
   }
 
-  async function rejeitarProposta(e: FormEvent) {
-    e.preventDefault();
-    if (!activeProposta) return;
-    setBusy(true);
-    setError(null);
-    const res = await bffFetch(`/api/v1/propostas/${activeProposta.id}/rejeitar`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ motivo: rejeitarMotivo.trim() || undefined }),
-    });
-    setBusy(false);
-    if (!res.ok) setError(await parseApiError(res));
-    else {
-      setMsg("Proposta rejeitada.");
-      setRejeitarOpen(false);
-      setActiveProposta(null);
-      await load();
-    }
-  }
-
   const COLS: Column<Proposta>[] = [
     {
       key: "codigo",
       header: "Proposta",
       cell: (p) => (
-        <Link href={`/portal/propostas/${p.id}`} className="block hover:text-blue-300">
+        <Link href={withPortalFrom(`/portal/propostas/${p.id}`, pathname)} className="block hover:text-blue-300">
           <span className="font-medium text-slate-100">{p.codigo}</span>
           <p className="text-xs text-slate-500 mt-0.5">{p.titulo}</p>
           {p.curso && (
@@ -399,10 +376,18 @@ export default function PropostasPage() {
       header: "Estado",
       cell: (p) => <PropostaEstadoBadge estado={p.estado} />,
     },
+    {
+      key: "autoria",
+      header: "Equipa comercial",
+      cell: (p) => (
+        <span className="text-sm text-slate-300">{fmtPropostaAutoria(p.criadoPor, p.enviadaPor)}</span>
+      ),
+    },
   ];
 
   return (
     <>
+      <CrmContextNav tabs={PROPOSTAS_NAV} ariaLabel="Secções Propostas" />
       <PageHeader
         title="Propostas comerciais"
         description="Orçamentos B2B com envio por email, aceitação e registo de facturação pipeline."
@@ -433,7 +418,14 @@ export default function PropostasPage() {
       {error && <Alert variant="error" className="mb-4">{error}</Alert>}
       {msg && <Alert variant="success" className="mb-4">{msg}</Alert>}
 
-      <div className="flex flex-wrap gap-2 mb-4">
+      <CrmListFilters
+        value={listFilters}
+        onChange={setListFilters}
+        gestor={canManage}
+        searchPlaceholder="Pesquisar NIF ou nome da empresa…"
+      />
+
+      <div className="flex flex-wrap gap-2 mb-4 mt-5">
         {ESTADOS.map((e) => (
           <button
             key={e}
@@ -471,7 +463,7 @@ export default function PropostasPage() {
         <CardContent className="p-0">
           <DataTable
             columns={COLS}
-            data={filtered}
+            data={propostas}
             keyField="id"
             loading={loading}
             emptyMessage="Sem propostas neste estado."
@@ -504,18 +496,6 @@ export default function PropostasPage() {
                           {p.estado === "RASCUNHO" ? "Enviar" : "Reenviar"}
                         </Button>
                       )}
-                      {p.estado === "ENVIADA" && (
-                        <>
-                          <Button size="sm" variant="teal" onClick={() => void aceitarProposta(p.id)} disabled={busy}>
-                            <Check className="h-3.5 w-3.5" />
-                            Aceitar
-                          </Button>
-                          <Button size="sm" variant="secondary" onClick={() => openRejeitar(p)} disabled={busy}>
-                            <X className="h-3.5 w-3.5" />
-                            Rejeitar
-                          </Button>
-                        </>
-                      )}
                       {podeFaturarProposta(p, canManage) &&
                         (p.fatura ? (
                           <Button size="sm" variant="secondary" asChild>
@@ -539,6 +519,13 @@ export default function PropostasPage() {
                   )
                 : undefined
             }
+          />
+          <ListPagination
+            className="border-t border-slate-700/40 px-4 py-3"
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
           />
         </CardContent>
       </Card>
@@ -658,23 +645,6 @@ export default function PropostasPage() {
                     : "Reenviar proposta"}
               </Button>
               <Button type="button" variant="secondary" onClick={() => setEnviarOpen(false)}>Cancelar</Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={rejeitarOpen} onOpenChange={setRejeitarOpen}>
-        <DialogContent title="Rejeitar proposta" description="Registe o motivo para histórico interno.">
-          <form onSubmit={(e) => void rejeitarProposta(e)} className="grid gap-4">
-            <Textarea
-              label="Motivo (opcional)"
-              value={rejeitarMotivo}
-              onChange={(ev) => setRejeitarMotivo(ev.target.value)}
-              placeholder="Orçamento acima do previsto, prazo incompatível…"
-            />
-            <div className="flex gap-2">
-              <Button type="submit" variant="danger" disabled={busy}>Confirmar rejeição</Button>
-              <Button type="button" variant="secondary" onClick={() => setRejeitarOpen(false)}>Cancelar</Button>
             </div>
           </form>
         </DialogContent>

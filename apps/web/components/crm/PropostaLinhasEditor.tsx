@@ -72,13 +72,19 @@ export function PropostaLinhasEditor({
   hideHeader = false,
   readOnly = false,
 }: Props) {
-  const parsed = linhasPropostaParaApi(linhas);
+  const linhasVisiveis = readOnly ? linhas.filter((l) => l.descricao.trim()) : linhas;
+  const parsed = linhasPropostaParaApi(linhasVisiveis);
   const totais = parsed.length ? calcularTotaisLinhas(parsed) : { valorCentavos: 0, ivaCentavos: 0 };
   const totalComIva = totais.valorCentavos + totais.ivaCentavos;
+  const mostrarNotas = !readOnly || linhasVisiveis.some((l) => l.notas.trim());
+
+  if (readOnly && linhasVisiveis.length === 0) {
+    return null;
+  }
 
   return (
     <div className="min-w-0 w-full max-w-full space-y-3">
-      {!hideHeader ? (
+      {!hideHeader && !readOnly ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm font-medium text-slate-200">Itens (opcional)</p>
           <p className="text-xs text-slate-500">Como numa fatura: preço s/ IVA + IVA por linha</p>
@@ -87,13 +93,14 @@ export function PropostaLinhasEditor({
 
       {compact ? (
         <div className="space-y-3">
-          {linhas.map((linha, idx) => {
+          {linhasVisiveis.map((linha, idx) => {
             const q = Number.parseFloat(linha.quantidade.replace(",", ".")) || 0;
             const preco = parseEurosInput(linha.precoEuros);
             const taxa = Number.parseFloat(linha.taxaIva.replace(",", ".")) || 0;
             const base = calcularBaseLinhaCentavos({ quantidade: q, precoUnitCentavos: preco, taxaIva: taxa });
             const iva = calcularValorIvaCentavos({ quantidade: q, precoUnitCentavos: preco, taxaIva: taxa });
             const total = base + iva;
+            const linhaIdx = readOnly ? linhas.indexOf(linha) : idx;
 
             return (
               <div
@@ -102,32 +109,53 @@ export function PropostaLinhasEditor({
               >
                 <div className="flex items-start gap-2 min-w-0">
                   <div className="min-w-0 flex-1 space-y-3">
-                    <Textarea
-                      label="Produto / serviço"
-                      value={linha.descricao}
-                      onChange={(e) => onChange(updateLinha(linhas, idx, { descricao: e.target.value }))}
-                      placeholder="Ex.: Formação presencial (7h)"
-                      rows={2}
-                      className="text-base leading-snug min-h-[3.25rem]"
-                      readOnly={readOnly}
-                      disabled={readOnly}
-                    />
-                    <Textarea
-                      label="Notas do item (opcional)"
-                      value={linha.notas}
-                      onChange={(e) => onChange(updateLinha(linhas, idx, { notas: e.target.value }))}
-                      placeholder="Detalhes adicionais – coluna Notas no PDF"
-                      rows={2}
-                      className="text-sm"
-                      readOnly={readOnly}
-                      disabled={readOnly}
-                    />
+                    {readOnly ? (
+                      <div>
+                        <p className="mb-1 text-xs text-slate-500">Produto / serviço</p>
+                        <p className="whitespace-pre-wrap text-sm text-slate-200">{linha.descricao}</p>
+                      </div>
+                    ) : (
+                      <Textarea
+                        label="Produto / serviço"
+                        value={linha.descricao}
+                        onChange={(e) => onChange(updateLinha(linhas, linhaIdx, { descricao: e.target.value }))}
+                        placeholder="Ex.: Formação presencial (7h)"
+                        rows={2}
+                        className="text-base leading-snug min-h-[3.25rem]"
+                      />
+                    )}
+                    {mostrarNotas && linha.notas.trim() ? (
+                      readOnly ? (
+                        <div>
+                          <p className="mb-1 text-xs text-slate-500">Notas do item</p>
+                          <p className="whitespace-pre-wrap text-sm text-slate-400">{linha.notas}</p>
+                        </div>
+                      ) : (
+                        <Textarea
+                          label="Notas do item (opcional)"
+                          value={linha.notas}
+                          onChange={(e) => onChange(updateLinha(linhas, linhaIdx, { notas: e.target.value }))}
+                          placeholder="Detalhes adicionais – coluna Notas no PDF"
+                          rows={2}
+                          className="text-sm"
+                        />
+                      )
+                    ) : !readOnly ? (
+                      <Textarea
+                        label="Notas do item (opcional)"
+                        value={linha.notas}
+                        onChange={(e) => onChange(updateLinha(linhas, linhaIdx, { notas: e.target.value }))}
+                        placeholder="Detalhes adicionais – coluna Notas no PDF"
+                        rows={2}
+                        className="text-sm"
+                      />
+                    ) : null}
                   </div>
                   {!readOnly ? (
                   <button
                     type="button"
                     className="mt-7 rounded p-1.5 text-slate-500 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-30 shrink-0"
-                    onClick={() => onChange(linhas.filter((_, i) => i !== idx))}
+                    onClick={() => onChange(linhas.filter((_, i) => i !== linhaIdx))}
                     disabled={linhas.length <= 1}
                     title="Remover linha"
                   >
@@ -136,28 +164,41 @@ export function PropostaLinhasEditor({
                   ) : null}
                 </div>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  <Input
-                    label="Qtd."
-                    value={linha.quantidade}
-                    onChange={(e) => onChange(updateLinha(linhas, idx, { quantidade: e.target.value }))}
-                    readOnly={readOnly}
-                    disabled={readOnly}
-                  />
-                  <Input
-                    label="Preço s/ IVA (€)"
-                    value={linha.precoEuros}
-                    onChange={(e) => onChange(updateLinha(linhas, idx, { precoEuros: e.target.value }))}
-                    placeholder="0.00"
-                    readOnly={readOnly}
-                    disabled={readOnly}
-                  />
-                  <Input
-                    label="IVA %"
-                    value={linha.taxaIva}
-                    onChange={(e) => onChange(updateLinha(linhas, idx, { taxaIva: e.target.value }))}
-                    readOnly={readOnly}
-                    disabled={readOnly}
-                  />
+                  {readOnly ? (
+                    <>
+                      <div>
+                        <p className="text-xs text-slate-500">Qtd.</p>
+                        <p className="text-sm tabular-nums text-slate-200">{linha.quantidade}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500">Preço s/ IVA</p>
+                        <p className="text-sm tabular-nums text-slate-200">{fmtEuro(preco)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500">IVA</p>
+                        <p className="text-sm tabular-nums text-slate-200">{linha.taxaIva}%</p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <Input
+                        label="Qtd."
+                        value={linha.quantidade}
+                        onChange={(e) => onChange(updateLinha(linhas, linhaIdx, { quantidade: e.target.value }))}
+                      />
+                      <Input
+                        label="Preço s/ IVA (€)"
+                        value={linha.precoEuros}
+                        onChange={(e) => onChange(updateLinha(linhas, linhaIdx, { precoEuros: e.target.value }))}
+                        placeholder="0.00"
+                      />
+                      <Input
+                        label="IVA %"
+                        value={linha.taxaIva}
+                        onChange={(e) => onChange(updateLinha(linhas, linhaIdx, { taxaIva: e.target.value }))}
+                      />
+                    </>
+                  )}
                 </div>
                 <p className="text-xs text-slate-400 text-right tabular-nums">
                   Base {fmtEuro(base)} · IVA {fmtEuro(iva)} ·{" "}
@@ -173,93 +214,106 @@ export function PropostaLinhasEditor({
             <thead>
               <tr className="border-b border-slate-700/40 bg-slate-800/40 text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-2 py-2 font-semibold min-w-[220px]">Produto / serviço</th>
-                <th className="px-2 py-2 font-semibold min-w-[160px]">Notas</th>
+                {mostrarNotas ? (
+                  <th className="px-2 py-2 font-semibold min-w-[160px]">Notas</th>
+                ) : null}
                 <th className="px-2 py-2 font-semibold text-right w-16">Qtd.</th>
                 <th className="px-2 py-2 font-semibold text-right w-24">Preço s/ IVA</th>
                 <th className="px-2 py-2 font-semibold text-right w-24">Base</th>
                 <th className="px-2 py-2 font-semibold text-right w-16">IVA %</th>
                 <th className="px-2 py-2 font-semibold text-right w-24">IVA</th>
                 <th className="px-2 py-2 font-semibold text-right w-28">Total c/ IVA</th>
-                <th className="w-10" />
+                {!readOnly ? <th className="w-10" /> : null}
               </tr>
             </thead>
             <tbody>
-              {linhas.map((linha, idx) => {
+              {linhasVisiveis.map((linha, idx) => {
                 const q = Number.parseFloat(linha.quantidade.replace(",", ".")) || 0;
                 const preco = parseEurosInput(linha.precoEuros);
                 const taxa = Number.parseFloat(linha.taxaIva.replace(",", ".")) || 0;
                 const base = calcularBaseLinhaCentavos({ quantidade: q, precoUnitCentavos: preco, taxaIva: taxa });
                 const iva = calcularValorIvaCentavos({ quantidade: q, precoUnitCentavos: preco, taxaIva: taxa });
                 const total = base + iva;
+                const linhaIdx = readOnly ? linhas.indexOf(linha) : idx;
 
                 return (
                   <tr key={linha.key} className="border-b border-slate-800/60 align-top">
                     <td className="px-2 py-2 min-w-[220px]">
-                      <Textarea
-                        value={linha.descricao}
-                        onChange={(e) => onChange(updateLinha(linhas, idx, { descricao: e.target.value }))}
-                        placeholder="Ex.: Subscrição Mensal Bronze"
-                        rows={2}
-                        className="text-base leading-snug min-h-[3.25rem] w-full min-w-[200px]"
-                        readOnly={readOnly}
-                        disabled={readOnly}
-                      />
+                      {readOnly ? (
+                        <p className="whitespace-pre-wrap text-sm text-slate-200">{linha.descricao}</p>
+                      ) : (
+                        <Textarea
+                          value={linha.descricao}
+                          onChange={(e) => onChange(updateLinha(linhas, linhaIdx, { descricao: e.target.value }))}
+                          placeholder="Ex.: Subscrição Mensal Bronze"
+                          rows={2}
+                          className="text-base leading-snug min-h-[3.25rem] w-full min-w-[200px]"
+                        />
+                      )}
                     </td>
-                    <td className="px-2 py-2 min-w-[160px]">
-                      <Textarea
-                        value={linha.notas}
-                        onChange={(e) => onChange(updateLinha(linhas, idx, { notas: e.target.value }))}
-                        placeholder="Opcional – coluna Notas no PDF"
-                        rows={2}
-                        className="text-sm w-full min-w-[140px]"
-                        readOnly={readOnly}
-                        disabled={readOnly}
-                      />
+                    {mostrarNotas ? (
+                      <td className="px-2 py-2 min-w-[160px]">
+                        {readOnly ? (
+                          linha.notas.trim() ? (
+                            <p className="whitespace-pre-wrap text-sm text-slate-400">{linha.notas}</p>
+                          ) : (
+                            <span className="text-slate-600">-</span>
+                          )
+                        ) : (
+                          <Textarea
+                            value={linha.notas}
+                            onChange={(e) => onChange(updateLinha(linhas, linhaIdx, { notas: e.target.value }))}
+                            placeholder="Opcional – coluna Notas no PDF"
+                            rows={2}
+                            className="text-sm w-full min-w-[140px]"
+                          />
+                        )}
+                      </td>
+                    ) : null}
+                    <td className="px-2 py-2 text-right tabular-nums text-slate-200">
+                      {readOnly ? linha.quantidade : (
+                        <Input
+                          value={linha.quantidade}
+                          onChange={(e) => onChange(updateLinha(linhas, linhaIdx, { quantidade: e.target.value }))}
+                          className="text-right"
+                        />
+                      )}
                     </td>
-                    <td className="px-2 py-2">
-                      <Input
-                        value={linha.quantidade}
-                        onChange={(e) => onChange(updateLinha(linhas, idx, { quantidade: e.target.value }))}
-                        className="text-right"
-                        readOnly={readOnly}
-                        disabled={readOnly}
-                      />
-                    </td>
-                    <td className="px-2 py-2">
-                      <Input
-                        value={linha.precoEuros}
-                        onChange={(e) => onChange(updateLinha(linhas, idx, { precoEuros: e.target.value }))}
-                        className="text-right"
-                        placeholder="0.00"
-                        readOnly={readOnly}
-                        disabled={readOnly}
-                      />
+                    <td className="px-2 py-2 text-right tabular-nums text-slate-200">
+                      {readOnly ? fmtEuro(preco) : (
+                        <Input
+                          value={linha.precoEuros}
+                          onChange={(e) => onChange(updateLinha(linhas, linhaIdx, { precoEuros: e.target.value }))}
+                          className="text-right"
+                          placeholder="0.00"
+                        />
+                      )}
                     </td>
                     <td className="px-2 py-2 text-right tabular-nums text-slate-400">{fmtEuro(base)}</td>
-                    <td className="px-2 py-2">
-                      <Input
-                        value={linha.taxaIva}
-                        onChange={(e) => onChange(updateLinha(linhas, idx, { taxaIva: e.target.value }))}
-                        className="text-right"
-                        readOnly={readOnly}
-                        disabled={readOnly}
-                      />
+                    <td className="px-2 py-2 text-right tabular-nums text-slate-200">
+                      {readOnly ? `${linha.taxaIva}%` : (
+                        <Input
+                          value={linha.taxaIva}
+                          onChange={(e) => onChange(updateLinha(linhas, linhaIdx, { taxaIva: e.target.value }))}
+                          className="text-right"
+                        />
+                      )}
                     </td>
                     <td className="px-2 py-2 text-right tabular-nums text-slate-400">{fmtEuro(iva)}</td>
                     <td className="px-2 py-2 text-right tabular-nums font-medium text-slate-200">{fmtEuro(total)}</td>
-                    <td className="px-1 py-2">
-                      {!readOnly ? (
-                      <button
-                        type="button"
-                        className="rounded p-1 text-slate-500 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-30"
-                        onClick={() => onChange(linhas.filter((_, i) => i !== idx))}
-                        disabled={linhas.length <= 1}
-                        title="Remover linha"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                      ) : null}
-                    </td>
+                    {!readOnly ? (
+                      <td className="px-1 py-2">
+                        <button
+                          type="button"
+                          className="rounded p-1 text-slate-500 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-30"
+                          onClick={() => onChange(linhas.filter((_, i) => i !== linhaIdx))}
+                          disabled={linhas.length <= 1}
+                          title="Remover linha"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    ) : null}
                   </tr>
                 );
               })}

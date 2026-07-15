@@ -317,7 +317,7 @@ export default function FormacoesWebsitePage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant={f.publicado ? "success" : "secondary"}>
+                    <Badge variant={f.publicado ? "green" : "default"}>
                       {f.publicado ? "Publicado" : "Rascunho"}
                     </Badge>
                     {canManage ? (

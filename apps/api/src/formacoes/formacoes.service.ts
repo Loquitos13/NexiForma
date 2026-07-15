@@ -25,6 +25,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { EmailTemplates } from "../notificacoes/templates/email.templates";
 import { PortalNotificacoesService } from "../notificacoes/portal-notificacoes.service";
+import { FormadorNotificacoesService } from "../notificacoes/formador-notificacoes.service";
 import { FormacoesPublishService } from "./formacoes-publish.service";
 import type { WebsiteSyncEvent } from "./formacoes-website.types";
 
@@ -38,6 +39,7 @@ export class FormacoesService {
     private readonly storage: StorageService,
     private readonly publish: FormacoesPublishService,
     private readonly portalNotificacoes: PortalNotificacoesService,
+    private readonly formadorNotificacoes: FormadorNotificacoesService,
     private readonly config: ConfigService,
   ) {}
 
@@ -105,6 +107,7 @@ export class FormacoesService {
     });
 
     this.afterFormacaoChange(tenantId, curso.id, curso.publicado, "formacao.created");
+    void this.formadorNotificacoes.notifyCursoCrud(tenantId, curso.id, curso.designacao, "criado");
     return this.mapFormacao(curso);
   }
 
@@ -146,6 +149,8 @@ export class FormacoesService {
         curso.codigoPublico,
       );
     }
+
+    void this.formadorNotificacoes.notifyCursoCrud(tenantId, curso.id, curso.designacao, "atualizado");
 
     return this.mapFormacao(curso);
   }
@@ -416,6 +421,7 @@ export class FormacoesService {
       curso.publicado || (dto.publicado ?? false),
       "acao.created",
     );
+    void this.formadorNotificacoes.notifyAcaoCrud(tenantId, result, cursoId, titulo, "criada");
     return this.mapAcaoDetalhe(acao);
   }
 
@@ -449,6 +455,13 @@ export class FormacoesService {
     if (cursoPub?.publicado || dto.publicado) {
       this.afterFormacaoChange(tenantId, cursoId, true, event);
     }
+    void this.formadorNotificacoes.notifyAcaoCrud(
+      tenantId,
+      acaoId,
+      cursoId,
+      acao.titulo ?? existing.titulo,
+      "actualizada",
+    );
     return this.mapAcaoDetalhe(acao);
   }
 

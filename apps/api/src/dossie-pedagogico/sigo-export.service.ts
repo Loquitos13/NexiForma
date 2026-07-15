@@ -3,6 +3,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 import { DossiePedagogicoService } from "./dossie-pedagogico.service";
+import { extrairSigoFormandoMetadata } from "@nexiforma/shared";
 import { validateSigoPayload } from "./sigo-validation.util";
 
 /** Pacote de preparação para importação manual na plataforma SIGO (DGEEC) – não é API oficial. */
@@ -87,7 +88,7 @@ export class SigoExportService {
     const formandoMetaRows = formandoIds.length
       ? await this.prisma.formandoProfile.findMany({
           where: { tenantId, id: { in: formandoIds } },
-          select: { id: true, email: true, telefone: true },
+          select: { id: true, email: true, telefone: true, metadata: true },
         })
       : [];
     const formandoMeta = new Map(formandoMetaRows.map((r) => [r.id, r]));
@@ -95,6 +96,7 @@ export class SigoExportService {
     const formandos = dossie.turmas.flatMap((t) =>
       t.matriculas.map((m) => {
         const meta = formandoMeta.get(m.formando.id);
+        const sigoMeta = extrairSigoFormandoMetadata(meta?.metadata);
         const agg = presByMat.get(m.id);
         const taxa =
           agg && agg.total > 0 ? Math.round((agg.presentes / agg.total) * 100) : null;
@@ -107,6 +109,11 @@ export class SigoExportService {
           turmaNome: t.nome,
           matriculaId: m.id,
           estadoMatricula: m.estado,
+          tipoDocIdentificacao: sigoMeta.tipoDocIdentificacao,
+          numDocIdentificacao: sigoMeta.numDocIdentificacao,
+          dataNascimento: sigoMeta.dataNascimento,
+          nacionalidade: sigoMeta.nacionalidade,
+          habilitacaoLiteraria: sigoMeta.habilitacaoLiteraria,
           assiduidade: agg
             ? {
                 registosPresenca: agg.total,
@@ -273,10 +280,11 @@ export class SigoExportService {
     return { filename, csv };
   }
 
-  async validateForSigo(user: RequestUser, acaoId: string) {
+  async validateForSigo(user: RequestUser, acaoId: string, opts?: { exigirCamposSoap?: boolean }) {
     const { body } = await this.buildSigoJsonPackage(user, acaoId);
     const validacao = validateSigoPayload(
       body as Parameters<typeof validateSigoPayload>[0],
+      { exigirCamposSoap: opts?.exigirCamposSoap },
     );
     return {
       validadoEm: new Date().toISOString(),

@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
+import { sanitizeLmsHtml } from "@nexiforma/shared";
 
 export type MockupModulo = {
   id: string;
@@ -112,7 +113,7 @@ function ViewerMockup({
         ) : modulo.tipo === "TEXTO" && modulo.conteudoHtml ? (
           <div
             className="p-3 text-[9px] text-slate-300 leading-relaxed prose prose-invert prose-sm max-w-none"
-            dangerouslySetInnerHTML={{ __html: modulo.conteudoHtml }}
+            dangerouslySetInnerHTML={{ __html: sanitizeLmsHtml(modulo.conteudoHtml) ?? "" }}
           />
         ) : modulo.tipo === "QUIZ" ? (
           <div className="p-4 text-center space-y-2">

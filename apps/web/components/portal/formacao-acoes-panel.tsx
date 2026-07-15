@@ -185,10 +185,10 @@ export function FormacaoAcoesPanel({ cursoUuid, cursoTitulo, canManage, onChange
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant={a.inscricoes === "ABERTAS" ? "success" : "secondary"}>
+                    <Badge variant={a.inscricoes === "ABERTAS" ? "green" : "default"}>
                       {a.inscricoes}
                     </Badge>
-                    <Badge variant={a.publicado ? "success" : "secondary"}>
+                    <Badge variant={a.publicado ? "green" : "default"}>
                       {a.publicado ? "Publicada" : "Rascunho"}
                     </Badge>
                     {canManage ? (

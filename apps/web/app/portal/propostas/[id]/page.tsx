@@ -1,9 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, FileText, Save, Send } from "lucide-react";
+import { FileText, Save, Send } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { openHtmlForPrint } from "@/lib/client/open-html-for-print";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
@@ -22,8 +21,10 @@ import {
   type PropostaConteudoForm,
 } from "@/components/crm/proposta-conteudo-fields";
 import { PropostaEstadoBadge } from "@/components/crm/proposta-estado-badge";
+import { PropostaDocumentoPreview } from "@/components/crm/proposta-documento-preview";
 import { fmtEuro } from "@/lib/crm/shared";
 import { Alert, Button, Input, PageHeader, Textarea } from "@/components/ui";
+import { PortalBackButton } from "@/components/ui/portal-back-button";
 
 function podeEnviarProposta(estado: string): boolean {
   return estado !== "CANCELADA";
@@ -98,7 +99,9 @@ export default function PropostaEditorPage({ params }: { params: Promise<{ id: s
             precoEuros: (l.precoUnitCentavos / 100).toFixed(2),
             taxaIva: String(Number(l.taxaIva)),
           }))
-        : [novaPropostaLinha()],
+        : p.estado === "RASCUNHO"
+          ? [novaPropostaLinha()]
+          : [],
     );
     if (cRes.ok) {
       const cfg = (await cRes.json() as { config: Record<string, unknown> }).config;
@@ -162,17 +165,12 @@ export default function PropostaEditorPage({ params }: { params: Promise<{ id: s
 
   return (
     <div className="w-full space-y-5 pb-10">
+      <PortalBackButton fallbackHref="/portal/propostas" fallbackLabel="Propostas" />
       <PageHeader
         title={proposta.codigo}
         description={`${proposta.entidadeCliente.nome} · NIF ${proposta.entidadeCliente.nif}`}
         actions={
           <div className="flex flex-wrap gap-2">
-            <Link href="/portal/propostas">
-              <Button size="sm" variant="secondary">
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Lista
-              </Button>
-            </Link>
             <Button size="sm" variant="secondary" disabled={busy} onClick={() => void gerarPdf()}>
               <FileText className="h-3.5 w-3.5" />
               PDF
@@ -212,44 +210,55 @@ export default function PropostaEditorPage({ params }: { params: Promise<{ id: s
         </Alert>
       ) : null}
 
-      <section className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-5 space-y-4">
-        <h2 className="text-sm font-semibold text-slate-200">Identificação</h2>
-        <div>
-          <label className="mb-1 block text-xs text-slate-400">Título</label>
-          <Input value={titulo} onChange={(e) => setTitulo(e.target.value)} readOnly={!editavel} />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs text-slate-400">Validade</label>
-          <Input type="date" value={validadeAte} onChange={(e) => setValidadeAte(e.target.value)} readOnly={!editavel} />
-        </div>
-        {editavel ? (
-          <div>
-            <label className="mb-1 block text-xs text-slate-400">Notas internas (não aparecem no PDF)</label>
-            <Textarea value={notasInternas} onChange={(e) => setNotasInternas(e.target.value)} rows={2} />
-          </div>
-        ) : null}
-      </section>
+      {!editavel ? (
+        <>
+          {notasInternas.trim() ? (
+            <section className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-5">
+              <h2 className="mb-2 text-sm font-semibold text-slate-200">Notas internas</h2>
+              <p className="whitespace-pre-wrap text-sm text-slate-300">{notasInternas}</p>
+            </section>
+          ) : null}
+          <PropostaDocumentoPreview propostaId={proposta.id} />
+        </>
+      ) : (
+        <>
+          <section className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-5 space-y-4">
+            <h2 className="text-sm font-semibold text-slate-200">Identificação</h2>
+            <div>
+              <label className="mb-1 block text-xs text-slate-400">Título</label>
+              <Input value={titulo} onChange={(e) => setTitulo(e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-400">Validade</label>
+              <Input type="date" value={validadeAte} onChange={(e) => setValidadeAte(e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-400">Notas internas (não aparecem no PDF)</label>
+              <Textarea value={notasInternas} onChange={(e) => setNotasInternas(e.target.value)} rows={2} />
+            </div>
+          </section>
 
-      <section className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-5">
-        <h2 className="text-sm font-semibold text-slate-200 mb-4">Conteúdo da proposta (PDF)</h2>
-        <PropostaConteudoFields
-          value={conteudo}
-          onChange={setConteudo}
-          padroes={padroes ?? undefined}
-          readOnly={!editavel}
-        />
-      </section>
+          <section className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-5">
+            <h2 className="text-sm font-semibold text-slate-200 mb-4">Conteúdo da proposta (PDF)</h2>
+            <PropostaConteudoFields
+              value={conteudo}
+              onChange={setConteudo}
+              padroes={padroes ?? undefined}
+            />
+          </section>
 
-      <section className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-5 space-y-3">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-200">Investimento</h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Preencha a coluna Notas por item e clique Guardar antes de gerar o PDF. As notas internas (secção
-            Identificação) não aparecem no documento.
-          </p>
-        </div>
-        <PropostaLinhasEditor hideHeader readOnly={!editavel} linhas={linhas} onChange={setLinhas} />
-      </section>
+          <section className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-5 space-y-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-200">Investimento</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Preencha a coluna Notas por item e clique Guardar antes de gerar o PDF. As notas internas (secção
+                Identificação) não aparecem no documento.
+              </p>
+            </div>
+            <PropostaLinhasEditor hideHeader linhas={linhas} onChange={setLinhas} />
+          </section>
+        </>
+      )}
 
       {editavel ? (
         <div className="flex gap-2">

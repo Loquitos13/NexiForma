@@ -3,7 +3,7 @@ import { formatDatePt } from "@/lib/calendar-date";
 export type PropostaEstado = "RASCUNHO" | "ENVIADA" | "ACEITE" | "REJEITADA" | "CANCELADA";
 
 export type LeadEstado = "NOVO" | "CONTACTADO" | "QUALIFICADO" | "CONVERTIDO" | "PERDIDO";
-export type LeadOrigem = "WEBSITE" | "REFERRAL" | "FEIRA" | "LINKEDIN" | "TELEFONE" | "OUTRO";
+export type LeadOrigem = "WEBSITE" | "REFERRAL" | "FEIRA" | "LINKEDIN" | "TELEFONE" | "IA" | "OUTRO";
 
 export function fmtEuro(cents: number) {
   return new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(cents / 100);
@@ -78,6 +78,22 @@ export function leadEstadoVariant(
   return map[estado] ?? "default";
 }
 
+type CrmUserRef = { displayName: string } | null | undefined;
+
+export function fmtCrmAutor(user?: CrmUserRef): string {
+  return user?.displayName?.trim() || "-";
+}
+
+/** Proposta: criador; se enviada por outra pessoa, indica também. */
+export function fmtPropostaAutoria(criadoPor?: CrmUserRef, enviadaPor?: CrmUserRef): string {
+  const criador = criadoPor?.displayName?.trim();
+  const enviado = enviadaPor?.displayName?.trim();
+  if (criador && enviado && criador !== enviado) {
+    return `${criador} · enviada por ${enviado}`;
+  }
+  return criador || enviado || "-";
+}
+
 export function leadOrigemLabel(origem: string) {
   const map: Record<string, string> = {
     WEBSITE: "Website",
@@ -85,6 +101,7 @@ export function leadOrigemLabel(origem: string) {
     FEIRA: "Feira / evento",
     LINKEDIN: "LinkedIn",
     TELEFONE: "Telefone",
+    IA: "Sugestão IA",
     OUTRO: "Outro",
   };
   return map[origem] ?? origem;

@@ -11,13 +11,14 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { IntegracaoMode, IntegracaoProvider } from "@nexiforma/database";
 import type { Prisma } from "@nexiforma/database";
-import { isModalidadeOnline } from "@nexiforma/shared";
+import { isModalidadeOnline, isIntegracaoProviderAllowed } from "@nexiforma/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 import type { UpsertIntegracaoDto } from "./dto/integracoes.dto";
 import { FormadorScopeService } from "../common/formador-scope.service";
 import { SessoesFormacaoService } from "../sessoes-formacao/sessoes-formacao.service";
+import { BillingEntitlementsService } from "../billing/billing-entitlements.service";
 
 export type ReuniaoResult = {
   provider: IntegracaoProvider;
@@ -50,10 +51,7 @@ const TEAMS_PLATFORM_ENV = {
   clientSecret: ["NEXIFORMA_TEAMS_CLIENT_SECRET", "TEAMS_CLIENT_SECRET"] as const,
 };
 
-function providerParaModalidade(modalidade: string): "ZOOM" | "TEAMS" {
-  const m = modalidade.toLowerCase();
-  if (m.includes("learning") || m === "e-learning") return "TEAMS";
-  if (m.includes("online")) return "ZOOM";
+function providerParaModalidade(_modalidade: string): "ZOOM" | "TEAMS" {
   return "TEAMS";
 }
 
@@ -65,6 +63,7 @@ export class IntegracoesService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly formadorScope: FormadorScopeService,
+    private readonly entitlements: BillingEntitlementsService,
     @Inject(forwardRef(() => SessoesFormacaoService))
     private readonly sessoes: SessoesFormacaoService,
   ) {}
@@ -125,13 +124,16 @@ export class IntegracoesService {
   }
 
   async list(user: RequestUser) {
-    return this.listForTenant(requireTenantId(user));
+    const tenantId = requireTenantId(user);
+    const ent = await this.entitlements.forTenant(tenantId);
+    const rows = await this.listForTenant(tenantId);
+    return rows.filter((r) => isIntegracaoProviderAllowed(r.provider, ent));
   }
 
   async listForTenant(tenantId: string) {
     await this.assertTenantExists(tenantId);
     const rows = await this.prisma.tenantIntegracao.findMany({ where: { tenantId } });
-    const providers: IntegracaoProvider[] = ["ZOOM", "TEAMS", "MOODLE"];
+    const providers: IntegracaoProvider[] = ["ZOOM", "TEAMS", "MOODLE", "GMAIL", "M365", "CRM_WEBHOOK"];
     return providers.map((provider) => {
       const row = rows.find((r) => r.provider === provider);
       return {
@@ -148,7 +150,12 @@ export class IntegracoesService {
   }
 
   async oauthStatus(user: RequestUser) {
-    return this.oauthStatusForTenant(requireTenantId(user));
+    const tenantId = requireTenantId(user);
+    const ent = await this.entitlements.forTenant(tenantId);
+    if (!ent.canAccessFormacaoTeams) {
+      throw new ForbiddenException("Módulo Formação Teams não contratado.");
+    }
+    return this.oauthStatusForTenant(tenantId);
   }
 
   async oauthStatusForTenant(tenantId: string) {
@@ -163,6 +170,15 @@ export class IntegracoesService {
   /** Estado resumido para LMS / formadores (sem segredos). */
   async disponibilidade(user: RequestUser) {
     const tenantId = requireTenantId(user);
+    const ent = await this.entitlements.forTenant(tenantId);
+    if (!ent.canAccessFormacaoTeams) {
+      return {
+        zoom: { mode: "DISABLED", oauth: false, ready: false, aviso: "Módulo Formação Teams não contratado." },
+        teams: { mode: "DISABLED", oauth: false, ready: false, aviso: "Módulo Formação Teams não contratado." },
+        podeCriarSalaZoom: false,
+        podeCriarSalaTeams: false,
+      };
+    }
     const [zoomReady, teamsReady] = await Promise.all([
       this.resolveOAuthReadiness("ZOOM", tenantId),
       this.resolveOAuthReadiness("TEAMS", tenantId),
@@ -193,7 +209,12 @@ export class IntegracoesService {
 
   /** Passa ZOOM/TEAMS para OAUTH quando credenciais existem (.env ou config tenant). */
   async activarOAuthReal(user: RequestUser, provider: "ZOOM" | "TEAMS" | "ALL" = "ALL") {
-    return this.activarOAuthRealForTenant(requireTenantId(user), provider);
+    const tenantId = requireTenantId(user);
+    const ent = await this.entitlements.forTenant(tenantId);
+    if (!ent.canAccessFormacaoTeams) {
+      throw new ForbiddenException("Módulo Formação Teams não contratado.");
+    }
+    return this.activarOAuthRealForTenant(tenantId, provider);
   }
 
   async activarOAuthRealForTenant(tenantId: string, provider: "ZOOM" | "TEAMS" | "ALL" = "ALL") {
@@ -281,18 +302,32 @@ export class IntegracoesService {
     return undefined;
   }
 
-  private async resolveOAuthReadiness(provider: "ZOOM" | "TEAMS", tenantId: string) {
+  private configString(cfg: Record<string, unknown>, key: string): string {
+    const raw = cfg[key];
+    if (typeof raw === "string") return raw.trim();
+    if (raw == null) return "";
+    return String(raw).trim();
+  }
+
+  private async resolveOAuthReadiness(
+    provider: "ZOOM" | "TEAMS",
+    tenantId: string,
+    pendingConfig?: Record<string, unknown>,
+  ) {
     const integracao = await this.prisma.tenantIntegracao.findUnique({
       where: { tenantId_provider: { tenantId, provider } },
     });
-    const cfg = (integracao?.config ?? {}) as Record<string, string>;
+    const cfg = {
+      ...((integracao?.config ?? {}) as Record<string, unknown>),
+      ...(pendingConfig ?? {}),
+    };
 
     if (provider === "TEAMS") {
       const missing: string[] = [];
       if (!this.platformTeamsClientId()) missing.push("NEXIFORMA_TEAMS_CLIENT_ID (plataforma)");
       if (!this.platformTeamsClientSecret()) missing.push("NEXIFORMA_TEAMS_CLIENT_SECRET (plataforma)");
       for (const f of TEAMS_TENANT_FIELDS) {
-        if (!cfg[f.key]?.trim()) missing.push(`${f.label} (tenant)`);
+        if (!this.configString(cfg, f.key)) missing.push(`${f.label} (tenant)`);
       }
       return {
         provider,
@@ -300,14 +335,14 @@ export class IntegracoesService {
         ready: missing.length === 0,
         missing,
         source: "platform+tenant",
-        m365TenantId: cfg.tenantId ?? null,
+        m365TenantId: this.configString(cfg, "tenantId") || null,
       };
     }
 
     const missing: string[] = [];
     let fromTenant = 0;
     for (const f of ZOOM_OAUTH_FIELDS) {
-      if (cfg[f.key]?.trim()) fromTenant++;
+      if (this.configString(cfg, f.key)) fromTenant++;
       else missing.push(`${f.label} (tenant)`);
     }
     return {
@@ -320,12 +355,12 @@ export class IntegracoesService {
   }
 
   private resolveOAuthCredentials(provider: "ZOOM" | "TEAMS", config: unknown) {
-    const cfg = (config ?? {}) as Record<string, string>;
+    const cfg = (config ?? {}) as Record<string, unknown>;
     if (provider === "TEAMS") {
       const clientId = this.platformTeamsClientId();
       const clientSecret = this.platformTeamsClientSecret();
-      const tenantId = cfg.tenantId?.trim();
-      const organizerId = cfg.organizerId?.trim();
+      const tenantId = this.configString(cfg, "tenantId");
+      const organizerId = this.configString(cfg, "organizerId");
       const missing: string[] = [];
       if (!clientId) missing.push("NEXIFORMA_TEAMS_CLIENT_ID");
       if (!clientSecret) missing.push("NEXIFORMA_TEAMS_CLIENT_SECRET");
@@ -340,7 +375,7 @@ export class IntegracoesService {
     const out: Record<string, string> = {};
     const missing: string[] = [];
     for (const f of ZOOM_OAUTH_FIELDS) {
-      const val = cfg[f.key]?.trim() || this.config.get<string>(f.envKey)?.trim();
+      const val = this.configString(cfg, f.key) || this.config.get<string>(f.envKey)?.trim();
       if (!val) missing.push(f.envKey);
       else out[f.key] = val;
     }
@@ -387,12 +422,20 @@ export class IntegracoesService {
     if (dto.provider === "TEAMS") {
       delete config.clientId;
       delete config.clientSecret;
+      if (dto.config?.tenantId != null) {
+        config.tenantId = this.configString(config, "tenantId");
+      }
+      if (dto.config?.organizerId != null) {
+        config.organizerId = this.configString(config, "organizerId");
+      }
+      const m365TenantId = this.configString(config, "tenantId");
+      if (m365TenantId) this.assertTeamsM365TenantId(tenantId, m365TenantId);
     }
     if (
       dto.mode === "OAUTH" &&
       (dto.provider === "ZOOM" || dto.provider === "TEAMS")
     ) {
-      const readiness = await this.resolveOAuthReadiness(dto.provider, tenantId);
+      const readiness = await this.resolveOAuthReadiness(dto.provider, tenantId, config);
       if (!readiness.ready) {
         throw new BadRequestException(
           `Credenciais OAuth em falta: ${readiness.missing.join(", ")}`,
@@ -419,14 +462,52 @@ export class IntegracoesService {
     if (!t) throw new NotFoundException("Tenant não encontrado.");
   }
 
+  private assertTeamsM365TenantId(nexiformaTenantId: string, m365TenantId: string) {
+    const m365 = m365TenantId.trim().toLowerCase();
+    if (!m365) return;
+    if (m365 === nexiformaTenantId.trim().toLowerCase()) {
+      throw new BadRequestException(
+        "O Azure Tenant ID não pode ser o ID interno NexiForma (UUID na URL /plataforma/tenantes/...). " +
+          "Usa o «ID do inquilino» do Microsoft Entra ID do cliente: portal.azure.com → Entra ID → Propriedades.",
+      );
+    }
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m365)) {
+      throw new BadRequestException(
+        "Azure Tenant ID inválido — deve ser um GUID (ex.: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx) do Entra ID do cliente.",
+      );
+    }
+  }
+
+  private microsoftOAuthHint(body: string): string | null {
+    if (body.includes("AADSTS90002")) {
+      return (
+        "Azure Tenant ID não existe na Microsoft (AADSTS90002). " +
+        "Confirma o «ID do inquilino» no Entra ID do cliente — não uses o UUID da URL NexiForma (/plataforma/tenantes/...)."
+      );
+    }
+    if (body.includes("AADSTS700016") || body.includes("AADSTS700022")) {
+      return "A app NexiForma não está registada ou autorizada neste tenant M365 — gera o link de admin consent e pede ao IT do cliente para aprovar.";
+    }
+    if (body.includes("AADSTS7000215")) {
+      return "Client secret inválido ou expirado — verifica NEXIFORMA_TEAMS_CLIENT_SECRET no .env da API.";
+    }
+    return null;
+  }
+
   private async readUpstreamError(res: Response, label: string): Promise<string> {
     const body = await res.text().catch(() => "");
+    const msHint = this.microsoftOAuthHint(body);
+    if (msHint) return `${label}: ${msHint}`;
     const snippet = body.slice(0, 280).replace(/\s+/g, " ").trim();
     return snippet ? `${label} (${res.status}): ${snippet}` : `${label} (HTTP ${res.status})`;
   }
 
   async upsert(user: RequestUser, dto: UpsertIntegracaoDto): Promise<import("@nexiforma/database").TenantIntegracao> {
     const tenantId = requireTenantId(user);
+    const ent = await this.entitlements.forTenant(tenantId);
+    if (!isIntegracaoProviderAllowed(dto.provider, ent)) {
+      throw new ForbiddenException("Integração não disponível no plano actual.");
+    }
     const existing = await this.prisma.tenantIntegracao.findUnique({
       where: { tenantId_provider: { tenantId, provider: dto.provider } },
     });
@@ -444,13 +525,12 @@ export class IntegracoesService {
     const integracao = await this.prisma.tenantIntegracao.findUnique({
       where: { tenantId_provider: { tenantId, provider } },
     });
-    const mode = integracao?.mode ?? "DISABLED";
-    if (mode !== "OAUTH") {
-      throw new ServiceUnavailableException(
-        `Integração ${provider} desactivada - activa OAuth em Integrações.`,
+    if (!integracao?.config) {
+      throw new BadRequestException(
+        `Guarda primeiro o Azure Tenant ID e o organizador M365 em Integrações.`,
       );
     }
-    return this.testarConexaoOAuth(integracao?.config, provider);
+    return this.testarConexaoOAuth(integracao.config, provider, tenantId);
   }
 
   async criarReuniao(
@@ -459,6 +539,10 @@ export class IntegracoesService {
     provider: "ZOOM" | "TEAMS",
   ): Promise<ReuniaoResult> {
     const tenantId = requireTenantId(user);
+    const ent = await this.entitlements.forTenant(tenantId);
+    if (!ent.canAccessFormacaoTeams) {
+      throw new ForbiddenException("Módulo Formação Teams não contratado.");
+    }
     const sessao = await this.prisma.sessaoFormacao.findFirst({
       where: { id: sessaoId, tenantId },
     });
@@ -466,10 +550,8 @@ export class IntegracoesService {
       throw new NotFoundException("Sessão não encontrada.");
     }
 
-    if (user.role !== "formador") {
-      throw new ForbiddenException(
-        "Apenas o formador pode criar a sala e iniciar a sessão (notificação aos formandos).",
-      );
+    if (isModalidadeOnline(sessao.modalidade)) {
+      provider = "TEAMS";
     }
 
     if (user.role === "formador") {
@@ -487,26 +569,81 @@ export class IntegracoesService {
     }
 
     const { config } = await this.ensureOAuthMode(tenantId, provider);
+    const iniciarENotificar = user.role === "formador";
     return this.criarReuniaoOAuth(tenantId, sessaoId, provider, config, {
-      iniciarENotificar: true,
+      iniciarENotificar,
     });
+  }
+
+  /** Cron: cria salas online para sessões de amanhã sem link (OAuth activo). */
+  async criarSalasPendentesAutomaticamente(): Promise<{ criadas: number; erros: number }> {
+    const enabled = this.config.get<string>("CRON_REUNIOES_AUTO_ENABLED") === "true";
+    if (!enabled) return { criadas: 0, erros: 0 };
+
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const day = tomorrow.toISOString().slice(0, 10);
+
+    const sessoes = await this.prisma.sessaoFormacao.findMany({
+      where: {
+        data: new Date(day),
+        estado: "AGENDADA",
+        salaJoinUrl: null,
+      },
+      select: { id: true, tenantId: true, modalidade: true },
+      take: 80,
+    });
+
+    let criadas = 0;
+    let erros = 0;
+    for (const s of sessoes) {
+      if (!isModalidadeOnline(s.modalidade)) continue;
+      try {
+        const ent = await this.entitlements.forTenant(s.tenantId);
+        if (!ent.canAccessFormacaoTeams) continue;
+
+        const teams = await this.prisma.tenantIntegracao.findUnique({
+          where: { tenantId_provider: { tenantId: s.tenantId, provider: "TEAMS" } },
+        });
+        if (teams?.mode !== "OAUTH") continue;
+
+        const readiness = await this.resolveOAuthReadiness("TEAMS", s.tenantId);
+        if (!readiness.ready) continue;
+
+        const { config } = await this.ensureOAuthMode(s.tenantId, "TEAMS");
+        await this.criarReuniaoOAuth(s.tenantId, s.id, "TEAMS", config, {
+          iniciarENotificar: false,
+        });
+        criadas += 1;
+      } catch {
+        erros += 1;
+      }
+    }
+    return { criadas, erros };
   }
 
   async testarConexao(user: RequestUser, provider: "ZOOM" | "TEAMS") {
     const tenantId = requireTenantId(user);
+    const ent = await this.entitlements.forTenant(tenantId);
+    if (!ent.canAccessFormacaoTeams) {
+      throw new ForbiddenException("Módulo Formação Teams não contratado.");
+    }
     const integracao = await this.prisma.tenantIntegracao.findUnique({
       where: { tenantId_provider: { tenantId, provider } },
     });
-    const mode = integracao?.mode ?? "DISABLED";
-    if (mode !== "OAUTH") {
-      throw new ServiceUnavailableException(
-        `Integração ${provider} desactivada - activa OAuth em Integrações.`,
+    if (!integracao?.config) {
+      throw new BadRequestException(
+        `Guarda primeiro o Azure Tenant ID e o organizador M365 em Integrações.`,
       );
     }
-    return this.testarConexaoOAuth(integracao?.config, provider);
+    return this.testarConexaoOAuth(integracao.config, provider, tenantId);
   }
 
-  private async testarConexaoOAuth(config: unknown, provider: "ZOOM" | "TEAMS") {
+  private async testarConexaoOAuth(
+    config: unknown,
+    provider: "ZOOM" | "TEAMS",
+    nexiformaTenantId?: string,
+  ) {
     const mode = "OAUTH" as const;
     if (provider === "ZOOM") {
       const { values, missing } = this.resolveOAuthCredentials("ZOOM", config);
@@ -525,6 +662,9 @@ export class IntegracoesService {
     const { values, missing } = this.resolveOAuthCredentials("TEAMS", config);
     if (missing.length) {
       throw new BadRequestException(`Credenciais Teams em falta: ${missing.join(", ")}`);
+    }
+    if (nexiformaTenantId) {
+      this.assertTeamsM365TenantId(nexiformaTenantId, values.tenantId);
     }
     const token = await this.fetchMsToken(values.tenantId, values.clientId, values.clientSecret);
     const organizer = await this.resolveMsUser(token, values.organizerId);
@@ -552,6 +692,10 @@ export class IntegracoesService {
 
   async moodleSync(user: RequestUser, cursoId?: string) {
     const tenantId = requireTenantId(user);
+    const ent = await this.entitlements.forTenant(tenantId);
+    if (!ent.canAccessCoreFormation) {
+      throw new ForbiddenException("Módulo Formação Core não contratado.");
+    }
     const integracao = await this.prisma.tenantIntegracao.findUnique({
       where: { tenantId_provider: { tenantId, provider: "MOODLE" } },
     });

@@ -9,10 +9,12 @@ export type ErroServidorContext = ErroPlataformaContext & {
   tenantSlug?: string;
   payload?: string;
   stack?: string;
+  responseBody?: string;
 };
 
 const DEDUP_MS = 120_000;
 const recentAlerts = new Map<string, number>();
+const failedSections = new Map<string, number>();
 
 function escapeHtml(raw: string): string {
   return raw
@@ -35,6 +37,11 @@ export function buildErroServidorDetalhe(input: ErroServidorContext): string {
   }
   lines.push("");
   lines.push(`Mensagem: ${input.resumo}`);
+  if (input.responseBody) {
+    lines.push("");
+    lines.push("Corpo da resposta:");
+    lines.push(input.responseBody);
+  }
   if (input.payload) {
     lines.push("");
     lines.push("Payload (sanitizado):");
@@ -80,8 +87,15 @@ export function shouldDedupAlert(fingerprint: string): boolean {
   return false;
 }
 
+export function severityFromStatusCode(statusCode?: number): "INFO" | "WARNING" | "ERROR" {
+  if (!statusCode) return "ERROR";
+  if (statusCode >= 500) return "ERROR";
+  if (statusCode >= 400) return "WARNING";
+  return "INFO";
+}
+
 export function alertFingerprint(input: ErroServidorContext): string {
-  return `${input.modulo}|${input.httpMethod ?? ""}|${input.httpPath ?? ""}|${input.resumo}`.slice(
+  return `${input.modulo}|${input.httpMethod ?? ""}|${input.httpPath ?? ""}|${input.statusCode ?? ""}|${input.resumo}`.slice(
     0,
     400,
   );

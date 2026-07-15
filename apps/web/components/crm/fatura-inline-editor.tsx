@@ -7,16 +7,22 @@ import { Calendar, Plus, Settings, Trash2 } from "lucide-react";
 import {
   AT_MOTIVO_ISENCAO_DEFAULT,
   AT_MOTIVOS_ISENCAO,
-  AT_MOTIVOS_ISENCAO_LABELS,
   buildFaturaQrPayload,
   formatarMotivoIsencaoAt,
+  formatarMotivoIsencaoSelectOpcao,
 } from "@nexiforma/shared";
 import {
   calcularBaseLinhaCentavos,
   calcularValorIvaCentavos,
   formatarEurosInput,
+  formatarPercentInput,
   parseEurosInput,
+  parsePercentInput,
 } from "@/lib/crm/fatura-calculos";
+import {
+  resolveMoradaCarga,
+  resolveMoradaDescarga,
+} from "@/lib/crm/faturacao-moradas";
 import { Button, Input, Textarea } from "@/components/ui";
 
 export type FaturaLinhaEdit = {
@@ -24,6 +30,7 @@ export type FaturaLinhaEdit = {
   descricao: string;
   quantidade: string;
   precoEuros: string;
+  descontoPercent: string;
   taxaIva: string;
   codigoIsencaoIva: string;
 };
@@ -35,6 +42,7 @@ export function novaLinhaFatura(taxaPadrao: number): FaturaLinhaEdit {
     descricao: "",
     quantidade: "1",
     precoEuros: "0.00",
+    descontoPercent: "0",
     taxaIva: String(taxaPadrao),
     codigoIsencaoIva: isento ? AT_MOTIVO_ISENCAO_DEFAULT : "",
   };
@@ -46,6 +54,7 @@ export function linhasFromApi(
     quantidade: number | string;
     precoUnitCentavos: number;
     taxaIva: number | string;
+    descontoPercent?: number | string | null;
     codigoIsencaoIva?: string | null;
   }>,
   taxaPadrao: number,
@@ -58,6 +67,7 @@ export function linhasFromApi(
       descricao: l.descricao,
       quantidade: String(Number(l.quantidade)),
       precoEuros: formatarEurosInput(l.precoUnitCentavos),
+      descontoPercent: formatarPercentInput(l.descontoPercent),
       taxaIva: String(taxa),
       codigoIsencaoIva:
         l.codigoIsencaoIva?.trim() ||
@@ -158,9 +168,12 @@ type Props = {
   destNome: string;
   destNif: string;
   destMorada: string;
-  onDestNome: (v: string) => void;
-  onDestNif: (v: string) => void;
-  onDestMorada: (v: string) => void;
+  /** Link para editar o cliente na ficha (não editável na fatura). */
+  clienteId?: string | null;
+  moradaCarga: string;
+  moradaDescarga: string;
+  onMoradaCarga: (v: string) => void;
+  onMoradaDescarga: (v: string) => void;
   /** Ex.: FT → FATURA */
   tipoDocumento?: string;
   /** Tipo fiscal AT (FT, NC, …) para QR Code */
@@ -194,9 +207,11 @@ export function FaturaInlineEditor({
   destNome,
   destNif,
   destMorada,
-  onDestNome,
-  onDestNif,
-  onDestMorada,
+  clienteId,
+  moradaCarga,
+  moradaDescarga,
+  onMoradaCarga,
+  onMoradaDescarga,
   tipoDocumento = "FATURA",
   tipoSerie,
   numeroDocumento,
@@ -271,10 +286,12 @@ export function FaturaInlineEditor({
     .map((l) => {
       const q = Number.parseFloat(l.quantidade.replace(",", ".")) || 0;
       const preco = parseEurosInput(l.precoEuros);
+      const desconto = parsePercentInput(l.descontoPercent);
       const taxa = Number.parseFloat(l.taxaIva.replace(",", ".")) || 0;
-      const base = calcularBaseLinhaCentavos({ quantidade: q, precoUnitCentavos: preco, taxaIva: taxa });
-      const iva = calcularValorIvaCentavos({ quantidade: q, precoUnitCentavos: preco, taxaIva: taxa });
-      return { ...l, q, preco, taxa, base, iva, total: base + iva };
+      const linhaCalc = { quantidade: q, precoUnitCentavos: preco, taxaIva: taxa, descontoPercent: desconto };
+      const base = calcularBaseLinhaCentavos(linhaCalc);
+      const iva = calcularValorIvaCentavos(linhaCalc);
+      return { ...l, q, preco, desconto, taxa, base, iva, total: base + iva };
     });
 
   const isencoesUsadas = new Map<string, number>();
@@ -299,6 +316,23 @@ export function FaturaInlineEditor({
 
   const hashFooter = hashIntegridade?.trim().slice(0, 4) ?? "----";
   const atcudDisplay = codigoAtcud ?? (editavel ? "-" : "-");
+  const moradaCargaEfectiva = resolveMoradaCarga(moradaCarga, emitente.moradaFiscal);
+  const moradaDescargaEfectiva = resolveMoradaDescarga(moradaDescarga, destMorada);
+
+  const alterarMotivoIsencao = (codigoActual: string, codigoNovo: string) => {
+    const actual = codigoActual.toUpperCase();
+    const novo = codigoNovo.toUpperCase();
+    if (actual === novo) return;
+    onLinhas(
+      linhas.map((l) => {
+        const taxa = Number.parseFloat(l.taxaIva.replace(",", ".")) || 0;
+        if (taxa > 0) return l;
+        const codigo = (l.codigoIsencaoIva.trim() || AT_MOTIVO_ISENCAO_DEFAULT).toUpperCase();
+        if (codigo !== actual) return l;
+        return { ...l, codigoIsencaoIva: novo };
+      }),
+    );
+  };
 
   return (
     <article className="mx-auto max-w-4xl overflow-hidden rounded-2xl border border-violet-200/80 bg-white text-neutral-900 shadow-2xl shadow-violet-900/10 [color-scheme:light] print:shadow-none">
@@ -467,39 +501,80 @@ export function FaturaInlineEditor({
           style={{ borderColor: THEME.tintBorder, backgroundColor: THEME.tint }}
         >
           <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-violet-600">Para</p>
+          <div className="space-y-1 text-sm">
+            <p className="font-semibold text-neutral-900">{destNome || "-"}</p>
+            {destMorada ? (
+              <p className="whitespace-pre-line text-neutral-600">{destMorada}</p>
+            ) : null}
+            <p className="text-neutral-600">
+              <span className="text-neutral-500">NIF </span>
+              {destNif || "-"}
+            </p>
+            {editavel && clienteId ? (
+              <Link
+                href={`/portal/clientes/${clienteId}`}
+                className="inline-block pt-1 text-xs text-violet-700 hover:underline"
+              >
+                Editar na ficha do cliente
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      {/* Moradas de transporte */}
+      <div className="grid gap-4 px-5 pb-2 sm:grid-cols-2 sm:px-6">
+        <div
+          className="rounded-xl border p-4"
+          style={{ borderColor: THEME.tintBorder, backgroundColor: THEME.tint }}
+        >
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-violet-600">
+            Morada de carga
+          </p>
           {editavel ? (
-            <div className="space-y-2 text-sm">
-              <Input
-                value={destNome}
-                onChange={(e) => onDestNome(e.target.value)}
-                className="border-violet-200 bg-white text-neutral-900"
-                placeholder="Nome / empresa *"
-              />
-              <Input
-                value={destNif}
-                onChange={(e) => onDestNif(e.target.value)}
-                className="border-violet-200 bg-white text-neutral-900"
-                placeholder="NIF *"
-              />
+            <div className="space-y-1">
               <Textarea
-                value={destMorada}
-                onChange={(e) => onDestMorada(e.target.value)}
+                value={moradaCarga}
+                onChange={(e) => onMoradaCarga(e.target.value)}
                 rows={2}
                 className="border-violet-200 bg-white text-neutral-900"
-                placeholder="Morada (opcional)"
               />
+              {!moradaCarga.trim() && emitente.moradaFiscal ? (
+                <p className="text-xs text-neutral-500">
+                  Omissão: {emitente.moradaFiscal}
+                </p>
+              ) : null}
             </div>
           ) : (
-            <div className="space-y-1 text-sm">
-              <p className="font-semibold">{destNome}</p>
-              {destMorada ? (
-                <p className="whitespace-pre-line text-neutral-600">{destMorada}</p>
+            <p className="whitespace-pre-line text-sm text-neutral-700">
+              {moradaCargaEfectiva || "-"}
+            </p>
+          )}
+        </div>
+
+        <div
+          className="rounded-xl border p-4"
+          style={{ borderColor: THEME.tintBorder, backgroundColor: THEME.tint }}
+        >
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-violet-600">
+            Morada de descarga
+          </p>
+          {editavel ? (
+            <div className="space-y-1">
+              <Textarea
+                value={moradaDescarga}
+                onChange={(e) => onMoradaDescarga(e.target.value)}
+                rows={2}
+                className="border-violet-200 bg-white text-neutral-900"
+              />
+              {!moradaDescarga.trim() && destMorada ? (
+                <p className="text-xs text-neutral-500">Omissão: {destMorada}</p>
               ) : null}
-              <p className="text-neutral-600">
-                <span className="text-neutral-500">NIF </span>
-                {destNif}
-              </p>
             </div>
+          ) : (
+            <p className="whitespace-pre-line text-sm text-neutral-700">
+              {moradaDescargaEfectiva || "-"}
+            </p>
           )}
         </div>
       </div>
@@ -510,15 +585,15 @@ export function FaturaInlineEditor({
           Lista de Artigos
         </p>
         <div className="overflow-x-auto rounded-xl border border-violet-100">
-          <table className="w-full min-w-[720px] border-collapse text-sm">
+          <table className="w-full min-w-[780px] border-collapse text-sm">
             <thead>
               <tr className="text-left text-[10px] font-bold uppercase text-white" style={{ background: THEME.primary }}>
-                <th className="px-3 py-2.5">Descrição do artigo</th>
-                <th className="w-16 px-2 py-2.5 text-right">Quant.</th>
-                <th className="w-24 px-2 py-2.5 text-right">Preço</th>
-                <th className="w-16 px-2 py-2.5 text-right">Desc.</th>
-                <th className="w-20 px-2 py-2.5 text-right">IVA (%)</th>
-                <th className="w-28 px-2 py-2.5 text-right">Total</th>
+                <th className="px-4 py-2.5">Descrição do artigo</th>
+                <th className="w-[5.5rem] px-4 py-2.5 text-center">Quant.</th>
+                <th className="w-[6.5rem] px-4 py-2.5 text-center">Preço</th>
+                <th className="w-[5.5rem] px-4 py-2.5 text-center">Desc.</th>
+                <th className="w-[6rem] px-4 py-2.5 text-center">IVA (%)</th>
+                <th className="w-28 px-4 py-2.5 text-right">Total</th>
                 {editavel ? <th className="w-8" /> : null}
               </tr>
             </thead>
@@ -526,23 +601,18 @@ export function FaturaInlineEditor({
               {linhas.map((linha, idx) => {
                 const q = Number.parseFloat(linha.quantidade.replace(",", ".")) || 0;
                 const preco = parseEurosInput(linha.precoEuros);
+                const desconto = parsePercentInput(linha.descontoPercent);
                 const taxa = Number.parseFloat(linha.taxaIva.replace(",", ".")) || 0;
-                const base = calcularBaseLinhaCentavos({
+                const linhaCalc = {
                   quantidade: q,
                   precoUnitCentavos: preco,
                   taxaIva: taxa,
-                });
-                const iva = calcularValorIvaCentavos({
-                  quantidade: q,
-                  precoUnitCentavos: preco,
-                  taxaIva: taxa,
-                });
+                  descontoPercent: desconto,
+                };
+                const base = calcularBaseLinhaCentavos(linhaCalc);
+                const iva = calcularValorIvaCentavos(linhaCalc);
                 const total = base + iva;
-                const isento = taxa <= 0;
                 const ref = refPorLinha.get(linha.key);
-                const motivoLabel =
-                  linha.codigoIsencaoIva &&
-                  formatarMotivoIsencaoAt(linha.codigoIsencaoIva);
 
                 const patch = (p: Partial<FaturaLinhaEdit>) => {
                   const next = [...linhas];
@@ -559,73 +629,60 @@ export function FaturaInlineEditor({
 
                 return (
                   <tr key={linha.key} className="border-t border-violet-50 align-top">
-                    <td className="px-3 py-3">
+                    <td className="px-4 py-3">
                       {editavel ? (
-                        <div className="space-y-1.5">
-                          <Input
-                            value={linha.descricao}
-                            onChange={(e) => patch({ descricao: e.target.value })}
-                            className="border-violet-200 bg-white text-neutral-900"
-                            placeholder="Descrição do artigo / serviço"
-                          />
-                          {isento ? (
-                            <>
-                              <select
-                                value={linha.codigoIsencaoIva || AT_MOTIVO_ISENCAO_DEFAULT}
-                                onChange={(e) => patch({ codigoIsencaoIva: e.target.value })}
-                                className="w-full rounded-md border border-violet-200 bg-violet-50/50 px-2 py-1.5 text-xs text-violet-900"
-                                aria-label="Motivo de isenção de IVA"
-                              >
-                                {AT_MOTIVOS_ISENCAO.map((code) => (
-                                  <option key={code} value={code}>
-                                    {code} - {AT_MOTIVOS_ISENCAO_LABELS[code]}
-                                  </option>
-                                ))}
-                              </select>
-                              {motivoLabel ? (
-                                <p className="text-xs font-medium text-violet-600">{motivoLabel}</p>
-                              ) : null}
-                            </>
-                          ) : null}
-                        </div>
+                        <Input
+                          value={linha.descricao}
+                          onChange={(e) => patch({ descricao: e.target.value })}
+                          className="border-violet-200 bg-white text-neutral-900"
+                          placeholder="Descrição do artigo / serviço"
+                        />
                       ) : (
-                        <div>
-                          <p className="font-medium text-neutral-900">{linha.descricao}</p>
-                          {isento && motivoLabel ? (
-                            <p className="mt-1 text-xs font-medium text-violet-600">{motivoLabel}</p>
-                          ) : null}
-                        </div>
+                        <p className="font-medium text-neutral-900">{linha.descricao}</p>
                       )}
                     </td>
-                    <td className="px-2 py-3 text-right tabular-nums">
+                    <td className="px-4 py-3 text-center tabular-nums">
                       {editavel ? (
                         <Input
                           value={linha.quantidade}
                           onChange={(e) => patch({ quantidade: e.target.value })}
-                          className="border-violet-200 bg-white text-right text-neutral-900"
+                          className="mx-auto w-[4.25rem] border-violet-200 bg-white text-center text-neutral-900"
                         />
                       ) : (
                         fmtQuantidade(q)
                       )}
                     </td>
-                    <td className="px-2 py-3 text-right tabular-nums">
+                    <td className="px-4 py-3 text-center tabular-nums">
                       {editavel ? (
                         <Input
                           value={linha.precoEuros}
                           onChange={(e) => patch({ precoEuros: e.target.value })}
-                          className="border-violet-200 bg-white text-right text-neutral-900"
+                          className="mx-auto w-[5.25rem] border-violet-200 bg-white text-center text-neutral-900"
                         />
                       ) : (
                         fmtPrecoEuros(preco)
                       )}
                     </td>
-                    <td className="px-2 py-3 text-right tabular-nums text-neutral-400">0,00</td>
-                    <td className="px-2 py-3 text-right tabular-nums">
+                    <td className="px-4 py-3 text-center tabular-nums">
+                      {editavel ? (
+                        <Input
+                          value={linha.descontoPercent}
+                          onChange={(e) => patch({ descontoPercent: e.target.value })}
+                          className="mx-auto w-[4.25rem] border-violet-200 bg-white text-center text-neutral-900"
+                          aria-label="Desconto (%)"
+                        />
+                      ) : (
+                        <span className={desconto > 0 ? "text-neutral-700" : "text-neutral-400"}>
+                          {desconto.toFixed(2).replace(".", ",")}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-center tabular-nums">
                       {editavel ? (
                         <Input
                           value={linha.taxaIva}
                           onChange={(e) => patch({ taxaIva: e.target.value })}
-                          className="ml-auto w-16 border-violet-200 bg-white text-right text-neutral-900"
+                          className="mx-auto w-[4.25rem] border-violet-200 bg-white text-center text-neutral-900"
                         />
                       ) : (
                         <>
@@ -639,7 +696,7 @@ export function FaturaInlineEditor({
                         </>
                       )}
                     </td>
-                    <td className="px-2 py-3 text-right tabular-nums font-semibold">
+                    <td className="px-4 py-3 text-right tabular-nums font-semibold">
                       {fmtPrecoEuros(total)}
                     </td>
                     {editavel ? (
@@ -680,13 +737,28 @@ export function FaturaInlineEditor({
           <p className="mb-2 text-xs font-bold uppercase tracking-wide text-violet-700">
             Condições de Enquadramento de IVA
           </p>
-          <ul className="space-y-1 text-sm text-neutral-700">
+          <ul className="space-y-2 text-sm text-neutral-700">
             {[...isencoesUsadas.entries()]
               .sort((a, b) => a[1] - b[1])
               .map(([code, ref]) => (
-                <li key={code}>
-                  <span className="font-medium text-violet-700">({ref})</span>{" "}
-                  {formatarMotivoIsencaoAt(code)}
+                <li key={code} className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium text-violet-700">({ref})</span>
+                  {editavel ? (
+                    <select
+                      value={code}
+                      onChange={(e) => alterarMotivoIsencao(code, e.target.value)}
+                      className="min-w-0 flex-1 rounded-md border border-violet-200 bg-white px-2 py-1.5 text-xs text-violet-900"
+                      aria-label={`Motivo de isenção (${ref})`}
+                    >
+                      {AT_MOTIVOS_ISENCAO.map((c) => (
+                        <option key={c} value={c}>
+                          {formatarMotivoIsencaoSelectOpcao(c)}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    formatarMotivoIsencaoAt(code)
+                  )}
                 </li>
               ))}
           </ul>

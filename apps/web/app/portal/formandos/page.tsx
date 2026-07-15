@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { PlusCircle, Pencil, Users } from "lucide-react";
+import { PlusCircle, Pencil, Trash2, Users } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
@@ -14,7 +14,10 @@ type Formando = {
   id: string; nome: string; nif: string;
   email: string | null; emailPresenca: string | null;
   emailConta: string | null; emailPresencaEfectivo: string | null;
-  telefone: string | null; _count?: { matriculas: number };
+  telefone: string | null;
+  contaEstado?: "activa" | "convite_pendente" | "sem_conta";
+  nifProvisorio?: boolean;
+  _count?: { matriculas: number };
 };
 
 const EMPTY = { nome: "", nif: "", email: "", emailPresenca: "", telefone: "" };
@@ -28,6 +31,7 @@ export default function FormandosPage() {
   const [busy, setBusy] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Formando | null>(null);
   const [form, setForm] = useState(EMPTY);
 
   const load = useCallback(async () => {
@@ -68,9 +72,61 @@ export default function FormandosPage() {
     setBusy(false);
   }
 
+  async function confirmDelete() {
+    if (!canManage || !deleteTarget) return;
+    setBusy(true);
+    setError(null);
+    setMsg(null);
+    const res = await bffFetch(`/api/v1/formandos/${deleteTarget.id}`, { method: "DELETE" });
+    setBusy(false);
+    if (!res.ok) {
+      setError(await parseApiError(res));
+      return;
+    }
+    const data = (await res.json()) as { matriculasRemovidas?: number; contaDesactivada?: boolean };
+    const parts = ["Formando eliminado."];
+    if ((data.matriculasRemovidas ?? 0) > 0) {
+      parts.push(`${data.matriculasRemovidas} matrícula(s) removida(s).`);
+    }
+    if (data.contaDesactivada) {
+      parts.push("Conta de utilizador desactivada.");
+    }
+    setMsg(parts.join(" "));
+    setDeleteTarget(null);
+    await load();
+  }
+
   const COLUMNS: Column<Formando>[] = [
     { key: "nome", header: "Nome", cell: (f) => <span className="font-medium text-slate-100">{f.nome}</span> },
-    { key: "nif", header: "NIF", cell: (f) => <span className="font-mono text-sm text-slate-300">{f.nif}</span> },
+    {
+      key: "contaEstado",
+      header: "Conta",
+      cell: (f) => (
+        <Badge
+          variant={
+            f.contaEstado === "activa" ? "green" : f.contaEstado === "convite_pendente" ? "yellow" : "default"
+          }
+        >
+          {f.contaEstado === "activa"
+            ? "Activa"
+            : f.contaEstado === "convite_pendente"
+              ? "Convite pendente"
+              : "Sem conta"}
+        </Badge>
+      ),
+    },
+    {
+      key: "nif",
+      header: "NIF",
+      cell: (f) => (
+        <span className="font-mono text-sm text-slate-300">
+          {f.nif}
+          {f.nifProvisorio ? (
+            <span className="block text-[10px] text-amber-500/90 font-sans">provisório — actualizar</span>
+          ) : null}
+        </span>
+      ),
+    },
     { key: "email", header: "Email contacto", cell: (f) => <span className="text-slate-400 text-sm">{f.email ?? "–"}</span> },
     {
       key: "emailPresencaEfectivo",
@@ -122,9 +178,14 @@ export default function FormandosPage() {
           keyField="id"
           loading={loading}
           rowActions={canManage ? (f) => (
-            <Button size="sm" variant="ghost" onClick={() => openEdit(f)}>
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
+            <div className="flex items-center gap-0.5">
+              <Button size="sm" variant="ghost" onClick={() => openEdit(f)} aria-label="Editar">
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setDeleteTarget(f)} aria-label="Eliminar">
+                <Trash2 className="h-3.5 w-3.5 text-red-400" />
+              </Button>
+            </div>
           ) : undefined}
         />
       )}
@@ -155,6 +216,31 @@ export default function FormandosPage() {
               <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>Cancelar</Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent
+          title="Eliminar formando"
+          description={
+            deleteTarget
+              ? `Eliminar ${deleteTarget.nome}? As matrículas (${deleteTarget._count?.matriculas ?? 0}) e documentos associados são removidos.` +
+                (deleteTarget.contaEstado === "activa"
+                  ? " A conta de utilizador fica desactivada."
+                  : deleteTarget.contaEstado === "convite_pendente"
+                    ? " O convite pendente é cancelado."
+                    : "")
+              : undefined
+          }
+        >
+          <div className="flex gap-2 pt-2">
+            <Button variant="danger" disabled={busy} onClick={() => void confirmDelete()}>
+              {busy ? "A eliminar…" : "Eliminar"}
+            </Button>
+            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
+              Cancelar
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </>

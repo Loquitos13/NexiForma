@@ -29,8 +29,8 @@ export class SalesContactDto {
   telefone?: string;
 
   @IsOptional()
-  @IsIn([...BILLING_PLAN_CODES, "custom"])
-  planoInteresse?: (typeof BILLING_PLAN_CODES)[number] | "custom";
+  @IsIn([...BILLING_PLAN_CODES, "custom", "modules_only"])
+  planoInteresse?: (typeof BILLING_PLAN_CODES)[number] | "custom" | "modules_only";
 
   @IsOptional()
   @IsArray()

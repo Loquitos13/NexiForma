@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import {
+  buildContentSecurityPolicy,
+  productionOnlyHeaders,
+  TRANSPORT_SECURITY_HEADERS,
+} from "./lib/server/transport-security";
 
 /** Next.js só lê `.env` em apps/web – reutilizar o da raiz do monorepo. */
 function loadRootEnv() {
@@ -36,6 +41,22 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   transpilePackages: ["@nexiforma/shared"],
   output: "standalone",
+  async headers() {
+    const securityHeaders = [
+      ...TRANSPORT_SECURITY_HEADERS,
+      ...productionOnlyHeaders(),
+      {
+        key: "Content-Security-Policy",
+        value: buildContentSecurityPolicy(),
+      },
+    ];
+    return [
+      {
+        source: "/:path*",
+        headers: securityHeaders,
+      },
+    ];
+  },
   async redirects() {
     return [
       {

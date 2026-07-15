@@ -1,15 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { bffFetch } from "@/lib/client/bff-fetch";
+import { bffQuery } from "@/lib/client/bff-query";
 import {
   buildMonthGridCells,
   dayFromDateKey,
   formatDateKeyPt,
   formatLocalDateKey,
-  isDateKeyInRange,
   monthLoadRange,
-  toDateKey,
 } from "@/lib/calendar-date";
 
 type SessaoEvent = {
@@ -22,22 +20,6 @@ type SessaoEvent = {
   estado: string;
   acaoCodigo: string;
   acaoTitulo: string;
-};
-
-type CronogramaRow = {
-  id: string;
-  acaoFormacao: { codigoInterno: string; titulo: string };
-};
-
-type SessaoRow = {
-  id: string;
-  cronogramaId: string;
-  numeroSessao: number;
-  data: string;
-  horaInicio: string;
-  horaFim: string;
-  modalidade: string;
-  estado: string;
 };
 
 export default function CalendarioPage() {
@@ -59,44 +41,39 @@ export default function CalendarioPage() {
     const { inicio, fim } = monthLoadRange(ano, mes);
 
     try {
-      const [crRes, sRes] = await Promise.all([
-        bffFetch("/api/v1/cronogramas", { headers: { accept: "application/json" } }),
-        bffFetch("/api/v1/sessoes-formacao", { headers: { accept: "application/json" } }),
-      ]);
-
-      if (!sRes.ok) {
-        setError("Erro ao carregar sessões.");
+      const r = await bffQuery("/api/v1/calendario/eventos", {
+        body: { inicio, fim },
+      });
+      if (!r.ok) {
+        setError(r.status === 403 ? "Sem permissão para o calendário." : "Erro ao carregar calendário.");
         setEventos([]);
         return;
       }
-
-      const acaoByCronograma = new Map<string, { codigoInterno: string; titulo: string }>();
-      if (crRes.ok) {
-        const cronos = (await crRes.json()) as CronogramaRow[];
-        for (const c of cronos) {
-          acaoByCronograma.set(c.id, c.acaoFormacao);
-        }
-      }
-
-      const sessoes = (await sRes.json()) as SessaoRow[];
-      const evts: SessaoEvent[] = [];
-      for (const s of sessoes) {
-        const dataKey = toDateKey(s.data);
-        if (!isDateKeyInRange(dataKey, inicio, fim)) continue;
-        const acao = acaoByCronograma.get(s.cronogramaId);
-        evts.push({
-          id: s.id,
-          numeroSessao: s.numeroSessao,
-          data: dataKey,
-          horaInicio: s.horaInicio,
-          horaFim: s.horaFim,
-          modalidade: s.modalidade,
-          estado: s.estado,
-          acaoCodigo: acao?.codigoInterno ?? "-",
-          acaoTitulo: acao?.titulo ?? "Formação",
-        });
-      }
-      setEventos(evts);
+      const rows = (await r.json()) as Array<{
+        id: string;
+        tipo: string;
+        titulo: string;
+        subtitulo?: string;
+        data: string;
+        horaInicio: string;
+        horaFim?: string;
+        modalidade?: string;
+        numeroSessao?: number;
+        estado?: string;
+      }>;
+      setEventos(
+        rows.map((e) => ({
+          id: e.id,
+          numeroSessao: e.numeroSessao ?? 0,
+          data: e.data,
+          horaInicio: e.horaInicio,
+          horaFim: e.horaFim ?? "",
+          modalidade: e.modalidade ?? (e.tipo === "REUNIAO_CRM" ? "CRM" : ""),
+          estado: e.estado ?? "AGENDADA",
+          acaoCodigo: e.tipo === "REUNIAO_CRM" ? "CRM" : e.titulo.split("–")[0]?.trim() ?? "-",
+          acaoTitulo: e.subtitulo ?? e.titulo,
+        })),
+      );
     } catch {
       setError("Erro ao carregar calendário.");
       setEventos([]);
@@ -118,7 +95,9 @@ export default function CalendarioPage() {
     <div className="max-w-5xl space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-slate-50">Calendario</h1>
-        <p className="text-sm text-slate-500 mt-1">Visualizacao mensal das sessoes de formacao agendadas.</p>
+        <p className="text-sm text-slate-500 mt-1">
+          Sessões de formação, reuniões CRM e eventos agendados - vista por perfil.
+        </p>
       </div>
 
       {error ? (
@@ -127,34 +106,35 @@ export default function CalendarioPage() {
         </div>
       ) : null}
 
-      <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/30">
+      <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 overflow-x-auto">
+        <div className="flex min-w-[280px] flex-wrap items-center justify-between gap-2 px-3 py-3 sm:px-5 sm:py-4 border-b border-slate-700/30">
           <button
             type="button"
             onClick={() => setMesAtual(new Date(ano, mes - 1, 1))}
-            className="px-3 py-1.5 rounded-lg border border-slate-600/40 text-sm text-slate-400 hover:bg-slate-800/40 transition-colors"
+            className="px-2 py-1.5 sm:px-3 rounded-lg border border-slate-600/40 text-xs sm:text-sm text-slate-400 hover:bg-slate-800/40 transition-colors"
           >
-            ← {new Date(ano, mes - 1, 1).toLocaleDateString("pt-PT", { month: "short" })}
+            ← <span className="hidden sm:inline">{new Date(ano, mes - 1, 1).toLocaleDateString("pt-PT", { month: "short" })}</span>
           </button>
-          <h2 className="text-lg font-bold text-slate-100">
+          <h2 className="text-sm sm:text-lg font-bold text-slate-100 text-center">
             {new Date(ano, mes, 1).toLocaleDateString("pt-PT", { month: "long", year: "numeric" })}
           </h2>
           <button
             type="button"
             onClick={() => setMesAtual(new Date(ano, mes + 1, 1))}
-            className="px-3 py-1.5 rounded-lg border border-slate-600/40 text-sm text-slate-400 hover:bg-slate-800/40 transition-colors"
+            className="px-2 py-1.5 sm:px-3 rounded-lg border border-slate-600/40 text-xs sm:text-sm text-slate-400 hover:bg-slate-800/40 transition-colors"
           >
-            {new Date(ano, mes + 1, 1).toLocaleDateString("pt-PT", { month: "short" })} →
+            <span className="hidden sm:inline">{new Date(ano, mes + 1, 1).toLocaleDateString("pt-PT", { month: "short" })}</span> →
           </button>
         </div>
 
-        <div className="grid grid-cols-7 text-center">
+        <div className="grid min-w-[280px] grid-cols-7 text-center">
           {["Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom"].map((d) => (
             <div
               key={d}
-              className="py-2 text-[11px] font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-700/20"
+              className="py-1.5 sm:py-2 text-[9px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-700/20"
             >
-              {d}
+              <span className="sm:hidden">{d.charAt(0)}</span>
+              <span className="hidden sm:inline">{d}</span>
             </div>
           ))}
           {dias.map((data, i) => (
@@ -163,7 +143,7 @@ export default function CalendarioPage() {
               type="button"
               disabled={!data}
               onClick={() => data && setSelectedDate(selectedDate === data ? null : data)}
-              className={`min-h-[72px] p-1.5 border border-slate-700/10 text-left transition-colors ${
+              className={`min-h-[52px] sm:min-h-[72px] p-1 sm:p-1.5 border border-slate-700/10 text-left transition-colors ${
                 !data
                   ? "bg-slate-900/30"
                   : data === hoje

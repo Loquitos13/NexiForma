@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { FileText, Fingerprint, Lock, Shield, User } from "lucide-react";
 import { DocumentCaptureModule } from "@/components/formando/document-capture-module";
@@ -204,27 +205,8 @@ export default function FormandoPerfilPage() {
         </div>
         {consent.canUse ? (
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" size="sm" onClick={consent.openSettings}>
-              Privacidade / RGPD
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                void (async () => {
-                  setError(null);
-                  const res = await bffFetch("/api/v1/rgpd/me/export", { method: "POST" });
-                  if (!res.ok) {
-                    setError("Não foi possível gerar a exportação dos seus dados.");
-                    return;
-                  }
-                  const data = (await res.json()) as { downloadUrl?: string };
-                  if (data.downloadUrl) window.open(data.downloadUrl, "_blank");
-                })();
-              }}
-            >
-              Exportar os meus dados
+            <Button type="button" variant="secondary" size="sm" asChild>
+              <Link href="/portal/formando/rgpd">Privacidade / RGPD</Link>
             </Button>
           </div>
         ) : null}

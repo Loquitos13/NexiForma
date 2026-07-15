@@ -64,10 +64,7 @@ export function isModalidadeOnline(modalidade: string): boolean {
   return m.includes("learning") || m.includes("online") || m === "e-learning" || m === "b-learning";
 }
 
-/** B-learning / e-learning → Teams; online puro → Zoom; fallback Teams. */
-export function providerParaModalidade(modalidade: string): SalaProvider {
-  const m = modalidade.toLowerCase();
-  if (m.includes("learning") || m === "e-learning") return "TEAMS";
-  if (m.includes("online")) return "ZOOM";
+/** Formações online (e-learning, b-learning, online) usam Microsoft Teams. */
+export function providerParaModalidade(_modalidade: string): SalaProvider {
   return "TEAMS";
 }

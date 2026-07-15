@@ -1,16 +1,29 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
+import type { BillingPlanCode } from "@nexiforma/shared";
+import { BILLING_ADDON_LABELS, MODULAR_PLAN_CODE } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { persistAuthFromResponse } from "@/lib/client/auth-login";
 import { formatDatePt } from "@/lib/calendar-date";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { PageContentSkeleton } from "@/components/ui/page-skeleton";
+import {
+  TenantSubscriptionForm,
+  parseCustomAddons,
+  type TenantSubscriptionFormValue,
+} from "@/components/plataforma/tenant-subscription-form";
 
 type TenantDetail = {
   id: string; slug: string; legalName: string; nif: string; status: string;
   _count: { users: number; acoesFormacao: number; formandos: number; sessoesFormacao: number };
-  subscriptions: { status: string; plan: { name: string; code: string } }[];
+  subscriptions: {
+    status: string;
+    customAddons?: unknown;
+    plan: { name: string; code: string };
+  }[];
   subscriptionKeys: { id: string; keyPrefix: string; status: string; expiresAt: string | null }[];
 };
 
@@ -45,6 +58,13 @@ export default function TenantDetailPage() {
   const [consentUrl, setConsentUrl] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ slug: "", legalName: "", nif: "" });
   const [editBusy, setEditBusy] = useState(false);
+  const [subscriptionForm, setSubscriptionForm] = useState<TenantSubscriptionFormValue>({
+    planCode: "starter",
+    customAddons: [],
+  });
+  const [subBusy, setSubBusy] = useState(false);
+  const [inviteForm, setInviteForm] = useState({ email: "", displayName: "" });
+  const [inviteBusy, setInviteBusy] = useState(false);
 
   const loadIntegracoes = useCallback(async () => {
     const [listR, statusR] = await Promise.all([
@@ -71,6 +91,13 @@ export default function TenantDetailPage() {
     const t = (await tenantR.json()) as TenantDetail;
     setTenant(t);
     setEditForm({ slug: t.slug, legalName: t.legalName, nif: t.nif });
+    const sub = t.subscriptions[0];
+    if (sub) {
+      setSubscriptionForm({
+        planCode: (sub.plan.code as BillingPlanCode) ?? "starter",
+        customAddons: parseCustomAddons(sub.customAddons),
+      });
+    }
     if (usersR.ok) {
       const list = (await usersR.json()) as TenantUser[];
       setUsers(list);
@@ -88,6 +115,62 @@ export default function TenantDetailPage() {
     });
     if (!r.ok) { setError(`HTTP ${r.status}`); return; }
     setMsg(`Estado actualizado para ${status}.`);
+    await load();
+  }
+
+  async function enviarConviteGestor(e: FormEvent) {
+    e.preventDefault();
+    if (!inviteForm.email.trim()) return;
+    setInviteBusy(true);
+    setError(null);
+    const r = await bffFetch(`/api/v1/control-plane/tenants/${id}/manager-invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        email: inviteForm.email.trim(),
+        displayName: inviteForm.displayName.trim() || undefined,
+      }),
+    });
+    setInviteBusy(false);
+    if (!r.ok) {
+      setError(await parseApiError(r));
+      return;
+    }
+    const data = (await r.json()) as { inviteUrl?: string };
+    setMsg(
+      data.inviteUrl
+        ? `Convite enviado (dev: ${data.inviteUrl})`
+        : "Convite enviado por email ao gestor.",
+    );
+    setInviteForm({ email: "", displayName: "" });
+    await load();
+  }
+
+  async function guardarSubscricao(e: FormEvent) {
+    e.preventDefault();
+    if (
+      subscriptionForm.planCode === MODULAR_PLAN_CODE &&
+      subscriptionForm.customAddons.length === 0
+    ) {
+      setError("Seleccione pelo menos um módulo para o plano só-módulos.");
+      return;
+    }
+    setSubBusy(true);
+    setError(null);
+    const r = await bffFetch(`/api/v1/control-plane/tenants/${id}/subscription`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        planCode: subscriptionForm.planCode,
+        customAddons: subscriptionForm.customAddons,
+      }),
+    });
+    setSubBusy(false);
+    if (!r.ok) {
+      setError(await parseApiError(r));
+      return;
+    }
+    setMsg("Plano e módulos actualizados.");
     await load();
   }
 
@@ -158,6 +241,7 @@ export default function TenantDetailPage() {
     });
     setImpBusy(false);
     if (!r.ok) { const d = (await r.json().catch(() => null)) as { message?: string } | null; setError(d?.message ?? `HTTP ${r.status}`); return; }
+    await persistAuthFromResponse(r);
     router.push("/portal"); router.refresh();
   }
 
@@ -165,11 +249,18 @@ export default function TenantDetailPage() {
     setIntBusy(true); setError(null);
     const r = await bffFetch(`/api/v1/control-plane/tenants/${id}/integracoes`, {
       method: "POST", headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ provider: "TEAMS", mode: "OAUTH", config: teamsDraft }),
+      body: JSON.stringify({
+        provider: "TEAMS",
+        mode: "DISABLED",
+        config: {
+          tenantId: teamsDraft.tenantId.trim(),
+          organizerId: teamsDraft.organizerId.trim(),
+        },
+      }),
     });
     setIntBusy(false);
     if (!r.ok) { const d = (await r.json().catch(() => null)) as { message?: string } | null; setError(d?.message ?? `Integracao Teams: HTTP ${r.status}`); return; }
-    setMsg("Microsoft 365 ligado a este tenant.");
+    setMsg("Microsoft 365 ligado a este tenant. Testa a ligação e activa OAuth quando estiver OK.");
     await loadIntegracoes();
   }
 
@@ -228,6 +319,14 @@ export default function TenantDetailPage() {
             {tenant?.status}
           </span>
         </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Link
+            href={`/plataforma/tenantes/${id}/operacoes`}
+            className="rounded-lg bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-500"
+          >
+            Centro de suporte do tenant
+          </Link>
+        </div>
       </div>
 
       {error ? <div className="flex items-start gap-2.5 rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3"><p className="text-sm text-red-300">{error}</p></div> : null}
@@ -277,6 +376,63 @@ export default function TenantDetailPage() {
                   </button>
                 ) : null}
               </div>
+            </form>
+          </div>
+
+          {/* Plano e módulos */}
+          <div className="rounded-2xl bg-[#0c0a14]/80 border border-teal-500/15 p-5">
+            <h2 className="text-sm font-semibold text-teal-200 mb-1">Plano e módulos</h2>
+            <p className="text-xs text-slate-500 mb-4">
+              Estado actual: {tenant.subscriptions[0]?.plan.name ?? "–"} ({tenant.subscriptions[0]?.status ?? "–"})
+              {tenant.subscriptions[0]?.customAddons &&
+              Array.isArray(tenant.subscriptions[0].customAddons) &&
+              tenant.subscriptions[0].customAddons.length > 0 ? (
+                <span className="block mt-1 text-teal-400/90">
+                  Módulos:{" "}
+                  {parseCustomAddons(tenant.subscriptions[0].customAddons)
+                    .map((c) => BILLING_ADDON_LABELS[c])
+                    .join(", ")}
+                </span>
+              ) : null}
+            </p>
+            <form onSubmit={(e) => void guardarSubscricao(e)} className="max-w-lg space-y-3">
+              <TenantSubscriptionForm
+                value={subscriptionForm}
+                onChange={setSubscriptionForm}
+                inputClass={inputClass}
+                compact
+              />
+              <button type="submit" disabled={subBusy} className={btnPrimaryClass}>
+                {subBusy ? "A guardar…" : "Actualizar plano e módulos"}
+              </button>
+            </form>
+          </div>
+
+          {/* Convite gestor */}
+          <div className="rounded-2xl bg-[#0c0a14]/80 border border-blue-500/15 p-5">
+            <h2 className="text-sm font-semibold text-blue-200 mb-1">Convite ao gestor</h2>
+            <p className="text-xs text-slate-500 mb-4">
+              Envia email com link de activação. O convite inclui o slug <code className="text-purple-300">{tenant.slug}</code>{" "}
+              para o gestor usar no login.
+            </p>
+            <form onSubmit={(e) => void enviarConviteGestor(e)} className="grid gap-3 max-w-md">
+              <input
+                type="email"
+                required
+                placeholder="Email do gestor"
+                className={inputClass}
+                value={inviteForm.email}
+                onChange={(e) => setInviteForm((f) => ({ ...f, email: e.target.value }))}
+              />
+              <input
+                placeholder="Nome a mostrar (opcional)"
+                className={inputClass}
+                value={inviteForm.displayName}
+                onChange={(e) => setInviteForm((f) => ({ ...f, displayName: e.target.value }))}
+              />
+              <button type="submit" disabled={inviteBusy} className={btnPrimaryClass}>
+                {inviteBusy ? "A enviar…" : "Enviar convite por email"}
+              </button>
             </form>
           </div>
 
@@ -358,6 +514,12 @@ export default function TenantDetailPage() {
             {/* Teams */}
             <div className="mb-5">
               <h3 className="text-sm font-medium text-slate-300 mb-2.5">Microsoft 365 (por tenant cliente)</h3>
+              <p className="text-xs text-slate-500 mb-2.5 leading-relaxed">
+                Usa o <strong className="text-slate-400">ID do inquilino</strong> do Entra ID do cliente (portal Azure →
+                Entra ID → Propriedades).{" "}
+                <strong className="text-amber-400/90">Não</strong> uses o UUID desta página NexiForma (
+                <code className="text-purple-300/80">{id.slice(0, 8)}…</code>).
+              </p>
               <div className="space-y-2.5 max-w-md">
                 <input placeholder="Azure Tenant ID do cliente" value={teamsDraft.tenantId}
                   onChange={(e) => setTeamsDraft((p) => ({ ...p, tenantId: e.target.value }))} className={inputClass} />

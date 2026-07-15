@@ -12,6 +12,7 @@ import type { RequestUser } from "../auth/types/access-token-payload";
 import { FormadorScopeService } from "../common/formador-scope.service";
 import { requireTenantId } from "../common/tenant-scope";
 import { StorageService } from "../storage/storage.service";
+import { sanitizeLmsHtml } from "../common/sanitize-html.util";
 import type { CreateModuloConteudoDto, CreateModuloUnidadeDto, UpdateModuloUnidadeDto, UpdateProgressoModuloDto } from "./dto/conteudos-lms.dto";
 import {
   moduloDesbloqueado,
@@ -71,7 +72,9 @@ function mergeModuloConteudo(
     titulo: dto.titulo?.trim() ?? existing.titulo,
     urlOuRef: dto.urlOuRef !== undefined ? dto.urlOuRef?.trim() || null : existing.urlOuRef,
     conteudoHtml:
-      dto.conteudoHtml !== undefined ? dto.conteudoHtml?.trim() || null : existing.conteudoHtml,
+      dto.conteudoHtml !== undefined
+        ? sanitizeLmsHtml(dto.conteudoHtml?.trim() || null)
+        : existing.conteudoHtml,
     metadata:
       dto.metadata !== undefined
         ? (dto.metadata as Prisma.JsonValue)
@@ -212,7 +215,7 @@ export class ConteudosLmsService {
     const conteudoDraft = {
       tipo: dto.tipo,
       urlOuRef: dto.urlOuRef?.trim() || null,
-      conteudoHtml: dto.conteudoHtml?.trim() || null,
+      conteudoHtml: sanitizeLmsHtml(dto.conteudoHtml?.trim() || null),
       metadata: dto.metadata ?? null,
     };
     const check = validarModuloConteudoCompleto(conteudoDraft);
@@ -267,7 +270,8 @@ export class ConteudosLmsService {
         ordem: dto.ordem,
         moduloUnidadeId: dto.moduloUnidadeId !== undefined ? dto.moduloUnidadeId ?? null : undefined,
         urlOuRef: dto.urlOuRef !== undefined ? dto.urlOuRef?.trim() || null : undefined,
-        conteudoHtml: dto.conteudoHtml !== undefined ? dto.conteudoHtml?.trim() || null : undefined,
+        conteudoHtml:
+          dto.conteudoHtml !== undefined ? sanitizeLmsHtml(dto.conteudoHtml?.trim() || null) : undefined,
         duracaoMin: dto.duracaoMin,
         publicado,
         notaMinima: dto.notaMinima,
@@ -310,19 +314,26 @@ export class ConteudosLmsService {
     const storageKey = `lms/${tenantId}/${modulo.cursoId}/${randomUUID()}-${file.originalname.replace(/[^\w.-]/g, "_")}`;
     await this.storage.putObject(storageKey, file.buffer, file.mimetype);
 
+    const merged = mergeModuloConteudo(modulo, {
+      urlOuRef: storageKey,
+      metadata: {
+        ...(typeof modulo.metadata === "object" && modulo.metadata ? modulo.metadata : {}),
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+        sizeBytes: file.size,
+        uploadedAt: new Date().toISOString(),
+      },
+    });
+    const publicado = resolvePublicadoOnSave(merged, undefined);
+
     return this.prisma.moduloConteudo.update({
       where: { id: moduloId },
       data: {
         urlOuRef: storageKey,
         titulo:
           modulo.titulo.startsWith("Novo ") ? tituloFromFileName(file.originalname) : modulo.titulo,
-        metadata: {
-          ...(typeof modulo.metadata === "object" && modulo.metadata ? modulo.metadata : {}),
-          fileName: file.originalname,
-          mimeType: file.mimetype,
-          sizeBytes: file.size,
-          uploadedAt: new Date().toISOString(),
-        },
+        metadata: merged.metadata as Prisma.InputJsonValue,
+        publicado,
       },
     });
   }
@@ -429,20 +440,26 @@ export class ConteudosLmsService {
         turma: {
           include: {
             acaoFormacao: {
-              select: { dataFim: true, prazoConclusaoLms: true },
+              select: { cursoId: true, dataFim: true, prazoConclusaoLms: true },
             },
           },
         },
       },
     });
+    if (!matricula?.turma?.acaoFormacao) {
+      throw new NotFoundException("Matrícula ou formação não encontrada.");
+    }
+
+    // Conteúdos LMS são por curso — todas as acções do mesmo curso partilham o percurso.
+    const cursoIdResolved = matricula.turma.acaoFormacao.cursoId;
 
     const [unidades, modulos, progressos] = await Promise.all([
       this.prisma.moduloUnidade.findMany({
-        where: { tenantId, cursoId },
+        where: { tenantId, cursoId: cursoIdResolved },
         orderBy: [{ ordem: "asc" }, { createdAt: "asc" }],
       }),
       this.prisma.moduloConteudo.findMany({
-        where: { tenantId, cursoId, publicado: true },
+        where: { tenantId, cursoId: cursoIdResolved, publicado: true },
         orderBy: [{ ordem: "asc" }, { createdAt: "asc" }],
       }),
       this.prisma.progressoModulo.findMany({
@@ -498,6 +515,7 @@ export class ConteudosLmsService {
           m.metadata && typeof m.metadata === "object" && !Array.isArray(m.metadata)
             ? (m.metadata as Record<string, unknown>)
             : null,
+        prerequisitoModuloId: m.prerequisitoModuloId,
         pontuacao: pontuacaoTarefa(progresso, m),
         percentual: prog?.percentual ?? 0,
         concluido: !!prog?.concluidoEm,
@@ -519,6 +537,7 @@ export class ConteudosLmsService {
     const cumpridoNoPrazo = completo && !emAtraso;
 
     return {
+      cursoId: cursoIdResolved,
       unidades: unidadesOut,
       tarefas: tarefasOut,
       prazoLms: limite
@@ -533,6 +552,134 @@ export class ConteudosLmsService {
             cumpridoNoPrazo,
           }
         : null,
+    };
+  }
+
+  /** Progresso LMS agregado dos formandos nas acções do formador. */
+  async resumoProgressoFormador(user: RequestUser) {
+    const tenantId = requireTenantId(user);
+    if (user.role !== "formador") {
+      throw new ForbiddenException("Apenas formadores.");
+    }
+
+    const acaoIds = await this.formadorScope.assignedAcaoIds(user);
+    if (!acaoIds?.length) {
+      return {
+        geral: { percentual: 0, concluidas: 0, totalTarefas: 0, formandosAtivos: 0 },
+        acoes: [],
+      };
+    }
+
+    const acoes = await this.prisma.acaoFormacao.findMany({
+      where: { tenantId, id: { in: acaoIds } },
+      select: {
+        id: true,
+        titulo: true,
+        codigoInterno: true,
+        cursoId: true,
+        curso: { select: { designacao: true } },
+        turmas: {
+          select: {
+            matriculas: {
+              where: { estado: "ATIVA" },
+              select: {
+                id: true,
+                formando: { select: { nome: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { dataInicio: "desc" },
+    });
+
+    const cursoIds = [...new Set(acoes.map((a) => a.cursoId))];
+    const modulos = await this.prisma.moduloConteudo.findMany({
+      where: { tenantId, cursoId: { in: cursoIds }, publicado: true },
+      select: { id: true, cursoId: true, ordem: true, moduloUnidadeId: true, publicado: true },
+    });
+    const tarefasPorCurso = new Map<string, ReturnType<typeof tarefasOrdenadas>>();
+    for (const cursoId of cursoIds) {
+      const cursoModulos = modulos.filter((m) => m.cursoId === cursoId);
+      tarefasPorCurso.set(cursoId, tarefasOrdenadas(cursoModulos));
+    }
+
+    const matriculaIds = acoes.flatMap((a) =>
+      a.turmas.flatMap((t) => t.matriculas.map((m) => m.id)),
+    );
+    const progressos =
+      matriculaIds.length > 0
+        ? await this.prisma.progressoModulo.findMany({
+            where: { tenantId, matriculaId: { in: matriculaIds } },
+            select: { matriculaId: true, moduloId: true, concluidoEm: true },
+          })
+        : [];
+    const progressoPorMatricula = new Map<string, typeof progressos>();
+    for (const p of progressos) {
+      const list = progressoPorMatricula.get(p.matriculaId) ?? [];
+      list.push(p);
+      progressoPorMatricula.set(p.matriculaId, list);
+    }
+
+    let geralConcluidas = 0;
+    let geralTotal = 0;
+    let formandosAtivos = 0;
+
+    const acoesOut = acoes.map((acao) => {
+      const tarefas = tarefasPorCurso.get(acao.cursoId) ?? [];
+      const totalTarefas = tarefas.length;
+      const matriculas = acao.turmas.flatMap((t) => t.matriculas);
+
+      const formandos = matriculas.map((m) => {
+        const prog = progressoPorMatricula.get(m.id) ?? [];
+        const concluidas = tarefas.filter((t) =>
+          prog.some((p) => p.moduloId === t.id && p.concluidoEm),
+        ).length;
+        const percentual =
+          totalTarefas > 0 ? Math.round((concluidas / totalTarefas) * 1000) / 10 : 0;
+        return {
+          matriculaId: m.id,
+          nome: m.formando.nome,
+          percentual,
+          concluidas,
+          total: totalTarefas,
+        };
+      });
+
+      const somaPercentuais = formandos.reduce((s, f) => s + f.percentual, 0);
+      const percentualMedio =
+        formandos.length > 0 ? Math.round((somaPercentuais / formandos.length) * 10) / 10 : 0;
+      const concluidasAcao = formandos.reduce((s, f) => s + f.concluidas, 0);
+      const totalSlots = totalTarefas * formandos.length;
+
+      geralConcluidas += concluidasAcao;
+      geralTotal += totalSlots;
+      formandosAtivos += formandos.length;
+
+      return {
+        acaoId: acao.id,
+        codigoInterno: acao.codigoInterno,
+        titulo: acao.titulo,
+        cursoDesignacao: acao.curso.designacao,
+        percentualMedio,
+        formandos: formandos.length,
+        concluidas: concluidasAcao,
+        totalTarefas,
+        formandosDetalhe: formandos.sort((a, b) => a.percentual - b.percentual),
+      };
+    });
+
+    const percentualGeral =
+      geralTotal > 0 ? Math.round((geralConcluidas / geralTotal) * 1000) / 10 : 0;
+
+    return {
+      geral: {
+        percentual: percentualGeral,
+        concluidas: geralConcluidas,
+        totalTarefas: geralTotal,
+        formandosAtivos,
+      },
+      acoes: acoesOut,
     };
   }
 

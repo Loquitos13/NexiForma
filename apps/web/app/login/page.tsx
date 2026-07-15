@@ -4,10 +4,23 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Shield } from "lucide-react";
+import { mfaAppOpenHint, mfaVerificationSubtitle, MFA_APP_CODES, MFA_APP_LABELS, type MfaAppCode } from "@nexiforma/shared";
 import { AuthShell } from "@/components/site/auth-shell";
 import { PasswordInput } from "@/components/ui/password-input";
 import { setAccessToken } from "@/lib/client/access-token";
+import { refreshViaBffCookies } from "@/lib/client/bff-fetch";
 import { resolvePostLoginPath } from "@/lib/client/jwt-role";
+import {
+  getRememberLogin,
+  getSavedEmail,
+  persistLoginPreferences,
+  persistTenantSlug,
+} from "@/lib/client/login-preferences";
+import {
+  isPlatformAuthMode,
+  platformAuthHref,
+  resolveTenantSlugForAuth,
+} from "@/lib/client/platform-auth-mode";
 import { isDevEnvironment } from "@/lib/ui/site";
 
 const inputClass =
@@ -79,27 +92,74 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [mfaCode, setMfaCode] = useState("");
+  const [mfaAppLabel, setMfaAppLabel] = useState<string | null>(null);
+  const [mfaEnrollmentMode, setMfaEnrollmentMode] = useState(false);
+  const [mfaEnrollSetup, setMfaEnrollSetup] = useState<{ qrDataUrl: string } | null>(null);
+  const [mfaApp, setMfaApp] = useState<MfaAppCode>("microsoft_authenticator");
   const [credSuccess, setCredSuccess] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [platformMode, setPlatformMode] = useState(false);
   const isDev = isDevEnvironment();
 
   useEffect(() => {
+    setRememberMe(getRememberLogin());
     const params = new URLSearchParams(window.location.search);
+    const platform = isPlatformAuthMode(params);
+    setPlatformMode(platform);
     const slug = params.get("slug");
     const next = params.get("next");
-    if (slug) setTenantSlug(slug);
-    else if (isDev) setTenantSlug("demo");
+    const emailParam = params.get("email");
+    setTenantSlug(
+      resolveTenantSlugForAuth(params, { slugFromUrl: slug ?? undefined, isDev }),
+    );
+    if (emailParam) setEmail(emailParam);
+    else {
+      const savedEmail = getSavedEmail();
+      if (savedEmail) setEmail(savedEmail);
+    }
     if (next) sessionStorage.setItem("nexiforma_login_next", next);
+    else sessionStorage.removeItem("nexiforma_login_next");
   }, [isDev]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await refreshViaBffCookies();
+        if (!cancelled && token) {
+          await finishLogin(token);
+          return;
+        }
+      } catch {
+        /* sem sessão activa */
+      } finally {
+        if (!cancelled) setCheckingSession(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function finishLogin(accessToken?: string) {
     if (accessToken) setAccessToken(accessToken);
-    const next = sessionStorage.getItem("nexiforma_login_next");
     sessionStorage.removeItem("nexiforma_login_next");
-    router.push(resolvePostLoginPath(accessToken, next));
+    router.push(resolvePostLoginPath(accessToken, null));
     router.refresh();
+  }
+
+  function saveLoginPreferences() {
+    const slug = tenantSlug.trim();
+    if (slug) persistTenantSlug(slug);
+    persistLoginPreferences({
+      remember: rememberMe,
+      tenantSlug: slug,
+      email: email.trim(),
+    });
   }
 
   useEffect(() => {
@@ -112,6 +172,42 @@ export default function LoginPage() {
     }
   }, [router]);
 
+  useEffect(() => {
+    if (!mfaEnrollmentMode || !mfaToken || mfaEnrollSetup) return;
+    void (async () => {
+      const res = await fetch("/api/auth/mfa/enroll/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mfaToken }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { message?: string | string[] };
+        const msg = Array.isArray(err.message)
+          ? err.message.join(", ")
+          : typeof err.message === "string"
+            ? err.message
+            : "Não foi possível iniciar a configuração MFA.";
+        setError(msg);
+        return;
+      }
+      const data = (await res.json()) as { qrDataUrl?: string };
+      if (data.qrDataUrl) {
+        setMfaEnrollSetup({ qrDataUrl: data.qrDataUrl });
+      }
+    })();
+  }, [mfaEnrollmentMode, mfaToken, mfaEnrollSetup]);
+
+  function resetMfaFlow() {
+    setMfaToken(null);
+    setMfaCode("");
+    setMfaAppLabel(null);
+    setMfaEnrollmentMode(false);
+    setMfaEnrollSetup(null);
+    setMfaApp("microsoft_authenticator");
+    setCredSuccess(false);
+    setError(null);
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -121,8 +217,8 @@ export default function LoginPage() {
     const slug = tenantSlug.trim();
     const endpoint = slug ? "/api/auth/tenant/login" : "/api/auth/platform/login";
     const body = slug
-      ? { tenantSlug: slug, email: email.trim(), password }
-      : { email: email.trim(), password };
+      ? { tenantSlug: slug, email: email.trim(), password, rememberMe }
+      : { email: email.trim(), password, rememberMe };
 
     try {
       const res = await fetch(endpoint, {
@@ -135,7 +231,9 @@ export default function LoginPage() {
         message?: string | string[];
         accessToken?: string;
         mfaRequired?: boolean;
+        mfaEnrollmentRequired?: boolean;
         mfaToken?: string;
+        user?: { mfaAppLabel?: string | null };
       };
 
       if (!res.ok) {
@@ -148,13 +246,22 @@ export default function LoginPage() {
         return;
       }
 
+      if (data.mfaEnrollmentRequired && data.mfaToken) {
+        setCredSuccess(true);
+        setMfaToken(data.mfaToken);
+        setMfaEnrollmentMode(true);
+        return;
+      }
+
       if (data.mfaRequired && data.mfaToken) {
         setCredSuccess(true);
         setMfaToken(data.mfaToken);
+        setMfaAppLabel(data.user?.mfaAppLabel ?? null);
         return;
       }
 
       setLoginSuccess(true);
+      saveLoginPreferences();
       await new Promise((r) => setTimeout(r, 700));
       await finishLogin(data.accessToken);
     } catch {
@@ -174,7 +281,7 @@ export default function LoginPage() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mfaToken, code: mfaCode }),
+        body: JSON.stringify({ mfaToken, code: mfaCode, rememberMe }),
       });
       const data = (await res.json().catch(() => ({}))) as { message?: string; accessToken?: string };
       if (!res.ok) {
@@ -182,6 +289,7 @@ export default function LoginPage() {
         return;
       }
       setLoginSuccess(true);
+      saveLoginPreferences();
       await new Promise((r) => setTimeout(r, 700));
       await finishLogin(data.accessToken);
     } catch {
@@ -189,6 +297,42 @@ export default function LoginPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function onMfaEnrollSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!mfaToken || mfaCode.length !== 6) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/auth/mfa/enroll/confirm", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mfaToken, code: mfaCode, mfaApp, rememberMe }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { message?: string; accessToken?: string };
+      if (!res.ok) {
+        setError(typeof data.message === "string" ? data.message : "Código MFA inválido.");
+        return;
+      }
+      setLoginSuccess(true);
+      saveLoginPreferences();
+      await new Promise((r) => setTimeout(r, 700));
+      await finishLogin(data.accessToken);
+    } catch {
+      setError("Falha na configuração MFA.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (checkingSession && !loginSuccess) {
+    return (
+      <AuthShell title="Entrar" subtitle="A verificar sessão…">
+        <div className="py-8 text-center text-sm text-slate-500">A carregar…</div>
+      </AuthShell>
+    );
   }
 
   if (loginSuccess) {
@@ -209,29 +353,91 @@ export default function LoginPage() {
 
   return (
     <AuthShell
-      title={mfaToken ? "Verificação em dois passos" : "Entrar"}
+      title={mfaEnrollmentMode ? "Configurar verificação" : mfaToken ? "Verificação em dois passos" : "Entrar"}
       subtitle={
-        mfaToken
-          ? "Introduz o código de 6 dígitos da app de autenticação (Microsoft Authenticator, Google Authenticator, etc.)."
-          : "Acede à plataforma NexiForma com as tuas credenciais."
+        mfaEnrollmentMode
+          ? "A tua conta exige autenticação em dois passos. Configura a app no telemóvel para continuar."
+          : mfaToken
+            ? mfaVerificationSubtitle(mfaAppLabel)
+            : "Acede à plataforma NexiForma com as tuas credenciais."
       }
     >
-      {mfaToken ? (
+      {mfaEnrollmentMode && mfaToken ? (
+        <form onSubmit={onMfaEnrollSubmit} className="space-y-5">
+          {credSuccess ? (
+            <div className="rounded-xl bg-emerald-950/30 border border-emerald-500/25 px-4 py-3 flex items-start gap-2.5">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 mt-0.5 shrink-0" />
+              <p className="text-sm text-emerald-300">Palavra-passe correcta. Configura a verificação para entrar.</p>
+            </div>
+          ) : null}
+
+          <label className={labelClass}>App no telemóvel</label>
+          <select
+            value={mfaApp}
+            onChange={(e) => setMfaApp(e.target.value as MfaAppCode)}
+            className={inputClass}
+          >
+            {MFA_APP_CODES.map((code) => (
+              <option key={code} value={code}>{MFA_APP_LABELS[code]}</option>
+            ))}
+          </select>
+
+          {mfaEnrollSetup ? (
+            <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-4 space-y-3">
+              <p className="text-sm text-slate-300">
+                Lê o QR code com <strong className="text-slate-100">{MFA_APP_LABELS[mfaApp]}</strong> e introduz o código de 6 dígitos.
+              </p>
+              <div className="flex justify-center rounded-lg bg-white p-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={mfaEnrollSetup.qrDataUrl} alt="QR code MFA" width={220} height={220} />
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">A preparar QR code…</p>
+          )}
+
+          <div className="rounded-xl border border-slate-700/40 bg-slate-800/30 px-4 py-5">
+            <TotpInput value={mfaCode} onChange={setMfaCode} disabled={busy} />
+          </div>
+
+          {error ? (
+            <div className="rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3">
+              <p className="text-sm text-red-300">{error}</p>
+            </div>
+          ) : null}
+
+          <button
+            type="submit"
+            disabled={busy || mfaCode.length !== 6 || !mfaEnrollSetup}
+            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold text-sm disabled:opacity-60"
+          >
+            {busy ? "A activar…" : "Ativar e entrar"}
+          </button>
+
+          <button type="button" onClick={resetMfaFlow} className="w-full text-sm text-slate-400 hover:text-slate-200">
+            Voltar ao login
+          </button>
+        </form>
+      ) : mfaToken ? (
         <form onSubmit={onMfaSubmit} className="space-y-5">
           {credSuccess ? (
             <div className="rounded-xl bg-emerald-950/30 border border-emerald-500/25 px-4 py-3 flex items-start gap-2.5">
               <CheckCircle2 className="h-4 w-4 text-emerald-400 mt-0.5 shrink-0" />
-              <p className="text-sm text-emerald-300">Palavra-passe correcta. Confirma com o código TOTP.</p>
+              <p className="text-sm text-emerald-300">
+                Palavra-passe correcta. {mfaAppOpenHint(mfaAppLabel)}
+              </p>
             </div>
           ) : null}
 
           <div className="rounded-xl border border-slate-700/40 bg-slate-800/30 px-4 py-5">
             <div className="flex items-center justify-center gap-2 mb-4 text-slate-400">
               <Shield className="h-4 w-4 text-blue-400" />
-              <span className="text-xs font-medium uppercase tracking-wider">Código TOTP</span>
+              <span className="text-xs font-medium uppercase tracking-wider">Código de verificação</span>
             </div>
             <TotpInput value={mfaCode} onChange={setMfaCode} disabled={busy} />
-            <p className="mt-3 text-center text-xs text-slate-500">6 dígitos · podes colar o código completo</p>
+            <p className="mt-3 text-center text-xs text-slate-500">
+              {mfaAppLabel ? `Em ${mfaAppLabel}` : "Na app autenticadora"} · 6 dígitos
+            </p>
           </div>
 
           {error ? (
@@ -250,12 +456,7 @@ export default function LoginPage() {
 
           <button
             type="button"
-            onClick={() => {
-              setMfaToken(null);
-              setMfaCode("");
-              setCredSuccess(false);
-              setError(null);
-            }}
+            onClick={resetMfaFlow}
             className="w-full text-sm text-slate-400 hover:text-slate-200"
           >
             Voltar ao login
@@ -285,13 +486,19 @@ export default function LoginPage() {
               <label className={labelClass}>Identificador da entidade</label>
               <input
                 value={tenantSlug}
-                onChange={(x) => setTenantSlug(x.target.value)}
+                onChange={(x) => {
+                  setTenantSlug(x.target.value);
+                  if (!platformMode) persistTenantSlug(x.target.value);
+                }}
                 autoComplete="organization"
                 placeholder="ex.: minha-entidade (vazio = equipa NexiForma)"
                 className={inputClass}
+                readOnly={platformMode}
               />
               <p className="mt-1.5 text-xs text-slate-500">
-                Utilizadores da entidade formadora preenchem o slug. A equipa NexiForma deixa este campo vazio.
+                {platformMode
+                  ? "Login da equipa NexiForma (Control Plane) - sem identificador de entidade."
+                  : "Utilizadores da entidade formadora preenchem o slug. A equipa NexiForma deixa este campo vazio."}
               </p>
             </div>
 
@@ -311,7 +518,10 @@ export default function LoginPage() {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className={labelClass}>Palavra-passe</label>
-                <Link href="/login/recuperar" className="text-xs text-blue-400 hover:text-blue-300">
+                <Link
+                  href={platformMode ? platformAuthHref("/login/recuperar") : "/login/recuperar"}
+                  className="text-xs text-blue-400 hover:text-blue-300"
+                >
                   Esqueceu a palavra-passe?
                 </Link>
               </div>
@@ -324,6 +534,21 @@ export default function LoginPage() {
                 className={inputClass}
               />
             </div>
+
+            <label className="flex items-start gap-2.5 cursor-pointer rounded-xl border border-slate-700/40 bg-slate-800/20 px-3.5 py-3">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="mt-0.5 rounded border-slate-600 bg-slate-900 accent-blue-500"
+              />
+              <span className="text-sm text-slate-300">
+                Memorizar sessão
+                <span className="block text-xs text-slate-500 mt-0.5">
+                  Mantém o identificador da entidade e o email; sessão prolongada até 30 dias (cookie seguro).
+                </span>
+              </span>
+            </label>
 
             {error ? (
               <div className="rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3">

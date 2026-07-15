@@ -24,7 +24,7 @@
 ## Fluxo
 
 ```
-Dossiê pedagógico → Validação SIGO → Submeter API → Estado SUBMETIDA → Reconciliar → ACEITE | REJEITADA
+Dossiê pedagógico → Validação SIGO → Submeter API → Estado SUBMETIDA → Reconciliar → ACEITE → Sync certificados SIGO
                                       ↓ (erro)
                                     ERRO → Reenviar
 ```
@@ -41,6 +41,10 @@ Dossiê pedagógico → Validação SIGO → Submeter API → Estado SUBMETIDA �
 | POST | `/sigo/acoes-formacao/:acaoId/submit` | Validar + submeter pacote JSON |
 | POST | `/sigo/submissoes/:id/reconciliar` | Consultar estado remoto (modo `http`) |
 | POST | `/sigo/submissoes/:id/reenviar` | Nova submissão a partir da acção |
+| GET | `/sigo/acoes-formacao/:acaoId/certificados` | Certificados SIGO sincronizados por acção |
+| GET | `/sigo/submissoes/:id/certificados` | Certificados de uma submissão |
+| POST | `/sigo/submissoes/:id/certificados/sincronizar` | Obter certificados oficiais da SIGO |
+| GET | `/sigo/certificados/:id/download` | Download PDF certificado SIGO |
 
 ---
 
@@ -53,6 +57,8 @@ SIGO_API_KEY=                     # Bearer token ou API key
 SIGO_API_TIMEOUT_MS=30000
 SIGO_API_STATUS_PATH=/acoes/{referenceId}
 SIGO_API_SUBMIT_PATH=/acoes
+SIGO_API_CERTIFICADOS_PATH=/acoes/{referenceId}/certificados
+SIGO_API_CERTIFICADO_DOWNLOAD_PATH=/certificados/{certificadoId}/download
 SIGO_API_MAX_RETRIES=2
 ```
 

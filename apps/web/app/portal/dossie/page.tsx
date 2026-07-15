@@ -87,7 +87,7 @@ export default function DossiePedagogicoPage() {
   }, []);
 
   useEffect(() => { void bffFetch("/api/v1/cmd/config", { headers: { accept: "application/json" } }).then(async (r) => { if (r.ok) { const cfg = (await r.json()) as { mode?: string }; setCmdMode(cfg.mode ?? "disabled"); } }); }, []);
-  useEffect(() => { void bffFetch("/api/v1/sigo/config", { headers: { accept: "application/json" } }).then(async (r) => { if (r.ok) { const cfg = (await r.json()) as { mode?: string }; setSigoApiMode(cfg.mode ?? "disabled"); } }); }, []);
+  useEffect(() => { void bffFetch("/api/v1/sigo/config", { headers: { accept: "application/json" } }).then(async (r) => { if (r.ok) { const cfg = (await r.json()) as { mode?: string; configured?: boolean }; setSigoApiMode(cfg.configured ? (cfg.mode ?? "http") : "disabled"); } }); }, []);
   useEffect(() => { const acao = new URLSearchParams(window.location.search).get("acao"); if (acao) setAcaoFromUrl(acao); }, []);
   useEffect(() => { void (async () => { const list = await loadAcoes(); setAcoes(list); if (list.length) { const pick = acaoFromUrl && list.some((a) => a.id === acaoFromUrl) ? acaoFromUrl : list[0].id; setSelectedAcaoId(pick); } })(); }, [loadAcoes, acaoFromUrl]);
   useEffect(() => { if (selectedAcaoId) void loadDossie(selectedAcaoId); }, [selectedAcaoId, loadDossie]);
@@ -156,6 +156,22 @@ export default function DossiePedagogicoPage() {
     if (!res.ok) { setError(await parseErr(res)); setBusy(false); return; }
     const data = (await res.json()) as { referenceId?: string; message?: string };
     setMsg(data.message ?? `Submissao SIGO: ${data.referenceId ?? "ok"}`); setBusy(false);
+  }
+
+  async function certificarSigoApi() {
+    if (!selectedAcaoId) return; setBusy(true); setError(null); setMsg(null);
+    const res = await bffFetch(`/api/v1/sigo/acoes-formacao/${selectedAcaoId}/certificar`, { method: "POST", headers: { accept: "application/json" } });
+    if (!res.ok) { setError(await parseErr(res)); setBusy(false); return; }
+    const data = (await res.json()) as {
+      estado?: string;
+      certificados?: { transferidos?: number; disponiveis?: number };
+    };
+    const certs = data.certificados;
+    setMsg(
+      `Certificacao SIGO: ${data.estado ?? "ok"}` +
+        (certs ? ` – ${certs.transferidos ?? 0} PDF(s), ${certs.disponiveis ?? 0} disponiveis.` : "."),
+    );
+    setBusy(false);
   }
 
   async function arquivarExport(tipo: ArquivoExport["tipo"]) {
@@ -291,7 +307,10 @@ export default function DossiePedagogicoPage() {
               <button type="button" disabled={busy || !selectedAcaoId || !dossie} onClick={() => void exportar("html")} className="px-3.5 py-2 rounded-lg bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-white text-sm font-medium transition-colors">HTML / PDF</button>
               <button type="button" disabled={busy || !selectedAcaoId || !dossie} onClick={() => void exportar("csv")} className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium transition-colors">SIGO CSV</button>
               {sigoApiMode !== "disabled" ? (
-                <button type="button" disabled={busy || !selectedAcaoId || !sigoPronto} onClick={() => void submeterSigoApi()} className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-medium transition-colors">Submeter SIGO API</button>
+                <>
+                  <button type="button" disabled={busy || !selectedAcaoId || !sigoPronto} onClick={() => void submeterSigoApi()} className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-medium transition-colors">Submeter SIGO API</button>
+                  <button type="button" disabled={busy || !selectedAcaoId || !sigoPronto} onClick={() => void certificarSigoApi()} className="px-3.5 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium transition-colors">Certificar (SIGO completo)</button>
+                </>
               ) : null}
             </div>
           </div>

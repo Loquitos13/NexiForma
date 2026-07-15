@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Response } from "express";
+import { Public } from "../auth/decorators/public.decorator";
 import { FormacoesCatalogService } from "../formacoes/formacoes-catalog.service";
 import { FormacoesService } from "../formacoes/formacoes.service";
 import { ApiKeyGuard, type ApiKeyRequest } from "./api-key.guard";
@@ -19,6 +20,7 @@ type ReqWithKey = { apiKey: ApiKeyRequest };
 /**
  * API pública (API key) - catálogo optimizado para website do tenant.
  */
+@Public()
 @Controller("public/v1/formacoes")
 export class PublicFormacoesController {
   constructor(

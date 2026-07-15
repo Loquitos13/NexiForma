@@ -8,6 +8,7 @@ import type { AcaoEstado } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { FormadorScopeService } from "../common/formador-scope.service";
+import { FormadorNotificacoesService } from "../notificacoes/formador-notificacoes.service";
 import { requireTenantId } from "../common/tenant-scope";
 import type { CreateAcaoFormacaoDto } from "./dto/create-acao-formacao.dto";
 import type { UpdateAcaoFormacaoDto } from "./dto/update-acao-formacao.dto";
@@ -27,6 +28,7 @@ export class AcoesFormacaoService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly formadorScope: FormadorScopeService,
+    private readonly formadorNotificacoes: FormadorNotificacoesService,
   ) {}
 
   async list(user: RequestUser) {
@@ -86,7 +88,7 @@ export class AcoesFormacaoService {
       throw new BadRequestException("dataFim deve ser igual ou posterior a dataInicio.");
     }
 
-    return this.prisma.acaoFormacao.create({
+    const acao = await this.prisma.acaoFormacao.create({
       data: {
         tenantId,
         cursoId: dto.cursoId,
@@ -100,6 +102,14 @@ export class AcoesFormacaoService {
         curso: { select: { id: true, designacao: true, modalidade: true } },
       },
     });
+    void this.formadorNotificacoes.notifyAcaoCrud(
+      tenantId,
+      acao.id,
+      dto.cursoId,
+      acao.titulo,
+      "criada",
+    );
+    return acao;
   }
 
   async getOne(user: RequestUser, id: string): Promise<unknown> {
@@ -162,7 +172,7 @@ export class AcoesFormacaoService {
       estado = dto.estado;
     }
 
-    return this.prisma.acaoFormacao.update({
+    const acao = await this.prisma.acaoFormacao.update({
       where: { id },
       data: {
         ...(dto.titulo !== undefined ? { titulo: dto.titulo.trim() } : {}),
@@ -175,5 +185,13 @@ export class AcoesFormacaoService {
         curso: { select: { id: true, designacao: true, modalidade: true, codigoUfcd: true } },
       },
     });
+    void this.formadorNotificacoes.notifyAcaoCrud(
+      tenantId,
+      acao.id,
+      acao.cursoId,
+      acao.titulo,
+      "actualizada",
+    );
+    return acao;
   }
 }

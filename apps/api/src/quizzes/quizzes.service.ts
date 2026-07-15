@@ -4,11 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import type { QuizPergunta, QuizTentativa } from "@nexiforma/database";
+import type { Prisma, QuizPergunta, QuizTentativa } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
-import type { CreateQuizPerguntaDto, SubmitQuizDto } from "./dto/quizzes.dto";
+import type { CreateQuizPerguntaDto, SubmitQuizDto, UpdateQuizPerguntaDto } from "./dto/quizzes.dto";
 import {
   notaMinimaParaDesbloquearProximo,
   tarefaDesbloqueada,
@@ -67,10 +67,39 @@ export class QuizzesService {
         moduloId: dto.moduloId,
         enunciado: dto.enunciado.trim(),
         ordem: dto.ordem ?? 0,
-        opcoes: dto.opcoes,
+        opcoes: dto.opcoes as unknown as Prisma.InputJsonValue,
         pontos: dto.pontos ?? 1,
       },
     });
+  }
+
+  async updatePergunta(
+    user: RequestUser,
+    id: string,
+    dto: UpdateQuizPerguntaDto,
+  ): Promise<QuizPergunta> {
+    const tenantId = requireTenantId(user);
+    const existing = await this.prisma.quizPergunta.findFirst({ where: { id, tenantId } });
+    if (!existing) throw new NotFoundException("Pergunta não encontrada.");
+    return this.prisma.quizPergunta.update({
+      where: { id },
+      data: {
+        ...(dto.enunciado !== undefined ? { enunciado: dto.enunciado.trim() } : {}),
+        ...(dto.ordem !== undefined ? { ordem: dto.ordem } : {}),
+        ...(dto.opcoes !== undefined
+          ? { opcoes: dto.opcoes as unknown as Prisma.InputJsonValue }
+          : {}),
+        ...(dto.pontos !== undefined ? { pontos: dto.pontos } : {}),
+      },
+    });
+  }
+
+  async deletePergunta(user: RequestUser, id: string): Promise<{ ok: true }> {
+    const tenantId = requireTenantId(user);
+    const existing = await this.prisma.quizPergunta.findFirst({ where: { id, tenantId } });
+    if (!existing) throw new NotFoundException("Pergunta não encontrada.");
+    await this.prisma.quizPergunta.delete({ where: { id } });
+    return { ok: true };
   }
 
   async submitTentativa(

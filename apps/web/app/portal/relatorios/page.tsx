@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import type { RelatorioDashboard } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { Alert, PageContentSkeleton, PageHeader } from "@/components/ui";
 import { cn } from "@/lib/ui/cn";
@@ -14,10 +15,13 @@ import {
 } from "@/components/relatorios/sections";
 
 export default function RelatoriosPage() {
+  const { entitlements, loading: entLoading } = useTenantEntitlements();
   const [data, setData] = useState<RelatorioDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<RelatorioTab>("financeiro");
+
+  const enterprise = entitlements?.canAccessRelatoriosInsights ?? false;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,7 +46,7 @@ export default function RelatoriosPage() {
     void load();
   }, [load]);
 
-  if (loading && !data) {
+  if ((loading || entLoading) && !data) {
     return <PageContentSkeleton />;
   }
 
@@ -50,7 +54,11 @@ export default function RelatoriosPage() {
     <div className="space-y-6">
       <PageHeader
         title="Relatórios"
-        description="Análise financeira, comercial e empresarial com comparações temporais e insights IA."
+        description={
+          enterprise
+            ? "Análise financeira, comercial e empresarial com comparações temporais e interpretação IA por gráfico (Enterprise)."
+            : "Análise financeira, comercial e empresarial com comparações temporais (Business)."
+        }
         actions={
           <button
             type="button"
@@ -73,6 +81,7 @@ export default function RelatoriosPage() {
             {new Date(data.periodoReferencia.inicio).toLocaleDateString("pt-PT")} -{" "}
             {new Date(data.periodoReferencia.fim).toLocaleDateString("pt-PT")} · Gerado{" "}
             {new Date(data.geradoEm).toLocaleString("pt-PT")}
+            {enterprise ? " · Plano Enterprise (IA activa)" : " · Plano Business"}
           </p>
 
           <div className="flex flex-wrap gap-1 rounded-xl border border-slate-800/80 bg-slate-950/50 p-1">
@@ -94,12 +103,7 @@ export default function RelatoriosPage() {
             ))}
           </div>
 
-          <p className="text-xs text-slate-600">
-            Cada KPI inclui variação vs mês anterior, trimestre anterior, semestre anterior e ano
-            anterior.
-          </p>
-
-          <RelatoriosTabContent data={data} tab={tab} />
+          <RelatoriosTabContent data={data} tab={tab} enterprise={enterprise} />
         </>
       ) : null}
     </div>

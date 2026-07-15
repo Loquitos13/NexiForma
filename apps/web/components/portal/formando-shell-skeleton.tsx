@@ -13,7 +13,7 @@ function SessionBarSkeleton() {
 
 export function FormandoShellSkeleton() {
   return (
-    <div className="flex min-h-screen flex-col bg-[#070b12]">
+    <div className="portal-app-shell bg-[#070b12]">
       <header className="border-b border-slate-700/30 bg-slate-950/90 px-5 py-3.5">
         <div className="mx-auto flex max-w-4xl items-center gap-2.5">
           <SkeletonCircle className="h-7 w-7" />

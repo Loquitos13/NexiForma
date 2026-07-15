@@ -44,7 +44,7 @@ async function main() {
       features: { dossie: true, compliance: true, sigo: true, billing: true },
     },
   });
-  await prisma.subscriptionPlan.upsert({
+  const planEnterprise = await prisma.subscriptionPlan.upsert({
     where: { code: "enterprise" },
     update: { active: true },
     create: {
@@ -55,22 +55,46 @@ async function main() {
       features: { all: true },
     },
   });
+  await prisma.subscriptionPlan.upsert({
+    where: { code: "modular" },
+    update: { active: true },
+    create: {
+      code: "modular",
+      name: "Módulos à la carte",
+      priceCentsMonthly: 0,
+      maxActiveUsers: null,
+      features: { modules_only: true },
+    },
+  });
 
-  const existingSub = await prisma.tenantSubscription.findFirst({
+  const demoCustomAddons: string[] = [];
+
+  const now = new Date();
+  const end = new Date(now);
+  end.setMonth(end.getMonth() + 1);
+
+  const demoSubCount = await prisma.tenantSubscription.count({
     where: { tenantId: tenantDemo.id },
   });
-  if (!existingSub) {
-    const now = new Date();
-    const end = new Date(now);
-    end.setMonth(end.getMonth() + 1);
+  if (demoSubCount === 0) {
     await prisma.tenantSubscription.create({
       data: {
         tenantId: tenantDemo.id,
-        planId: planStarter.id,
+        planId: planEnterprise.id,
         status: "TRIALING",
         currentPeriodStart: now,
         currentPeriodEnd: end,
         billingEmail: "manager@demo.local",
+        customAddons: demoCustomAddons,
+      },
+    });
+  } else {
+    await prisma.tenantSubscription.updateMany({
+      where: { tenantId: tenantDemo.id },
+      data: {
+        planId: planEnterprise.id,
+        status: "TRIALING",
+        customAddons: demoCustomAddons,
       },
     });
   }
@@ -512,13 +536,18 @@ async function main() {
   // Fase 10 – CRM demo: entidade cliente, proposta, CC/CCP formador
   const entidadeDemo = await prisma.entidadeCliente.upsert({
     where: { tenantId_nif: { tenantId: tenantDemo.id, nif: "501234567" } },
-    update: { nome: "Empresa Cliente Demo Lda", email: "contacto@cliente-demo.local" },
+    update: {
+      nome: "Empresa Cliente Demo Lda",
+      email: "contacto@cliente-demo.local",
+      moradaFiscal: "Rua das Flores 12, 4000-001 Porto",
+    },
     create: {
       tenantId: tenantDemo.id,
       nif: "501234567",
       nome: "Empresa Cliente Demo Lda",
       email: "contacto@cliente-demo.local",
       telefone: "+351912345678",
+      moradaFiscal: "Rua das Flores 12, 4000-001 Porto",
     },
   });
 
@@ -546,9 +575,22 @@ async function main() {
   }
 
   if (cursoDemo) {
+    const comercialDemo = await prisma.user.findFirst({
+      where: { tenantId: tenantDemo.id, email: "comercial@demo.local" },
+      select: { id: true },
+    });
     await prisma.propostaComercial.upsert({
       where: { tenantId_codigo: { tenantId: tenantDemo.id, codigo: "PROP-DEMO-001" } },
-      update: { titulo: "Formação Excelência Operacional – 2026" },
+      update: {
+        titulo: "Formação Excelência Operacional – 2026",
+        ...(comercialDemo
+          ? {
+              criadoPorUserId: comercialDemo.id,
+              enviadaPorUserId: comercialDemo.id,
+              enviadaEm: new Date(),
+            }
+          : {}),
+      },
       create: {
         tenantId: tenantDemo.id,
         entidadeClienteId: entidadeDemo.id,
@@ -559,8 +601,57 @@ async function main() {
         estado: "ENVIADA",
         validadeAte: new Date("2026-12-31"),
         cursoId: cursoDemo.id,
+        ...(comercialDemo
+          ? {
+              criadoPorUserId: comercialDemo.id,
+              enviadaPorUserId: comercialDemo.id,
+              enviadaEm: new Date(),
+            }
+          : {}),
       },
     });
+  }
+
+  // Sugestões IA comerciais demo (Enterprise)
+  const sugestoesDemo = [
+    {
+      tipo: "FOLLOW_UP" as const,
+      titulo: "Follow-up proposta enviada",
+      descricao:
+        "A proposta PROP-DEMO-001 foi enviada há 5 dias sem resposta. Agendar contacto telefónico com o decisor.",
+    },
+    {
+      tipo: "UPSELL" as const,
+      titulo: "Upsell módulo avançado",
+      descricao:
+        "Cliente com histórico de formações operacionais - propor UFCD 0374 (Excelência operacional) para equipa alargada.",
+    },
+    {
+      tipo: "RENOVACAO" as const,
+      titulo: "Renovação formação anual",
+      descricao:
+        "Renovar pacote de formação HACCP para 2027 antes do vencimento do certificado da equipa de cozinha.",
+    },
+  ];
+  for (const s of sugestoesDemo) {
+    const existing = await prisma.sugestaoIaComercial.findFirst({
+      where: { tenantId: tenantDemo.id, titulo: s.titulo },
+    });
+    if (!existing) {
+      await prisma.sugestaoIaComercial.create({
+        data: {
+          tenantId: tenantDemo.id,
+          entidadeClienteId: entidadeDemo.id,
+          tipo: s.tipo,
+          titulo: s.titulo,
+          descricao: s.descricao,
+          score: 0.85,
+          confianca: 0.78,
+          engine: "seed",
+          estado: "PENDENTE",
+        },
+      });
+    }
   }
 
   // Fases 11–13 – catálogo UFCD, integrações, quiz demo
@@ -641,7 +732,7 @@ async function main() {
   // eslint-disable-next-line no-console
   console.log("  Super admin:", "super@nexiforma.local", "(definir SEED_SUPERADMIN_PASSWORD em produção)");
   // eslint-disable-next-line no-console
-  console.log("  Tenant demo slug: demo – manager@demo.local / formador@demo.local / formando@demo.local / comercial@demo.local");
+  console.log("  Tenant demo slug: demo (plano Enterprise) – manager@demo.local / formador@demo.local / formando@demo.local / comercial@demo.local");
 }
 
 main()

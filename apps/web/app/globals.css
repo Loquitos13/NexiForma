@@ -4,6 +4,10 @@
 
 :root {
   color-scheme: dark;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
   --bg: #070b12;
   --bg-elevated: rgba(15, 23, 42, 0.72);
   --fg: #e8eef7;
@@ -24,11 +28,16 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: clip;
+  max-width: 100%;
+  height: 100%;
 }
 
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: 100%;
+  overflow-x: clip;
+  max-width: 100%;
   font-family: var(--font);
   background: radial-gradient(1200px circle at 15% -5%, #1e3a5f 0%, var(--bg) 55%);
   color: var(--fg);
@@ -64,6 +73,14 @@ a {
   100% {
     transform: translateX(100%);
   }
+}
+
+@keyframes kanban-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -645,6 +662,21 @@ a {
   }
 }
 
+/* Sino de notificações - glow quando há não lidas */
+.portal-bell-glow {
+  animation: portal-bell-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes portal-bell-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgba(251, 191, 36, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(251, 191, 36, 0.55), 0 0 24px rgba(251, 191, 36, 0.2);
+  }
+}
+
 .site-nav-cta {
   padding: 0.45rem 1rem !important;
   border-radius: 8px;
@@ -1095,4 +1127,122 @@ input:focus {
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;
+}
+
+/* Portal - shells, safe areas e overflow em mobile */
+.portal-app-shell {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+}
+
+/* Shells com sidebar lateral (plataforma, backoffice) - flex-row tem de vencer o column acima */
+.portal-app-shell.flex-row {
+  flex-direction: row;
+}
+
+.portal-scroll-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.portal-mobile-bar {
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.portal-fixed-drawer {
+  position: fixed;
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
+  left: var(--safe-left);
+  z-index: 50;
+  height: auto;
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom));
+}
+
+@media (min-width: 1024px) {
+  .portal-fixed-drawer {
+    position: static;
+    top: auto;
+    bottom: auto;
+    left: auto;
+    z-index: auto;
+    height: 100%;
+    max-height: none;
+    transform: none !important;
+  }
+}
+
+.portal-main {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.portal-main > div {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.portal-card-shell {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.portal-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.portal-action-row > button,
+.portal-action-row > a {
+  max-width: 100%;
+}
+
+.portal-prose {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.portal-prose img,
+.portal-prose video,
+.portal-prose iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+.portal-prose pre,
+.portal-prose table {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+@media (max-width: 639px) {
+  .dashboard-block-shell {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    flex-basis: 100% !important;
+  }
 }

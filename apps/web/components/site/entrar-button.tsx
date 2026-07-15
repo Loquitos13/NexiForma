@@ -9,7 +9,7 @@ export const ENTRAR_GLASS_ANIMATION_MS = 1650;
 /** Pausa após a animação antes de ir para /login (ms) */
 export const ENTRAR_POST_ANIMATION_DELAY_MS = 480;
 
-/** Fragmentos de vidro — clip-path a partir do centro do botão */
+/** Fragmentos de vidro - clip-path a partir do centro do botão */
 const GLASS_SHARDS = [
   { clip: "polygon(48% 42%, 0% 0%, 52% 0%)", tx: -16, ty: -12, rot: -14 },
   { clip: "polygon(52% 42%, 48% 0%, 100% 0%)", tx: 18, ty: -10, rot: 12 },

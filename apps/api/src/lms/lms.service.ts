@@ -333,7 +333,7 @@ export class LmsService {
                 cronogramas: {
                   select: {
                     sessoes: {
-                      where: { lmsAtivo: true, estado: { not: "CANCELADA" } },
+                      where: { estado: { not: "CANCELADA" } },
                       orderBy: { data: "asc" },
                       select: {
                         id: true,

@@ -35,7 +35,7 @@ export class FaturasController {
   constructor(private readonly faturas: FaturasService) {}
 
   @Get("faturas")
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager")
   list(
     @CurrentUser() user: RequestUser,
     @Query("entidadeClienteId") entidadeClienteId?: string,
@@ -46,7 +46,7 @@ export class FaturasController {
   }
 
   @Get("faturas/export/saft")
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager")
   async exportSaft(
     @CurrentUser() user: RequestUser,
     @Query("ano") ano: string,
@@ -68,7 +68,7 @@ export class FaturasController {
   }
 
   @Get("faturas/:id/documento.html")
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager")
   async documentoHtml(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -86,7 +86,7 @@ export class FaturasController {
   }
 
   @Get("faturas/:id/documento.pdf")
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager")
   async documentoPdf(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -104,19 +104,19 @@ export class FaturasController {
   }
 
   @Get("faturas/:id")
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager")
   detail(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string): Promise<unknown> {
     return this.faturas.getOne(user, id);
   }
 
   @Post("faturas")
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager")
   create(@CurrentUser() user: RequestUser, @Body() dto: CreateFaturaDto): Promise<unknown> {
     return this.faturas.create(user, dto);
   }
 
   @Patch("faturas/:id")
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager")
   update(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -126,7 +126,7 @@ export class FaturasController {
   }
 
   @Post("faturas/:id/emitir")
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager")
   emitir(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -135,7 +135,7 @@ export class FaturasController {
   }
 
   @Post("faturas/:id/comunicar-at")
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager")
   comunicarAt(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -144,7 +144,7 @@ export class FaturasController {
   }
 
   @Post("faturas/:id/reenviar-at")
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager")
   reenviarAt(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -153,7 +153,7 @@ export class FaturasController {
   }
 
   @Post("faturas/:id/enviar-email")
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager")
   enviarEmail(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -163,7 +163,7 @@ export class FaturasController {
   }
 
   @Post("faturas/:id/solicitar-anulacao")
-  @Roles("comercial")
+  @Roles("tenant_manager")
   solicitarAnulacao(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -193,7 +193,7 @@ export class FaturasController {
   }
 
   @Post("propostas/:propostaId/faturar")
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager")
   faturarProposta(
     @CurrentUser() user: RequestUser,
     @Param("propostaId", ParseUUIDPipe) propostaId: string,
@@ -202,7 +202,7 @@ export class FaturasController {
   }
 
   @Post("faturas/:id/nota-credito")
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager")
   criarNotaCredito(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -248,7 +248,7 @@ export class FaturasController {
   }
 
   @Get("config/faturacao")
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager")
   getConfig(@CurrentUser() user: RequestUser): Promise<unknown> {
     return this.faturas.getConfig(user);
   }

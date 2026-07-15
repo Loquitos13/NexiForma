@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { bffFetch } from '@/lib/client/bff-fetch';
 
 interface ThemeContextType {
   primaryColor: string;
@@ -39,16 +40,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     const carregarSettings = async () => {
       try {
-        const token = localStorage.getItem('token');
-        if (!token) {
-          setIsLoading(false);
-          return;
-        }
-
-        const response = await fetch('/api/settings/tema', {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
+        const response = await bffFetch('/api/settings/tema', {
+          headers: { accept: 'application/json' },
         });
 
         if (response.ok) {
@@ -122,17 +115,11 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     salvarSettings({ sidebarCollapsed: collapsed });
   };
 
-  const salvarSettings = async (updates: any) => {
+  const salvarSettings = async (updates: Record<string, unknown>) => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) return;
-
-      await fetch('/api/settings/tema', {
+      await bffFetch('/api/settings/tema', {
         method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json', accept: 'application/json' },
         body: JSON.stringify(updates),
       });
     } catch (error) {

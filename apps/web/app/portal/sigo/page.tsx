@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, Upload } from "lucide-react";
+import { Fragment, useCallback, useEffect, useState } from "react";
+import { Download, RefreshCw, Upload } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { Alert, Button } from "@/components/ui";
+import { SigoTenantConfigPanel } from "@/components/portal/sigo-tenant-config";
 
 type SigoErro = { codigo?: string; mensagem: string; campo?: string };
 
@@ -21,7 +22,36 @@ type Submissao = {
   acaoFormacao?: { codigoInterno: string; titulo: string };
 };
 
-type SigoConfig = { mode: string; configured: boolean; baseUrl?: string | null };
+type SigoConfig = {
+  mode: string;
+  configured: boolean;
+  baseUrl?: string | null;
+  payloadFormat?: string;
+  platformBaseUrl?: string | null;
+  tenant?: { prontoProducao?: boolean; integracaoAtiva?: boolean };
+};
+
+type CertificadoSigo = {
+  id: string;
+  matriculaId: string;
+  formandoNome: string;
+  nif: string | null;
+  estado: string;
+  numeroCertificado: string | null;
+  emitidoEm: string | null;
+  sincronizadoEm: string | null;
+  temFicheiro: boolean;
+};
+
+type SyncResumo = {
+  totalRemotos: number;
+  associados: number;
+  disponiveis: number;
+  transferidos: number;
+  pendentes: number;
+  erros: number;
+  certificados: CertificadoSigo[];
+};
 
 const estadoStyle: Record<string, string> = {
   ACEITE: "bg-green-500/10 text-green-400 border-green-500/20",
@@ -37,8 +67,13 @@ export default function SigoPage() {
   const [rows, setRows] = useState<Submissao[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [busyCertId, setBusyCertId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [certificados, setCertificados] = useState<Record<string, CertificadoSigo[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+
+  const [testBusy, setTestBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,6 +92,21 @@ export default function SigoPage() {
     void load();
   }, [load]);
 
+  async function testarLigacao() {
+    if (!canManage) return;
+    setTestBusy(true);
+    setMsg(null);
+    setError(null);
+    const res = await bffFetch("/api/v1/sigo/config/testar", { method: "POST" });
+    setTestBusy(false);
+    if (!res.ok) {
+      setError(await parseApiError(res));
+      return;
+    }
+    const data = (await res.json()) as { ok?: boolean; message?: string };
+    setMsg(data.ok ? `Ligação OK: ${data.message ?? ""}` : `Falha: ${data.message ?? "erro"}`);
+  }
+
   async function reconciliar(id: string) {
     if (!canManage) return;
     setBusy(true);
@@ -70,6 +120,67 @@ export default function SigoPage() {
     }
     setMsg("Submissão reconciliada.");
     await load();
+  }
+
+  async function sincronizarCertificados(id: string, force = false) {
+    if (!canManage) return;
+    setBusyCertId(id);
+    setMsg(null);
+    setError(null);
+    const qs = force ? "?force=true" : "";
+    const res = await bffFetch(`/api/v1/sigo/submissoes/${id}/certificados/sincronizar${qs}`, { method: "POST" });
+    setBusyCertId(null);
+    if (!res.ok) {
+      setError(await parseApiError(res));
+      return;
+    }
+    const data = (await res.json()) as SyncResumo;
+    setCertificados((prev) => ({ ...prev, [id]: data.certificados }));
+    setExpandedId(id);
+    setMsg(
+      `Certificados sincronizados: ${data.transferidos} PDF(s), ${data.disponiveis} disponíveis, ${data.pendentes} pendentes.`,
+    );
+  }
+
+  async function carregarCertificados(id: string) {
+    if (certificados[id]) {
+      setExpandedId(expandedId === id ? null : id);
+      return;
+    }
+    const res = await bffFetch(`/api/v1/sigo/submissoes/${id}/certificados`, { headers: { accept: "application/json" } });
+    if (!res.ok) {
+      setError(await parseApiError(res));
+      return;
+    }
+    const rows = (await res.json()) as Array<{
+      id: string;
+      matriculaId: string;
+      estado: string;
+      numeroCertificado: string | null;
+      emitidoEm: string | null;
+      sincronizadoEm: string | null;
+      storageKey: string | null;
+      matricula: { formando: { nome: string; nif: string | null } };
+    }>;
+    setCertificados((prev) => ({
+      ...prev,
+      [id]: rows.map((c) => ({
+        id: c.id,
+        matriculaId: c.matriculaId,
+        formandoNome: c.matricula.formando.nome,
+        nif: c.matricula.formando.nif,
+        estado: c.estado,
+        numeroCertificado: c.numeroCertificado,
+        emitidoEm: c.emitidoEm,
+        sincronizadoEm: c.sincronizadoEm,
+        temFicheiro: Boolean(c.storageKey),
+      })),
+    }));
+    setExpandedId(id);
+  }
+
+  function downloadCertificado(certId: string) {
+    window.open(`/api/v1/sigo/certificados/${certId}/download`, "_blank", "noopener,noreferrer");
   }
 
   async function reenviar(id: string) {
@@ -99,6 +210,8 @@ export default function SigoPage() {
       {error ? <Alert variant="error">{error}</Alert> : null}
       {msg ? <Alert variant="success">{msg}</Alert> : null}
 
+      {canManage ? <SigoTenantConfigPanel onSaved={() => void load()} /> : null}
+
       {config ? (
         <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-4 space-y-3">
           <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -109,12 +222,34 @@ export default function SigoPage() {
                 config.configured ? "bg-green-500/10 text-green-400" : "bg-slate-500/10 text-slate-500"
               }`}
             >
-              {config.configured ? "Configurado" : "Desactivado"}
+              {config.configured ? "API activa" : "Modo manual"}
             </span>
             {config.baseUrl ? (
               <span className="text-xs text-slate-500 font-mono truncate max-w-xs">{config.baseUrl}</span>
             ) : null}
           </div>
+          {!config.configured || config.mode === "disabled" ? (
+            <p className="text-xs text-amber-200/90">
+              Configure credenciais SIGO acima (NIF + API key DGEEC). Em produção cada entidade usa o seu acesso;
+              a plataforma fornece apenas o endpoint base (
+              {config.platformBaseUrl ? (
+                <code className="text-amber-100">{config.platformBaseUrl}</code>
+              ) : (
+                <code className="text-amber-100">SIGO_API_BASE_URL</code>
+              )}
+              ).
+            </p>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500">
+                Reconciliação actualiza estados (SUBMETIDA → ACEITE/REJEITADA) e sincroniza certificados PDF.
+                {config.payloadFormat ? ` Payload: ${config.payloadFormat}.` : ""}
+              </p>
+              <Button type="button" size="sm" variant="secondary" disabled={testBusy} onClick={() => void testarLigacao()}>
+                {testBusy ? "A testar…" : "Testar ligação SIGO"}
+              </Button>
+            </div>
+          )}
         </div>
       ) : null}
 
@@ -143,8 +278,11 @@ export default function SigoPage() {
             <tbody className="divide-y divide-slate-700/20">
               {rows.map((r) => {
                 const erros = Array.isArray(r.erros) ? r.erros : [];
+                const certs = certificados[r.id] ?? [];
+                const expanded = expandedId === r.id;
                 return (
-                  <tr key={r.id} className="hover:bg-slate-800/30 align-top">
+                  <Fragment key={r.id}>
+                  <tr className="hover:bg-slate-800/30 align-top">
                     <td className="px-4 py-3">
                       <p className="text-slate-200 text-xs font-medium">
                         {r.acaoFormacao?.codigoInterno ?? r.acaoFormacaoId.slice(0, 8)}
@@ -187,6 +325,27 @@ export default function SigoPage() {
                           Reconciliar
                         </button>
                       ) : null}
+                      {canManage && r.estado === "ACEITE" ? (
+                        <>
+                          <button
+                            type="button"
+                            disabled={busyCertId === r.id}
+                            onClick={() => void sincronizarCertificados(r.id)}
+                            className="flex items-center gap-1 ml-auto px-3 py-1.5 rounded-lg bg-teal-600/80 hover:bg-teal-500 text-xs font-medium text-white"
+                          >
+                            <RefreshCw className={`h-3 w-3 ${busyCertId === r.id ? "animate-spin" : ""}`} />
+                            Sync certificados
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyCertId === r.id}
+                            onClick={() => void carregarCertificados(r.id)}
+                            className="block ml-auto px-3 py-1.5 rounded-lg border border-slate-600/40 text-xs font-medium text-slate-300 hover:bg-slate-700/40"
+                          >
+                            {expanded ? "Ocultar" : "Ver certificados"}
+                          </button>
+                        </>
+                      ) : null}
                       {canManage && (r.estado === "REJEITADA" || r.estado === "ERRO") ? (
                         <button
                           type="button"
@@ -200,6 +359,52 @@ export default function SigoPage() {
                       ) : null}
                     </td>
                   </tr>
+                  {expanded && certs.length > 0 ? (
+                    <tr key={`${r.id}-certs`} className="bg-slate-950/40">
+                      <td colSpan={5} className="px-4 py-3">
+                        <div className="rounded-xl border border-slate-700/40 overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b border-slate-700/30 text-slate-500">
+                                <th className="text-left px-3 py-2">Formando</th>
+                                <th className="text-left px-3 py-2">N.º certificado</th>
+                                <th className="text-left px-3 py-2">Estado</th>
+                                <th className="px-3 py-2" />
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-700/20">
+                              {certs.map((c) => (
+                                <tr key={c.id}>
+                                  <td className="px-3 py-2 text-slate-300">{c.formandoNome}</td>
+                                  <td className="px-3 py-2 text-slate-400">{c.numeroCertificado ?? "–"}</td>
+                                  <td className="px-3 py-2">
+                                    <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${estadoStyle[c.estado] ?? estadoStyle.PENDENTE}`}>
+                                      {c.estado}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    {c.temFicheiro ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => downloadCertificado(c.id)}
+                                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-600/80 hover:bg-blue-500 text-white"
+                                      >
+                                        <Download className="h-3 w-3" />
+                                        PDF
+                                      </button>
+                                    ) : (
+                                      <span className="text-slate-600">Sem ficheiro</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                  </Fragment>
                 );
               })}
             </tbody>

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, BookOpen, GraduationCap, Pencil } from "lucide-react";
+import { ArrowLeft, BookOpen, FileText, GraduationCap, Pencil } from "lucide-react";
+import { ActionContentBuilder } from "@/components/portal/ActionContentBuilder";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
@@ -47,6 +48,13 @@ const MODALIDADE_LABEL: Record<string, string> = {
   "e-learning": "E-learning",
 };
 
+const CURSO_TABS = [
+  { id: "resumo", label: "Resumo", icon: FileText },
+  { id: "conteudos", label: "Conteúdos LMS", icon: BookOpen },
+] as const;
+
+type CursoTab = (typeof CURSO_TABS)[number]["id"];
+
 const ACao_COLS: Column<AcaoRow>[] = [
   {
     key: "codigo",
@@ -73,10 +81,17 @@ const ACao_COLS: Column<AcaoRow>[] = [
 export default function CursoDetailPage() {
   const params = useParams();
   const cursoId = String(params.id ?? "");
-  const { canManage } = useTenantRole();
+  const { canManage, isFormador } = useTenantRole();
+  const canEditContent = canManage || isFormador;
+  const [tab, setTab] = useState<CursoTab>("resumo");
   const [curso, setCurso] = useState<CursoDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "conteudos" || t === "resumo") setTab(t);
+  }, []);
 
   const load = useCallback(async () => {
     if (!cursoId) return;
@@ -138,74 +153,117 @@ export default function CursoDetailPage() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-3 mb-6">
-        <Card>
-          <CardContent className="pt-5 flex items-center gap-3">
-            <GraduationCap className="h-8 w-8 text-blue-400/80" />
-            <div>
-              <p className="text-2xl font-bold text-slate-100">{curso.cargaHoras}h</p>
-              <p className="text-xs text-slate-500">Carga horária</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-5 flex items-center gap-3">
-            <BookOpen className="h-8 w-8 text-teal-400/80" />
-            <div>
-              <p className="text-2xl font-bold text-slate-100">{curso.acoesFormacao.length}</p>
-              <p className="text-xs text-slate-500">Acções de formação</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-5">
-            {curso.codigoUfcd ? (
-              <Badge variant="blue" className="text-base px-3 py-1">UFCD {curso.codigoUfcd}</Badge>
-            ) : (
-              <span className="text-sm text-slate-500">Sem código UFCD</span>
-            )}
-            <p className="text-xs text-slate-500 mt-2">
-              <Link href="/portal/catalogo-ufcd" className="text-blue-400 hover:text-blue-300">
-                Consultar catálogo nacional
-              </Link>
-            </p>
-          </CardContent>
-        </Card>
+      <div className="flex gap-1 mb-6 border-b border-slate-700/40 overflow-x-auto">
+        {CURSO_TABS.map((t) => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
+                tab === t.id
+                  ? "border-blue-500 text-blue-400"
+                  : "border-transparent text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
-      {curso.objetivos ? (
-        <Card className="mb-6">
+      {tab === "resumo" ? (
+        <>
+          <div className="grid gap-4 sm:grid-cols-3 mb-6">
+            <Card>
+              <CardContent className="pt-5 flex items-center gap-3">
+                <GraduationCap className="h-8 w-8 text-blue-400/80" />
+                <div>
+                  <p className="text-2xl font-bold text-slate-100">{curso.cargaHoras}h</p>
+                  <p className="text-xs text-slate-500">Carga horária</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-5 flex items-center gap-3">
+                <BookOpen className="h-8 w-8 text-teal-400/80" />
+                <div>
+                  <p className="text-2xl font-bold text-slate-100">{curso.acoesFormacao.length}</p>
+                  <p className="text-xs text-slate-500">Acções de formação</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-5">
+                {curso.codigoUfcd ? (
+                  <Badge variant="blue" className="text-base px-3 py-1">
+                    UFCD {curso.codigoUfcd}
+                  </Badge>
+                ) : (
+                  <span className="text-sm text-slate-500">Sem código UFCD</span>
+                )}
+                <p className="text-xs text-slate-500 mt-2">
+                  <Link href="/portal/catalogo-ufcd" className="text-blue-400 hover:text-blue-300">
+                    Consultar catálogo nacional
+                  </Link>
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {curso.objetivos ? (
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle className="text-base">Objectivos de aprendizagem</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">{curso.objetivos}</p>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">Acções de formação</CardTitle>
+              {canManage ? (
+                <Link href="/portal/acoes" className="text-xs text-blue-400 hover:text-blue-300">
+                  Criar nova acção →
+                </Link>
+              ) : null}
+            </CardHeader>
+            <CardContent>
+              <DataTable
+                columns={ACao_COLS}
+                data={curso.acoesFormacao}
+                keyField="id"
+                loading={false}
+                emptyMessage="Este curso ainda não tem acções de formação."
+              />
+            </CardContent>
+          </Card>
+        </>
+      ) : null}
+
+      {tab === "conteudos" ? (
+        <Card>
           <CardHeader>
-            <CardTitle className="text-base">Objectivos de aprendizagem</CardTitle>
+            <CardTitle>Conteúdos da formação</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">{curso.objetivos}</p>
+          <CardContent className="overflow-hidden">
+            <p className="text-sm text-slate-400 mb-4">
+              Percurso LMS partilhado por todas as acções deste curso. Reordena, edita e pré-visualiza como o
+              formando verá.
+            </p>
+            <ActionContentBuilder
+              cursoId={curso.id}
+              cursoTitulo={curso.designacao}
+              canEdit={canEditContent}
+            />
           </CardContent>
         </Card>
       ) : null}
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Acções de formação</CardTitle>
-          {canManage ? (
-            <Link
-              href="/portal/acoes"
-              className="text-xs text-blue-400 hover:text-blue-300"
-            >
-              Criar nova acção →
-            </Link>
-          ) : null}
-        </CardHeader>
-        <CardContent>
-          <DataTable
-            columns={ACao_COLS}
-            data={curso.acoesFormacao}
-            keyField="id"
-            loading={false}
-            emptyMessage="Este curso ainda não tem acções de formação."
-          />
-        </CardContent>
-      </Card>
     </>
   );
 }

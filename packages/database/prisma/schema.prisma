@@ -58,6 +58,22 @@ enum AuditActorType {
   @@schema("control_plane")
 }
 
+enum PlatformAlertSeverity {
+  INFO
+  WARNING
+  ERROR
+
+  @@schema("control_plane")
+}
+
+enum PlatformAlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+
+  @@schema("control_plane")
+}
+
 /// Operadores da plataforma (Control Plane) – autenticação separada dos utilizadores tenant.
 model PlatformUser {
   id           String   @id @default(uuid()) @db.Uuid
@@ -120,6 +136,10 @@ model Tenant {
   subscriptions         TenantSubscription[]
   subscriptionKeys      TenantSubscriptionKey[]
   impersonationSessions ImpersonationSession[]
+  httpAlerts            PlatformHttpAlert[]
+  healthChecks          TenantHealthCheck[]
+  supportTickets        SupportTicket[]
+  accessKeys            TenantAccessKey[]
 
   // public (dados operacionais isolados por tenant_id + RLS em produção)
   users           User[]
@@ -127,8 +147,12 @@ model Tenant {
   entidadesCliente EntidadeCliente[]
   propostasComerciais PropostaComercial[]
   leadsComerciais     LeadComercial[]
+  interaccoesComerciais InteraccaoComercial[]
+  calendarioLembreteLogs CalendarioLembreteLog[]
+  sugestoesIaComerciais SugestaoIaComercial[]
   configFaturacao     ConfigFaturacaoTenant?
   configProposta      ConfigPropostaTenant?
+  configSigo          ConfigSigoTenant?
   seriesFaturacao     SerieFaturacao[]
   faturasComerciais   FaturaComercial[]
   notificacoesPortal  NotificacaoPortal[]
@@ -151,6 +175,8 @@ model Tenant {
   certificadosVerificacao CertificadoVerificacao[]
   tenantIntegracoes TenantIntegracao[]
   sigoSubmissoes SigoSubmissao[]
+  sigoCertificadosFormando SigoCertificadoFormando[]
+  sigoSincronizacoesFormando SigoSincronizacaoFormando[]
   rgpdPedidos RgpdPedido[]
   rgpdConsents RgpdConsent[]
   documentosAnexo DocumentoAnexo[]
@@ -164,7 +190,7 @@ model Tenant {
 
 model SubscriptionPlan {
   id                   String @id @default(uuid()) @db.Uuid
-  code                 String @unique // starter | pro | enterprise
+  code                 String @unique // starter | pro | enterprise | modular
   name                 String
   priceCentsMonthly    Int        @map("price_cents_monthly")
   maxActiveUsers       Int?       @map("max_active_users") // null = ilimitado
@@ -286,6 +312,116 @@ model GlobalAuditLog {
   @@schema("control_plane")
 }
 
+/// Alertas HTTP 4xx/5xx persistidos para o back office de operações.
+model PlatformHttpAlert {
+  id          String                @id @default(uuid()) @db.Uuid
+  statusCode  Int                   @map("status_code")
+  httpMethod  String?               @map("http_method")
+  httpPath    String?               @map("http_path")
+  modulo      String
+  resumo      String                @db.Text
+  corpo       String?               @db.Text
+  stack       String?               @db.Text
+  tenantId    String?               @map("tenant_id") @db.Uuid
+  tenantSlug  String?               @map("tenant_slug")
+  userEmail   String?               @map("user_email")
+  userId      String?               @map("user_id")
+  severity    PlatformAlertSeverity @default(ERROR)
+  status      PlatformAlertStatus   @default(OPEN)
+  fingerprint String?
+  resolvedAt  DateTime?             @map("resolved_at")
+  resolvedBy  String?               @map("resolved_by")
+  occurredAt  DateTime              @default(now()) @map("occurred_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([status, occurredAt])
+  @@index([tenantId, occurredAt])
+  @@index([statusCode])
+  @@index([fingerprint])
+  @@map("platform_http_alerts")
+  @@schema("control_plane")
+}
+
+/// Snapshot periódico de saúde operacional por tenant.
+model TenantHealthCheck {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  checkedAt DateTime @default(now()) @map("checked_at")
+  portalUp  Boolean  @default(true) @map("portal_up")
+  apiUp     Boolean  @default(true) @map("api_up")
+  dnsOk     Boolean? @map("dns_ok")
+  dnsHost   String?  @map("dns_host")
+  dnsDetail String?  @map("dns_detail") @db.Text
+  issues    Json?
+  activity  Json?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, checkedAt])
+  @@map("tenant_health_checks")
+  @@schema("control_plane")
+}
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+
+  @@schema("control_plane")
+}
+
+/// Tickets de suporte com payload encriptado (email, slug, assunto, descrição).
+model SupportTicket {
+  id         String              @id @default(uuid()) @db.Uuid
+  ticketRef  String              @unique @map("ticket_ref")
+  tenantId   String?             @map("tenant_id") @db.Uuid
+  payloadEnc String              @map("payload_enc") @db.Text
+  status     SupportTicketStatus @default(OPEN)
+  resolvedAt DateTime?           @map("resolved_at")
+  resolvedBy String?             @map("resolved_by")
+  createdAt  DateTime            @default(now()) @map("created_at")
+  updatedAt  DateTime            @updatedAt @map("updated_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("support_tickets")
+  @@schema("control_plane")
+}
+
+enum TenantAccessKeyStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+
+  @@schema("control_plane")
+}
+
+/// Chave partilhada gerada pelo superadmin para aceder ao espaço do tenant.
+model TenantAccessKey {
+  id          String                @id @default(uuid()) @db.Uuid
+  tenantId    String                @map("tenant_id") @db.Uuid
+  keyPrefix   String                @map("key_prefix")
+  keyHash     String                @map("key_hash")
+  label       String?
+  status      TenantAccessKeyStatus @default(ACTIVE)
+  expiresAt   DateTime?             @map("expires_at")
+  createdById String                @map("created_by_id")
+  revokedAt   DateTime?             @map("revoked_at")
+  lastUsedAt  DateTime?             @map("last_used_at")
+  createdAt   DateTime              @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([keyHash])
+  @@map("tenant_access_keys")
+  @@schema("control_plane")
+}
+
 model ImpersonationSession {
   id              String    @id @default(uuid()) @db.Uuid
   tenantId        String    @map("tenant_id") @db.Uuid
@@ -377,8 +513,14 @@ model User {
   active       Boolean          @default(true)
   cognitoSub   String?          @unique @map("cognito_sub")
   mfaEnabled   Boolean          @default(false) @map("mfa_enabled")
+  /// Gestor impõe MFA - o utilizador deve concluir a configuração no próximo login.
+  mfaRequired  Boolean          @default(false) @map("mfa_required")
   /// Segredo TOTP base32 (em produção encriptar com KMS).
   mfaSecret    String?          @map("mfa_secret")
+  /// App onde o utilizador guardou o código (ex.: microsoft_authenticator).
+  mfaApp       String?          @map("mfa_app") @db.VarChar(32)
+  /// Password temporária - obriga redefinição no próximo login.
+  mustChangePassword Boolean      @default(false) @map("must_change_password")
   emailVerifiedAt DateTime?     @map("email_verified_at")
   createdAt    DateTime         @default(now()) @map("created_at")
   updatedAt    DateTime         @updatedAt @map("updated_at")
@@ -396,7 +538,11 @@ model User {
   notificacoesPortal         NotificacaoPortal[]
   pushSubscriptions          PushSubscription[]
   leadsAtribuidos            LeadComercial[] @relation("LeadAtribuido")
+  leadsCriados               LeadComercial[] @relation("LeadCriadoPor")
   propostasEnviadas          PropostaComercial[] @relation("PropostaEnviadaPor")
+  propostasCriadas           PropostaComercial[] @relation("PropostaCriadaPor")
+  interaccoesComerciaisCriadas InteraccaoComercial[] @relation("InteraccaoCriadaPor")
+  sugestoesIaValidadas       SugestaoIaComercial[] @relation("SugestaoIaValidadaPor")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -411,6 +557,9 @@ model TenantInvite {
   email        String
   displayName  String?        @map("display_name")
   role         TenantUserRole
+  /// NIF DGERT guardado no convite — garante ficha em Formandos antes de aceitar.
+  formandoNif      String?        @map("formando_nif") @db.VarChar(9)
+  formandoTelefone String?        @map("formando_telefone") @db.VarChar(48)
   tokenHash    String         @unique @map("token_hash")
   expiresAt    DateTime       @map("expires_at")
   acceptedAt   DateTime?      @map("accepted_at")
@@ -433,6 +582,10 @@ model EntidadeCliente {
   moradaFiscal String?   @map("morada_fiscal") @db.Text
   email        String?
   telefone     String?
+  /** Cliente parceiro com desconto comercial negociado. */
+  isParceiro     Boolean   @default(false) @map("is_parceiro")
+  descontoPercent Decimal? @map("desconto_percent") @db.Decimal(5, 2)
+  metadata       Json?
   createdAt    DateTime  @default(now()) @map("created_at")
   tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -441,9 +594,12 @@ model EntidadeCliente {
   leads      LeadComercial[]
   faturas    FaturaComercial[]
   documentos DocumentoAnexo[]
+  interaccoes InteraccaoComercial[]
+  sugestoesIa SugestaoIaComercial[]
 
   @@unique([tenantId, nif])
   @@index([tenantId])
+  @@index([tenantId, isParceiro])
   @@map("entidades_cliente")
   @@schema("public")
 }
@@ -551,6 +707,7 @@ model AcaoFormacao {
   cronogramas Cronograma[]
   arquivosExportacao ArquivoExportacao[]
   sigoSubmissoes SigoSubmissao[]
+  sigoCertificadosFormando SigoCertificadoFormando[]
   documentosAnexo DocumentoAnexo[]
 
   @@unique([tenantId, codigoInterno])
@@ -593,6 +750,8 @@ model Matricula {
   acessosLms AcessoLms[]
   progressosModulo ProgressoModulo[]
   certificadoVerificacao CertificadoVerificacao?
+  sigoCertificados      SigoCertificadoFormando[]
+  sigoSincronizacoes    SigoSincronizacaoFormando[]
   quizTentativas QuizTentativa[]
   avaliacoes AvaliacaoFormando[]
 
@@ -910,6 +1069,8 @@ model PropostaComercial {
   validadeAte       DateTime?      @map("validade_ate") @db.Date
   cursoId           String?        @map("curso_id") @db.Uuid
   notasInternas     String?        @map("notas_internas") @db.Text
+  criadoPorUserId   String?        @map("criado_por_user_id") @db.Uuid
+  metadata          Json?
   enviadaPorUserId  String?        @map("enviada_por_user_id") @db.Uuid
   enviadaEm         DateTime?      @map("enviada_em")
   aceiteEm          DateTime?      @map("aceite_em")
@@ -920,6 +1081,7 @@ model PropostaComercial {
   tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   entidadeCliente EntidadeCliente @relation(fields: [entidadeClienteId], references: [id], onDelete: Cascade)
   curso           Curso?          @relation(fields: [cursoId], references: [id], onDelete: SetNull)
+  criadoPor       User?           @relation("PropostaCriadaPor", fields: [criadoPorUserId], references: [id], onDelete: SetNull)
   enviadaPor      User?           @relation("PropostaEnviadaPor", fields: [enviadaPorUserId], references: [id], onDelete: SetNull)
   fatura          FaturaComercial?
   linhas          PropostaLinha[]
@@ -927,6 +1089,7 @@ model PropostaComercial {
   @@unique([tenantId, codigo])
   @@index([tenantId])
   @@index([entidadeClienteId])
+  @@index([criadoPorUserId])
   @@map("propostas_comerciais")
   @@schema("public")
 }
@@ -993,6 +1156,44 @@ enum LeadOrigem {
   FEIRA
   LINKEDIN
   TELEFONE
+  IA
+  OUTRO
+
+  @@schema("public")
+}
+
+enum InteraccaoComercialTipo {
+  REUNIAO
+  TELEFONE
+  EMAIL
+  NOTA
+  OUTRO
+
+  @@schema("public")
+}
+
+enum InteraccaoProcessamentoEstado {
+  PENDENTE
+  PROCESSADO
+  ERRO
+
+  @@schema("public")
+}
+
+enum SugestaoIaEstado {
+  PENDENTE
+  ACEITE
+  REJEITADA
+
+  @@schema("public")
+}
+
+enum SugestaoIaTipo {
+  UPSELL
+  CROSS_SELL
+  RENOVACAO
+  NOVO_LEAD
+  FOLLOW_UP
   OUTRO
 
   @@schema("public")
@@ -1014,6 +1215,8 @@ model LeadComercial {
   motivoPerda           String?    @map("motivo_perda") @db.Text
   entidadeClienteId     String?    @map("entidade_cliente_id") @db.Uuid
   atribuidoUserId       String?    @map("atribuido_user_id") @db.Uuid
+  criadoPorUserId       String?    @map("criado_por_user_id") @db.Uuid
+  metadata              Json?
   convertidoEm          DateTime?  @map("convertido_em")
   createdAt             DateTime   @default(now()) @map("created_at")
   updatedAt             DateTime   @updatedAt @map("updated_at")
@@ -1021,12 +1224,112 @@ model LeadComercial {
   tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   entidadeCliente EntidadeCliente? @relation(fields: [entidadeClienteId], references: [id], onDelete: SetNull)
   atribuido       User?            @relation("LeadAtribuido", fields: [atribuidoUserId], references: [id], onDelete: SetNull)
+  criadoPor       User?            @relation("LeadCriadoPor", fields: [criadoPorUserId], references: [id], onDelete: SetNull)
+  interaccoes     InteraccaoComercial[]
+  sugestoesIa     SugestaoIaComercial[]
 
   @@unique([tenantId, codigo])
   @@index([tenantId])
   @@index([tenantId, estado])
   @@index([entidadeClienteId])
+  @@index([criadoPorUserId])
+  @@index([atribuidoUserId])
   @@map("leads_comerciais")
+  @@schema("public")
+}
+
+model InteraccaoComercial {
+  id                  String                        @id @default(uuid()) @db.Uuid
+  tenantId            String                        @map("tenant_id") @db.Uuid
+  tipo                InteraccaoComercialTipo       @default(REUNIAO)
+  titulo              String?                       @db.VarChar(200)
+  contexto            String?                       @db.Text
+  situacaoActual      String?                       @map("situacao_actual") @db.Text
+  dorNecessidade      String?                       @map("dor_necessidade") @db.Text
+  orcamentoTiming     String?                       @map("orcamento_timing") @db.Text
+  decisor             String?                       @db.Text
+  proximoPassoNota    String?                       @map("proximo_passo_nota") @db.Text
+  notasLivres         String?                       @map("notas_livres") @db.Text
+  resumoIa            String?                       @map("resumo_ia") @db.Text
+  proximosPassosIa    Json?                         @map("proximos_passos_ia")
+  gatilhosIa          Json?                         @map("gatilhos_ia")
+  dadosExtraidosIa    Json?                         @map("dados_extraidos_ia")
+  processamentoEstado InteraccaoProcessamentoEstado @default(PENDENTE) @map("processamento_estado")
+  processamentoEngine String?                       @map("processamento_engine") @db.VarChar(16)
+  processamentoErro   String?                       @map("processamento_erro") @db.Text
+  processadoEm        DateTime?                     @map("processado_em")
+  entidadeClienteId   String?                       @map("entidade_cliente_id") @db.Uuid
+  leadComercialId     String?                       @map("lead_comercial_id") @db.Uuid
+  agendadoPara       DateTime?                     @map("agendado_para")
+  agendadoFim        DateTime?                     @map("agendado_fim")
+  participantesIds   Json?                         @default("[]") @map("participantes_ids")
+  /// Perfis convidados (ex.: COMERCIAL, FORMADOR, FINANCEIRO) quando não há participantes explícitos.
+  audienciaRoles     Json?                         @default("[]") @map("audiencia_roles")
+  criadoPorUserId    String                        @map("criado_por_user_id") @db.Uuid
+  createdAt           DateTime                      @default(now()) @map("created_at")
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  entidadeCliente EntidadeCliente? @relation(fields: [entidadeClienteId], references: [id], onDelete: SetNull)
+  leadComercial   LeadComercial?   @relation(fields: [leadComercialId], references: [id], onDelete: SetNull)
+  criadoPor       User             @relation("InteraccaoCriadaPor", fields: [criadoPorUserId], references: [id], onDelete: Restrict)
+  sugestoesIa     SugestaoIaComercial[]
+
+  @@index([tenantId])
+  @@index([tenantId, entidadeClienteId])
+  @@index([tenantId, leadComercialId])
+  @@index([tenantId, processamentoEstado])
+  @@index([tenantId, agendadoPara])
+  @@map("interaccoes_comerciais")
+  @@schema("public")
+}
+
+/// Registo de lembretes de calendário já enviados (evita duplicados).
+model CalendarioLembreteLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  fonte     String   @db.VarChar(32)
+  fonteId   String   @map("fonte_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tipo      String   @db.VarChar(24)
+  enviadoEm DateTime @default(now()) @map("enviado_em")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([fonte, fonteId, userId, tipo])
+  @@index([tenantId, fonte, fonteId])
+  @@map("calendario_lembrete_logs")
+  @@schema("public")
+}
+
+model SugestaoIaComercial {
+  id                String           @id @default(uuid()) @db.Uuid
+  tenantId          String           @map("tenant_id") @db.Uuid
+  interaccaoId      String?          @map("interaccao_id") @db.Uuid
+  entidadeClienteId String?          @map("entidade_cliente_id") @db.Uuid
+  leadComercialId   String?          @map("lead_comercial_id") @db.Uuid
+  tipo              SugestaoIaTipo
+  titulo            String           @db.VarChar(300)
+  descricao         String           @db.Text
+  score             Decimal          @default(0) @db.Decimal(5, 2)
+  confianca         Decimal          @default(0) @db.Decimal(4, 3)
+  engine            String           @db.VarChar(16)
+  metadata          Json?
+  estado            SugestaoIaEstado @default(PENDENTE)
+  motivoRejeicao    String?          @map("motivo_rejeicao") @db.VarChar(120)
+  validadoPorUserId String?          @map("validado_por_user_id") @db.Uuid
+  validadoEm        DateTime?        @map("validado_em")
+  createdAt         DateTime         @default(now()) @map("created_at")
+
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  interaccao      InteraccaoComercial? @relation(fields: [interaccaoId], references: [id], onDelete: SetNull)
+  entidadeCliente EntidadeCliente?  @relation(fields: [entidadeClienteId], references: [id], onDelete: SetNull)
+  leadComercial   LeadComercial?    @relation(fields: [leadComercialId], references: [id], onDelete: SetNull)
+  validadoPor     User?             @relation("SugestaoIaValidadaPor", fields: [validadoPorUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, estado])
+  @@index([interaccaoId])
+  @@map("sugestoes_ia_comerciais")
   @@schema("public")
 }
 
@@ -1125,6 +1428,10 @@ model FaturaComercial {
   destinatarioNome    String       @map("destinatario_nome")
   destinatarioNif     String       @map("destinatario_nif")
   destinatarioMorada  String?      @map("destinatario_morada") @db.Text
+  /** Se null/vazio na emissão: morada fiscal do emitente. */
+  moradaCarga         String?      @map("morada_carga") @db.Text
+  /** Se null/vazio na emissão: morada do destinatário (cliente). */
+  moradaDescarga      String?      @map("morada_descarga") @db.Text
   notas             String?      @db.Text
   emitidaPorUserId  String?      @map("emitida_por_user_id") @db.Uuid
   anuladaEm         DateTime?    @map("anulada_em")
@@ -1162,6 +1469,7 @@ model FaturaLinha {
   quantidade        Decimal  @default(1) @db.Decimal(12, 4)
   precoUnitCentavos Int      @map("preco_unit_centavos")
   taxaIva           Decimal  @map("taxa_iva") @db.Decimal(5, 2)
+  descontoPercent   Decimal  @default(0) @map("desconto_percent") @db.Decimal(5, 2)
   valorIvaCentavos  Int      @map("valor_iva_centavos")
   codigoIsencaoIva  String?  @map("codigo_isencao_iva") @db.VarChar(8)
 
@@ -1281,6 +1589,9 @@ enum IntegracaoProvider {
   ZOOM
   TEAMS
   MOODLE
+  GMAIL
+  M365
+  CRM_WEBHOOK
 
   @@schema("public")
 }
@@ -1367,6 +1678,23 @@ enum SigoSubmissaoEstado {
   @@schema("public")
 }
 
+enum SigoRegiaoPortal {
+  CONTINENTE
+  MADEIRA
+  ACORES
+
+  @@schema("public")
+}
+
+enum SigoSyncEstado {
+  PENDENTE
+  SUCESSO
+  ERRO
+  DUPLICADO
+
+  @@schema("public")
+}
+
 model SigoSubmissao {
   id             String              @id @default(uuid()) @db.Uuid
   tenantId       String              @map("tenant_id") @db.Uuid
@@ -1381,9 +1709,103 @@ model SigoSubmissao {
 
   tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   acaoFormacao AcaoFormacao @relation(fields: [acaoFormacaoId], references: [id], onDelete: Cascade)
+  certificados SigoCertificadoFormando[]
+  sincronizacoesFormando SigoSincronizacaoFormando[]
 
   @@index([tenantId, acaoFormacaoId])
   @@map("sigo_submissoes")
+  @@schema("public")
+}
+
+enum SigoCertificadoEstado {
+  PENDENTE
+  DISPONIVEL
+  ERRO
+
+  @@schema("public")
+}
+
+model SigoCertificadoFormando {
+  id                String                @id @default(uuid()) @db.Uuid
+  tenantId          String                @map("tenant_id") @db.Uuid
+  acaoFormacaoId    String                @map("acao_formacao_id") @db.Uuid
+  matriculaId       String                @map("matricula_id") @db.Uuid
+  submissaoId       String?               @map("submissao_id") @db.Uuid
+  sigoReferencia    String                @map("sigo_referencia")
+  estado            SigoCertificadoEstado @default(PENDENTE)
+  numeroCertificado String?               @map("numero_certificado")
+  storageKey        String?               @map("storage_key")
+  mimeType          String?               @default("application/pdf") @map("mime_type")
+  tamanhoBytes      Int?                  @map("tamanho_bytes")
+  emitidoEm         DateTime?             @map("emitido_em")
+  sincronizadoEm    DateTime?             @map("sincronizado_em")
+  erros             Json?
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  acaoFormacao AcaoFormacao    @relation(fields: [acaoFormacaoId], references: [id], onDelete: Cascade)
+  matricula    Matricula       @relation(fields: [matriculaId], references: [id], onDelete: Cascade)
+  submissao    SigoSubmissao?  @relation(fields: [submissaoId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, matriculaId, sigoReferencia])
+  @@index([tenantId, acaoFormacaoId])
+  @@index([submissaoId])
+  @@map("sigo_certificados_formando")
+  @@schema("public")
+}
+
+/// Credenciais e perfis de acesso SIGO/DGEEC por entidade formadora.
+model ConfigSigoTenant {
+  tenantId            String           @id @map("tenant_id") @db.Uuid
+  integracaoAtiva     Boolean          @default(false) @map("integracao_ativa")
+  protocolo           String           @default("soap")
+  nifEntidade         String           @map("nif_entidade")
+  codigoEntidade      String?          @map("codigo_entidade")
+  denominacaoEntidade String?          @map("denominacao_entidade")
+  apiKeyEnc           String?          @map("api_key_enc") @db.Text
+  baseUrlOverride     String?          @map("base_url_override")
+  wsdlUrl             String?          @map("wsdl_url")
+  soapEndpoint        String?          @map("soap_endpoint")
+  soapUsername        String?          @map("soap_username")
+  soapPasswordEnc     String?          @map("soap_password_enc") @db.Text
+  ipAutorizado        String?          @map("ip_autorizado")
+  regiaoPortal        SigoRegiaoPortal @default(CONTINENTE) @map("regiao_portal")
+  perfisAcesso        Json             @default("{}") @map("perfis_acesso")
+  ultimoTesteOkEm     DateTime?        @map("ultimo_teste_ok_em")
+  ultimoTesteMsg      String?          @map("ultimo_teste_msg") @db.Text
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("config_sigo_tenant")
+  @@schema("public")
+}
+
+/// Histórico de sincronização SIGO por formando (evita duplicações, SOAP faults).
+model SigoSincronizacaoFormando {
+  id              String         @id @default(uuid()) @db.Uuid
+  tenantId        String         @map("tenant_id") @db.Uuid
+  submissaoId     String         @map("submissao_id") @db.Uuid
+  matriculaId     String         @map("matricula_id") @db.Uuid
+  operacao        String
+  transacaoId     String?        @map("transacao_id")
+  estado          SigoSyncEstado @default(PENDENTE)
+  soapFaultCode   String?        @map("soap_fault_code")
+  soapFaultString String?        @map("soap_fault_string") @db.Text
+  requestHash     String?        @map("request_hash")
+  responseResumo  String?        @map("response_resumo") @db.Text
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  tenant    Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  submissao SigoSubmissao @relation(fields: [submissaoId], references: [id], onDelete: Cascade)
+  matricula Matricula     @relation(fields: [matriculaId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, submissaoId, matriculaId, operacao])
+  @@index([submissaoId])
+  @@map("sigo_sincronizacoes_formando")
   @@schema("public")
 }
 

@@ -18,6 +18,8 @@ import { CrmService } from "./crm.service";
 import { ProposalService } from "./proposal.service";
 import { LeadsService } from "./leads.service";
 import { TrainerManagementService } from "./trainer-management.service";
+import { CrmInteraccoesService } from "./crm-interaccoes.service";
+import { CrmSugestoesIaService } from "./crm-sugestoes-ia.service";
 import {
   ConverterLeadDto,
   CreateLeadDto,
@@ -25,6 +27,12 @@ import {
   MarcarLeadPerdidoDto,
   UpdateLeadDto,
 } from "./dto/leads.dto";
+import { CreateInteraccaoDto } from "./dto/interaccoes.dto";
+import { RejeitarSugestaoIaDto } from "./dto/sugestoes-ia.dto";
+import { UpdateCrmConfigDto } from "./dto/crm-config.dto";
+import { CrmConfigService } from "./crm-config.service";
+import { CrmAuditService } from "./crm-audit.service";
+import { CrmEmailSyncService } from "./crm-email-sync.service";
 
 @Controller("crm")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -34,6 +42,11 @@ export class CrmController {
     private readonly proposal: ProposalService,
     private readonly leads: LeadsService,
     private readonly trainers: TrainerManagementService,
+    private readonly interaccoes: CrmInteraccoesService,
+    private readonly sugestoesIa: CrmSugestoesIaService,
+    private readonly crmConfig: CrmConfigService,
+    private readonly crmAudit: CrmAuditService,
+    private readonly emailSync: CrmEmailSyncService,
   ) {}
 
   // ── Entidades ──
@@ -98,6 +111,18 @@ export class CrmController {
     return this.crm.obterEstatisticas(user);
   }
 
+  @Get("clientes-resumo")
+  @Roles("tenant_manager", "comercial")
+  obterClientesResumo(
+    @CurrentUser() user: RequestUser,
+    @Query("tipo") tipo: "leads" | "notas" | "sugestoes" | "propostas",
+  ) {
+    if (!tipo || !["leads", "notas", "sugestoes", "propostas"].includes(tipo)) {
+      return [];
+    }
+    return this.crm.obterClientesResumo(user, tipo);
+  }
+
   // ── Leads ──
 
   @Get("leads")
@@ -107,19 +132,35 @@ export class CrmController {
     @Query("estado") estado?: string,
     @Query("origem") origem?: string,
     @Query("q") q?: string,
-  ) {
-    return this.leads.list(user, { estado, origem, q });
+    @Query("comercialUserId") comercialUserId?: string,
+    @Query("dataInicio") dataInicio?: string,
+    @Query("dataFim") dataFim?: string,
+    @Query("entidadeClienteId") entidadeClienteId?: string,
+    @Query("page") page?: string,
+    @Query("pageSize") pageSize?: string,
+  ): Promise<unknown> {
+    return this.leads.list(user, {
+      estado,
+      origem,
+      q,
+      comercialUserId,
+      dataInicio,
+      dataFim,
+      entidadeClienteId,
+      page,
+      pageSize,
+    });
   }
 
   @Get("leads/:id")
   @Roles("tenant_manager", "comercial")
-  obterLead(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+  obterLead(@CurrentUser() user: RequestUser, @Param("id") id: string): Promise<unknown> {
     return this.leads.getOne(user, id);
   }
 
   @Post("leads")
   @Roles("tenant_manager", "comercial")
-  criarLead(@CurrentUser() user: RequestUser, @Body() dto: CreateLeadDto) {
+  criarLead(@CurrentUser() user: RequestUser, @Body() dto: CreateLeadDto): Promise<unknown> {
     return this.leads.create(user, dto);
   }
 
@@ -129,7 +170,7 @@ export class CrmController {
     @CurrentUser() user: RequestUser,
     @Param("id") id: string,
     @Body() dto: UpdateLeadDto,
-  ) {
+  ): Promise<unknown> {
     return this.leads.update(user, id, dto);
   }
 
@@ -139,7 +180,7 @@ export class CrmController {
     @CurrentUser() user: RequestUser,
     @Param("id") id: string,
     @Body() dto: MarcarLeadPerdidoDto,
-  ) {
+  ): Promise<unknown> {
     return this.leads.marcarPerdido(user, id, dto);
   }
 
@@ -149,7 +190,7 @@ export class CrmController {
     @CurrentUser() user: RequestUser,
     @Param("id") id: string,
     @Body() dto: ConverterLeadDto,
-  ) {
+  ): Promise<unknown> {
     return this.leads.converterEntidade(user, id, dto);
   }
 
@@ -159,8 +200,97 @@ export class CrmController {
     @CurrentUser() user: RequestUser,
     @Param("id") id: string,
     @Body() dto: CriarPropostaFromLeadDto,
-  ) {
+  ): Promise<unknown> {
     return this.leads.criarProposta(user, id, dto);
+  }
+
+  // ── Interacções comerciais (notas + NLP local Ollama) ──
+
+  @Get("interaccoes")
+  @Roles("tenant_manager", "comercial")
+  listarInteraccoes(
+    @CurrentUser() user: RequestUser,
+    @Query("entidadeClienteId") entidadeClienteId?: string,
+    @Query("leadComercialId") leadComercialId?: string,
+    @Query("q") q?: string,
+    @Query("comercialUserId") comercialUserId?: string,
+    @Query("dataInicio") dataInicio?: string,
+    @Query("dataFim") dataFim?: string,
+    @Query("page") page?: string,
+    @Query("pageSize") pageSize?: string,
+  ) {
+    return this.interaccoes.list(user, {
+      entidadeClienteId,
+      leadComercialId,
+      q,
+      comercialUserId,
+      dataInicio,
+      dataFim,
+      page,
+      pageSize,
+    });
+  }
+
+  @Get("interaccoes/:id")
+  @Roles("tenant_manager", "comercial")
+  obterInteraccao(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+    return this.interaccoes.getOne(user, id);
+  }
+
+  @Post("interaccoes")
+  @Roles("tenant_manager", "comercial")
+  criarInteraccao(@CurrentUser() user: RequestUser, @Body() dto: CreateInteraccaoDto) {
+    return this.interaccoes.create(user, dto);
+  }
+
+  @Post("interaccoes/:id/reprocessar")
+  @Roles("tenant_manager", "comercial")
+  reprocessarInteraccao(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+    return this.interaccoes.reprocessar(user, id);
+  }
+
+  // ── Inbox sugestões IA (human-in-the-loop) ──
+
+  @Get("sugestoes-ia")
+  @Roles("tenant_manager", "comercial")
+  listarSugestoesIa(
+    @CurrentUser() user: RequestUser,
+    @Query("estado") estado?: string,
+    @Query("limit") limit?: string,
+    @Query("entidadeClienteId") entidadeClienteId?: string,
+    @Query("leadComercialId") leadComercialId?: string,
+  ) {
+    return this.sugestoesIa.list(user, {
+      estado,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      entidadeClienteId,
+      leadComercialId,
+    });
+  }
+
+  @Post("entidades/:entidadeId/sugestoes-ia/gerar")
+  @Roles("tenant_manager", "comercial")
+  gerarSugestoesEntidade(
+    @CurrentUser() user: RequestUser,
+    @Param("entidadeId") entidadeId: string,
+  ) {
+    return this.sugestoesIa.gerarSugestoesProactivas(user, entidadeId);
+  }
+
+  @Post("sugestoes-ia/:id/aceitar")
+  @Roles("tenant_manager", "comercial")
+  aceitarSugestaoIa(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+    return this.sugestoesIa.aceitar(user, id);
+  }
+
+  @Post("sugestoes-ia/:id/rejeitar")
+  @Roles("tenant_manager", "comercial")
+  rejeitarSugestaoIa(
+    @CurrentUser() user: RequestUser,
+    @Param("id") id: string,
+    @Body() dto: RejeitarSugestaoIaDto,
+  ) {
+    return this.sugestoesIa.rejeitar(user, id, dto.motivo, dto.comentario);
   }
 
   // ── Propostas ──
@@ -284,5 +414,48 @@ export class CrmController {
     const { requireTenantId } = require("../common/tenant-scope");
     const tenantId = requireTenantId(user);
     return this.trainers.verificarRenovacoes(tenantId);
+  }
+
+  // ── CRM Enterprise: config, audit, email sync ──
+
+  @Get("config")
+  @Roles("tenant_manager")
+  obterConfig(@CurrentUser() user: RequestUser) {
+    return this.crmConfig.get(user);
+  }
+
+  @Put("config")
+  @Roles("tenant_manager")
+  actualizarConfig(@CurrentUser() user: RequestUser, @Body() dto: UpdateCrmConfigDto) {
+    return this.crmConfig.update(user, dto);
+  }
+
+  @Post("config/webhook-secret/rotate")
+  @Roles("tenant_manager")
+  rotacionarWebhookSecret(@CurrentUser() user: RequestUser) {
+    return this.crmConfig.rotateLeadWebhookSecret(user);
+  }
+
+  @Get("audit")
+  @Roles("tenant_manager")
+  listarAudit(
+    @CurrentUser() user: RequestUser,
+    @Query("limit") limit?: string,
+    @Query("cursor") cursor?: string,
+  ) {
+    const { requireTenantId } = require("../common/tenant-scope");
+    const tenantId = requireTenantId(user);
+    return this.crmAudit.list(
+      tenantId,
+      limit ? parseInt(limit, 10) : 50,
+      cursor ? BigInt(cursor) : undefined,
+    );
+  }
+
+  @Get("email-sync/status")
+  @Roles("tenant_manager", "comercial")
+  emailSyncStatus(@CurrentUser() user: RequestUser) {
+    const { requireTenantId } = require("../common/tenant-scope");
+    return this.emailSync.getStatus(requireTenantId(user));
   }
 }

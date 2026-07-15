@@ -97,4 +97,34 @@ export class PlatformTenantNotificacoesService {
     this.logger.log(`Boas-vindas gestor enviado: ${input.email} (${input.slug})`);
     return { ok: true };
   }
+
+  async enviarConviteGestor(input: {
+    email: string;
+    displayName: string;
+    entidadeFormadora: string;
+    slug: string;
+    inviteUrl: string;
+  }) {
+    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const base = appUrl.replace(/\/$/, "");
+    const loginUrl = `${base}/login?slug=${encodeURIComponent(input.slug)}`;
+
+    const tpl = EmailTemplates.tenantGestorConvite({
+      nomeGestor: input.displayName,
+      entidadeFormadora: input.entidadeFormadora,
+      slug: input.slug,
+      inviteUrl: input.inviteUrl,
+      loginUrl,
+    });
+
+    await this.mail.send({
+      to: input.email,
+      subject: tpl.subject,
+      text: tpl.text,
+      html: tpl.html,
+    });
+
+    this.logger.log(`Convite gestor enviado: ${input.email} (${input.slug})`);
+    return { ok: true };
+  }
 }

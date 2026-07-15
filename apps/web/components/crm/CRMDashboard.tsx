@@ -11,7 +11,7 @@ type Entidade = {
   nome: string;
   email: string | null;
   telefone: string | null;
-  _count?: { formandos: number; propostas: number };
+  _count?: { propostas: number };
 };
 
 export function CrmDashboard() {
@@ -43,7 +43,6 @@ export function CrmDashboard() {
             <tr>
               <th style={bo.th}>Entidade</th>
               <th style={bo.th}>Contacto</th>
-              <th style={bo.th}>Formandos</th>
               <th style={bo.th}>Propostas</th>
               <th style={bo.th}></th>
             </tr>
@@ -61,7 +60,6 @@ export function CrmDashboard() {
                     <span style={{ display: "block", color: "#64748b", fontSize: "0.8rem" }}>{e.telefone}</span>
                   ) : null}
                 </td>
-                <td style={bo.td}>{e._count?.formandos ?? 0}</td>
                 <td style={bo.td}>
                   <Link href={`/portal/propostas?entidade=${e.id}`} style={{ color: "#93c5fd" }}>
                     {e._count?.propostas ?? 0}

@@ -27,6 +27,50 @@ function Step({
   );
 }
 
+function StepCompact({
+  label,
+  value,
+  pct,
+  accent,
+}: {
+  label: string;
+  value: number;
+  pct?: string;
+  accent: string;
+}) {
+  return (
+    <div className="flex min-w-0 flex-1 flex-col justify-center rounded-md border border-slate-700/50 bg-slate-950/40 px-2 py-1.5">
+      <span className="truncate text-[9px] font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+      <span className={`text-lg font-bold tabular-nums leading-tight ${accent}`}>{value}</span>
+      {pct ? <span className="truncate text-[9px] text-slate-500">{pct}</span> : null}
+    </div>
+  );
+}
+
+/** Versão compacta para widgets do slider da dashboard (sem Card externo). */
+export function ConversaoPropostasFunnelCompact({ conversao }: Props) {
+  const c = conversao;
+  return (
+    <div className="flex h-full min-h-0 items-center gap-1 overflow-hidden">
+      <StepCompact label="Enviadas" value={c.enviadas} accent="text-slate-100" />
+      <ArrowRight className="h-3 w-3 shrink-0 text-slate-600" aria-hidden />
+      <StepCompact
+        label="Aceites"
+        value={c.aceites}
+        pct={`${c.taxaAceitePct}%`}
+        accent="text-blue-400"
+      />
+      <ArrowRight className="h-3 w-3 shrink-0 text-slate-600" aria-hidden />
+      <StepCompact
+        label="Faturadas"
+        value={c.faturadas}
+        pct={`${c.taxaConversaoTotalPct}% total`}
+        accent="text-emerald-400"
+      />
+    </div>
+  );
+}
+
 export function ConversaoPropostasCard({ conversao }: Props) {
   const c = conversao;
   return (

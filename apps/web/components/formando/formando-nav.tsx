@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, CalendarDays, GraduationCap, LayoutGrid, UserCircle } from "lucide-react";
+import { BookOpen, CalendarDays, GraduationCap, LayoutGrid, Lock, UserCircle } from "lucide-react";
 import { cn } from "@/lib/ui/cn";
 
 const ITEMS = [
@@ -10,6 +10,7 @@ const ITEMS = [
   { href: "/portal/formando/calendario", label: "Calendário", icon: CalendarDays },
   { href: "/portal/formando/catalogo", label: "Catálogo", icon: LayoutGrid },
   { href: "/portal/formando/inscricoes", label: "Inscrições", icon: BookOpen },
+  { href: "/portal/formando/rgpd", label: "Privacidade", icon: Lock },
   { href: "/portal/formando/perfil", label: "Perfil", icon: UserCircle },
 ] as const;
 
@@ -20,13 +21,15 @@ function isActive(pathname: string, href: string, match?: (p: string) => boolean
 
 export function FormandoNav() {
   const pathname = usePathname();
+  const imersivo = /^\/portal\/formando\/aprendizagem\/[^/]+$/.test(pathname);
+  if (imersivo) return null;
 
   return (
     <nav
       className="sticky top-0 z-20 border-b border-slate-700/30 bg-slate-950/95 backdrop-blur-md"
       aria-label="Menu do formando"
     >
-      <div className="max-w-4xl mx-auto px-3 sm:px-5">
+      <div className="mx-auto w-full max-w-4xl px-3 sm:px-5">
         <ul className="flex gap-0.5 overflow-x-auto scrollbar-none py-2 -mx-1">
           {ITEMS.map((item) => {
             const Icon = item.icon;

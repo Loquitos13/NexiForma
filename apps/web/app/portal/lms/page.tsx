@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   Activity,
@@ -95,6 +96,7 @@ function duracaoSessaoSeg(sessao: SessaoRow): number {
 }
 
 export default function LmsPage() {
+  const router = useRouter();
   const { isStaff, showBackofficeTools, canManage, isFormador, loading: roleLoading } =
     useTenantRole();
   const [tab, setTab] = useState<Tab>("assiduidade");
@@ -128,6 +130,12 @@ export default function LmsPage() {
     zoom: { aviso: null as string | null },
     teams: { aviso: null as string | null },
   });
+
+  useEffect(() => {
+    if (!roleLoading && isFormador) {
+      router.replace("/portal/acoes");
+    }
+  }, [isFormador, roleLoading, router]);
 
   useEffect(() => {
     void bffFetch("/api/v1/integracoes/disponibilidade", { headers: { accept: "application/json" } }).then(
@@ -1062,12 +1070,12 @@ export default function LmsPage() {
                   <>
                     {roleLoading ? <p className="text-xs text-slate-500">A carregar permissões…</p> : null}
 
-                    {(intDisp.podeCriarSalaZoom || intDisp.podeCriarSalaTeams) ? (
+                    {intDisp.podeCriarSalaTeams ? (
                       <div className="rounded-xl border border-slate-700/30 bg-slate-800/30 p-4 space-y-3">
-                        <p className="text-sm text-slate-300">Criar reunião (OAuth)</p>
+                        <p className="text-sm text-slate-300">Criar reunião Teams (OAuth)</p>
                         {sala ? (
                           <p className="text-xs text-slate-400">
-                            Sala activa · {sala.provider}{" "}
+                            Sala Teams activa{" "}
                             <a
                               href={sala.joinUrl}
                               target="_blank"
@@ -1078,22 +1086,16 @@ export default function LmsPage() {
                             </a>
                           </p>
                         ) : (
-                          <p className="text-xs text-slate-500">Sem sala configurada para esta sessão.</p>
+                          <p className="text-xs text-slate-500">Sem sala Teams para esta sessão.</p>
                         )}
                         <div className="flex flex-wrap gap-2">
-                          {canManage && intDisp.podeCriarSalaZoom ? (
-                            <Button size="sm" disabled={busy || !sessaoId} onClick={() => void criarReuniao("ZOOM")}>
-                              Criar Zoom
-                            </Button>
-                          ) : null}
                           {canManage && intDisp.podeCriarSalaTeams ? (
                             <Button
                               size="sm"
-                              variant="secondary"
                               disabled={busy || !sessaoId}
                               onClick={() => void criarReuniao("TEAMS")}
                             >
-                              Criar Teams
+                              Criar sala Teams
                             </Button>
                           ) : null}
                         </div>
@@ -1111,20 +1113,20 @@ export default function LmsPage() {
                     ) : isModalidadeOnline(sessao?.modalidade ?? "") ? (
                       <Alert variant="warning">
                         {avisoIntegracao ??
-                          "Integração Zoom/Teams não configurada para este tenant - configure em Integrações."}
+                          "Integração Microsoft Teams não configurada - configure em Integrações."}
                       </Alert>
                     ) : (
                       <Alert variant="info">
-                        Configure Zoom ou Microsoft Teams em{" "}
+                        Configure Microsoft Teams em{" "}
                         <Link href="/portal/integracoes" className="underline hover:text-blue-300">
                           Integrações
                         </Link>{" "}
-                        para criar salas online.
+                        para criar salas de formação online.
                       </Alert>
                     )}
 
                     <Input
-                      label="Zoom Meeting ID (opcional)"
+                      label="Teams Meeting ID (opcional, legado)"
                       value={zoomId}
                       onChange={(e) => setZoomId(e.target.value)}
                       placeholder="ID da reunião existente"

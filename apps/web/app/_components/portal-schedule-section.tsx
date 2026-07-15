@@ -313,6 +313,10 @@ export function PortalScheduleSection({
   const acaoLabel = acoes.find((a) => a.id === acaoId);
   const cronogramaAtivo = cronogramas.find((c) => c.id === selectedCronogramaId);
   const sessaoAtiva = sessoes.find((s) => s.id === selectedSessaoId);
+  const formadorOperacao = Boolean(embedded && canIniciarSessao);
+  const showPresencasWorkspace =
+    (panel === "presencas" && !formadorOperacao) ||
+    (formadorOperacao && Boolean(selectedSessaoId));
   const sessaoSala = sessaoAtiva ? resolveSalaOnline(sessaoAtiva) : null;
   const sessaoOnlineLms = Boolean(
     sessaoAtiva && isModalidadeOnline(sessaoAtiva.modalidade) && sessaoAtiva.lmsAtivo,
@@ -600,9 +604,11 @@ export function PortalScheduleSection({
         setErr(await parseErr(res));
         return;
       }
-      setMsg(`Sessão ${sessNum} registada no cronograma.`);
+      const created = (await res.json()) as { id: string; numeroSessao?: number };
+      setMsg(`Sessão ${sessNum} registada. ${formadorOperacao && isModalidadeOnline(sessModalidade) ? "Usa «Iniciar e criar sala Teams» à direita." : ""}`.trim());
       setShowNovaSessao(false);
       await loadSessoes(selectedCronogramaId);
+      if (created.id) setSelectedSessaoId(created.id);
     } finally {
       setBusy(false);
     }
@@ -657,8 +663,8 @@ export function PortalScheduleSection({
       };
       setMsg(
         data.notificacoesEnviadas
-          ? `Sala ${data.provider} criada - formandos e formador notificados por email.`
-          : `Sala ${data.provider} criada - abre o link para entrar.`,
+          ? `Sala Teams criada - formandos e formador notificados por email.`
+          : `Sala Teams criada - abre o link para entrar.`,
       );
       await loadSessoes(selectedCronogramaId);
       const opened = openMeetingUrl(data.joinUrl);
@@ -681,9 +687,8 @@ export function PortalScheduleSection({
   async function iniciarEAbrirSala() {
     if (!selectedSessaoId || !canIniciarSessao || !sessaoAtiva) return;
     const online = isModalidadeOnline(sessaoAtiva.modalidade) && sessaoAtiva.lmsAtivo;
-    const provider = providerParaModalidade(sessaoAtiva.modalidade);
-    const integracaoPronta =
-      provider === "TEAMS" ? intDisp.podeCriarSalaTeams : intDisp.podeCriarSalaZoom;
+    const provider = "TEAMS" as const;
+    const integracaoPronta = intDisp.podeCriarSalaTeams;
     const sala = resolveSalaOnline(sessaoAtiva);
 
     if (online && !sala && integracaoPronta) {
@@ -694,8 +699,7 @@ export function PortalScheduleSection({
     if (online && !sala) {
       setErr(
         intDisp.teams.aviso ??
-          intDisp.zoom.aviso ??
-          "Integração Zoom/Teams não configurada - pede ao gestor para activar em Integrações.",
+          "Integração Microsoft Teams não configurada - pede ao gestor para activar em Integrações.",
       );
       return;
     }
@@ -1172,6 +1176,18 @@ export function PortalScheduleSection({
 
   return (
     <div className="space-y-5">
+      {formadorOperacao ? (
+        <Card className="border-blue-500/25 bg-blue-500/5">
+          <CardContent className="py-4">
+            <p className="text-sm font-medium text-slate-100">Sessão, sala Teams e assiduidade</p>
+            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+              Cria a sessão online, inicia a reunião Teams e regista presenças - tudo nesta página, sem
+              mudar de separador.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {/* Cabeçalho + fluxo */}
       {!embedded ? (
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -1412,7 +1428,8 @@ export function PortalScheduleSection({
         </Card>
       ) : (
         <>
-          {/* Tabs */}
+          {/* Tabs internas (gestor); formador vê sessão + assiduidade na mesma vista */}
+          {!formadorOperacao ? (
           <div className="flex rounded-xl border border-slate-700/40 p-1 bg-slate-900/50 w-full sm:w-auto">
             <button
               type="button"
@@ -1435,33 +1452,54 @@ export function PortalScheduleSection({
               Presenças
             </button>
           </div>
+          ) : null}
 
           <div className="grid gap-5 lg:grid-cols-[1fr_340px] xl:grid-cols-[1fr_380px]">
             {/* Coluna principal */}
             <div className="min-w-0 space-y-4">
-              {panel === "sessoes" ? (
+              {panel === "sessoes" || formadorOperacao ? (
                 <>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="text-sm font-semibold text-slate-300">
-                      Linha temporal ({sessoes.length})
+                      {formadorOperacao ? "1. Planear sessão" : `Linha temporal (${sessoes.length})`}
                     </h3>
                     {canManageAssiduidade ? (
                       <Button
                         type="button"
                         size="sm"
                         disabled={busy}
-                        onClick={() => setShowNovaSessao((v) => !v)}
+                        onClick={() => {
+                          if (formadorOperacao && !showNovaSessao) {
+                            setSessData(new Date().toISOString().slice(0, 10));
+                            setSessModalidade("online");
+                          }
+                          setShowNovaSessao((v) => !v);
+                        }}
                       >
                         <Plus className="h-4 w-4" />
-                        Nova sessão
+                        {formadorOperacao ? "Nova sessão online" : "Nova sessão"}
                       </Button>
                     ) : null}
                   </div>
 
                   {sessoes.length === 0 ? (
                     <Card className="border-dashed border-slate-700/40">
-                      <CardContent className="py-10 text-center text-sm text-slate-500">
-                        Sem sessões planeadas. Adiciona a primeira sessão ao cronograma.
+                      <CardContent className="py-10 text-center text-sm text-slate-500 space-y-3">
+                        <p>Sem sessões planeadas. Adiciona a primeira sessão ao cronograma.</p>
+                        {formadorOperacao && canManageAssiduidade ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => {
+                              setSessData(new Date().toISOString().slice(0, 10));
+                              setSessModalidade("online");
+                              setShowNovaSessao(true);
+                            }}
+                          >
+                            <Video className="h-4 w-4" />
+                            Criar sessão online (Teams)
+                          </Button>
+                        ) : null}
                       </CardContent>
                     </Card>
                   ) : (
@@ -1544,9 +1582,17 @@ export function PortalScheduleSection({
                   {showNovaSessao && canManageAssiduidade ? (
                     <Card className="border-blue-500/20 bg-blue-500/5">
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-base text-slate-200">Registar nova sessão</CardTitle>
+                        <CardTitle className="text-base text-slate-200">
+                          {formadorOperacao ? "Nova sessão online" : "Registar nova sessão"}
+                        </CardTitle>
                       </CardHeader>
                       <CardContent>
+                        {formadorOperacao ? (
+                          <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+                            Após criar, selecciona a sessão e usa «Iniciar e criar sala Teams» no painel à
+                            direita.
+                          </p>
+                        ) : null}
                         <form onSubmit={(e) => void submitSessao(e)} className="grid gap-3 sm:grid-cols-2">
                           <Input
                             label="N.º sessão"
@@ -1614,7 +1660,9 @@ export function PortalScheduleSection({
                           </Select>
                           <div className="sm:col-span-2 flex flex-wrap gap-2">
                             <Button type="submit" disabled={busy}>
-                              Registar sessão
+                              {formadorOperacao && isModalidadeOnline(sessModalidade)
+                                ? "Criar sessão online"
+                                : "Registar sessão"}
                             </Button>
                             <Button
                               type="button"
@@ -1629,8 +1677,16 @@ export function PortalScheduleSection({
                     </Card>
                   ) : null}
                 </>
-              ) : (
+              ) : null}
+
+              {showPresencasWorkspace ? (
                 <>
+                  {formadorOperacao ? (
+                    <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2 pt-2 border-t border-slate-700/40">
+                      <ClipboardList className="h-4 w-4 text-teal-400" />
+                      2. Assiduidade e folha
+                    </h3>
+                  ) : null}
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-base flex items-center gap-2">
@@ -1991,15 +2047,19 @@ export function PortalScheduleSection({
                     </Card>
                   ) : null}
                 </>
-              )}
+              ) : null}
             </div>
 
-            {/* Painel lateral - editar sessão */}
+            {/* Painel lateral - operar sessão */}
             <aside className="min-w-0">
-              {panel === "sessoes" && sessaoAtiva && canManageAssiduidade ? (
-                <Card className="border-slate-700/30 sticky top-4">
+              {(panel === "sessoes" || formadorOperacao) && sessaoAtiva && canManageAssiduidade ? (
+                <Card className={`border-slate-700/30 sticky top-4 ${formadorOperacao ? "border-blue-500/30 ring-1 ring-blue-500/15" : ""}`}>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-base">Editar sessão {sessaoAtiva.numeroSessao}</CardTitle>
+                    <CardTitle className="text-base">
+                      {formadorOperacao
+                        ? `Operar sessão ${sessaoAtiva.numeroSessao}`
+                        : `Editar sessão ${sessaoAtiva.numeroSessao}`}
+                    </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <Select
@@ -2094,7 +2154,9 @@ export function PortalScheduleSection({
                     {canIniciarSessao ? (
                       <p className="text-[11px] text-slate-500 leading-snug">
                         {sessaoOnlineLms
-                          ? "Inicia aqui - a sala abre automaticamente e os formandos são notificados."
+                          ? formadorOperacao
+                            ? "Passo seguinte: inicia a sessão - a sala Teams abre e os formandos são notificados."
+                            : "Inicia aqui - a sala abre automaticamente e os formandos são notificados."
                           : "Inicia a sessão para notificar os formandos (presencial)."}
                       </p>
                     ) : null}
@@ -2109,8 +2171,8 @@ export function PortalScheduleSection({
                           <Video className="h-4 w-4" />
                           {sessaoOnlineLms
                             ? sessaoSala
-                              ? `Iniciar e abrir sala ${providerSessao}`
-                              : `Iniciar e criar sala ${providerSessao}`
+                              ? "Iniciar e abrir sala Teams"
+                              : "Iniciar e criar sala Teams"
                             : "Iniciar sessão (notifica formandos)"}
                         </Button>
                       ) : null}

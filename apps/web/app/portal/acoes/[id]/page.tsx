@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ArrowLeft,
-  BookOpen,
   Calendar,
   CheckCircle2,
   ClipboardList,
@@ -14,22 +13,19 @@ import {
 } from "lucide-react";
 import { PortalEnrollmentSection } from "@/app/_components/portal-enrollment-section";
 import { PortalScheduleSection } from "@/app/_components/portal-schedule-section";
-import { ActionContentBuilder } from "@/components/portal/ActionContentBuilder";
+import { ActionResumoCard } from "@/components/portal/action-resumo-card";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
 import {
   Alert,
   Badge,
-  Button,
   Card,
   CardContent,
   CardHeader,
   CardTitle,
   estadoBadge,
-  Input,
   PageHeader,
-  Select,
 } from "@/components/ui";
 import { PageContentSkeleton } from "@/components/ui/page-skeleton";
 
@@ -79,9 +75,8 @@ type ComplianceDetail = {
 
 const ALL_TABS = [
   { id: "resumo", label: "Resumo", icon: FileText },
-  { id: "conteudos", label: "Conteúdos LMS", icon: BookOpen },
   { id: "turmas", label: "Turmas", icon: Users },
-  { id: "cronograma", label: "Cronograma", icon: Calendar },
+  { id: "cronograma", label: "Sessões & assiduidade", icon: Calendar },
   { id: "compliance", label: "Compliance", icon: ClipboardList },
 ] as const;
 
@@ -97,18 +92,19 @@ export default function AcaoDetailPage() {
   const params = useParams();
   const acaoId = String(params.id ?? "");
   const { canManage, isFormador } = useTenantRole();
-  const canEditContent = canManage || isFormador;
+  const canEditSessoes = canManage || isFormador;
   const tabs = ALL_TABS.filter((t) => {
     if (canManage) return true;
-    if (isFormador) return ["resumo", "conteudos", "cronograma"].includes(t.id);
+    if (isFormador) return ["resumo", "cronograma"].includes(t.id);
     return t.id === "resumo";
   });
-  const [tab, setTab] = useState<Tab>("resumo");
+  const [tab, setTab] = useState<Tab>(isFormador ? "cronograma" : "resumo");
 
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    if (t && tabs.some((x) => x.id === t)) setTab(t as Tab);
-  }, [tabs]);
+    const normalized = t === "sessoes" ? "cronograma" : t;
+    if (normalized && tabs.some((x) => x.id === normalized)) setTab(normalized as Tab);
+  }, [tabs, isFormador]);
 
   const [acao, setAcao] = useState<AcaoDetail | null>(null);
   const [compliance, setCompliance] = useState<ComplianceDetail | null>(null);
@@ -116,13 +112,6 @@ export default function AcaoDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [edit, setEdit] = useState({
-    titulo: "",
-    estado: "",
-    dataInicio: "",
-    dataFim: "",
-    prazoConclusaoLms: "",
-  });
 
   const load = useCallback(async () => {
     if (!acaoId) return;
@@ -140,15 +129,6 @@ export default function AcaoDetailPage() {
     } else {
       const data = (await acaoRes.json()) as AcaoDetail;
       setAcao(data);
-      setEdit({
-        titulo: data.titulo,
-        estado: data.estado,
-        dataInicio: String(data.dataInicio).slice(0, 10),
-        dataFim: String(data.dataFim).slice(0, 10),
-        prazoConclusaoLms: data.prazoConclusaoLms
-          ? String(data.prazoConclusaoLms).slice(0, 10)
-          : "",
-      });
     }
     if (compRes && compRes.ok) setCompliance((await compRes.json()) as ComplianceDetail);
     setLoading(false);
@@ -158,8 +138,13 @@ export default function AcaoDetailPage() {
     void load();
   }, [load]);
 
-  async function saveAcao(e: FormEvent) {
-    e.preventDefault();
+  async function saveAcao(data: {
+    titulo: string;
+    estado: string;
+    dataInicio: string;
+    dataFim: string;
+    prazoConclusaoLms: string;
+  }) {
     if (!canManage) return;
     setBusy(true);
     setMsg(null);
@@ -167,8 +152,8 @@ export default function AcaoDetailPage() {
       method: "PATCH",
       headers: { "Content-Type": "application/json", accept: "application/json" },
       body: JSON.stringify({
-        ...edit,
-        prazoConclusaoLms: edit.prazoConclusaoLms.trim() ? edit.prazoConclusaoLms : null,
+        ...data,
+        prazoConclusaoLms: data.prazoConclusaoLms.trim() ? data.prazoConclusaoLms : null,
       }),
     });
     if (!res.ok) setError(await parseApiError(res));
@@ -302,83 +287,19 @@ export default function AcaoDetailPage() {
       </div>
 
       {tab === "resumo" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Dados da acção</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {canManage ? (
-              <form onSubmit={(e) => void saveAcao(e)} className="grid gap-4 max-w-md">
-                <Input label="Título" value={edit.titulo} onChange={(e) => setEdit((x) => ({ ...x, titulo: e.target.value }))} />
-                <Select label="Estado" value={edit.estado} onChange={(e) => setEdit((x) => ({ ...x, estado: e.target.value }))}>
-                  {["PLANEADA", "EM_CURSO", "CONCLUIDA", "CANCELADA"].map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </Select>
-                <div className="grid grid-cols-2 gap-4">
-                  <Input label="Início" type="date" value={edit.dataInicio} onChange={(e) => setEdit((x) => ({ ...x, dataInicio: e.target.value }))} />
-                  <Input label="Fim" type="date" value={edit.dataFim} onChange={(e) => setEdit((x) => ({ ...x, dataFim: e.target.value }))} />
-                </div>
-                <Input
-                  label="Prazo conclusão LMS"
-                  type="date"
-                  value={edit.prazoConclusaoLms}
-                  onChange={(e) => setEdit((x) => ({ ...x, prazoConclusaoLms: e.target.value }))}
-                />
-                <p className="text-xs text-slate-500">
-                  Opcional. Se vazio, usa a data de fim da acção. O formando vê o progresso face a este prazo.
-                </p>
-                <Button type="submit" disabled={busy}>{busy ? "A guardar…" : "Guardar"}</Button>
-              </form>
-            ) : (
-              <dl className="grid gap-2 text-sm">
-                <div className="flex gap-2">
-                  <dt className="text-slate-500 w-24">Estado</dt>
-                  <dd>{estadoBadge(acao.estado)}</dd>
-                </div>
-                <div className="flex gap-2">
-                  <dt className="text-slate-500 w-24">Período</dt>
-                  <dd className="text-slate-200">
-                    {String(acao.dataInicio).slice(0, 10)} – {String(acao.dataFim).slice(0, 10)}
-                  </dd>
-                </div>
-                {acao.prazoConclusaoLms ? (
-                  <div className="flex gap-2">
-                    <dt className="text-slate-500 w-24">Prazo LMS</dt>
-                    <dd className="text-slate-200">{String(acao.prazoConclusaoLms).slice(0, 10)}</dd>
-                  </div>
-                ) : null}
-                <div className="flex gap-2">
-                  <dt className="text-slate-500 w-24">Curso</dt>
-                  <dd>
-                    <Link href={`/portal/cursos/${acao.curso.id}`} className="text-blue-400 hover:text-blue-300">
-                      {acao.curso.designacao}
-                    </Link>
-                  </dd>
-                </div>
-              </dl>
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {tab === "conteudos" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Conteúdos da formação</CardTitle>
-          </CardHeader>
-          <CardContent className="overflow-hidden">
-            <p className="text-sm text-slate-400 mb-4">
-              Módulos do percurso - reordena, edita e pré-visualiza como o formando verá.
-            </p>
-            <ActionContentBuilder
-              cursoId={acao.curso.id}
-              cursoTitulo={acao.curso.designacao}
-              acaoTitulo={acao.titulo}
-              canEdit={canEditContent}
-            />
-          </CardContent>
-        </Card>
+        <ActionResumoCard
+          acao={{
+            titulo: acao.titulo,
+            estado: acao.estado,
+            dataInicio: acao.dataInicio,
+            dataFim: acao.dataFim,
+            prazoConclusaoLms: acao.prazoConclusaoLms,
+            curso: acao.curso,
+          }}
+          canEdit={canManage}
+          busy={busy}
+          onSave={saveAcao}
+        />
       ) : null}
 
       {tab === "turmas" ? (
@@ -388,7 +309,7 @@ export default function AcaoDetailPage() {
       {tab === "cronograma" ? (
         <PortalScheduleSection
           acoes={acaoOpt}
-          canManageAssiduidade={canManage || isFormador}
+          canManageAssiduidade={canEditSessoes}
           canIniciarSessao={isFormador}
           canApproveCronograma={canManage}
           canApprovePresencasFolha={canManage}
