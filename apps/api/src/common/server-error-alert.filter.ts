@@ -71,14 +71,17 @@ function sanitizePayload(body: unknown): string | undefined {
   }
 }
 
-/** Erros de RBAC/sessão - não alertar superadmin (fluxo normal do cliente). */
+/**
+ * Só alertar superadmin em falhas de servidor (5xx).
+ * 4xx (validação, RBAC, não encontrado, etc.) são fluxo normal do cliente.
+ */
 function shouldSkipSuperAdminAlert(status: number): boolean {
-  return status === HttpStatus.FORBIDDEN || status === HttpStatus.UNAUTHORIZED;
+  return status < HttpStatus.INTERNAL_SERVER_ERROR;
 }
 
 /**
- * Envia email ao superadmin em erros HTTP 4xx e 5xx (e excepções não tratadas).
- * Exclui 403, refresh de sessão e outros 401 de autenticação esperados.
+ * Envia email ao superadmin em erros HTTP 5xx (e excepções não tratadas).
+ * Não alerta em 4xx (ex.: validar folha sem assiduidade assinalada).
  */
 @Catch()
 export class ServerErrorAlertFilter extends BaseExceptionFilter implements ExceptionFilter {

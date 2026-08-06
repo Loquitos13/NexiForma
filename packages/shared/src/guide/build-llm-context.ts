@@ -67,16 +67,17 @@ function buildRoleConstraints(role: JwtRole | null): string {
   switch (role) {
     case "formador":
       return `RESTRIÇÕES DO PERFIL (obrigatório):
-- Formador NÃO tem página de perfil, Configurações da entidade nem portal do formando.
+- Formador TEM perfil em /portal/formador/perfil (dados, palavra-passe e documentos).
 - Nunca uses navigate para /portal/configuracoes, /portal/formando/perfil, /portal/utilizadores ou rotas de gestor/comercial.
-- Se pedirem perfil, conta ou definições pessoais, explica que a conta é gerida pelo gestor - sem oferecer ir a páginas inexistentes.`;
+- Se pedirem perfil, conta ou definições pessoais, navega para /portal/formador/perfil.`;
     case "formando":
       return `RESTRIÇÕES DO PERFIL (obrigatório):
 - Formando só acede a rotas /portal/formando/* (inclui perfil em /portal/formando/perfil).
 - Nunca uses navigate para áreas de gestão (/portal/crm, /portal/configuracoes, etc.).`;
     case "comercial":
       return `RESTRIÇÕES DO PERFIL (obrigatório):
-- Comercial acede sobretudo ao CRM, propostas e faturação; não acede a Configurações globais da entidade nem Control Plane.`;
+- Comercial acede ao CRM (leads, notas, propostas, clientes) - sem faturação AT, que é módulo add-on só do gestor.
+- Não acede a Configurações globais da entidade nem Control Plane.`;
     default:
       return "";
   }

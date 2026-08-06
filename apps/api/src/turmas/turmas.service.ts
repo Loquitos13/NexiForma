@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import type { Turma } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
@@ -62,5 +67,49 @@ export class TurmasService {
         nome: dto.nome.trim(),
       },
     });
+  }
+
+  async remove(user: RequestUser, id: string) {
+    const tenantId = requireTenantId(user);
+    const turma = await this.prisma.turma.findFirst({
+      where: { id, tenantId },
+      select: {
+        id: true,
+        codigo: true,
+        nome: true,
+        acaoFormacaoId: true,
+        _count: { select: { matriculas: true, folhasPresenca: true } },
+      },
+    });
+    if (!turma) {
+      throw new NotFoundException("Turma não encontrada.");
+    }
+
+    // Folhas aprovadas/fechadas: bloquear para não perder evidência DGERT.
+    const folhasFechadas = await this.prisma.folhaPresenca.count({
+      where: {
+        tenantId,
+        turmaId: id,
+        OR: [
+          { fechadaEm: { not: null } },
+          { aprovadaGestorEm: { not: null } },
+        ],
+      },
+    });
+    if (folhasFechadas > 0) {
+      throw new BadRequestException(
+        "Não é possível eliminar a turma: existem folhas de presença aprovadas ou fechadas.",
+      );
+    }
+
+    await this.prisma.turma.delete({ where: { id } });
+    return {
+      ok: true,
+      id: turma.id,
+      codigo: turma.codigo,
+      nome: turma.nome,
+      matriculasRemovidas: turma._count.matriculas,
+      folhasRemovidas: turma._count.folhasPresenca,
+    };
   }
 }

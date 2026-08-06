@@ -14,6 +14,18 @@ export type AuditEntry = {
   payload?: Prisma.InputJsonValue;
 };
 
+export type AuditListOpts = {
+  tenantId?: string;
+  limit?: number;
+  cursor?: bigint;
+  action?: string;
+  actorType?: AuditActorType;
+  since?: Date;
+  until?: Date;
+  /** Pesquisa livre em action / resourceType / resourceId / actorId */
+  q?: string;
+};
+
 function serializeAuditRow(row: GlobalAuditLog): Record<string, unknown> {
   return {
     id: row.id.toString(),
@@ -51,10 +63,37 @@ export class AuditService {
     return serializeAuditRow(row);
   }
 
-  async list(opts: { tenantId?: string; limit?: number; cursor?: bigint }): Promise<Record<string, unknown>[]> {
+  async list(opts: AuditListOpts): Promise<Record<string, unknown>[]> {
     const take = Math.min(opts.limit ?? 50, 200);
+    const q = opts.q?.trim();
+    const where: Prisma.GlobalAuditLogWhereInput = {
+      ...(opts.tenantId ? { targetTenantId: opts.tenantId } : {}),
+      ...(opts.action
+        ? { action: { contains: opts.action, mode: "insensitive" } }
+        : {}),
+      ...(opts.actorType ? { actorType: opts.actorType } : {}),
+      ...((opts.since || opts.until)
+        ? {
+            occurredAt: {
+              ...(opts.since ? { gte: opts.since } : {}),
+              ...(opts.until ? { lte: opts.until } : {}),
+            },
+          }
+        : {}),
+      ...(q
+        ? {
+            OR: [
+              { action: { contains: q, mode: "insensitive" } },
+              { resourceType: { contains: q, mode: "insensitive" } },
+              { resourceId: { contains: q, mode: "insensitive" } },
+              { actorId: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+
     const rows = await this.prisma.globalAuditLog.findMany({
-      where: opts.tenantId ? { targetTenantId: opts.tenantId } : undefined,
+      where,
       orderBy: { occurredAt: "desc" },
       take,
       ...(opts.cursor ? { skip: 1, cursor: { id: opts.cursor } } : {}),

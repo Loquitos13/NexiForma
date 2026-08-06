@@ -10,6 +10,7 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
+import { interaccaoScopeWhere } from "../common/comercial-scope.util";
 import { mapSugestaoRow, type SugestaoIaComercialResposta } from "./crm-ia.types";
 import {
   buildSugestoesProactivas,
@@ -96,14 +97,15 @@ export class CrmSugestoesIaService {
     entidadeClienteId: string,
   ): Promise<{ criadas: number }> {
     const tenantId = requireTenantId(user);
-    return this.gerarSugestoesProactivasInterno(tenantId, entidadeClienteId);
+    return this.gerarSugestoesProactivasInterno(tenantId, entidadeClienteId, user);
   }
 
   async gerarSugestoesProactivasInterno(
     tenantId: string,
     entidadeClienteId: string,
+    user?: RequestUser,
   ): Promise<{ criadas: number }> {
-    const ctx = await this.carregarContextoEntidade(tenantId, entidadeClienteId);
+    const ctx = await this.carregarContextoEntidade(tenantId, entidadeClienteId, user);
     if (!ctx) throw new NotFoundException("Cliente não encontrado.");
 
     const drafts = buildSugestoesProactivas(ctx);
@@ -151,6 +153,7 @@ export class CrmSugestoesIaService {
   private async carregarContextoEntidade(
     tenantId: string,
     entidadeClienteId: string,
+    user?: RequestUser,
   ): Promise<EntidadeContextoProactivo | null> {
     const entidade = await this.prisma.entidadeCliente.findFirst({
       where: { id: entidadeClienteId, tenantId },
@@ -170,9 +173,15 @@ export class CrmSugestoesIaService {
     });
     if (!entidade) return null;
 
+    const interaccaoScope = user ? interaccaoScopeWhere(user) : undefined;
+
     const [interaccoes, leads] = await Promise.all([
       this.prisma.interaccaoComercial.findMany({
-        where: { tenantId, entidadeClienteId },
+        where: {
+          tenantId,
+          entidadeClienteId,
+          ...(interaccaoScope ? { AND: [interaccaoScope] } : {}),
+        },
         orderBy: { createdAt: "desc" },
         take: 5,
         select: {

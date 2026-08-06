@@ -32,6 +32,17 @@ export default function PlataformaLayout({ children }: { children: React.ReactNo
   const [ready, setReady] = useState(false);
   const [allowed, setAllowed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const sync = () => setIsDesktop(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  const drawerHidden = !isDesktop && !mobileNavOpen;
 
   useEffect(() => {
     const payload = decodeJwtPayload(getAccessToken());
@@ -74,6 +85,8 @@ export default function PlataformaLayout({ children }: { children: React.ReactNo
           "portal-fixed-drawer flex w-[min(88vw,17rem)] flex-col border-r border-purple-500/15 bg-[#0c0a14]/98 transition-transform duration-300 lg:h-full lg:w-56 lg:flex-shrink-0",
           mobileNavOpen ? "translate-x-0" : "max-lg:-translate-x-full",
         )}
+        aria-hidden={drawerHidden}
+        inert={drawerHidden ? true : undefined}
       >
         <div className="px-4 py-5">
           <div className="flex items-center gap-2.5">
@@ -90,7 +103,7 @@ export default function PlataformaLayout({ children }: { children: React.ReactNo
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-2 pb-4">
+        <nav aria-label="Menu da plataforma" className="flex-1 overflow-y-auto px-2 pb-4">
           {NAV.map((item) => {
             const active =
               item.href === "/plataforma" ? pathname === "/plataforma" : pathname.startsWith(item.href);
@@ -127,7 +140,7 @@ export default function PlataformaLayout({ children }: { children: React.ReactNo
           <span className="truncate text-sm font-semibold text-purple-100">Control Plane</span>
         </div>
         <UserSessionBar area="plataforma" />
-        <main className="portal-main portal-scroll-main">
+        <main id="main-content" className="portal-main portal-scroll-main">
           <div className="mx-auto max-w-6xl px-3 py-4 sm:px-6 sm:py-6">{children}</div>
         </main>
       </div>

@@ -1,12 +1,16 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
+import { verifySnsMessageSignature } from "./sns-signature.util";
 
-type SnsEnvelope = {
+type SnsEnvelope = Record<string, string | undefined> & {
   Type?: string;
   Message?: string;
   SubscribeURL?: string;
   TopicArn?: string;
+  Signature?: string;
+  SigningCertURL?: string;
+  SignatureVersion?: string;
 };
 
 type SesBouncePayload = {
@@ -33,14 +37,27 @@ export class MailWebhookService {
   ) {}
 
   async handleSesSns(body: SnsEnvelope) {
-    const expectedTopic = this.config.get<string>("SES_SNS_TOPIC_ARN");
+    const expectedTopic = this.config.get<string>("SES_SNS_TOPIC_ARN")?.trim();
+    if (process.env.NODE_ENV === "production" && !expectedTopic) {
+      this.logger.warn("SES_SNS_TOPIC_ARN em falta em produção.");
+      return { ok: false, reason: "topic_not_configured" };
+    }
     if (expectedTopic && body.TopicArn && body.TopicArn !== expectedTopic) {
       this.logger.warn(`SNS TopicArn inesperado: ${body.TopicArn}`);
       return { ok: false, reason: "topic_mismatch" };
     }
 
+    const signatureOk = await verifySnsMessageSignature(body);
+    if (!signatureOk) {
+      this.logger.warn("Assinatura SNS inválida ou em falta.");
+      return { ok: false, reason: "invalid_signature" };
+    }
+
     if (body.Type === "SubscriptionConfirmation" && body.SubscribeURL) {
-      const res = await fetch(body.SubscribeURL);
+      if (!body.SubscribeURL.startsWith("https://sns.")) {
+        return { ok: false, reason: "invalid_subscribe_url" };
+      }
+      const res = await fetch(body.SubscribeURL, { signal: AbortSignal.timeout(10_000) });
       this.logger.log(`SNS subscrição SES confirmada (HTTP ${res.status}).`);
       return { ok: true, type: "subscription_confirmation" };
     }

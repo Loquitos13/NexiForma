@@ -11,6 +11,20 @@ import {
 } from "./plans-catalog";
 import { resolveModuleFlags } from "./module-flags.util";
 
+export type TenantSubscriptionStatus =
+  | "TRIALING"
+  | "ACTIVE"
+  | "PAST_DUE"
+  | "CANCELED"
+  | "PAUSED";
+
+export type TenantBillingStatus = "ACTIVE" | "TRIAL" | "SUSPENDED" | "ARCHIVED";
+
+export type BillingAccessContext = {
+  subscriptionStatus?: TenantSubscriptionStatus | null;
+  tenantStatus?: TenantBillingStatus | null;
+};
+
 export type TenantEntitlements = {
   planCode: BillingPlanCode;
   customAddons: BillingAddonCode[];
@@ -26,10 +40,42 @@ export type TenantEntitlements = {
   canAccessInteligenciaIa: boolean;
   canAccessRelatoriosDashboard: boolean;
   canAccessRelatoriosInsights: boolean;
+  /** SSO, chaves API e restantes funcionalidades Enterprise. */
+  canAccessEnterpriseFeatures: boolean;
+  /** Subscrição efectiva para módulos (TRIALING/ACTIVE/PAST_DUE). */
+  subscriptionActive: boolean;
   canUpgradeAnytime: boolean;
   allowsCustomAddons: boolean;
   allowsStandaloneModules: boolean;
 };
+
+const ACTIVE_SUBSCRIPTION_STATUSES: readonly TenantSubscriptionStatus[] = [
+  "TRIALING",
+  "ACTIVE",
+  "PAST_DUE",
+];
+
+function isSubscriptionModulesActive(
+  subscriptionStatus?: TenantSubscriptionStatus | null,
+): boolean {
+  if (!subscriptionStatus) return true;
+  return ACTIVE_SUBSCRIPTION_STATUSES.includes(subscriptionStatus);
+}
+
+function stripModuleAccess(ent: TenantEntitlements): TenantEntitlements {
+  return {
+    ...ent,
+    subscriptionActive: false,
+    canAccessCoreFormation: false,
+    canAccessCrm: false,
+    canAccessFaturacao: false,
+    canAccessFormacaoTeams: false,
+    canAccessInteligenciaIa: false,
+    canAccessRelatoriosDashboard: false,
+    canAccessRelatoriosInsights: false,
+    canAccessEnterpriseFeatures: false,
+  };
+}
 
 function parseAddonList(raw: unknown): BillingAddonCode[] {
   if (!Array.isArray(raw)) return [];
@@ -46,6 +92,7 @@ function normalizePlanCode(code: string | null | undefined): BillingPlanCode {
 export function resolveTenantEntitlements(
   planCodeInput: string | null | undefined,
   customAddonsInput: unknown,
+  access?: BillingAccessContext,
 ): TenantEntitlements {
   const planCode = normalizePlanCode(planCodeInput);
   const customAddons = parseAddonList(customAddonsInput);
@@ -68,7 +115,9 @@ export function resolveTenantEntitlements(
   const effectiveRelatoriosTier: RelatoriosTier =
     isModular && flags.hasInteligenciaIa ? "ai_insights" : relatoriosTier;
 
-  return {
+  const subscriptionActive = isSubscriptionModulesActive(access?.subscriptionStatus);
+
+  const ent: TenantEntitlements = {
     planCode,
     customAddons: validCustom,
     activeAddons,
@@ -79,13 +128,22 @@ export function resolveTenantEntitlements(
     canAccessFaturacao: flags.hasFaturacao,
     canAccessFormacaoTeams: flags.hasFormacaoTeams,
     canAccessInteligenciaIa: flags.hasInteligenciaIa,
-    /** Dashboard base incluído em todos os planos; widgets filtrados por módulos activos. */
-    canAccessRelatoriosDashboard: true,
-    canAccessRelatoriosInsights: effectiveRelatoriosTier === "ai_insights",
+    /** Dashboard base incluído em todos os planos activos; widgets filtrados por módulos activos. */
+    canAccessRelatoriosDashboard: subscriptionActive,
+    canAccessRelatoriosInsights:
+      subscriptionActive && effectiveRelatoriosTier === "ai_insights",
+    canAccessEnterpriseFeatures: subscriptionActive && planCode === "enterprise",
+    subscriptionActive,
     canUpgradeAnytime: planCode !== "enterprise",
     allowsCustomAddons: !isModular && (PLAN_NEGOTIABLE_ADDONS[planCode as keyof typeof PLAN_NEGOTIABLE_ADDONS]?.length ?? 0) > 0,
     allowsStandaloneModules: true,
   };
+
+  if (!subscriptionActive) {
+    return stripModuleAccess(ent);
+  }
+
+  return ent;
 }
 
 /** Crédito proporcional ao fazer upgrade (0–1 do ciclo restante). */

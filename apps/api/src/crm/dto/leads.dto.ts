@@ -42,6 +42,13 @@ export class CreateLeadDto {
   @MaxLength(9)
   nif?: string;
 
+  /** Guardada em metadata; usada ao converter / criar entidade cliente. */
+  @IsOptional()
+  @IsString()
+  @MinLength(5)
+  @MaxLength(500)
+  moradaFiscal?: string;
+
   @IsOptional()
   @IsEnum(["WEBSITE", "REFERRAL", "FEIRA", "LINKEDIN", "TELEFONE", "IA", "OUTRO"])
   origem?: LeadOrigem;
@@ -138,6 +145,12 @@ export class ConverterLeadDto {
   @MinLength(2)
   @MaxLength(200)
   nome?: string;
+
+  /** Obrigatório para criar/actualizar a ficha de cliente (faturação / parceiro). */
+  @IsString()
+  @MinLength(5)
+  @MaxLength(500)
+  moradaFiscal!: string;
 }
 
 export class CriarPropostaFromLeadDto {

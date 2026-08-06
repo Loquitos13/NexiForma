@@ -26,7 +26,7 @@ const estadoBadge: Record<string, string> = {
 const inputClass = "w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-sm text-slate-200 placeholder:text-slate-500 outline-none focus:border-blue-500/40";
 
 export default function ContratosPage() {
-  const { canManageCrm } = useTenantRole();
+  const { canManage } = useTenantRole();
   const [entidades, setEntidades] = useState<{ id: string; nome: string }[]>([]);
   const [contratos, setContratos] = useState<Contrato[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +72,7 @@ export default function ContratosPage() {
 
   async function criarProposta(e: FormEvent) {
     e.preventDefault();
-    if (!canManageCrm) return;
+    if (!canManage) return;
     setBusy(true); setError(null); setMsg(null);
     const euros = Number(form.valor.replace(",", ".")) || 0;
     const r = await bffFetch("/api/v1/propostas", {
@@ -93,6 +93,15 @@ export default function ContratosPage() {
     await load();
   }
 
+  if (!canManage) {
+    return (
+      <div className="max-w-3xl">
+        <h1 className="text-2xl font-bold text-slate-50">Contratos</h1>
+        <p className="text-sm text-slate-400 mt-2">Apenas gestores podem aceder à gestão de contratos.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-5xl space-y-5">
       <div>
@@ -104,7 +113,7 @@ export default function ContratosPage() {
       {msg ? <div className="flex items-start gap-2.5 rounded-xl bg-green-950/30 border border-green-500/25 px-4 py-3"><p className="text-sm text-green-300">{msg}</p></div> : null}
 
       {/* New contract form */}
-      {canManageCrm ? (
+      {canManage ? (
         <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
           <h2 className="text-sm font-semibold text-slate-200 mb-3">Novo contrato / proposta</h2>
           <form onSubmit={(e) => void criarProposta(e)} className="grid sm:grid-cols-2 gap-3 max-w-lg">
@@ -142,7 +151,7 @@ export default function ContratosPage() {
       ) : null}
 
       {/* Contracts table */}
-      <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 overflow-hidden">
+      <div className="table-scroll-shell rounded-2xl bg-slate-900/50 border border-slate-700/30">
         <div className="px-5 py-4 border-b border-slate-700/30">
           <h2 className="text-sm font-semibold text-slate-200">Contratos vigentes ({contratos.length})</h2>
         </div>

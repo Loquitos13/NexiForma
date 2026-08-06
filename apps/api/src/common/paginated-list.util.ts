@@ -11,7 +11,7 @@ export function parseListPagination(page?: string, pageSize?: string) {
   const parsedSize = Number.parseInt(pageSize ?? "50", 10);
   const pageNum = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
   const pageSizeNum = Number.isFinite(parsedSize)
-    ? Math.min(100, Math.max(1, parsedSize))
+    ? Math.min(200, Math.max(1, parsedSize))
     : 50;
   return {
     page: pageNum,

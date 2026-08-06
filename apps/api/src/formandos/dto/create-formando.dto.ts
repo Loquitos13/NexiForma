@@ -1,4 +1,6 @@
-import { IsEmail, IsOptional, IsString, IsUUID, MaxLength, MinLength } from "class-validator";
+import { IsEmail, IsOptional, IsString, IsUUID, MaxLength, MinLength, ValidateNested } from "class-validator";
+import { Type } from "class-transformer";
+import { SigoFormandoMetadataDto } from "./sigo-formando-metadata.dto";
 
 /** Registo inicial de «aluno» (perfil DGERT antes de User/conta LMS). */
 export class CreateFormandoDto {
@@ -28,6 +30,17 @@ export class CreateFormandoDto {
   telefone?: string | null;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  morada?: string | null;
+
+  @IsOptional()
   @IsUUID()
   entidadeClienteId?: string | null;
+
+  /** Dados obrigatórios para submissão SOAP SIGO. */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SigoFormandoMetadataDto)
+  sigo?: SigoFormandoMetadataDto;
 }

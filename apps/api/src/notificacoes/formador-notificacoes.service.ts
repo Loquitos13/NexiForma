@@ -7,6 +7,10 @@ export type FormadorNotificacaoInput = {
   titulo: string;
   mensagem: string;
   link?: string;
+  /** Se definido, envia também email para a conta do formador. */
+  emailSubject?: string;
+  emailText?: string;
+  emailHtml?: string;
 };
 
 @Injectable()
@@ -109,8 +113,90 @@ export class FormadorNotificacoesService {
     });
   }
 
+  /**
+   * Se o formando concluiu todas as tarefas LMS publicadas, notifica os formadores da acção (1×).
+   */
+  async notifyIfPercursoCompleto(tenantId: string, matriculaId: string): Promise<void> {
+    try {
+      const matricula = await this.prisma.matricula.findFirst({
+        where: { id: matriculaId, tenantId },
+        select: {
+          id: true,
+          formando: { select: { nome: true } },
+          turma: {
+            select: {
+              codigo: true,
+              acaoFormacaoId: true,
+              acaoFormacao: {
+                select: {
+                  id: true,
+                  titulo: true,
+                  codigoInterno: true,
+                  cursoId: true,
+                },
+              },
+            },
+          },
+        },
+      });
+      if (!matricula) return;
+
+      const cursoId = matricula.turma.acaoFormacao.cursoId;
+      const tarefas = await this.prisma.moduloConteudo.findMany({
+        where: { tenantId, cursoId, publicado: true },
+        select: { id: true },
+      });
+      if (!tarefas.length) return;
+
+      const concluidos = await this.prisma.progressoModulo.count({
+        where: {
+          tenantId,
+          matriculaId,
+          moduloId: { in: tarefas.map((t) => t.id) },
+          concluidoEm: { not: null },
+        },
+      });
+      if (concluidos < tarefas.length) return;
+
+      const acaoId = matricula.turma.acaoFormacaoId;
+      const link = `/portal/progresso-lms?acao=${encodeURIComponent(acaoId)}&matricula=${encodeURIComponent(matriculaId)}`;
+
+      const jaNotificado = await this.prisma.notificacaoPortal.findFirst({
+        where: {
+          tenantId,
+          tipo: "lms_percurso_completo",
+          link,
+        },
+        select: { id: true },
+      });
+      if (jaNotificado) return;
+
+      const formandoNome = matricula.formando.nome;
+      const acao = matricula.turma.acaoFormacao;
+      await this.notifyForAcao(tenantId, acaoId, {
+        tipo: "lms_percurso_completo",
+        titulo: "Formando concluiu o LMS",
+        mensagem: `${formandoNome} concluiu todas as tarefas de «${acao.codigoInterno} – ${acao.titulo}» (${matricula.turma.codigo}).`,
+        link,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `notifyIfPercursoCompleto(${matriculaId}): ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
   private uniqueUserIds(raw: Array<string | null | undefined>): string[] {
     return [...new Set(raw.filter((id): id is string => Boolean(id)))];
+  }
+
+  /** Notifica userIds concretos (ex.: atribuição de sessões). */
+  async notifyUserIds(
+    tenantId: string,
+    userIds: string[],
+    input: FormadorNotificacaoInput,
+  ) {
+    await this.notifyMany(tenantId, this.uniqueUserIds(userIds), input);
   }
 
   private async notifyMany(
@@ -133,6 +219,17 @@ export class FormadorNotificacoesService {
             body: input.mensagem,
             url: input.link,
           },
+          ...(input.emailSubject && input.emailText
+            ? {
+                emailConteudo: {
+                  subject: input.emailSubject,
+                  text: input.emailText,
+                  html:
+                    input.emailHtml ??
+                    `<p>${input.emailText.replace(/\n/g, "<br/>")}</p>`,
+                },
+              }
+            : {}),
         })
         .catch((err) => {
           this.logger.warn(

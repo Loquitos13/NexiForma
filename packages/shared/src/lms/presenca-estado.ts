@@ -29,3 +29,37 @@ export function labelEstadoPresencaOuPorAssinalar(estado: string | null | undefi
   if (!estado || !isEstadoPresenca(estado)) return "Por assinalar";
   return ESTADO_PRESENCA_LABELS[estado];
 }
+
+/** Origens técnicas gravadas em `Presenca.origem`. */
+export type OrigemPresenca =
+  | "qr"
+  | "manual"
+  | "portal"
+  | "lms"
+  | "zoom"
+  | "teams"
+  | "meet";
+
+/** Rótulo de UI para a origem da marcação de presença. */
+export function labelOrigemPresenca(
+  origem: string | null | undefined,
+  opts?: { online?: boolean },
+): string {
+  const o = (origem ?? "manual").toLowerCase();
+  if (o === "qr") return "QR Code";
+  if (o === "manual") return "Manual";
+  if (o === "portal" || o === "lms" || o === "zoom" || o === "teams" || o === "meet") {
+    return opts?.online === false ? "Manual" : "Automático";
+  }
+  return opts?.online ? "Automático" : "Manual";
+}
+
+/** Variante de badge para a origem (alinhada com o design system). */
+export function origemPresencaBadgeVariant(
+  origem: string | null | undefined,
+): "green" | "blue" | "default" {
+  const o = (origem ?? "manual").toLowerCase();
+  if (o === "qr") return "green";
+  if (o === "portal" || o === "lms" || o === "zoom" || o === "teams" || o === "meet") return "blue";
+  return "default";
+}

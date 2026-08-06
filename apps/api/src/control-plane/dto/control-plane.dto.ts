@@ -10,6 +10,7 @@ import {
   IsUUID,
   Length,
   Matches,
+  Max,
   Min,
 } from "class-validator";
 import { BILLING_ADDON_CODES, BILLING_PLAN_CODES } from "@nexiforma/shared";
@@ -113,6 +114,35 @@ export class UpdateTenantSubscriptionDto {
 export class UpdateTenantStatusDto {
   @IsIn(STATUSES)
   status!: (typeof STATUSES)[number];
+}
+
+export class UpdateTenantLoginLockoutDto {
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(3)
+  @Max(20)
+  maxAttempts?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(60)
+  windowMinutes?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1440)
+  lockoutMinutes?: number;
+}
+
+export class ClearTenantLoginLockoutDto {
+  @IsEmail()
+  email!: string;
 }
 
 export class CreateSubscriptionKeyDto {

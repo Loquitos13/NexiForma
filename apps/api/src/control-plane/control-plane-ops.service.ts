@@ -4,6 +4,7 @@ import { promises as dns } from "dns";
 import type { PlatformAlertStatus, Prisma } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 
 type TenantIssue = {
   code: string;
@@ -276,7 +277,7 @@ export class ControlPlaneOpsService {
       (typeof meta?.website === "string" && meta.website.replace(/^https?:\/\//, "").split("/")[0]);
     if (custom) return custom.replace(/\/$/, "");
 
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     try {
       const host = new URL(appUrl).hostname;
       if (host === "localhost" || host === "127.0.0.1") return host;
@@ -310,7 +311,7 @@ export class ControlPlaneOpsService {
   }
 
   private async pingPortal(): Promise<boolean> {
-    const url = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const url = resolveAppPublicUrlForLinks(this.config);
     try {
       const res = await fetch(url.replace(/\/$/, "") + "/login", {
         method: "GET",

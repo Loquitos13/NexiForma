@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   Res,
   UploadedFile,
@@ -24,7 +25,15 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 import type { ModuloConteudo, ModuloUnidade, ProgressoModulo } from "@nexiforma/database";
-import { CreateModuloConteudoDto, CreateModuloUnidadeDto, UpdateModuloUnidadeDto, UpdateProgressoModuloDto } from "./dto/conteudos-lms.dto";
+import {
+  CreateModuloConteudoDto,
+  CreateModuloUnidadeDto,
+  DesbloquearUnidadeDto,
+  UpdateModuloPrazoAcaoDto,
+  UpdateModuloTarefasAcaoDto,
+  UpdateModuloUnidadeDto,
+  UpdateProgressoModuloDto,
+} from "./dto/conteudos-lms.dto";
 import { ScormCmiCommitDto } from "./dto/scorm.dto";
 import { ConteudosLmsService } from "./conteudos-lms.service";
 import { ScormService } from "./scorm.service";
@@ -42,19 +51,19 @@ export class ConteudosLmsController {
   ) {}
 
   @Get("unidades")
-  @Roles("tenant_manager", "formador", "formando")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador", "formando")
   listUnidades(@CurrentUser() user: RequestUser, @Query("cursoId") cursoId: string) {
     return this.conteudos.listUnidades(user, cursoId);
   }
 
   @Post("unidades")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   createUnidade(@CurrentUser() user: RequestUser, @Body() dto: CreateModuloUnidadeDto): Promise<ModuloUnidade> {
     return this.conteudos.createUnidade(user, dto);
   }
 
   @Patch("unidades/:id")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   updateUnidade(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -64,7 +73,7 @@ export class ConteudosLmsController {
   }
 
   @Delete("unidades/:id")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   @HttpCode(204)
   async deleteUnidade(
     @CurrentUser() user: RequestUser,
@@ -74,19 +83,19 @@ export class ConteudosLmsController {
   }
 
   @Get("modulos")
-  @Roles("tenant_manager", "formador", "formando")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador", "formando")
   listModulos(@CurrentUser() user: RequestUser, @Query("cursoId") cursoId: string): Promise<ModuloConteudo[]> {
     return this.conteudos.listModulos(user, cursoId);
   }
 
   @Post("modulos")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   createModulo(@CurrentUser() user: RequestUser, @Body() dto: CreateModuloConteudoDto): Promise<ModuloConteudo> {
     return this.conteudos.createModulo(user, dto);
   }
 
   @Patch("modulos/:id")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   updateModulo(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -96,13 +105,35 @@ export class ConteudosLmsController {
   }
 
   @Delete("modulos/:id")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   @HttpCode(204)
   async deleteModulo(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
   ): Promise<void> {
     await this.conteudos.deleteModulo(user, id);
+  }
+
+  @Post("matriculas/:matriculaId/unidades/:unidadeId/desbloquear")
+  @Roles("formando", "tenant_manager", "formador")
+  desbloquearUnidade(
+    @CurrentUser() user: RequestUser,
+    @Param("matriculaId", ParseUUIDPipe) matriculaId: string,
+    @Param("unidadeId", ParseUUIDPipe) unidadeId: string,
+    @Body() dto: DesbloquearUnidadeDto,
+  ) {
+    return this.conteudos.desbloquearUnidadeMatricula(user, matriculaId, unidadeId, dto.motivo);
+  }
+
+  @Delete("matriculas/:matriculaId/unidades/:unidadeId/desbloquear")
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  @HttpCode(204)
+  async bloquearUnidade(
+    @CurrentUser() user: RequestUser,
+    @Param("matriculaId", ParseUUIDPipe) matriculaId: string,
+    @Param("unidadeId", ParseUUIDPipe) unidadeId: string,
+  ): Promise<void> {
+    await this.conteudos.bloquearUnidadeMatricula(user, matriculaId, unidadeId);
   }
 
   @Get("percurso")
@@ -116,7 +147,7 @@ export class ConteudosLmsController {
   }
 
   @Get("progresso")
-  @Roles("tenant_manager", "formador", "formando")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador", "formando")
   progresso(
     @CurrentUser() user: RequestUser,
     @Query("matriculaId") matriculaId: string,
@@ -128,10 +159,55 @@ export class ConteudosLmsController {
     return this.conteudos.listProgresso(user, matriculaId);
   }
 
+  @Get("acoes/:acaoId/libertar")
+  @Roles("formador", "tenant_manager")
+  estadoLibertarAcao(
+    @CurrentUser() user: RequestUser,
+    @Param("acaoId", ParseUUIDPipe) acaoId: string,
+  ) {
+    return this.conteudos.estadoLibertarAcao(user, acaoId);
+  }
+
+  @Put("acoes/:acaoId/modulos/:unidadeId/tarefas")
+  @Roles("formador", "tenant_manager")
+  setModuloTarefas(
+    @CurrentUser() user: RequestUser,
+    @Param("acaoId", ParseUUIDPipe) acaoId: string,
+    @Param("unidadeId", ParseUUIDPipe) unidadeId: string,
+    @Body() body: UpdateModuloTarefasAcaoDto,
+  ) {
+    return this.conteudos.setModuloTarefasAcao(
+      user,
+      acaoId,
+      unidadeId,
+      body.desbloqueado === true,
+    );
+  }
+
+  @Put("acoes/:acaoId/modulos/:unidadeId/prazo")
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  setModuloPrazo(
+    @CurrentUser() user: RequestUser,
+    @Param("acaoId", ParseUUIDPipe) acaoId: string,
+    @Param("unidadeId", ParseUUIDPipe) unidadeId: string,
+    @Body() body: UpdateModuloPrazoAcaoDto,
+  ) {
+    return this.conteudos.setModuloPrazoAcao(user, acaoId, unidadeId, body.prazoConclusao);
+  }
+
   @Get("formador/progresso-resumo")
-  @Roles("formador")
+  @Roles("formador", "tenant_manager")
   resumoProgressoFormador(@CurrentUser() user: RequestUser) {
     return this.conteudos.resumoProgressoFormador(user);
+  }
+
+  @Get("formador/progresso-detalhe")
+  @Roles("formador", "tenant_manager")
+  progressoDetalheFormador(
+    @CurrentUser() user: RequestUser,
+    @Query("matriculaId", ParseUUIDPipe) matriculaId: string,
+  ) {
+    return this.conteudos.progressoDetalheFormador(user, matriculaId);
   }
 
   @Patch("progresso/:moduloId")
@@ -167,7 +243,7 @@ export class ConteudosLmsController {
   }
 
   @Post("modulos/upload-novo")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 200 * 1024 * 1024 } }))
   uploadNovoModuloComFicheiro(
     @CurrentUser() user: RequestUser,
@@ -183,7 +259,7 @@ export class ConteudosLmsController {
   }
 
   @Post("modulos/:id/upload")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 200 * 1024 * 1024 } }))
   uploadModuloFicheiro(
     @CurrentUser() user: RequestUser,
@@ -195,7 +271,7 @@ export class ConteudosLmsController {
   }
 
   @Get("modulos/:id/media")
-  @Roles("tenant_manager", "formador", "formando")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador", "formando")
   async serveModuloMedia(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -211,7 +287,7 @@ export class ConteudosLmsController {
   }
 
   @Post("scorm/upload")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   @UseInterceptors(
     FileInterceptor("package", { limits: { fileSize: 50 * 1024 * 1024 } }),
   )

@@ -6,9 +6,15 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import type { Prisma } from "@nexiforma/database";
+import AdmZip from "adm-zip";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
+import {
+  countsFromGroupBy,
+  parseListPagination,
+} from "../common/paginated-list.util";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 import { resolveProjectPath } from "../config/env-paths";
 import {
   calcularTotaisFatura,
@@ -66,7 +72,6 @@ import type {
   AnularFaturaDto,
   EnviarFaturaEmailDto,
   RejeitarPedidoAnulacaoDto,
-  SolicitarAnulacaoFaturaDto,
 } from "./dto/fatura.dto";
 import { ConfigService } from "@nestjs/config";
 import { buildSaftPtXml } from "./saft-pt-export.util";
@@ -78,6 +83,15 @@ import {
   normalizarBic,
   normalizarIban,
 } from "./faturacao-dados-legais.util";
+import {
+  AT_LICENCA_ANEXO_II_TEXTO,
+  AT_LICENCA_ANEXO_II_VERSAO,
+  isAtLicencaAnexoIiAceite,
+} from "./at-licenca-anexo-ii.util";
+import { AuditService } from "../audit/audit.service";
+
+const FATURACAO_AUDITORIA_SCHEMA = "nexiforma.faturacao_auditoria.v1";
+const MAX_PDFS_PACOTE_AUDITORIA = 50;
 
 const FATURA_INCLUDE = {
   entidadeCliente: { select: { id: true, nome: true, nif: true, email: true } },
@@ -115,13 +129,21 @@ export class FaturasService {
     private readonly portalNotificacoes: PortalNotificacoesService,
     private readonly mail: MailService,
     private readonly config: ConfigService,
+    private readonly audit: AuditService,
   ) {}
 
-  list(
+  async list(
     user: RequestUser,
-    filters?: { entidadeClienteId?: string; estado?: string; q?: string },
+    filters?: {
+      entidadeClienteId?: string;
+      estado?: string;
+      q?: string;
+      page?: string;
+      pageSize?: string;
+    },
   ) {
     const tenantId = requireTenantId(user);
+    const pagination = parseListPagination(filters?.page, filters?.pageSize);
     const base: Prisma.FaturaComercialWhereInput = {
       tenantId,
       ...(filters?.entidadeClienteId
@@ -129,11 +151,40 @@ export class FaturasService {
         : {}),
       ...(filters?.estado ? { estado: filters.estado as never } : {}),
     };
-    return this.prisma.faturaComercial.findMany({
-      where: mergeFaturaSearchWhere(base, filters?.q),
-      orderBy: { updatedAt: "desc" },
-      include: FATURA_INCLUDE,
-    });
+    const where = mergeFaturaSearchWhere(base, filters?.q);
+    const whereForCounts: Prisma.FaturaComercialWhereInput = mergeFaturaSearchWhere(
+      {
+        tenantId,
+        ...(filters?.entidadeClienteId
+          ? { entidadeClienteId: filters.entidadeClienteId }
+          : {}),
+      },
+      filters?.q,
+    );
+
+    const [total, items, countRows] = await Promise.all([
+      this.prisma.faturaComercial.count({ where }),
+      this.prisma.faturaComercial.findMany({
+        where,
+        orderBy: { updatedAt: "desc" },
+        skip: pagination.skip,
+        take: pagination.take,
+        include: FATURA_INCLUDE,
+      }),
+      this.prisma.faturaComercial.groupBy({
+        by: ["estado"],
+        where: whereForCounts,
+        _count: { _all: true },
+      }),
+    ]);
+
+    return {
+      items,
+      total,
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      countsByEstado: countsFromGroupBy(countRows),
+    };
   }
 
   async getOne(user: RequestUser, id: string) {
@@ -162,10 +213,7 @@ export class FaturasService {
     if (!proposta) {
       throw new NotFoundException("Proposta não encontrada.");
     }
-    if (proposta.estado === "REJEITADA") {
-      throw new BadRequestException("Não é possível faturar propostas rejeitadas.");
-    }
-    if (proposta.estado !== "ACEITE" && user.role !== "tenant_manager") {
+    if (proposta.estado !== "ACEITE") {
       throw new BadRequestException("Só é possível faturar propostas aceites.");
     }
     if (proposta.fatura) {
@@ -469,7 +517,22 @@ export class FaturasService {
     await this.tentarComunicacaoAutomatica(user, id, config);
     await this.enviarCopiaDocumentoAposEmissao(user, id);
 
-    return this.getOne(user, id);
+    const emitida = await this.getOne(user, id);
+    void this.audit.log({
+      actorType: "TENANT_USER",
+      actorId: user.sub,
+      action: "fatura.emitir",
+      resourceType: "FaturaComercial",
+      resourceId: id,
+      targetTenantId: tenantId,
+      targetUserId: user.sub,
+      payload: {
+        numero: emitida.numero,
+        atcud: emitida.codigoAtcud,
+        estado: emitida.estado,
+      },
+    });
+    return emitida;
   }
 
   /** Cópia interna do documento emitido para quem emitiu e gestores do tenant. */
@@ -582,6 +645,20 @@ export class FaturasService {
     });
 
     const fatura = await this.getOne(user, id);
+    void this.audit.log({
+      actorType: "TENANT_USER",
+      actorId: user.sub,
+      action: "fatura.comunicar_at",
+      resourceType: "FaturaComercial",
+      resourceId: id,
+      targetTenantId: tenantId,
+      targetUserId: user.sub,
+      payload: {
+        sucesso: resultado.sucesso,
+        codigoResposta: resultado.codigoResposta,
+        mode: resultado.mode,
+      },
+    });
     return {
       fatura,
       comunicacao: {
@@ -611,6 +688,20 @@ export class FaturasService {
     });
 
     const fatura = await this.getOne(user, id);
+    void this.audit.log({
+      actorType: "TENANT_USER",
+      actorId: user.sub,
+      action: "fatura.reenviar_at",
+      resourceType: "FaturaComercial",
+      resourceId: id,
+      targetTenantId: tenantId,
+      targetUserId: user.sub,
+      payload: {
+        sucesso: resultado.sucesso,
+        codigoResposta: resultado.codigoResposta,
+        mode: resultado.mode,
+      },
+    });
     return {
       fatura,
       comunicacao: {
@@ -675,63 +766,6 @@ export class FaturasService {
       orderBy: { codigo: "asc" },
     });
     return this.buildCertificacaoStatus(config, series);
-  }
-
-  async solicitarAnulacao(user: RequestUser, id: string, dto: SolicitarAnulacaoFaturaDto) {
-    const tenantId = requireTenantId(user);
-    if (user.role !== "comercial") {
-      throw new BadRequestException(
-        "Comerciais solicitam anulação; gestores anulam directamente.",
-      );
-    }
-
-    const fatura = await this.loadFaturaParaAnulacao(tenantId, id);
-    const motivo = dto.motivo.trim();
-    if (!motivo) {
-      throw new BadRequestException("Indique o motivo da anulação.");
-    }
-
-    const pendente = await this.prisma.faturaPedidoAnulacao.findFirst({
-      where: { faturaId: id, estado: "PENDENTE" },
-    });
-    if (pendente) {
-      throw new ConflictException("Já existe um pedido de anulação pendente para esta fatura.");
-    }
-
-    const solicitante = await this.prisma.user.findUnique({
-      where: { id: user.sub },
-      select: { displayName: true, email: true },
-    });
-
-    const pedido = await this.prisma.faturaPedidoAnulacao.create({
-      data: {
-        faturaId: id,
-        solicitadoPorUserId: user.sub,
-        motivo,
-      },
-    });
-
-    const faturaRef = this.refFatura(fatura);
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
-    const link = `/portal/crm/faturas/${id}`;
-
-    await this.portalNotificacoes.notifyGestores(tenantId, {
-      tipo: "FATURA_PEDIDO_ANULACAO",
-      titulo: `Pedido de anulação – ${faturaRef}`,
-      mensagem: `${solicitante?.displayName ?? "Comercial"} solicitou anular ${faturaRef}: ${motivo}`,
-      link,
-      buildEmail: (gestor) =>
-        this.portalNotificacoes.buildPedidoAnulacaoFaturaEmail({
-          gestorNome: gestor.displayName,
-          comercialNome: solicitante?.displayName ?? "Comercial",
-          faturaRef,
-          motivo,
-          portalUrl: `${appUrl}${link}`,
-        }),
-    });
-
-    const updated = await this.getOne(user, id);
-    return { pedido, fatura: updated };
   }
 
   async anular(user: RequestUser, id: string, dto: AnularFaturaDto) {
@@ -799,7 +833,23 @@ export class FaturasService {
       });
     });
 
-    return this.getOne(user, id);
+    const anulada = await this.getOne(user, id);
+    void this.audit.log({
+      actorType: "TENANT_USER",
+      actorId: user.sub,
+      action: "fatura.anular",
+      resourceType: "FaturaComercial",
+      resourceId: id,
+      targetTenantId: tenantId,
+      targetUserId: user.sub,
+      payload: {
+        motivo,
+        comunicadaAt,
+        numero: fatura.numero,
+        atcud: fatura.codigoAtcud,
+      },
+    });
+    return anulada;
   }
 
   async rejeitarPedidoAnulacao(
@@ -833,7 +883,7 @@ export class FaturasService {
       include: { serie: true },
     });
     const faturaRef = fatura ? this.refFatura(fatura) : id;
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     const link = `/portal/crm/faturas/${id}`;
     const respostaMotivo =
       dto.respostaMotivo?.trim() ||
@@ -923,7 +973,7 @@ export class FaturasService {
     },
     filename: string,
   ): FaturaEmailResumo {
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     const totalLiquido =
       fatura.valorCentavos + fatura.ivaCentavos - (fatura.retencaoCentavos ?? 0);
     return {
@@ -962,6 +1012,12 @@ export class FaturasService {
       series,
       integracao,
       certificacao,
+      licencaAt: {
+        versao: AT_LICENCA_ANEXO_II_VERSAO,
+        texto: AT_LICENCA_ANEXO_II_TEXTO,
+        aceite: isAtLicencaAnexoIiAceite(config),
+        aceiteEm: config.atLicencaAceiteEm?.toISOString() ?? null,
+      },
     };
   }
 
@@ -1024,6 +1080,27 @@ export class FaturasService {
       dto.comunicacaoAutomatica !== undefined
         ? dto.comunicacaoAutomatica
         : existing.comunicacaoAutomatica;
+
+    let nextLicencaAceiteEm = existing.atLicencaAceiteEm;
+    let nextLicencaAceitePor = existing.atLicencaAceitePorUserId;
+    let nextLicencaVersao = existing.atLicencaVersao;
+    const aceitarAgora = dto.aceitarLicencaAtWs === true;
+    if (aceitarAgora) {
+      nextLicencaAceiteEm = new Date();
+      nextLicencaAceitePor = user.sub;
+      nextLicencaVersao = AT_LICENCA_ANEXO_II_VERSAO;
+    }
+
+    const licencaOk = isAtLicencaAnexoIiAceite({
+      atLicencaAceiteEm: nextLicencaAceiteEm,
+      atLicencaVersao: nextLicencaVersao,
+    });
+
+    if (nextComunicacao && !licencaOk) {
+      throw new BadRequestException(
+        "Aceite a Licença de utilização dos serviços web da AT (Anexo II) antes de activar a comunicação.",
+      );
+    }
 
     if (nextComunicacao && integracao.mode === "production") {
       const cert = resolverSoftwareCertificado(
@@ -1109,12 +1186,28 @@ export class FaturasService {
             ? dto.atCertificadoRef?.trim() || null
             : existing.atCertificadoRef,
         softwareCertificado: nextSoftware,
+        atLicencaAceiteEm: nextLicencaAceiteEm,
+        atLicencaAceitePorUserId: nextLicencaAceitePor,
+        atLicencaVersao: nextLicencaVersao,
         comunicacaoAtiva: nextComunicacao,
         comunicacaoAutomatica: nextComunicacaoAutomatica,
       },
     });
 
     assertDadosEmitenteCompletos(config);
+
+    if (aceitarAgora) {
+      void this.audit.log({
+        actorType: "TENANT_USER",
+        actorId: user.sub,
+        action: "at.licenca.accepted",
+        resourceType: "ConfigFaturacaoTenant",
+        resourceId: tenantId,
+        targetTenantId: tenantId,
+        targetUserId: user.sub,
+        payload: { versao: AT_LICENCA_ANEXO_II_VERSAO },
+      });
+    }
 
     const series = await this.prisma.serieFaturacao.findMany({
       where: { tenantId, ativo: true },
@@ -1128,6 +1221,12 @@ export class FaturasService {
       series,
       integracao,
       certificacao: this.buildCertificacaoStatus(config, series),
+      licencaAt: {
+        versao: AT_LICENCA_ANEXO_II_VERSAO,
+        texto: AT_LICENCA_ANEXO_II_TEXTO,
+        aceite: isAtLicencaAnexoIiAceite(config),
+        aceiteEm: config.atLicencaAceiteEm?.toISOString() ?? null,
+      },
     };
   }
 
@@ -1139,6 +1238,17 @@ export class FaturasService {
     if (integracao.mode === "disabled") {
       throw new BadRequestException(
         "Integração AT desactivada - configure AT_FATURAS_MODE=sandbox ou production.",
+      );
+    }
+
+    if (
+      !isAtLicencaAnexoIiAceite({
+        atLicencaAceiteEm: config.atLicencaAceiteEm,
+        atLicencaVersao: config.atLicencaVersao,
+      })
+    ) {
+      throw new BadRequestException(
+        "Aceite a Licença Anexo II (serviços web AT) antes de testar a ligação.",
       );
     }
 
@@ -1240,6 +1350,13 @@ export class FaturasService {
       softwareCertificado: string | null;
       comunicacaoAtiva: boolean;
       nomeEmpresa: string;
+      atLicencaAceiteEm?: Date | null;
+      atLicencaVersao?: string | null;
+      iban?: string | null;
+      bicSwift?: string | null;
+      emailGestor?: string | null;
+      capitalSocial?: string | null;
+      consRegCom?: string | null;
     },
     series?: Array<{ codigo: string; tipo: string; codigoValidacaoAt: string | null }>,
   ) {
@@ -1543,10 +1660,22 @@ export class FaturasService {
   private assertComunicacaoAtPermitida(config: {
     comunicacaoAtiva: boolean;
     softwareCertificado: string | null;
+    atLicencaAceiteEm?: Date | null;
+    atLicencaVersao?: string | null;
   }) {
     const atMode = this.atFaturas.getPublicConfig().mode;
     if (atMode === "disabled") {
       throw new BadRequestException("Integração AT desactivada no servidor.");
+    }
+    if (
+      !isAtLicencaAnexoIiAceite({
+        atLicencaAceiteEm: config.atLicencaAceiteEm,
+        atLicencaVersao: config.atLicencaVersao,
+      })
+    ) {
+      throw new BadRequestException(
+        "Aceite a Licença Anexo II (serviços web AT) em Configuração → Faturação antes de comunicar.",
+      );
     }
     if (!config.comunicacaoAtiva) {
       throw new BadRequestException(
@@ -1613,6 +1742,7 @@ export class FaturasService {
   async comunicarSerieAt(user: RequestUser, serieId: string) {
     const tenantId = requireTenantId(user);
     const config = await this.ensureConfig(tenantId);
+    this.assertLicencaAtAceite(config);
     return this.comunicarSerieInterno(tenantId, serieId, config);
   }
 
@@ -1620,6 +1750,7 @@ export class FaturasService {
   async comunicarTodasSeriesAt(user: RequestUser) {
     const tenantId = requireTenantId(user);
     const config = await this.ensureConfig(tenantId);
+    this.assertLicencaAtAceite(config);
     const series = await this.prisma.serieFaturacao.findMany({
       where: {
         tenantId,
@@ -1632,6 +1763,22 @@ export class FaturasService {
       results.push(await this.comunicarSerieInterno(tenantId, s.id, config));
     }
     return { total: results.length, results };
+  }
+
+  private assertLicencaAtAceite(config: {
+    atLicencaAceiteEm?: Date | null;
+    atLicencaVersao?: string | null;
+  }) {
+    if (
+      !isAtLicencaAnexoIiAceite({
+        atLicencaAceiteEm: config.atLicencaAceiteEm,
+        atLicencaVersao: config.atLicencaVersao,
+      })
+    ) {
+      throw new BadRequestException(
+        "Aceite a Licença Anexo II (serviços web AT) em Configuração → Faturação antes de comunicar.",
+      );
+    }
   }
 
   private async ensureSerieComunicadaAt(
@@ -1840,6 +1987,208 @@ export class FaturasService {
     return {
       xml,
       filename: `SAFT-PT_${config.nifEmitente}_${suffix}.xml`,
+      faturas: faturas.length,
+    };
+  }
+
+  /**
+   * Pacote ZIP para auditoria de faturação: SAF-T, inventário CSV,
+   * log de comunicações AT, séries e PDFs (até ao limite).
+   */
+  async exportAuditoriaFaturacao(
+    user: RequestUser,
+    opts: { ano: number; mes?: number },
+  ): Promise<{ buffer: Buffer; filename: string; faturas: number }> {
+    const tenantId = requireTenantId(user);
+    const saft = await this.exportSaftPt(user, opts);
+
+    let periodoInicio: Date;
+    let periodoFim: Date;
+    if (opts.mes) {
+      periodoInicio = new Date(Date.UTC(opts.ano, opts.mes - 1, 1));
+      periodoFim = new Date(Date.UTC(opts.ano, opts.mes, 0, 23, 59, 59));
+    } else {
+      periodoInicio = new Date(Date.UTC(opts.ano, 0, 1));
+      periodoFim = new Date(Date.UTC(opts.ano, 11, 31, 23, 59, 59));
+    }
+
+    const [config, faturas, series] = await Promise.all([
+      this.prisma.configFaturacaoTenant.findUnique({ where: { tenantId } }),
+      this.prisma.faturaComercial.findMany({
+        where: {
+          tenantId,
+          dataEmissao: { gte: periodoInicio, lte: periodoFim },
+          estado: { in: ["EMITIDA", "COMUNICADA_AT", "ANULADA"] },
+        },
+        include: {
+          serie: { select: { codigo: true, tipo: true } },
+          comunicacoesAt: { orderBy: { tentativaEm: "asc" } },
+        },
+        orderBy: [{ serieId: "asc" }, { numero: "asc" }],
+      }),
+      this.prisma.serieFaturacao.findMany({
+        where: { tenantId, ativo: true },
+        orderBy: { codigo: "asc" },
+        select: {
+          codigo: true,
+          tipo: true,
+          codigoValidacaoAt: true,
+          proximoNumero: true,
+          estadoAt: true,
+          comunicadaAtEm: true,
+          dataInicioPrevUtiliz: true,
+        },
+      }),
+    ]);
+
+    if (!config) {
+      throw new BadRequestException("Configure a faturação antes de exportar o pacote de auditoria.");
+    }
+
+    const suffix = opts.mes
+      ? `${opts.ano}-${String(opts.mes).padStart(2, "0")}`
+      : String(opts.ano);
+    const geradoEm = new Date().toISOString();
+
+    const csvHeader =
+      "serie;tipo;numero;atcud;estado;data_emissao;cliente_nif;cliente_nome;base_eur;iva_eur;retencao_eur;total_eur;hash_control;anulada_em;motivo_anulacao\n";
+    const csvRows = faturas.map((f) => {
+      const total = f.valorCentavos + f.ivaCentavos - f.retencaoCentavos;
+      const esc = (v: string | null | undefined) =>
+        `"${String(v ?? "").replace(/"/g, '""')}"`;
+      return [
+        f.serie.codigo,
+        f.serie.tipo,
+        f.numero ?? "",
+        f.codigoAtcud ?? "",
+        f.estado,
+        f.dataEmissao?.toISOString() ?? "",
+        f.destinatarioNif,
+        esc(f.destinatarioNome),
+        (f.valorCentavos / 100).toFixed(2),
+        (f.ivaCentavos / 100).toFixed(2),
+        (f.retencaoCentavos / 100).toFixed(2),
+        (total / 100).toFixed(2),
+        f.hashControl ?? "",
+        f.anuladaEm?.toISOString() ?? "",
+        esc(f.motivoAnulacao),
+      ].join(";");
+    });
+
+    const comunicacoes = faturas.flatMap((f) =>
+      f.comunicacoesAt.map((c) => ({
+        faturaId: f.id,
+        documento: f.numero != null
+          ? identificacaoDocumentoAt(f.serie.tipo, f.serie.codigo, f.numero)
+          : null,
+        atcud: f.codigoAtcud,
+        tentativaEm: c.tentativaEm,
+        sucesso: c.sucesso,
+        codigoResposta: c.codigoResposta,
+        mensagemAt: c.mensagemAt,
+        payloadHash: c.payloadHash,
+      })),
+    );
+
+    const pdfsIncluidos: string[] = [];
+    const pdfsOmitidos: string[] = [];
+    const zip = new AdmZip();
+    zip.addFile(`saft/${saft.filename}`, Buffer.from(saft.xml, "utf8"));
+    zip.addFile("inventario/faturas.csv", Buffer.from(csvHeader + csvRows.join("\n"), "utf8"));
+    zip.addFile(
+      "at/comunicacoes.json",
+      Buffer.from(
+        JSON.stringify(
+          {
+            schema: "nexiforma.faturacao_comunicacoes_at.v1",
+            periodo: { inicio: periodoInicio, fim: periodoFim },
+            total: comunicacoes.length,
+            comunicacoes,
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      ),
+    );
+    zip.addFile(
+      "series/series.json",
+      Buffer.from(JSON.stringify({ schema: "nexiforma.series_faturacao.v1", series }, null, 2), "utf8"),
+    );
+
+    const paraPdf = faturas.filter((f) => f.numero != null).slice(0, MAX_PDFS_PACOTE_AUDITORIA);
+    for (const f of paraPdf) {
+      const docId = identificacaoDocumentoAt(f.serie.tipo, f.serie.codigo, f.numero!).replace(
+        /[^\w.-]+/g,
+        "_",
+      );
+      try {
+        const pkg = await this.htmlExport.buildPrintablePdf(user, f.id);
+        const name = `documentos/${docId}.pdf`;
+        zip.addFile(name, pkg.pdf);
+        pdfsIncluidos.push(name);
+      } catch (err) {
+        pdfsOmitidos.push(
+          `${docId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    if (faturas.length > MAX_PDFS_PACOTE_AUDITORIA) {
+      pdfsOmitidos.push(
+        `Limite de ${MAX_PDFS_PACOTE_AUDITORIA} PDFs – restantes disponíveis por download individual.`,
+      );
+    }
+
+    const ficheiros = [
+      `saft/${saft.filename}`,
+      "inventario/faturas.csv",
+      "at/comunicacoes.json",
+      "series/series.json",
+      ...pdfsIncluidos,
+      "manifest.json",
+      "README.txt",
+    ];
+
+    const manifest = {
+      schema: FATURACAO_AUDITORIA_SCHEMA,
+      geradoEm,
+      nifEmitente: config.nifEmitente,
+      nomeEmpresa: config.nomeEmpresa,
+      periodo: {
+        ano: opts.ano,
+        mes: opts.mes ?? null,
+        inicio: periodoInicio.toISOString(),
+        fim: periodoFim.toISOString(),
+      },
+      totais: {
+        faturas: faturas.length,
+        comunicacoesAt: comunicacoes.length,
+        pdfs: pdfsIncluidos.length,
+      },
+      ficheiros,
+      pdfsOmitidos,
+    };
+
+    const readme =
+      `Pacote de auditoria de faturação – NexiForma\n` +
+      `Gerado: ${geradoEm}\n` +
+      `Emitente: ${config.nifEmitente} – ${config.nomeEmpresa}\n` +
+      `Período: ${suffix}\n\n` +
+      `Conteúdo:\n` +
+      `- saft/ – ficheiro SAF-T PT (XML)\n` +
+      `- inventario/faturas.csv – inventário fiscal do período\n` +
+      `- at/comunicacoes.json – log de comunicações à AT\n` +
+      `- series/series.json – séries activas e códigos de validação\n` +
+      `- documentos/ – PDFs emitidos (até ${MAX_PDFS_PACOTE_AUDITORIA})\n\n` +
+      `Documentos no período: ${faturas.length}\n` +
+      `Comunicações AT: ${comunicacoes.length}\n`;
+
+    zip.addFile("manifest.json", Buffer.from(JSON.stringify(manifest, null, 2), "utf8"));
+    zip.addFile("README.txt", Buffer.from(readme, "utf8"));
+
+    return {
+      buffer: zip.toBuffer(),
+      filename: `auditoria-faturacao_${config.nifEmitente}_${suffix}.zip`,
       faturas: faturas.length,
     };
   }

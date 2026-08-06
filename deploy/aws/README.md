@@ -52,7 +52,7 @@
 
 10. **SIGO** – `SIGO_API_MODE=http` quando endpoint DGEEC disponível; staging usar `mock`.
 
-11. **S3** (Fase 5) – bucket dedicado (ex. `nexiforma-storage`) com encriptação SSE-S3; IAM na task role ECS conforme `deploy/aws/s3-iam-policy.example.json` (`PutObject`, `GetObject`, `DeleteObject`); variáveis `STORAGE_BACKEND=s3`, `S3_BUCKET`, `AWS_REGION`. Prefixos: `formandos/` (CC/BI), `documentos/`, `lms/`, exports dossiê. Documentos de identificação: servidos via API autenticada (`GET /v1/formando-portal/documentos/:id/download`); substituição apaga o ficheiro anterior no bucket.
+11. **S3** (Fase 5) – bucket dedicado (ex. `nexiforma-storage`) com encriptação SSE-S3 (`S3_SSE_ALGORITHM=AES256`) ou SSE-KMS (`aws:kms` + `S3_KMS_KEY_ID`); IAM na task role ECS conforme `deploy/aws/s3-iam-policy.example.json` (`PutObject`/`GetObject`/`DeleteObject` + `kms:*` se KMS); variáveis `STORAGE_BACKEND=s3`, `S3_BUCKET`, `AWS_REGION`. Prefixos: `formandos/` (CC/BI), `documentos/`, `lms/`, exports dossiê. Documentos: stream autenticado (`GET /v1/documentos/:id/download` e portal formando); downloads registados em `global_audit_log`.
 
 12. **SES** – verificar domínio remetente; `MAIL_PROVIDER=ses`, `MAIL_FROM=noreply@nexiforma.pt`, `MAIL_REPLY_TO=suporte@nexiforma.pt`.
     - SNS topic (bounces/complaints) → subscrição HTTPS `https://api.../v1/mail/webhooks/ses`; env `SES_SNS_TOPIC_ARN`.

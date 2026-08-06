@@ -2,7 +2,7 @@
 
 > **Objectivo:** permitir a **emissão legal de faturas** e **comunicação em tempo real à AT** (webservice e-fatura), dentro do fluxo comercial já existente (entidades → propostas → faturação).
 >
-> **Utilizadores:** `tenant_manager` (gestor) e `comercial`.
+> **Utilizadores:** `tenant_manager` (gestor) - módulo add-on **Faturação AT**, independente do CRM comercial.
 >
 > **Custo AT:** webservice e certificação de software são **gratuitos**; o investimento é desenvolvimento, certificação operacional e manutenção.
 
@@ -16,8 +16,8 @@ Entidade cliente → Proposta (RASCUNHO → ENVIADA → ACEITE) → Fatura → C
 
 | Papel | Permissões |
 |-------|------------|
-| **comercial** | Criar fatura a partir de proposta aceite, editar rascunho, emitir, enviar ao cliente, consultar estado AT |
-| **tenant_manager** | Tudo do comercial + configurar séries/AT, anular faturas, reenviar comunicação, relatórios CRM |
+| **comercial** | Sem acesso à faturação AT (CRM comercial: leads, propostas, clientes) |
+| **tenant_manager** | Emissão, comunicação AT, configuração fiscal, anulação, SAF-T, export contabilidade |
 
 ---
 
@@ -118,17 +118,17 @@ model FaturaComunicacaoAt {
 
 | Método | Rota | Roles | Descrição |
 |--------|------|-------|-----------|
-| GET | `/crm/faturas` | manager, comercial | Listar (filtro entidade, estado, datas) |
-| GET | `/crm/faturas/:id` | manager, comercial | Detalhe + histórico AT |
-| POST | `/crm/propostas/:id/faturar` | manager, comercial | Cria rascunho a partir de proposta **ACEITE** |
-| POST | `/crm/faturas` | manager, comercial | Criar rascunho manual |
-| PATCH | `/crm/faturas/:id` | manager, comercial | Editar só em RASCUNHO |
-| POST | `/crm/faturas/:id/emitir` | manager, comercial | Fecha numeração, gera ATCUD/QR |
-| POST | `/crm/faturas/:id/comunicar-at` | manager, comercial | Envia ao webservice AT |
-| POST | `/crm/faturas/:id/anular` | **manager** | Anula + comunica anulação AT |
-| GET | `/crm/faturas/:id/documento.html` | manager, comercial | PDF/HTML para impressão |
-| GET | `/crm/config/faturacao` | **manager** | Config tenant |
-| PATCH | `/crm/config/faturacao` | **manager** | Séries, flags, credenciais AT |
+| GET | `/crm/faturas` | tenant_manager | Listar (filtro entidade, estado, datas) |
+| GET | `/crm/faturas/:id` | tenant_manager | Detalhe + histórico AT |
+| POST | `/crm/propostas/:id/faturar` | tenant_manager | Cria rascunho a partir de proposta **ACEITE** |
+| POST | `/crm/faturas` | tenant_manager | Criar rascunho manual |
+| PATCH | `/crm/faturas/:id` | tenant_manager | Editar só em RASCUNHO |
+| POST | `/crm/faturas/:id/emitir` | tenant_manager | Fecha numeração, gera ATCUD/QR |
+| POST | `/crm/faturas/:id/comunicar-at` | tenant_manager | Envia ao webservice AT |
+| POST | `/crm/faturas/:id/anular` | tenant_manager | Anula + comunica anulação AT |
+| GET | `/crm/faturas/:id/documento.html` | tenant_manager | PDF/HTML para impressão |
+| GET | `/crm/config/faturacao` | tenant_manager | Config tenant |
+| PATCH | `/crm/config/faturacao` | tenant_manager | Séries, flags, credenciais AT |
 
 ### 5. UI CRM (`/portal/crm` e `/portal/propostas`)
 
@@ -137,7 +137,7 @@ model FaturaComunicacaoAt {
 - **Detalhe fatura:** linhas, totais, botões Emitir / Comunicar AT / Imprimir / Enviar email
 - **Propostas:** botão **«Faturar»** visível quando `estado === ACEITE` e ainda sem fatura
 - **Configuração** (`/portal/crm/faturacao`): só gestor – séries, teste de ligação AT, estado certificação
-- Reutilizar roles existentes: `@Roles("tenant_manager", "comercial")`
+- Reutilizar role: `@Roles("tenant_manager")` - faturação AT é exclusiva do gestor (módulo add-on).
 
 ---
 
@@ -171,7 +171,7 @@ Credenciais por tenant: `atSubutilizador` + password encriptada. Guia completo: 
 
 ## Critérios de aceitação
 
-- [x] Comercial converte proposta aceite em fatura rascunho em 2 cliques
+- [x] Gestor converte proposta aceite em fatura rascunho em 2 cliques
 - [x] Gestor configura série e vê estado da integração AT (incl. modo sandbox)
 - [x] Fatura emitida gera documento com ATCUD + QR legível
 - [x] Comunicação AT regista sucesso/erro com mensagem compreensível (sandbox + produção)

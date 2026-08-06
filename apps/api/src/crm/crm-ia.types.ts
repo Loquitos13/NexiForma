@@ -21,11 +21,21 @@ export type InteraccaoComercialResposta = {
   processadoEm: Date | null;
   entidadeClienteId: string | null;
   leadComercialId: string | null;
-  criadoPorUserId: string;
+  criadoPorUserId: string | null;
+  criadoPorAutorId: string;
+  criadoPorDisplayName: string;
+  criadoPorEmail: string;
   createdAt: Date;
+  agendadoPara?: Date | null;
+  agendadoFim?: Date | null;
+  salaJoinUrl?: string | null;
+  reuniaoEstado?: string | null;
+  reuniaoIniciadaEm?: Date | null;
+  reuniaoTerminadaEm?: Date | null;
+  reuniaoDuracaoSegundos?: number | null;
   entidadeCliente?: { id: string; nome: string; nif: string } | null;
   leadComercial?: { id: string; codigo: string; empresaNome: string } | null;
-  criadoPor?: { id: string; displayName: string; email: string };
+  criadoPor?: { id: string; displayName: string; email: string; contaEliminada?: boolean };
   sugestoesIa?: Array<{ id: string; titulo: string; descricao: string; estado: string; tipo: string; score: number }>;
 };
 
@@ -55,6 +65,12 @@ export type SugestaoIaComercialResposta = {
 
 export function mapInteraccaoRow(row: Record<string, unknown>): InteraccaoComercialResposta {
   const sugestoes = row.sugestoesIa as Array<Record<string, unknown>> | undefined;
+  const liveCriadoPor = row.criadoPor as InteraccaoComercialResposta["criadoPor"] | null | undefined;
+  const autorId = String(row.criadoPorAutorId ?? row.criadoPorUserId ?? "");
+  const displayName = String(row.criadoPorDisplayName ?? liveCriadoPor?.displayName ?? "");
+  const email = String(row.criadoPorEmail ?? liveCriadoPor?.email ?? "");
+  const contaEliminada = !liveCriadoPor && Boolean(displayName);
+
   return {
     id: String(row.id),
     tenantId: String(row.tenantId),
@@ -77,11 +93,28 @@ export function mapInteraccaoRow(row: Record<string, unknown>): InteraccaoComerc
     processadoEm: (row.processadoEm as Date | null) ?? null,
     entidadeClienteId: (row.entidadeClienteId as string | null) ?? null,
     leadComercialId: (row.leadComercialId as string | null) ?? null,
-    criadoPorUserId: String(row.criadoPorUserId),
+    criadoPorUserId: (row.criadoPorUserId as string | null) ?? null,
+    criadoPorAutorId: autorId,
+    criadoPorDisplayName: displayName,
+    criadoPorEmail: email,
     createdAt: row.createdAt as Date,
+    agendadoPara: (row.agendadoPara as Date | null) ?? null,
+    agendadoFim: (row.agendadoFim as Date | null) ?? null,
+    salaJoinUrl: (row.salaJoinUrl as string | null) ?? null,
+    reuniaoEstado: (row.reuniaoEstado as string | null) ?? null,
+    reuniaoIniciadaEm: (row.reuniaoIniciadaEm as Date | null) ?? null,
+    reuniaoTerminadaEm: (row.reuniaoTerminadaEm as Date | null) ?? null,
+    reuniaoDuracaoSegundos: (row.reuniaoDuracaoSegundos as number | null) ?? null,
     entidadeCliente: (row.entidadeCliente as InteraccaoComercialResposta["entidadeCliente"]) ?? null,
     leadComercial: (row.leadComercial as InteraccaoComercialResposta["leadComercial"]) ?? null,
-    criadoPor: (row.criadoPor as InteraccaoComercialResposta["criadoPor"]) ?? undefined,
+    criadoPor: displayName
+      ? {
+          id: autorId,
+          displayName,
+          email,
+          ...(contaEliminada ? { contaEliminada: true } : {}),
+        }
+      : undefined,
     sugestoesIa: sugestoes?.map((s) => ({
       id: String(s.id),
       titulo: String(s.titulo),

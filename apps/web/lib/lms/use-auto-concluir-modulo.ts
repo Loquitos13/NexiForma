@@ -3,7 +3,7 @@
 import { useCallback, useRef } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 
-/** Regista conclusão automática de módulo (evita cliques manuais do formando). */
+/** Regista conclusão de conteúdo LMS (vídeo terminado, quiz, ou confirmação manual). */
 export function useAutoConcluirModulo({
   matriculaId,
   moduloId,

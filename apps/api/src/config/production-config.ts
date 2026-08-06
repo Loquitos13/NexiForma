@@ -9,7 +9,6 @@ export function validateProductionConfig(env: NodeJS.ProcessEnv = process.env): 
 
   assertNot(env, "AT_FATURAS_MODE", ["mock", "sandbox"], errors);
   assertNot(env, "SIGO_API_MODE", ["mock"], errors);
-  assertNot(env, "CMD_SIGNATURE_MODE", ["mock"], errors);
   assertNot(env, "MAIL_PROVIDER", ["log"], errors);
   if (!env.MAIL_PROVIDER?.trim()) {
     errors.push("MAIL_PROVIDER é obrigatório em produção (use brevo, smtp ou ses).");
@@ -35,6 +34,15 @@ export function validateProductionConfig(env: NodeJS.ProcessEnv = process.env): 
   requireSet(env, "APP_PUBLIC_URL", errors);
   requireSet(env, "CORS_ORIGIN", errors);
 
+  const apiPublic = env.API_PUBLIC_URL?.trim();
+  if (!apiPublic) {
+    errors.push(
+      "API_PUBLIC_URL é obrigatório em produção (webhooks CRM, SSO, integrações externas).",
+    );
+  } else {
+    assertHttpsUrlValue(apiPublic, "API_PUBLIC_URL", errors);
+  }
+
   assertHttpsUrl(env, "APP_PUBLIC_URL", errors);
   for (const origin of (env.CORS_ORIGIN ?? "").split(",").map((o) => o.trim()).filter(Boolean)) {
     if (!origin.startsWith("https://")) {
@@ -52,14 +60,14 @@ export function validateProductionConfig(env: NodeJS.ProcessEnv = process.env): 
 
   requireSet(env, "STRIPE_SECRET_KEY", errors);
   requireSet(env, "AT_CREDENTIALS_ENCRYPTION_KEY", errors);
-
-  if (env.RLS_ENABLED !== "true") {
-    errors.push("RLS_ENABLED=true é obrigatório em produção (isolamento multi-tenant na BD).");
-  }
+  requireSet(env, "PROPOSTA_RESPOSTA_SECRET", errors);
+  requireSet(env, "TENANT_ACCESS_KEY_PEPPER", errors);
+  requireSet(env, "REDIS_URL", errors);
 
   if (env.MAIL_PROVIDER === "ses") {
     requireSet(env, "AWS_REGION", errors);
     requireSet(env, "MAIL_FROM", errors);
+    requireSet(env, "SES_SNS_TOPIC_ARN", errors);
   }
 
   if (env.MAIL_PROVIDER === "smtp") {
@@ -78,6 +86,18 @@ export function validateProductionConfig(env: NodeJS.ProcessEnv = process.env): 
 
   if (env.STORAGE_BACKEND === "s3") {
     requireSet(env, "S3_BUCKET", errors);
+    const sse = (env.S3_SSE_ALGORITHM ?? "AES256").trim().toLowerCase();
+    if (sse === "aws:kms" || sse === "kms") {
+      requireSet(env, "S3_KMS_KEY_ID", errors);
+    } else if (sse && sse !== "aes256" && sse !== "aes-256") {
+      errors.push("S3_SSE_ALGORITHM inválido em produção (use AES256 ou aws:kms).");
+    }
+  }
+
+  if (env.MFA_REQUIRED_MANAGERS !== "true" && env.MFA_REQUIRED_MANAGERS !== "1") {
+    errors.push(
+      "MFA_REQUIRED_MANAGERS=true é obrigatório em produção (gestores com TOTP).",
+    );
   }
 
   const atMode = (env.AT_FATURAS_MODE ?? "disabled").toLowerCase();
@@ -97,13 +117,12 @@ export function validateProductionConfig(env: NodeJS.ProcessEnv = process.env): 
     }
   }
 
-  const cmdMode = (env.CMD_SIGNATURE_MODE ?? "disabled").toLowerCase();
-  if (cmdMode === "oauth") {
-    requireSet(env, "CMD_OAUTH_URL", errors);
-  }
-
   if (env.DDOS_ENABLED === "false") {
     errors.push("DDOS_ENABLED=false não permitido em produção.");
+  }
+
+  if (env.RLS_ENABLED !== "true") {
+    errors.push("RLS_ENABLED=true é obrigatório em produção (isolamento multi-tenant na BD).");
   }
 
   if (errors.length > 0) {
@@ -133,7 +152,11 @@ function assertNot(
 function assertHttpsUrl(env: NodeJS.ProcessEnv, key: string, errors: string[]): void {
   const v = env[key]?.trim();
   if (!v) return;
-  if (!v.startsWith("https://")) {
-    errors.push(`${key} deve começar por https:// em produção (anti-MITM).`);
+  assertHttpsUrlValue(v, key, errors);
+}
+
+function assertHttpsUrlValue(value: string, label: string, errors: string[]): void {
+  if (!value.startsWith("https://")) {
+    errors.push(`${label} deve começar por https:// em produção (anti-MITM).`);
   }
 }

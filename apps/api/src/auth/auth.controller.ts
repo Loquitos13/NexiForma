@@ -28,7 +28,12 @@ import { SetupMfaConfirmDto, EnrollMfaConfirmDto, EnrollMfaSetupDto, VerifyMfaDt
 import { CognitoAuthService } from "./cognito-auth.service";
 import { MfaService } from "./mfa.service";
 import { ChangeRequiredPasswordDto } from "./dto/change-required-password.dto";
+import {
+  ConfirmEmailDto,
+  ResendEmailConfirmationDto,
+} from "./dto/email-confirmation.dto";
 import { SkipMustChangePassword } from "./decorators/skip-must-change-password.decorator";
+import { EmailConfirmationService } from "./email-confirmation.service";
 
 @UseGuards(ThrottlerGuard)
 @Controller("auth")
@@ -37,6 +42,7 @@ export class AuthController {
     private readonly auth: AuthService,
     private readonly mfa: MfaService,
     private readonly cognito: CognitoAuthService,
+    private readonly emailConfirmation: EmailConfirmationService,
   ) {}
 
   @Public()
@@ -101,6 +107,26 @@ export class AuthController {
   @HttpCode(200)
   platformResetPassword(@Body() dto: PlatformResetPasswordDto) {
     return this.auth.confirmPlatformPasswordReset(dto);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post("tenant/confirm-email")
+  @HttpCode(200)
+  confirmEmail(@Body() dto: ConfirmEmailDto) {
+    return this.emailConfirmation.confirmToken(dto.token);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post("tenant/resend-email-confirmation")
+  @HttpCode(200)
+  resendEmailConfirmation(@Body() dto: ResendEmailConfirmationDto, @Req() req: Request) {
+    return this.emailConfirmation.resendPublic({
+      email: dto.email,
+      tenantSlug: dto.tenantSlug,
+      req,
+    });
   }
 
   @Public()

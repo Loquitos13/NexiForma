@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import { IsInt, IsObject, IsOptional, IsString, MaxLength, Min } from "class-validator";
 
 export class UpdateCursoDto {
   @IsOptional()
@@ -25,4 +25,9 @@ export class UpdateCursoDto {
   @IsString()
   @MaxLength(4000)
   objetivos?: string;
+
+  /** Predefinição documental (universais + inscrição) para novas acções deste curso. */
+  @IsOptional()
+  @IsObject()
+  configuracaoMatricula?: Record<string, unknown> | null;
 }

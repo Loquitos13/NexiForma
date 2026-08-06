@@ -1,0 +1,142 @@
+/** Categorias de documentos do formador (credenciais DGERT / CV). */
+export const FORMADOR_DOC_TIPOS = new Set([
+  "documento_identificacao",
+  "cc",
+  "ccp",
+  "cv",
+  "carta_conducao",
+  "certificados_formacao",
+  "ficha_dgert",
+  "outros",
+]);
+
+export const FORMADOR_DOC_MIMES = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "application/pdf",
+]);
+
+export const FORMADOR_DOC_MAX_BYTES = 10 * 1024 * 1024;
+
+export const FORMADOR_DOC_LABELS: Record<string, string> = {
+  documento_identificacao: "Cartão de Cidadão",
+  cc: "Cartão de Cidadão",
+  ccp: "CCP (Certificado de Competências Pedagógicas)",
+  cv: "Curriculum Vitae",
+  carta_conducao: "Carta de condução",
+  certificados_formacao: "Certificados das formações",
+  ficha_dgert: "Ficha DGERT preenchida e assinada",
+  outros: "Outros documentos",
+};
+
+/** Universais do tenant que o formador consegue carregar (categorias partilhadas). */
+export const FORMADOR_UNIVERSAL_COMPAT = new Set(["cv", "documento_identificacao"]);
+
+/** Obrigatórios do cargo formador (além dos universais compatíveis). */
+export const FORMADOR_ROLE_REQUIRED = [
+  "ccp",
+  "certificados_formacao",
+  "ficha_dgert",
+] as const;
+
+export type FormadorDocObrigatorioId =
+  | "cv"
+  | "documento_identificacao"
+  | "ccp"
+  | "certificados_formacao"
+  | "ficha_dgert";
+
+export type FormadorDocObrigatorioItem = {
+  id: FormadorDocObrigatorioId;
+  label: string;
+  completo: boolean;
+  detalhe: string;
+  origem: "universal" | "cargo";
+};
+
+const OBRIGATORIO_META: Record<
+  FormadorDocObrigatorioId,
+  { label: string; detalheFalta: string; origem: "universal" | "cargo" }
+> = {
+  cv: {
+    label: "Curriculum Vitae",
+    detalheFalta: "PDF ou imagem obrigatório",
+    origem: "universal",
+  },
+  documento_identificacao: {
+    label: "Cartão de Cidadão",
+    detalheFalta: "Cópia do cartão de cidadão (PDF ou imagem)",
+    origem: "universal",
+  },
+  ccp: {
+    label: "Cópia do CCP",
+    detalheFalta: "Certificado de Competências Pedagógicas (obrigatório do cargo)",
+    origem: "cargo",
+  },
+  certificados_formacao: {
+    label: "Certificados das formações",
+    detalheFalta: "Certificados das formações que possui (pode juntar num PDF)",
+    origem: "cargo",
+  },
+  ficha_dgert: {
+    label: "Ficha DGERT preenchida e assinada",
+    detalheFalta: "Ficha da DGERT preenchida e assinada (PDF ou imagem)",
+    origem: "cargo",
+  },
+};
+
+export function labelFormadorDocCategoria(categoria: string | null | undefined): string {
+  if (!categoria) return "Documento";
+  return FORMADOR_DOC_LABELS[categoria] ?? categoria;
+}
+
+/**
+ * Universais do tenant aplicáveis ao formador + documentos do cargo.
+ * Se o tenant não marcar nenhum universal compatível, usa CV + identificação.
+ */
+export function resolveFormadorObrigatorios(
+  tenantUniversais?: string[] | null,
+): FormadorDocObrigatorioId[] {
+  const fromTenant = (tenantUniversais ?? []).filter(
+    (id): id is "cv" | "documento_identificacao" => FORMADOR_UNIVERSAL_COMPAT.has(id),
+  );
+  const universais: FormadorDocObrigatorioId[] =
+    fromTenant.length > 0 ? fromTenant : ["cv", "documento_identificacao"];
+  return [...new Set<FormadorDocObrigatorioId>([...universais, ...FORMADOR_ROLE_REQUIRED])];
+}
+
+export function avaliarDocumentosObrigatoriosFormador(
+  docs: Array<{ categoria: string | null }>,
+  tenantUniversais?: string[] | null,
+): {
+  items: FormadorDocObrigatorioItem[];
+  completo: boolean;
+  emFalta: FormadorDocObrigatorioId[];
+  totalDocumentos: number;
+} {
+  const required = resolveFormadorObrigatorios(tenantUniversais);
+  const categorias = new Set(
+    docs.map((d) => d.categoria).filter((c): c is string => Boolean(c)),
+  );
+
+  const items: FormadorDocObrigatorioItem[] = required.map((id) => {
+    const meta = OBRIGATORIO_META[id];
+    const ok = categorias.has(id);
+    return {
+      id,
+      label: meta.label,
+      completo: ok,
+      detalhe: ok ? "Ficheiro registado" : meta.detalheFalta,
+      origem: meta.origem,
+    };
+  });
+
+  const emFalta = items.filter((i) => !i.completo).map((i) => i.id);
+  return {
+    items,
+    completo: emFalta.length === 0,
+    emFalta,
+    totalDocumentos: docs.length,
+  };
+}

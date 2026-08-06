@@ -11,6 +11,10 @@ import { StorageService } from "../storage/storage.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { FormadorScopeService } from "../common/formador-scope.service";
 import { requireTenantId } from "../common/tenant-scope";
+import {
+  SCORM_ZIP_MAX_ENTRIES,
+  SCORM_ZIP_MAX_TOTAL_BYTES,
+} from "../common/upload-mime.util";
 
 type ScormPackageMeta = {
   scormVersion: "1.2" | "2004";
@@ -49,9 +53,23 @@ export class ScormPackageService {
     }
 
     const zip = new AdmZip(file.buffer);
-    const manifestEntry = zip
-      .getEntries()
-      .find((e) => !e.isDirectory && /imsmanifest\.xml$/i.test(e.entryName));
+    const fileEntries = zip.getEntries().filter((e) => !e.isDirectory);
+    if (fileEntries.length > SCORM_ZIP_MAX_ENTRIES) {
+      throw new BadRequestException("Pacote SCORM excede o número máximo de ficheiros.");
+    }
+    let totalBytes = 0;
+    for (const entry of fileEntries) {
+      const rel = entry.entryName.replace(/\\/g, "/");
+      if (rel.includes("..") || rel.startsWith("/")) {
+        throw new BadRequestException("Pacote SCORM contém caminhos inválidos.");
+      }
+      totalBytes += entry.header.size;
+      if (totalBytes > SCORM_ZIP_MAX_TOTAL_BYTES) {
+        throw new BadRequestException("Pacote SCORM excede o tamanho máximo permitido.");
+      }
+    }
+
+    const manifestEntry = fileEntries.find((e) => /imsmanifest\.xml$/i.test(e.entryName));
     if (!manifestEntry) {
       throw new BadRequestException("ZIP inválido – imsmanifest.xml não encontrado.");
     }
@@ -63,9 +81,9 @@ export class ScormPackageService {
     const moduloId = randomUUID();
     const storagePrefix = `${tenantId}/scorm/${cursoId}/${moduloId}`;
 
-    for (const entry of zip.getEntries()) {
-      if (entry.isDirectory) continue;
+    for (const entry of fileEntries) {
       const rel = entry.entryName.replace(/\\/g, "/");
+      if (rel.includes("..") || rel.startsWith("/")) continue;
       const key = `${storagePrefix}/${rel}`;
       await this.storage.putObject(key, entry.getData(), this.storage.guessContentType(rel));
     }

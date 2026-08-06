@@ -23,6 +23,7 @@ import {
   type AgendaTemplate,
 } from "./formacoes-sessoes.util";
 import { ConfigService } from "@nestjs/config";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 import { EmailTemplates } from "../notificacoes/templates/email.templates";
 import { PortalNotificacoesService } from "../notificacoes/portal-notificacoes.service";
 import { FormadorNotificacoesService } from "../notificacoes/formador-notificacoes.service";
@@ -370,6 +371,18 @@ export class FormacoesService {
     const inscricoesEstado = agenda.inscricoes as InscricoesEstado;
     const agendaTemplate: AgendaTemplate = agenda;
 
+    let formadorId: string | null = null;
+    if (dto.formadorId) {
+      const formador = await this.prisma.formadorProfile.findFirst({
+        where: { id: dto.formadorId, tenantId },
+        select: { id: true },
+      });
+      if (!formador) {
+        throw new BadRequestException("Formador inválido para este tenant.");
+      }
+      formadorId = formador.id;
+    }
+
     const result = await this.prisma.$transaction(async (tx) => {
       const acao = await tx.acaoFormacao.create({
         data: {
@@ -408,6 +421,7 @@ export class FormacoesService {
           horaFim: agenda.horaFim,
           local: agenda.local?.trim() || null,
           modalidade: curso.modalidade,
+          formadorId,
         })),
       });
 
@@ -481,7 +495,7 @@ export class FormacoesService {
     titulo: string,
     codigoPublico: number | null,
   ) {
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     const portalUrl = `${appUrl}/portal/formacoes`;
     await this.portalNotificacoes.notifyGestores(tenantId, {
       tipo: "formacao_catalogo",

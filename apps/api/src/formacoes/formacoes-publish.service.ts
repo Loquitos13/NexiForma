@@ -1,7 +1,10 @@
 import { createHmac } from "node:crypto";
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { assertSafeOutboundUrl } from "@nexiforma/shared";
 import { PrismaService } from "../prisma/prisma.service";
+import { safeFetch } from "../common/safe-fetch.util";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 import { FormacoesCatalogService } from "./formacoes-catalog.service";
 import type {
   TenantWebsiteSyncConfig,
@@ -72,6 +75,19 @@ export class FormacoesPublishService {
         : {}),
     };
 
+    if (next.enabled && next.webhookUrl) {
+      try {
+        assertSafeOutboundUrl(next.webhookUrl, {
+          requireHttps: process.env.NODE_ENV === "production",
+          allowHttp: process.env.NODE_ENV !== "production",
+        });
+      } catch (e) {
+        throw new BadRequestException(
+          e instanceof Error ? e.message : "URL de webhook inválida.",
+        );
+      }
+    }
+
     await this.prisma.tenant.update({
       where: { id: tenantId },
       data: { metadata: { ...meta, websiteSync: next } as object },
@@ -128,7 +144,7 @@ export class FormacoesPublishService {
       return { skipped: true };
     }
 
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     const formacao = await this.catalog.getFormacaoPublicaByUuid(tenantId, cursoUuid, appUrl);
 
     const payload: WebsiteSyncPayload = {
@@ -172,11 +188,13 @@ export class FormacoesPublishService {
     let errorMsg: string | undefined;
 
     try {
-      const res = await fetch(url, {
+      const res = await safeFetch(url, {
         method: "POST",
         headers,
         body,
         signal: AbortSignal.timeout(15_000),
+        requireHttps: process.env.NODE_ENV === "production",
+        allowHttp: process.env.NODE_ENV !== "production",
       });
       if (!res.ok) {
         status = "error";
@@ -212,7 +230,7 @@ export class FormacoesPublishService {
       where: { id: tenantId },
       select: { legalName: true },
     });
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     const portalUrl = `${appUrl}/portal/formacoes`;
     const entidade = tenant?.legalName ?? "Entidade formadora";
 

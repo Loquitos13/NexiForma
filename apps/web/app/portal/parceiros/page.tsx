@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
@@ -16,32 +17,55 @@ type Parceiro = {
   createdAt: string;
 };
 
-const emptyForm = { nif: "", nome: "", email: "", telefone: "", moradaFiscal: "", descontoPercent: "" };
+type ClienteOpt = {
+  id: string;
+  nif: string;
+  nome: string;
+  email: string | null;
+  telefone: string | null;
+};
 
 export default function ParceirosPage() {
   const { canManageCrm } = useTenantRole();
   const formRef = useRef<HTMLDivElement>(null);
   const [parceiros, setParceiros] = useState<Parceiro[]>([]);
+  const [clientesDisponiveis, setClientesDisponiveis] = useState<ClienteOpt[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState(emptyForm);
+  const [clienteId, setClienteId] = useState("");
+  const [descontoPercent, setDescontoPercent] = useState("");
+  const [editLabel, setEditLabel] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const loadParceiros = useCallback(async () => {
     const r = await bffFetch("/api/v1/entidades-cliente?parceiro=true", {
       headers: { accept: "application/json" },
     });
     if (!r.ok) {
       setError(await parseApiError(r));
-      setLoading(false);
       return;
     }
     setParceiros((await r.json()) as Parceiro[]);
-    setLoading(false);
   }, []);
+
+  const loadClientesDisponiveis = useCallback(async () => {
+    const r = await bffFetch("/api/v1/entidades-cliente?parceiro=false", {
+      headers: { accept: "application/json" },
+    });
+    if (!r.ok) return;
+    const data = await r.json();
+    const list = Array.isArray(data) ? data : (data as { items: ClienteOpt[] }).items;
+    setClientesDisponiveis(Array.isArray(list) ? list : []);
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    await Promise.all([loadParceiros(), loadClientesDisponiveis()]);
+    setLoading(false);
+  }, [loadParceiros, loadClientesDisponiveis]);
 
   useEffect(() => {
     void load();
@@ -57,80 +81,97 @@ export default function ParceirosPage() {
         headers: { accept: "application/json" },
       });
       if (!r.ok) return;
-      const p = (await r.json()) as Parceiro & { moradaFiscal?: string | null };
-      setEditId(p.id);
-      setForm({
-        nif: p.nif,
-        nome: p.nome,
-        email: p.email ?? "",
-        telefone: p.telefone ?? "",
-        moradaFiscal: p.moradaFiscal ?? "",
-        descontoPercent:
-          p.descontoPercent != null && p.descontoPercent !== ""
-            ? String(p.descontoPercent)
-            : "",
-      });
+      const p = (await r.json()) as Parceiro & { isParceiro?: boolean };
+      const desconto =
+        p.descontoPercent != null && p.descontoPercent !== ""
+          ? String(p.descontoPercent)
+          : "";
+      if (p.isParceiro) {
+        setEditId(p.id);
+        setClienteId("");
+        setEditLabel(`${p.nome} · NIF ${p.nif}`);
+        setDescontoPercent(desconto);
+      } else {
+        setEditId(null);
+        setClienteId(p.id);
+        setEditLabel("");
+        setDescontoPercent(desconto);
+        setClientesDisponiveis((prev) =>
+          prev.some((c) => c.id === p.id)
+            ? prev
+            : [
+                {
+                  id: p.id,
+                  nif: p.nif,
+                  nome: p.nome,
+                  email: p.email,
+                  telefone: p.telefone,
+                },
+                ...prev,
+              ],
+        );
+      }
       window.history.replaceState({}, "", "/portal/parceiros");
       formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     })();
   }, [loading]);
 
+  function resetForm() {
+    setEditId(null);
+    setClienteId("");
+    setDescontoPercent("");
+    setEditLabel("");
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!canManageCrm) return;
+
+    const targetId = editId || clienteId;
+    if (!targetId) {
+      setError("Seleccione um cliente existente para tornar parceiro.");
+      return;
+    }
+
     setBusy(true);
     setMsg(null);
     setError(null);
-    const desconto = form.descontoPercent.trim();
+    const desconto = descontoPercent.trim();
     const descontoNum = desconto ? Number(desconto.replace(",", ".")) : null;
-    const body = {
-      nif: form.nif.trim(),
-      nome: form.nome.trim(),
-      moradaFiscal: form.moradaFiscal.trim(),
-      email: form.email.trim() || undefined,
-      telefone: form.telefone.trim() || undefined,
-      isParceiro: true,
-      descontoPercent: descontoNum,
-    };
-    const r = await bffFetch(editId ? `/api/v1/entidades-cliente/${editId}` : "/api/v1/entidades-cliente", {
-      method: editId ? "PATCH" : "POST",
+    if (desconto && (descontoNum == null || Number.isNaN(descontoNum) || descontoNum < 0 || descontoNum > 100)) {
+      setBusy(false);
+      setError("Desconto inválido (0 a 100%).");
+      return;
+    }
+
+    const r = await bffFetch(`/api/v1/entidades-cliente/${targetId}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify(
-        editId
-          ? {
-              nome: body.nome,
-              email: body.email,
-              telefone: body.telefone,
-              moradaFiscal: body.moradaFiscal || undefined,
-              descontoPercent: descontoNum,
-            }
-          : body,
-      ),
+      body: JSON.stringify({
+        isParceiro: true,
+        descontoPercent: descontoNum,
+      }),
     });
     setBusy(false);
     if (!r.ok) {
       setError(await parseApiError(r));
       return;
     }
-    setMsg(editId ? "Parceiro actualizado." : "Parceiro criado.");
-    setEditId(null);
-    setForm(emptyForm);
+    setMsg(editId ? "Parceiro actualizado." : "Cliente adicionado como parceiro.");
+    resetForm();
     await load();
   }
 
   function startEdit(p: Parceiro) {
     setEditId(p.id);
-    setForm({
-      nif: p.nif,
-      nome: p.nome,
-      email: p.email ?? "",
-      telefone: p.telefone ?? "",
-      moradaFiscal: "",
-      descontoPercent:
-        p.descontoPercent != null && p.descontoPercent !== ""
-          ? String(p.descontoPercent)
-          : "",
-    });
+    setClienteId("");
+    setEditLabel(`${p.nome} · NIF ${p.nif}`);
+    setDescontoPercent(
+      p.descontoPercent != null && p.descontoPercent !== ""
+        ? String(p.descontoPercent)
+        : "",
+    );
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function fmtDesconto(value: Parceiro["descontoPercent"]) {
@@ -140,13 +181,15 @@ export default function ParceirosPage() {
     return `${n % 1 === 0 ? n.toFixed(0) : n.toFixed(2)}%`;
   }
 
+  const clienteSeleccionado = clientesDisponiveis.find((c) => c.id === clienteId);
+
   return (
     <div className="max-w-5xl space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-slate-50">Parceiros</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Clientes especiais com desconto comercial negociado - condições aplicadas em propostas e
-          faturação.
+          Parceiros são clientes da entidade com desconto comercial negociado. Escolhe um cliente
+          existente para o adicionar aqui.
         </p>
       </div>
 
@@ -167,76 +210,54 @@ export default function ParceirosPage() {
           className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5"
         >
           <h2 className="text-sm font-semibold text-slate-200 mb-1">
-            {editId ? "Editar parceiro" : "Novo parceiro"}
+            {editId ? "Editar parceiro" : "Adicionar parceiro"}
           </h2>
           <p className="text-xs text-slate-500 mb-3">
             {editId
-              ? "Define o desconto comercial acordado com este parceiro."
-              : "Regista um parceiro directamente ou converte um cliente existente na lista de Clientes."}
+              ? "Actualiza o desconto comercial deste parceiro."
+              : "Selecciona um cliente já registado na entidade. Se ainda não existir, cria-o primeiro em Clientes."}
           </p>
           <form onSubmit={(e) => void submit(e)} className="grid sm:grid-cols-2 gap-3 max-w-lg">
-            {!editId ? (
-              <>
-                <div className="sm:col-span-2 sm:max-w-[240px]">
-                  <label className="block text-xs font-medium text-slate-400 mb-1">NIF *</label>
-                  <input
-                    required
-                    minLength={9}
-                    maxLength={9}
-                    value={form.nif}
-                    onChange={(ev) =>
-                      setForm((f) => ({
-                        ...f,
-                        nif: ev.target.value.replace(/\D/g, "").slice(0, 9),
-                      }))
-                    }
-                    className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-sm text-slate-200 outline-none focus:border-blue-500/40"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-medium text-slate-400 mb-1">
-                    Morada fiscal *
-                  </label>
-                  <textarea
-                    required
-                    rows={2}
-                    value={form.moradaFiscal}
-                    onChange={(ev) => setForm((f) => ({ ...f, moradaFiscal: ev.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-sm text-slate-200 outline-none focus:border-blue-500/40"
-                  />
-                </div>
-              </>
+            {editId ? (
+              <div className="sm:col-span-2 rounded-lg bg-slate-800/60 px-3 py-2 text-sm text-slate-300">
+                {editLabel}
+              </div>
             ) : (
-              <div className="sm:col-span-2 rounded-lg bg-slate-800/60 px-3 py-2 text-sm text-slate-400">
-                NIF {form.nif}
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-slate-400 mb-1">
+                  Cliente existente *
+                </label>
+                <select
+                  required
+                  value={clienteId}
+                  onChange={(ev) => setClienteId(ev.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-sm text-slate-200 outline-none focus:border-blue-500/40"
+                >
+                  <option value="">Seleccionar cliente…</option>
+                  {clientesDisponiveis.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome} · NIF {c.nif}
+                    </option>
+                  ))}
+                </select>
+                {clientesDisponiveis.length === 0 ? (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Não há clientes disponíveis (ou todos já são parceiros).{" "}
+                    <Link href="/portal/clientes" className="text-blue-400 hover:underline">
+                      Ir a Clientes
+                    </Link>
+                  </p>
+                ) : null}
+                {clienteSeleccionado ? (
+                  <p className="mt-2 text-xs text-slate-500">
+                    {clienteSeleccionado.email ?? "Sem email"}
+                    {clienteSeleccionado.telefone
+                      ? ` · ${clienteSeleccionado.telefone}`
+                      : ""}
+                  </p>
+                ) : null}
               </div>
             )}
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-slate-400 mb-1">Nome *</label>
-              <input
-                required
-                value={form.nome}
-                onChange={(ev) => setForm((f) => ({ ...f, nome: ev.target.value }))}
-                className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-sm text-slate-200 outline-none focus:border-blue-500/40"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Email</label>
-              <input
-                type="email"
-                value={form.email}
-                onChange={(ev) => setForm((f) => ({ ...f, email: ev.target.value }))}
-                className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-sm text-slate-200 outline-none focus:border-blue-500/40"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Telefone</label>
-              <input
-                value={form.telefone}
-                onChange={(ev) => setForm((f) => ({ ...f, telefone: ev.target.value }))}
-                className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-sm text-slate-200 outline-none focus:border-blue-500/40"
-              />
-            </div>
             <div className="sm:max-w-[160px]">
               <label className="block text-xs font-medium text-slate-400 mb-1">
                 Desconto (%)
@@ -247,26 +268,23 @@ export default function ParceirosPage() {
                 max={100}
                 step={0.01}
                 placeholder="ex. 10"
-                value={form.descontoPercent}
-                onChange={(ev) => setForm((f) => ({ ...f, descontoPercent: ev.target.value }))}
+                value={descontoPercent}
+                onChange={(ev) => setDescontoPercent(ev.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-sm text-slate-200 outline-none focus:border-blue-500/40"
               />
             </div>
-            <div className="flex gap-2 sm:col-span-2">
+            <div className="flex flex-wrap gap-2 sm:col-span-2">
               <button
                 type="submit"
-                disabled={busy}
+                disabled={busy || (!editId && !clienteId)}
                 className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium transition-colors"
               >
-                {editId ? "Guardar" : "Criar parceiro"}
+                {editId ? "Guardar" : "Adicionar como parceiro"}
               </button>
-              {editId ? (
+              {editId || clienteId || descontoPercent ? (
                 <button
                   type="button"
-                  onClick={() => {
-                    setEditId(null);
-                    setForm(emptyForm);
-                  }}
+                  onClick={resetForm}
                   className="px-4 py-2 rounded-lg border border-slate-600/40 text-sm text-slate-400 hover:bg-slate-800/40 transition-colors"
                 >
                   Cancelar
@@ -277,7 +295,7 @@ export default function ParceirosPage() {
         </div>
       ) : null}
 
-      <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 overflow-hidden">
+      <div className="table-scroll-shell rounded-2xl bg-slate-900/50 border border-slate-700/30">
         <div className="px-5 py-4 border-b border-slate-700/30">
           <h2 className="text-sm font-semibold text-slate-200">Parceiros ({parceiros.length})</h2>
         </div>
@@ -286,7 +304,11 @@ export default function ParceirosPage() {
         ) : parceiros.length === 0 ? (
           <div className="p-8 text-center">
             <p className="text-sm text-slate-500">
-              Sem parceiros registados. Use «Tornar parceiro» na lista de Clientes ou crie um acima.
+              Sem parceiros. Adiciona um a partir de um{" "}
+              <Link href="/portal/clientes" className="text-blue-400 hover:underline">
+                cliente existente
+              </Link>
+              .
             </p>
           </div>
         ) : (
@@ -323,6 +345,7 @@ export default function ParceirosPage() {
                   {canManageCrm ? (
                     <td className="px-4 py-3 text-right">
                       <button
+                        type="button"
                         onClick={() => startEdit(p)}
                         className="px-2.5 py-1 rounded-md border border-slate-600/40 text-[11px] font-medium text-slate-300 hover:bg-slate-700/40 transition-colors"
                       >

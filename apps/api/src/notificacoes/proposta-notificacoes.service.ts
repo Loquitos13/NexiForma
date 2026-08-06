@@ -2,9 +2,11 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { PropostaEstado } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
+import { MailService } from "../mail/mail.service";
 import { EmailTemplates } from "./templates/email.templates";
 import { PortalNotificacoesService } from "./portal-notificacoes.service";
 import { resolverEmailUtilizador } from "@nexiforma/shared";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 
 const ESTADOS_NOTIFICAR: PropostaEstado[] = ["ACEITE", "REJEITADA"];
 
@@ -16,6 +18,7 @@ export class PropostaNotificacoesService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly portal: PortalNotificacoesService,
+    private readonly mail: MailService,
   ) {}
 
   async aoAlterarEstado(
@@ -32,18 +35,20 @@ export class PropostaNotificacoesService {
     const proposta = await this.prisma.propostaComercial.findFirst({
       where: { id: propostaId, tenantId },
       include: {
-        entidadeCliente: { select: { nome: true } },
+        entidadeCliente: { select: { nome: true, email: true } },
+        tenant: { select: { legalName: true } },
         enviadaPor: { select: { id: true, email: true, displayName: true, role: true } },
       },
     });
     if (!proposta) return { skipped: true };
 
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     const portalUrl = `${appUrl}/portal/propostas/${propostaId}`;
     const portalLink = `/portal/propostas/${propostaId}`;
     const estadoLabel = estadoNovo === "ACEITE" ? "aceite" : "rejeitada";
     const estadoEmail = estadoNovo as "ACEITE" | "REJEITADA";
 
+    // Gestor + comercial: emails internos com link «Abrir CRM».
     await this.portal.notifyGestores(tenantId, {
       tipo: "proposta_estado",
       titulo: `Proposta ${proposta.codigo} ${estadoLabel}`,
@@ -83,6 +88,31 @@ export class PropostaNotificacoesService {
           link: portalLink,
           email: { to, subject: tpl.subject, text: tpl.text, html: tpl.html },
         });
+      }
+    }
+
+    // Cliente externo: confirmação sem link para o CRM.
+    const clienteEmail = proposta.entidadeCliente.email?.trim();
+    if (clienteEmail) {
+      const tplCliente = EmailTemplates.propostaEstadoCliente({
+        clienteNome: proposta.entidadeCliente.nome,
+        codigo: proposta.codigo,
+        titulo: proposta.titulo,
+        entidadeFormadora: proposta.tenant.legalName,
+        estado: estadoEmail,
+        motivo,
+      });
+      try {
+        await this.mail.send({
+          to: clienteEmail,
+          subject: tplCliente.subject,
+          text: tplCliente.text,
+          html: tplCliente.html,
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Email confirmação cliente (${proposta.codigo} → ${clienteEmail}): ${String(err)}`,
+        );
       }
     }
 

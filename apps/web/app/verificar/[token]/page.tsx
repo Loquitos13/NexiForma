@@ -9,6 +9,7 @@ type Verificacao = {
   valido: boolean;
   codigoPublico: string;
   emitidoEm: string;
+  expiresAt?: string | null;
   revogadoEm?: string | null;
   motivo?: string;
   formando?: { nome: string; nif: string };
@@ -43,7 +44,11 @@ function ResultCard({ data }: { data: Verificacao }) {
           <ShieldX className="h-6 w-6 text-red-400" />
         )}
         <p className={`text-lg font-semibold ${data.valido ? "text-emerald-300" : "text-red-300"}`}>
-          {data.valido ? "Certificado válido" : "Certificado inválido ou revogado"}
+          {data.valido
+            ? "Certificado válido"
+            : data.motivo?.toLowerCase().includes("expir")
+              ? "Link de verificação expirado"
+              : "Certificado inválido ou revogado"}
         </p>
       </div>
       {data.motivo ? <p className="mb-3 text-sm text-red-300">{data.motivo}</p> : null}
@@ -98,6 +103,12 @@ function ResultCard({ data }: { data: Verificacao }) {
             {data.emitidoEm ? new Date(data.emitidoEm).toLocaleString("pt-PT") : "–"}
           </dd>
         </div>
+        {data.expiresAt ? (
+          <div>
+            <dt className="inline text-slate-500">Válido até: </dt>
+            <dd className="inline">{new Date(data.expiresAt).toLocaleString("pt-PT")}</dd>
+          </div>
+        ) : null}
       </dl>
     </section>
   );

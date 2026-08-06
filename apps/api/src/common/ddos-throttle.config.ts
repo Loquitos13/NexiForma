@@ -39,19 +39,31 @@ export function loginFailLockoutMs(): number {
   return envInt("LOGIN_FAIL_LOCKOUT_MS", 900_000);
 }
 
-/** Burst curto - picos em 10s (web BFF). */
-export function webBurstPer10s(): number {
-  return envInt("DDOS_WEB_BURST_PER_10S", 40);
+/** Burst curto - picos em janela configurável (web BFF, só `/api/*`). */
+export function webBurstPerWindow(): number {
+  return envInt("DDOS_WEB_BURST_PER_10S", 80);
+}
+
+export function webBurstSessionPerWindow(): number {
+  return envInt("DDOS_WEB_BURST_SESSION", 120);
+}
+
+export function webBurstWindowMs(): number {
+  return envInt("DDOS_WEB_BURST_WINDOW_MS", 15_000);
 }
 
 export function webApiLimitPerMin(): number {
-  return envInt("DDOS_WEB_API_LIMIT_PER_MIN", 120);
+  return envInt("DDOS_WEB_API_LIMIT_PER_MIN", 240);
+}
+
+export function webApiSessionLimitPerMin(): number {
+  return envInt("DDOS_WEB_API_SESSION_LIMIT_PER_MIN", 360);
 }
 
 export function webAuthLimitPerMin(): number {
-  return envInt("DDOS_WEB_AUTH_LIMIT_PER_MIN", 25);
+  return envInt("DDOS_WEB_AUTH_LIMIT_PER_MIN", 40);
 }
 
 export function webPageLimitPerMin(): number {
-  return envInt("DDOS_WEB_PAGE_LIMIT_PER_MIN", 300);
+  return envInt("DDOS_WEB_PAGE_LIMIT_PER_MIN", 400);
 }

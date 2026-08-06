@@ -1,3 +1,10 @@
+import {
+  emailButton,
+  emailMuted,
+  emailParagraph,
+  escapeHtml,
+} from "../mail/email-layout.util";
+
 export type FaturaEmailResumo = {
   ref: string;
   nomeEmpresa: string;
@@ -64,13 +71,22 @@ export function buildFaturaEmitidaInternaEmail(p: FaturaEmailResumo): FaturaEmai
       `Este email é uma cópia interna automática - não reencaminhe o PDF ao cliente sem validar os dados.\n\n` +
       `–\nNexiForma\n`,
     html:
-      `<p>Foi registada a emissão de uma nova fatura no <strong>NexiForma</strong>.</p>` +
-      `<p>A fatura <strong>${p.ref}</strong> foi emitida para <strong>${p.clienteNome}</strong> em nome de <strong>${p.nomeEmpresa}</strong>.</p>` +
+      emailParagraph(
+        `Foi registada a emissão de uma nova fatura no <strong>NexiForma</strong>.`,
+      ) +
+      emailParagraph(
+        `A fatura <strong>${escapeHtml(p.ref)}</strong> foi emitida para ` +
+          `<strong>${escapeHtml(p.clienteNome)}</strong> em nome de ` +
+          `<strong>${escapeHtml(p.nomeEmpresa)}</strong>.`,
+      ) +
       resumoBoxHtml(p) +
-      `<p>O documento fiscal completo segue em anexo (<strong>${p.filename}</strong>), pronto para arquivo ou reenvio.</p>` +
-      `<p><a href="${p.portalUrl}" style="background:#7c3aed;color:#fff;padding:10px 20px;text-decoration:none;border-radius:6px;display:inline-block;">Abrir fatura no portal</a></p>` +
-      `<p style="font-size:12px;color:#64748b;margin-top:24px;">Cópia interna automática. Valide os dados antes de partilhar o PDF com o cliente.</p>` +
-      `<p>–<br/>NexiForma</p>`,
+      emailParagraph(
+        `O documento fiscal completo segue em anexo (<strong>${escapeHtml(p.filename)}</strong>), pronto para arquivo ou reenvio.`,
+      ) +
+      emailButton("Abrir fatura no portal", p.portalUrl, "primary") +
+      emailMuted(
+        "Cópia interna automática. Valide os dados antes de partilhar o PDF com o cliente.",
+      ),
   };
 }
 
@@ -105,16 +121,25 @@ export function buildFaturaEnviadaClienteEmail(p: FaturaEmailResumo): FaturaEmai
       `Com os melhores cumprimentos,\n${p.nomeEmpresa}\n` +
       (p.emailGestor ? `\n${p.emailGestor}\n` : ""),
     html:
-      `<p>Exmo(a). Sr(a). <strong>${p.clienteNome}</strong>,</p>` +
-      `<p>Vimos por este meio enviar a fatura <strong>${p.ref}</strong>, emitida por ` +
-      `<strong>${p.nomeEmpresa}</strong> (NIF ${p.nifEmitente}), referente à prestação de serviços acordada consigo.</p>` +
+      emailParagraph(
+        `Exmo(a). Sr(a). <strong>${escapeHtml(p.clienteNome)}</strong>,`,
+      ) +
+      emailParagraph(
+        `Vimos por este meio enviar a fatura <strong>${escapeHtml(p.ref)}</strong>, emitida por ` +
+          `<strong>${escapeHtml(p.nomeEmpresa)}</strong> (NIF ${escapeHtml(p.nifEmitente)}), ` +
+          `referente à prestação de serviços acordada consigo.`,
+      ) +
       resumoBoxHtml(p) +
       pagamentoHtml +
-      `<p>O documento fiscal completo segue em anexo (<strong>${p.filename}</strong>).</p>` +
+      emailParagraph(
+        `O documento fiscal completo segue em anexo (<strong>${escapeHtml(p.filename)}</strong>).`,
+      ) +
       contactoHtml +
-      `<p style="margin-top:24px;">Com os melhores cumprimentos,<br/><strong>${p.nomeEmpresa}</strong></p>` +
+      emailParagraph(
+        `Com os melhores cumprimentos,<br/><strong>${escapeHtml(p.nomeEmpresa)}</strong>`,
+      ) +
       (p.emailGestor
-        ? `<p style="font-size:13px;color:#64748b;">${p.emailGestor}</p>`
+        ? emailMuted(`<a href="mailto:${escapeHtml(p.emailGestor)}">${escapeHtml(p.emailGestor)}</a>`)
         : ""),
   };
 }

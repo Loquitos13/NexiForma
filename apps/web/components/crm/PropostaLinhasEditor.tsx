@@ -87,7 +87,7 @@ export function PropostaLinhasEditor({
       {!hideHeader && !readOnly ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm font-medium text-slate-200">Itens (opcional)</p>
-          <p className="text-xs text-slate-500">Como numa fatura: preço s/ IVA + IVA por linha</p>
+          <p className="text-xs text-slate-500">Preço s/ IVA + IVA por linha</p>
         </div>
       ) : null}
 
@@ -158,6 +158,7 @@ export function PropostaLinhasEditor({
                     onClick={() => onChange(linhas.filter((_, i) => i !== linhaIdx))}
                     disabled={linhas.length <= 1}
                     title="Remover linha"
+                    aria-label="Remover linha"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -309,6 +310,7 @@ export function PropostaLinhasEditor({
                           onClick={() => onChange(linhas.filter((_, i) => i !== linhaIdx))}
                           disabled={linhas.length <= 1}
                           title="Remover linha"
+                          aria-label="Remover linha"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>

@@ -9,6 +9,7 @@ import { CrmNotasInsightsService } from "./crm-notas-insights.service";
 import { CrmSugestoesExecucaoService } from "./crm-sugestoes-execucao.service";
 import { CrmSugestoesIaService } from "./crm-sugestoes-ia.service";
 import { CrmInteraccoesService } from "./crm-interaccoes.service";
+import { CrmReuniaoTeamsService } from "./crm-reuniao-teams.service";
 import { CrmInteraccoesSchedulerService } from "./crm-interaccoes-scheduler.service";
 import { CrmAuditService } from "./crm-audit.service";
 import { CrmConfigService } from "./crm-config.service";
@@ -20,9 +21,18 @@ import { PrismaModule } from "../prisma/prisma.module";
 import { MailModule } from "../mail/mail.module";
 import { NotificacoesModule } from "../notificacoes/notificacoes.module";
 import { CalendarioModule } from "../calendario/calendario.module";
+import { IntegracoesModule } from "../integracoes/integracoes.module";
+import { ViesModule } from "../vies/vies.module";
 
 @Module({
-  imports: [PrismaModule, MailModule, NotificacoesModule, CalendarioModule],
+  imports: [
+    PrismaModule,
+    MailModule,
+    NotificacoesModule,
+    CalendarioModule,
+    IntegracoesModule,
+    ViesModule,
+  ],
   controllers: [CrmController],
   providers: [
     CrmService,
@@ -34,6 +44,7 @@ import { CalendarioModule } from "../calendario/calendario.module";
     CrmSugestoesExecucaoService,
     CrmSugestoesIaService,
     CrmInteraccoesService,
+    CrmReuniaoTeamsService,
     CrmInteraccoesSchedulerService,
     CrmAuditService,
     CrmConfigService,

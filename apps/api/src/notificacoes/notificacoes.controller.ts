@@ -22,25 +22,25 @@ export class NotificacoesController {
   @Get("portal")
   @Roles("tenant_manager", "comercial", "formador")
   listPortal(@CurrentUser() user: RequestUser) {
-    return this.portal.listMine(user.sub);
+    return this.portal.listForUser(user);
   }
 
   @Get("portal/nao-lidas")
   @Roles("tenant_manager", "comercial", "formador")
   countUnread(@CurrentUser() user: RequestUser) {
-    return this.portal.countUnread(user.sub).then((count) => ({ count }));
+    return this.portal.countUnreadForUser(user).then((count) => ({ count }));
   }
 
   @Patch("portal/:id/lida")
   @Roles("tenant_manager", "comercial", "formador")
   markRead(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
-    return this.portal.markRead(user.sub, id);
+    return this.portal.markRead(user, id);
   }
 
   @Post("portal/marcar-todas-lidas")
   @Roles("tenant_manager", "comercial", "formador")
   markAllRead(@CurrentUser() user: RequestUser) {
-    return this.portal.markAllRead(user.sub);
+    return this.portal.markAllRead(user);
   }
 
   @Get("push/vapid-public-key")

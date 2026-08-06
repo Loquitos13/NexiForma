@@ -7,9 +7,10 @@ import { PortalNotificacoesService } from "../notificacoes/portal-notificacoes.s
 import { NotificacoesExtendedService } from "../notificacoes/notificacoes-extended.service";
 import { EmailTemplates } from "../notificacoes/templates/email.templates";
 import { parseAudienciaRoles, parseParticipantes } from "./calendario-reuniao.util";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 import type { TenantUserRole } from "@nexiforma/database";
 
-type LembreteTipo = "CRIACAO" | "SEMANA_ANTES" | "DIA_ANTES" | "HORA_EVENTO";
+type LembreteTipo = "CRIACAO" | "SEMANA_ANTES" | "DIA_ANTES" | "HORA_EVENTO" | "TEAMS_SALA";
 
 @Injectable()
 export class CalendarioNotificacoesService {
@@ -66,47 +67,156 @@ export class CalendarioNotificacoesService {
   }
 
   async onReuniaoAgendada(interaccaoId: string, tenantId: string) {
-    const row = await this.prisma.interaccaoComercial.findFirst({
+    const row = await this.loadReuniaoRow(interaccaoId, tenantId);
+    if (!row?.agendadoPara) return;
+
+    const userIds = await this.resolverDestinatariosReuniao(
+      tenantId,
+      parseParticipantes(row.participantesIds),
+      row.audienciaRoles,
+      row.criadoPorUserId,
+    );
+
+    await this.notificarUtilizadoresReuniao({
+      row,
+      tenantId,
+      userIds,
+      tipo: "CRIACAO",
+      tituloPrefixo: "Reunião agendada",
+    });
+
+    await this.notificarClienteReuniao(row, "Reunião agendada");
+  }
+
+  /** Sala Teams criada ou actualizada - email + sino com link directo. */
+  async onReuniaoTeamsSalaCriada(interaccaoId: string, tenantId: string) {
+    const row = await this.loadReuniaoRow(interaccaoId, tenantId);
+    if (!row?.agendadoPara || !row.salaJoinUrl) return;
+
+    const userIds = await this.resolverDestinatariosReuniao(
+      tenantId,
+      parseParticipantes(row.participantesIds),
+      row.audienciaRoles,
+      row.criadoPorUserId,
+    );
+
+    await this.notificarUtilizadoresReuniao({
+      row,
+      tenantId,
+      userIds,
+      tipo: "TEAMS_SALA",
+      tituloPrefixo: "Sala Teams disponível",
+    });
+
+    await this.notificarClienteReuniao(row, "Sala Teams da reunião");
+  }
+
+  private async loadReuniaoRow(interaccaoId: string, tenantId: string) {
+    return this.prisma.interaccaoComercial.findFirst({
       where: { id: interaccaoId, tenantId, tipo: "REUNIAO" },
       include: {
-        entidadeCliente: { select: { nome: true } },
+        entidadeCliente: { select: { nome: true, email: true } },
         leadComercial: { select: { empresaNome: true, codigo: true } },
         criadoPor: { select: { id: true, email: true, displayName: true } },
       },
     });
-    if (!row?.agendadoPara) return;
+  }
 
-    const participantes = parseParticipantes(row.participantesIds);
-    const userIds = await this.resolverDestinatariosReuniao(
-      tenantId,
-      participantes,
-      row.audienciaRoles,
-    );
+  private buildReuniaoCorpo(row: {
+    agendadoPara: Date | null;
+    salaJoinUrl: string | null;
+    entidadeCliente?: { nome: string } | null;
+    leadComercial?: { empresaNome: string; codigo: string } | null;
+  }): string {
+    const cliente =
+      row.entidadeCliente?.nome ?? row.leadComercial?.empresaNome ?? row.leadComercial?.codigo ?? "";
+    const parts = [row.agendadoPara?.toLocaleString("pt-PT") ?? "-"];
+    if (cliente) parts.push(cliente);
+    if (row.salaJoinUrl) parts.push("Reunião online via Microsoft Teams.");
+    return parts.join(" · ");
+  }
 
-    const titulo = row.titulo?.trim() || "Reunião comercial";
-    const cliente = row.entidadeCliente?.nome ?? row.leadComercial?.empresaNome ?? row.leadComercial?.codigo ?? "";
-    const dataHora = row.agendadoPara.toLocaleString("pt-PT");
-    const link = `${this.appUrl()}/portal/calendario`;
+  private calendarioLink(row: { agendadoPara: Date; id: string }): string {
+    const data = row.agendadoPara.toISOString().slice(0, 10);
+    return `${this.appUrl()}/portal/calendario?data=${data}&reuniao=${row.id}`;
+  }
+
+  private async notificarUtilizadoresReuniao(input: {
+    row: {
+      id: string;
+      titulo: string | null;
+      agendadoPara: Date | null;
+      salaJoinUrl: string | null;
+      entidadeCliente?: { nome: string } | null;
+      leadComercial?: { empresaNome: string; codigo: string } | null;
+    };
+    tenantId: string;
+    userIds: string[];
+    tipo: LembreteTipo;
+    tituloPrefixo: string;
+  }) {
+    const titulo = input.row.titulo?.trim() || "Reunião comercial";
+    const corpo = this.buildReuniaoCorpo(input.row);
+    const link =
+      input.row.agendadoPara != null
+        ? this.calendarioLink({ agendadoPara: input.row.agendadoPara, id: input.row.id })
+        : `${this.appUrl()}/portal/calendario`;
 
     const users = await this.prisma.user.findMany({
-      where: { tenantId, id: { in: userIds }, active: true },
+      where: { tenantId: input.tenantId, id: { in: input.userIds }, active: true },
       select: { id: true, email: true, displayName: true },
     });
 
     for (const u of users) {
       await this.enviarLembrete({
-        tenantId,
+        tenantId: input.tenantId,
         fonte: "INTERACCAO_CRM",
-        fonteId: row.id,
+        fonteId: input.row.id,
         userId: u.id,
         email: u.email,
         nome: u.displayName ?? u.email,
-        tipo: "CRIACAO",
-        titulo: `Reunião agendada: ${titulo}`,
-        corpo: `${dataHora}${cliente ? ` · ${cliente}` : ""}`,
+        tipo: input.tipo,
+        titulo: `${input.tituloPrefixo}: ${titulo}`,
+        corpo,
         link,
         emailKind: "reuniao",
+        teamsJoinUrl: input.row.salaJoinUrl,
       });
+    }
+  }
+
+  private async notificarClienteReuniao(
+    row: {
+      id: string;
+      titulo: string | null;
+      agendadoPara: Date | null;
+      salaJoinUrl: string | null;
+      entidadeCliente?: { nome: string; email: string | null } | null;
+    },
+    assuntoPrefixo: string,
+  ) {
+    const email = row.entidadeCliente?.email?.trim();
+    if (!email || !row.salaJoinUrl) return;
+
+    const titulo = row.titulo?.trim() || "Reunião comercial";
+    const tpl = EmailTemplates.lembreteCalendario({
+      nome: row.entidadeCliente?.nome ?? "Cliente",
+      titulo: `${assuntoPrefixo}: ${titulo}`,
+      corpo: this.buildReuniaoCorpo(row),
+      tipo: row.salaJoinUrl ? "TEAMS_SALA" : "CRIACAO",
+      link: row.salaJoinUrl,
+      teamsJoinUrl: row.salaJoinUrl,
+    });
+
+    try {
+      await this.mail.send({
+        to: email,
+        subject: tpl.subject,
+        text: tpl.text,
+        html: tpl.html,
+      });
+    } catch (err) {
+      this.logger.warn(`Email reunião cliente (${row.id}): ${String(err)}`);
     }
   }
 
@@ -176,18 +286,23 @@ export class CalendarioNotificacoesService {
 
     for (const r of reunioes) {
       if (!r.agendadoPara) continue;
+      const agendadoPara = r.agendadoPara;
       const participantes = parseParticipantes(r.participantesIds);
       const userIds = await this.resolverDestinatariosReuniao(
         r.tenantId,
         participantes,
         r.audienciaRoles,
+        r.criadoPorUserId,
       );
       const users = await this.prisma.user.findMany({
         where: { tenantId: r.tenantId, id: { in: userIds }, active: true },
         select: { id: true, email: true, displayName: true },
       });
 
-      for (const tipo of this.tiposParaInstante(r.agendadoPara, now, em7d, em1d, em1h)) {
+      const link = this.calendarioLink({ agendadoPara, id: r.id });
+      const corpo = this.buildReuniaoCorpo(r);
+
+      for (const tipo of this.tiposParaInstante(agendadoPara, now, em7d, em1d, em1h)) {
         for (const u of users) {
           await this.enviarLembrete({
             tenantId: r.tenantId,
@@ -198,9 +313,10 @@ export class CalendarioNotificacoesService {
             nome: u.displayName ?? u.email,
             tipo,
             titulo: `Lembrete: ${r.titulo ?? "Reunião"}`,
-            corpo: r.agendadoPara.toLocaleString("pt-PT"),
-            link: `${this.appUrl()}/portal/calendario`,
+            corpo,
+            link,
             emailKind: "reuniao",
+            teamsJoinUrl: r.salaJoinUrl,
           });
         }
       }
@@ -219,6 +335,7 @@ export class CalendarioNotificacoesService {
     corpo: string;
     link: string;
     emailKind: "sessao" | "reuniao";
+    teamsJoinUrl?: string | null;
     sessao?: {
       nomeSessao: string;
       dataHora: string;
@@ -248,6 +365,7 @@ export class CalendarioNotificacoesService {
           corpo: input.corpo,
           tipo: input.tipo,
           link: input.link,
+          teamsJoinUrl: input.teamsJoinUrl ?? undefined,
         });
         await this.mail.send({
           to: input.email,
@@ -262,7 +380,9 @@ export class CalendarioNotificacoesService {
         userId: input.userId,
         tipo: "calendario",
         titulo: input.titulo,
-        mensagem: input.corpo,
+        mensagem: input.teamsJoinUrl
+          ? `${input.corpo} Link Teams: ${input.teamsJoinUrl}`
+          : input.corpo,
         link: input.link,
       });
 
@@ -342,30 +462,33 @@ export class CalendarioNotificacoesService {
     tenantId: string,
     participantesIds: string[],
     audienciaRolesRaw: unknown,
+    criadorUserId?: string | null,
   ): Promise<string[]> {
-    if (participantesIds.length > 0) return participantesIds;
-
-    const roles = parseAudienciaRoles(audienciaRolesRaw);
-    if (roles.length > 0) {
-      const users = await this.prisma.user.findMany({
-        where: { tenantId, active: true, role: { in: roles as TenantUserRole[] } },
-        select: { id: true },
-      });
-      return users.map((u) => u.id);
+    let ids: string[];
+    if (participantesIds.length > 0) {
+      ids = [...participantesIds];
+    } else {
+      const roles = parseAudienciaRoles(audienciaRolesRaw);
+      if (roles.length > 0) {
+        const users = await this.prisma.user.findMany({
+          where: { tenantId, active: true, role: { in: roles as TenantUserRole[] } },
+          select: { id: true },
+        });
+        ids = users.map((u) => u.id);
+      } else if (criadorUserId) {
+        ids = [criadorUserId];
+      } else {
+        ids = [];
+      }
     }
 
-    return this.todosComerciaisIds(tenantId);
-  }
-
-  private async todosComerciaisIds(tenantId: string): Promise<string[]> {
-    const rows = await this.prisma.user.findMany({
-      where: { tenantId, role: "COMERCIAL", active: true },
-      select: { id: true },
-    });
-    return rows.map((r) => r.id);
+    if (criadorUserId && !ids.includes(criadorUserId)) {
+      ids = [criadorUserId, ...ids];
+    }
+    return ids;
   }
 
   private appUrl(): string {
-    return (this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000").replace(/\/$/, "");
+    return resolveAppPublicUrlForLinks(this.config).replace(/\/$/, "");
   }
 }

@@ -13,13 +13,13 @@ export class LmsController {
   constructor(private readonly lms: LmsService) {}
 
   @Post("eventos")
-  @Roles("tenant_manager", "formador", "formando")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador", "formando")
   register(@CurrentUser() user: RequestUser, @Body() dto: CreateLmsEventoDto): Promise<Record<string, unknown>> {
     return this.lms.registerEvent(user, dto);
   }
 
   @Get("presenca-estado")
-  @Roles("tenant_manager", "formador", "formando")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador", "formando")
   presencaEstado(
     @CurrentUser() user: RequestUser,
     @Query("matriculaId") matriculaId: string,
@@ -29,7 +29,7 @@ export class LmsController {
   }
 
   @Get("acessos")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   acessos(
     @CurrentUser() user: RequestUser,
     @Query("sessaoFormacaoId") sessaoFormacaoId?: string,
@@ -46,7 +46,7 @@ export class LmsController {
   }
 
   @Get("sessoes/:sessaoId/painel-presenca")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   painelPresenca(
     @CurrentUser() user: RequestUser,
     @Param("sessaoId") sessaoId: string,

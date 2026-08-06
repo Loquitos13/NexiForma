@@ -11,7 +11,7 @@ import {
 } from "react";
 import type { TenantEntitlements } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
-import { getAccessToken } from "@/lib/client/access-token";
+import { getAccessToken, ACCESS_TOKEN_CHANGED_EVENT } from "@/lib/client/access-token";
 import { decodeJwtRole } from "@/lib/client/jwt-role";
 import { subscribeSessionExpired } from "@/lib/client/session-lifecycle";
 
@@ -62,11 +62,22 @@ export function TenantEntitlementsProvider({ children }: { children: ReactNode }
 
   useEffect(() => {
     void load();
-    return subscribeSessionExpired(() => {
+    const onExpired = () => {
       setEntitlements(null);
       setLoading(false);
       inflightLoad = null;
-    });
+    };
+    const onTokenChanged = () => {
+      setEntitlements(null);
+      inflightLoad = null;
+      void load();
+    };
+    const unsubExpired = subscribeSessionExpired(onExpired);
+    window.addEventListener(ACCESS_TOKEN_CHANGED_EVENT, onTokenChanged);
+    return () => {
+      unsubExpired();
+      window.removeEventListener(ACCESS_TOKEN_CHANGED_EVENT, onTokenChanged);
+    };
   }, [load]);
 
   const value = useMemo(

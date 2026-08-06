@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import {
   canAccessPlatformArea,
   canAccessPortalArea,
+  isPortalPathAllowedByRoleEdge,
   type MiddlewareJwtSlice,
 } from "@/lib/middleware-auth";
 import {
@@ -61,7 +62,11 @@ function isProtectedAppPath(pathname: string): boolean {
 }
 
 export function middleware(request: NextRequest) {
-  const ddos = checkWebDdosRateLimit(request);
+  const ddos = checkWebDdosRateLimit({
+    nextUrl: request.nextUrl,
+    headers: request.headers,
+    cookies: request.cookies,
+  });
   if (!ddos.allowed) {
     const res = NextResponse.json(
       { message: "Demasiados pedidos. Tente novamente dentro de momentos.", statusCode: 429 },
@@ -107,6 +112,16 @@ export function middleware(request: NextRequest) {
         return withTransportHeaders(NextResponse.redirect(new URL("/plataforma", request.url)));
       }
       return withTransportHeaders(NextResponse.redirect(new URL("/acesso-negado", request.url)));
+    }
+    // RBAC por rota (papéis); entitlements de faturação continuam no layout client.
+    if (!impersonating && !isPortalPathAllowedByRoleEdge(pathname, role)) {
+      const home =
+        role === "formando"
+          ? "/portal/formando"
+          : role === "comercial"
+            ? "/portal/crm/leads"
+            : "/portal";
+      return withTransportHeaders(NextResponse.redirect(new URL(home, request.url)));
     }
     return withTransportHeaders(NextResponse.next());
   }

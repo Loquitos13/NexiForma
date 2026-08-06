@@ -1,9 +1,10 @@
 import {
+  IsArray,
+  IsBoolean,
   IsEnum,
   IsOptional,
   IsString,
   IsUUID,
-  IsArray,
   MaxLength,
 } from "class-validator";
 
@@ -84,6 +85,13 @@ export class CreateInteraccaoDto {
   @IsArray()
   @IsEnum(REUNIAO_AUDIENCIA_ROLES, { each: true })
   audienciaRoles?: (typeof REUNIAO_AUDIENCIA_ROLES)[number][];
+
+  @IsOptional()
+  criarSalaTeams?: boolean;
+
+  @IsOptional()
+  @IsUUID()
+  reuniaoOrigemId?: string;
 }
 
 export class UpdateInteraccaoDto extends CreateInteraccaoDto {}

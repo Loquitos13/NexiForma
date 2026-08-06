@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: "Harris Signature";
+  src: url("/fonts/harris-signature.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   color-scheme: dark;
   --safe-top: env(safe-area-inset-top, 0px);
@@ -94,7 +102,7 @@ a {
   }
 }
 
-/* Planos – glow por coluna (explorar) */
+/* Planos â€“ glow por coluna (explorar) */
 .plan-glow-starter {
   background-color: rgba(59, 130, 246, 0.09);
   border-color: rgba(96, 165, 250, 0.45);
@@ -155,7 +163,7 @@ a {
   animation: plan-enterprise-breathe 3.4s ease-in-out infinite;
 }
 
-/* Entrar – broken glass roxo */
+/* Entrar â€“ broken glass roxo */
 .entrar-glass-btn {
   --entrar-anim-ms: 1650ms;
 }
@@ -304,7 +312,7 @@ a {
   }
 }
 
-/* –– Marketing site –– */
+/* â€“â€“ Marketing site â€“â€“ */
 .site-page {
   min-height: 100vh;
   display: flex;
@@ -370,7 +378,7 @@ a {
   color: #f1f5f9;
 }
 
-/* NexiForma NF - vetor de energia rosa percorre contorno (2s) → fill */
+/* NexiForma NF - vetor de energia rosa percorre contorno (2s) â†’ fill */
 @media (prefers-reduced-motion: no-preference) {
   .nexi-energy-trail,
   .nexi-energy-beam,
@@ -439,7 +447,7 @@ a {
     animation: nexi-card-glow var(--nexi-trace, 2s) ease-out infinite;
   }
 
-  /* Camada 0: fita principal - 0% → 52% do ciclo de 2s */
+  /* Camada 0: fita principal - 0% â†’ 52% do ciclo de 2s */
   @keyframes nexi-energy-trail-0 {
     0% {
       stroke-dashoffset: 100;
@@ -497,7 +505,7 @@ a {
     }
   }
 
-  /* Camada 1: fita superior - 48% → 100% do ciclo de 2s */
+  /* Camada 1: fita superior - 48% â†’ 100% do ciclo de 2s */
   @keyframes nexi-energy-trail-1 {
     0%,
     47% {
@@ -613,7 +621,7 @@ a {
   }
 }
 
-/* Título NexiForma - rainbow líquido infinito (loop sem salto) */
+/* TÃ­tulo NexiForma - rainbow lÃ­quido infinito (loop sem salto) */
 @media (prefers-reduced-motion: no-preference) {
   .nexi-brand-title {
     background: linear-gradient(
@@ -636,7 +644,7 @@ a {
       nexi-brand-glow 9s ease-in-out infinite;
   }
 
-  /* Deslocamento contínuo - 0% e 100% são visualmente iguais (gradiente fecha em ciclo) */
+  /* Deslocamento contÃ­nuo - 0% e 100% sÃ£o visualmente iguais (gradiente fecha em ciclo) */
   @keyframes nexi-brand-shimmer {
     0% {
       background-position: 100% center;
@@ -646,7 +654,7 @@ a {
     }
   }
 
-  /* Intro/out suave só em opacidade - sem blur para evitar flash no restart */
+  /* Intro/out suave sÃ³ em opacidade - sem blur para evitar flash no restart */
   @keyframes nexi-brand-glow {
     0%,
     100% {
@@ -662,7 +670,49 @@ a {
   }
 }
 
-/* Sino de notificações - glow quando há não lidas */
+/* FormaFuturo - faísca leve em órbita contínua (sem pausa) */
+@media (prefers-reduced-motion: no-preference) {
+  .ff-hex-loop .ff-hex-trail,
+  .ff-hex-loop .ff-hex-beam,
+  .ff-hex-loop .ff-hex-head {
+    animation-name: ff-hex-orbit;
+    animation-duration: var(--ff-hex-cycle, 2.8s);
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+
+  .ff-hex-trail {
+    opacity: 0.28;
+  }
+
+  .ff-hex-beam {
+    opacity: 0.95;
+  }
+
+  .ff-hex-head {
+    opacity: 1;
+  }
+
+  @keyframes ff-hex-orbit {
+    from {
+      stroke-dashoffset: 100;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ff-hex-trail,
+  .ff-hex-beam,
+  .ff-hex-head {
+    opacity: 0;
+    animation: none;
+  }
+}
+
+/* Sino de notificaÃ§Ãµes - glow quando hÃ¡ nÃ£o lidas */
 .portal-bell-glow {
   animation: portal-bell-pulse 2.2s ease-in-out infinite;
 }
@@ -674,6 +724,46 @@ a {
   }
   50% {
     box-shadow: 0 0 14px rgba(251, 191, 36, 0.55), 0 0 24px rgba(251, 191, 36, 0.2);
+  }
+}
+
+/* Chips de jobs de importação de cronograma via IA (background) */
+.cronograma-ia-chip-processing {
+  animation: cronograma-ia-chip-breathe-violet 2.4s ease-in-out infinite;
+}
+
+.cronograma-ia-chip-ready {
+  animation: cronograma-ia-chip-breathe-green 2.4s ease-in-out infinite;
+}
+
+@keyframes cronograma-ia-chip-breathe-violet {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgba(167, 139, 250, 0.2);
+    background-color: rgba(139, 92, 246, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(167, 139, 250, 0.5), 0 0 24px rgba(139, 92, 246, 0.2);
+    background-color: rgba(139, 92, 246, 0.18);
+  }
+}
+
+@keyframes cronograma-ia-chip-breathe-green {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgba(52, 211, 153, 0.2);
+    background-color: rgba(16, 185, 129, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(52, 211, 153, 0.5), 0 0 24px rgba(16, 185, 129, 0.22);
+    background-color: rgba(16, 185, 129, 0.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cronograma-ia-chip-processing,
+  .cronograma-ia-chip-ready {
+    animation: none;
   }
 }
 
@@ -919,7 +1009,7 @@ a {
   border-top: 1px solid var(--border);
 }
 
-/* –– Auth pages –– */
+/* â€“â€“ Auth pages â€“â€“ */
 .auth-page {
   min-height: 100vh;
   display: flex;
@@ -1045,7 +1135,7 @@ a {
   color: #e2e8f0;
 }
 
-/* –– Session bar (portal / plataforma) –– */
+/* â€“â€“ Session bar (portal / plataforma) â€“â€“ */
 .session-bar {
   border-bottom: 1px solid var(--border);
   background: rgba(15, 23, 42, 0.85);
@@ -1099,12 +1189,90 @@ a {
   cursor: not-allowed;
 }
 
+/* Skip link - visÃ­vel apenas com foco */
+.skip-link {
+  position: fixed;
+  top: calc(var(--safe-top) + 0.5rem);
+  left: calc(var(--safe-left) + 0.5rem);
+  z-index: 200;
+  padding: 0.625rem 1rem;
+  border-radius: 0.5rem;
+  background: #1e293b;
+  color: #f8fafc;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: var(--shadow);
+  transform: translateY(calc(-100% - 1rem));
+  transition: transform 0.15s ease;
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
 /* Focus visible for a11y */
 a:focus-visible,
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[tabindex="0"]:focus-visible {
   outline: 2px solid #60a5fa;
   outline-offset: 2px;
+}
+
+/* Tabelas largas - scroll horizontal em mobile/tablet */
+.table-scroll-shell {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.table-scroll-shell > table {
+  min-width: min(100%, 640px);
+}
+
+/* Thead fixo + scroll só no tbody */
+.table-scroll-shell--body-scroll {
+  min-height: 0;
+  max-height: 100%;
+  overscroll-behavior: contain;
+}
+
+.table-scroll-shell--body-scroll .table-head-fixed,
+.table-scroll-shell--body-scroll .table-body-scroll {
+  scrollbar-gutter: stable;
+}
+
+.table-scroll-shell--body-scroll .table-head-fixed {
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.table-scroll-shell--body-scroll .table-head-fixed::-webkit-scrollbar {
+  width: 8px;
+  height: 0;
+  background: transparent;
+}
+
+.table-scroll-shell--body-scroll .table-head-fixed::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.table-body-scroll {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-body-scroll:focus-visible {
+  outline: none;
 }
 
 input:focus {
@@ -1155,6 +1323,119 @@ input:focus {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+}
+
+/*
+ * Portal scrollbars: track invisível; thumb azul marinho com breathing roxo.
+ * Animação em @property no shell (browsers ignoram animation em ::-webkit-scrollbar-thumb).
+ */
+@property --portal-scroll-thumb {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #1e3a5f;
+}
+
+@keyframes portal-scrollbar-breathe {
+  0%,
+  100% {
+    --portal-scroll-thumb: #1e3a5f; /* azul marinho */
+  }
+  50% {
+    --portal-scroll-thumb: #3b4f8c; /* tom índigo discreto (breathing notável, sem lilás) */
+  }
+}
+
+.portal-app-shell {
+  --portal-scroll-thumb: #1e3a5f;
+  animation: portal-scrollbar-breathe 3.2s ease-in-out infinite;
+}
+
+.portal-app-shell,
+.portal-app-shell *,
+.portal-scroll-main,
+.table-scroll-shell,
+.table-body-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--portal-scroll-thumb) transparent;
+}
+
+.portal-app-shell::-webkit-scrollbar,
+.portal-app-shell *::-webkit-scrollbar,
+.portal-scroll-main::-webkit-scrollbar,
+.table-scroll-shell::-webkit-scrollbar,
+.table-body-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  background: transparent;
+}
+
+.portal-app-shell::-webkit-scrollbar-track,
+.portal-app-shell *::-webkit-scrollbar-track,
+.portal-scroll-main::-webkit-scrollbar-track,
+.table-scroll-shell::-webkit-scrollbar-track,
+.table-body-scroll::-webkit-scrollbar-track,
+.portal-app-shell::-webkit-scrollbar-corner,
+.portal-app-shell *::-webkit-scrollbar-corner,
+.portal-scroll-main::-webkit-scrollbar-corner,
+.table-scroll-shell::-webkit-scrollbar-corner,
+.table-body-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.portal-app-shell::-webkit-scrollbar-button,
+.portal-app-shell *::-webkit-scrollbar-button,
+.portal-scroll-main::-webkit-scrollbar-button,
+.table-scroll-shell::-webkit-scrollbar-button,
+.table-body-scroll::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.portal-app-shell::-webkit-scrollbar-thumb,
+.portal-app-shell *::-webkit-scrollbar-thumb,
+.portal-scroll-main::-webkit-scrollbar-thumb,
+.table-scroll-shell::-webkit-scrollbar-thumb,
+.table-body-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--portal-scroll-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 2rem;
+  box-shadow: 0 0 5px color-mix(in srgb, var(--portal-scroll-thumb) 45%, transparent);
+}
+
+.portal-app-shell::-webkit-scrollbar-thumb:hover,
+.portal-app-shell *::-webkit-scrollbar-thumb:hover,
+.portal-scroll-main::-webkit-scrollbar-thumb:hover,
+.table-scroll-shell::-webkit-scrollbar-thumb:hover,
+.table-body-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: #4a5f9e;
+  box-shadow: 0 0 8px rgba(59, 79, 140, 0.55);
+}
+
+/* Nav lateral: scroll funcional, barra invisível (vence o estilo global do portal) */
+.portal-nav-scroll {
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.portal-app-shell .portal-nav-scroll::-webkit-scrollbar,
+.portal-nav-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+  background: transparent;
+}
+
+.portal-app-shell .portal-nav-scroll::-webkit-scrollbar-thumb,
+.portal-nav-scroll::-webkit-scrollbar-thumb {
+  display: none;
+  background: transparent;
+  box-shadow: none;
 }
 
 .portal-mobile-bar {

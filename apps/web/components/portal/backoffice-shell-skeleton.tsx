@@ -41,7 +41,7 @@ export function BackofficeShellSkeleton() {
       <SidebarSkeleton />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <SessionBarSkeleton />
-        <main className="portal-main portal-scroll-main">
+        <main id="main-content" className="portal-main portal-scroll-main">
           <div className="mx-auto max-w-6xl px-3 py-4 sm:px-6 sm:py-6">
             <PageContentSkeleton variant="default" />
           </div>

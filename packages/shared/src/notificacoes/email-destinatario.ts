@@ -35,3 +35,33 @@ export function resolverEmailUtilizador(email?: string | null): string | null {
   const e = email?.trim();
   return e || null;
 }
+
+/** Contas de seed/dev que provedores SMTP reais não entregam. */
+export function isEmailNaoEntregavelDev(email?: string | null): boolean {
+  const e = email?.trim().toLowerCase();
+  if (!e || !e.includes("@")) return true;
+  const domain = e.split("@").pop() ?? "";
+  return (
+    domain === "localhost" ||
+    domain === "local" ||
+    domain.endsWith(".local") ||
+    domain.endsWith(".test") ||
+    domain.endsWith(".invalid") ||
+    domain.endsWith(".example")
+  );
+}
+
+/**
+ * Resolve destino SMTP: se o email for não entregável (ex. @demo.local),
+ * usa `fallback` (tipicamente MAIL_REPLY_TO).
+ */
+export function resolverEmailEntregavel(
+  email?: string | null,
+  fallback?: string | null,
+): string | null {
+  const primary = resolverEmailUtilizador(email);
+  if (primary && !isEmailNaoEntregavelDev(primary)) return primary;
+  const fb = resolverEmailUtilizador(fallback);
+  if (fb && !isEmailNaoEntregavelDev(fb)) return fb;
+  return null;
+}

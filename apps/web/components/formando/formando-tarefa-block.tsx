@@ -1,10 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
-import { Lock } from "lucide-react";
-import { isModuloStorageRef, parseVimeoVideoId, parseYoutubeVideoId, resolveModuloConteudoUrl, sanitizeLmsHtml } from "@nexiforma/shared";
+import { useCallback } from "react";
+import { CheckCircle2, Lock } from "lucide-react";
+import {
+  isModuloStorageRef,
+  parseYoutubeVideoId,
+  resolveModuloConteudoUrl,
+  sanitizeLmsHtml,
+} from "@nexiforma/shared";
 import { ModuloStoredMedia } from "@/components/lms/ModuloStoredMedia";
 import { ExternalVideoEmbed } from "@/components/lms/ExternalVideoEmbed";
+import { Button } from "@/components/ui";
 import { useAutoConcluirModulo } from "@/lib/lms/use-auto-concluir-modulo";
 import { FormandoFlashcard } from "./formando-flashcard";
 import { FormandoQuizInline } from "./formando-quiz-inline";
@@ -17,7 +23,14 @@ type Props = {
   onConcluido?: () => void;
 };
 
-export function FormandoTarefaBlock({ tarefa, matriculaId, cursoId, onConcluido }: Props) {
+/** Tipos que precisam de confirmação explícita do formando (não concluem sozinhos). */
+function precisaConfirmacaoManual(tarefa: TarefaPercurso, opts: { isExternalVideo: boolean }): boolean {
+  if (tarefa.tipo === "QUIZ" || tarefa.tipo === "SCORM") return false;
+  if (tarefa.tipo === "VIDEO" || (tarefa.tipo === "WEBINAR" && opts.isExternalVideo)) return false;
+  return true;
+}
+
+export function FormandoTarefaBlock({ tarefa, matriculaId, cursoId: _cursoId, onConcluido }: Props) {
   const locked = !tarefa.desbloqueado;
   const concluido = tarefa.concluido || tarefa.percentual >= 100;
   const { registarConclusao } = useAutoConcluirModulo({
@@ -33,65 +46,23 @@ export function FormandoTarefaBlock({ tarefa, matriculaId, cursoId, onConcluido 
   const mimeType =
     tarefa.metadata && typeof tarefa.metadata.mimeType === "string" ? tarefa.metadata.mimeType : null;
   const isExternalVideo =
-    mediaUrl &&
-    (parseYoutubeVideoId(mediaUrl) !== null || mediaUrl.includes("youtube.com") || mediaUrl.includes("youtu.be"));
-  const isOfficeDoc =
-    mimeType?.includes("word") ||
-    mimeType?.includes("powerpoint") ||
-    mimeType?.includes("spreadsheet") ||
-    mimeType?.includes("msword") ||
-    (tarefa.metadata &&
-      typeof tarefa.metadata.fileName === "string" &&
-      /\.(doc|docx|ppt|pptx|xls|xlsx)$/i.test(tarefa.metadata.fileName));
+    !!mediaUrl &&
+    (parseYoutubeVideoId(mediaUrl) !== null ||
+      mediaUrl.includes("youtube.com") ||
+      mediaUrl.includes("youtu.be"));
 
-  const textoRef = useRef<HTMLDivElement>(null);
   const handleConcluir = useCallback(() => void registarConclusao(), [registarConclusao]);
-
-  useEffect(() => {
-    if (concluido || locked) return;
-    const webinarComPlayer =
-      tarefa.tipo === "WEBINAR" &&
-      (parseYoutubeVideoId(urlOuRef) !== null || parseVimeoVideoId(urlOuRef) !== null);
-    const videoExternoComPlayer = tarefa.tipo === "VIDEO" && isExternalVideo;
-    const usaTimerEngagement =
-      !webinarComPlayer &&
-      !videoExternoComPlayer &&
-      tarefa.tipo === "PDF" &&
-      mediaUrl &&
-      !isOfficeDoc &&
-      !mimeType?.startsWith("image/") &&
-      !isStored;
-    if (!usaTimerEngagement) return;
-    const secs = tarefa.duracaoMin ? Math.max(30, Math.round(tarefa.duracaoMin * 60 * 0.7)) : 90;
-    const t = setTimeout(() => void handleConcluir(), secs * 1000);
-    return () => clearTimeout(t);
-  }, [tarefa, concluido, locked, isExternalVideo, isOfficeDoc, isStored, mediaUrl, mimeType, urlOuRef, handleConcluir]);
-
-  useEffect(() => {
-    if (concluido || locked || !tarefa.conteudoHtml || isFlashcardTarefa(tarefa)) return;
-    const el = textoRef.current;
-    if (!el) return;
-    function checkScroll() {
-      const node = textoRef.current;
-      if (!node) return;
-      if (node.scrollHeight <= node.clientHeight + 8) {
-        void handleConcluir();
-        return;
-      }
-      if (node.scrollTop + node.clientHeight >= node.scrollHeight * 0.92) {
-        void handleConcluir();
-      }
-    }
-    el.addEventListener("scroll", checkScroll);
-    checkScroll();
-    return () => el.removeEventListener("scroll", checkScroll);
-  }, [tarefa.conteudoHtml, concluido, locked, handleConcluir, tarefa]);
+  const showManualConfirm =
+    !locked && !concluido && precisaConfirmacaoManual(tarefa, { isExternalVideo });
 
   const meta = tarefa.metadata ?? {};
   const flashcard = isFlashcardTarefa(tarefa);
 
   return (
-    <section id={`tarefa-${tarefa.id}`} className="portal-card-shell scroll-mt-6 border-b border-slate-700/30 px-3 py-10 last:border-b-0 sm:px-6">
+    <section
+      id={`tarefa-${tarefa.id}`}
+      className="portal-card-shell scroll-mt-6 border-b border-slate-700/30 px-3 py-10 last:border-b-0 sm:px-6"
+    >
       <header className="mb-6 text-center">
         <h3 className="text-xl font-bold uppercase tracking-wide text-slate-100">{tarefa.titulo}</h3>
         {concluido ? (
@@ -106,7 +77,9 @@ export function FormandoTarefaBlock({ tarefa, matriculaId, cursoId, onConcluido 
       </header>
 
       {locked ? (
-        <p className="text-center text-sm text-slate-500">Conclui o tópico anterior para desbloquear este conteúdo.</p>
+        <p className="text-center text-sm text-slate-500">
+          Conclui o tópico anterior para desbloquear este conteúdo.
+        </p>
       ) : flashcard ? (
         <FormandoFlashcard
           frente={(typeof meta.frente === "string" ? meta.frente : null) ?? tarefa.titulo}
@@ -161,7 +134,6 @@ export function FormandoTarefaBlock({ tarefa, matriculaId, cursoId, onConcluido 
               mimeType={mimeType}
               fileName={typeof meta.fileName === "string" ? meta.fileName : null}
               variant="full"
-              onDocumentoVisualizado={handleConcluir}
             />
           ) : mediaUrl ? (
             <iframe
@@ -182,13 +154,24 @@ export function FormandoTarefaBlock({ tarefa, matriculaId, cursoId, onConcluido 
         </div>
       ) : tarefa.conteudoHtml ? (
         <div
-          ref={textoRef}
           className="portal-prose prose prose-invert prose-sm mx-auto w-full max-w-2xl rounded-2xl border border-slate-700/30 bg-slate-900/40 p-4 sm:p-8"
           dangerouslySetInnerHTML={{ __html: sanitizeLmsHtml(tarefa.conteudoHtml) ?? "" }}
         />
       ) : (
         <p className="text-center text-sm text-slate-500">Conteúdo indisponível.</p>
       )}
+
+      {showManualConfirm ? (
+        <div className="mx-auto mt-8 flex max-w-md flex-col items-center gap-2">
+          <Button type="button" onClick={handleConcluir} className="w-full sm:w-auto">
+            <CheckCircle2 className="h-4 w-4" />
+            Marcar como concluído
+          </Button>
+          <p className="text-center text-[11px] text-slate-500">
+            Só depois podes avançar para o módulo seguinte no rodapé.
+          </p>
+        </div>
+      ) : null}
     </section>
   );
 }

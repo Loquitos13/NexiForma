@@ -5,6 +5,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 import { ProposalService } from "./proposal.service";
+import { interaccaoAutorFromUserId } from "./interaccao-autor.util";
 
 type SugestaoRow = {
   id: string;
@@ -248,6 +249,8 @@ export class CrmSugestoesExecucaoService {
       return { sucesso: false, acao, mensagem: "Utilizador inválido.", executadoEm };
     }
 
+    const autor = await interaccaoAutorFromUserId(this.prisma, user.sub);
+
     const interaccao = await this.prisma.interaccaoComercial.create({
       data: {
         tenantId,
@@ -257,7 +260,7 @@ export class CrmSugestoesExecucaoService {
         notasLivres: `[Execução automática · sugestão IA aceite]\n${row.descricao}`,
         entidadeClienteId: row.entidadeClienteId,
         leadComercialId: leadId ?? row.leadComercialId,
-        criadoPorUserId: user.sub,
+        ...autor,
         processamentoEstado: "PROCESSADO",
         resumoIa: row.descricao.slice(0, 500),
         processadoEm: new Date(),

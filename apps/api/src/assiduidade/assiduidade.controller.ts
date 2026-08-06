@@ -18,7 +18,7 @@ export class AssiduidadeController {
 
   @Post("sessoes/:sessaoId/sincronizar")
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   sincronizar(
     @CurrentUser() user: RequestUser,
     @Param("sessaoId") sessaoId: string,

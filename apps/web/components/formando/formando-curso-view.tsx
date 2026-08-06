@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Menu, X } from "lucide-react";
-import { bffFetch } from "@/lib/client/bff-fetch";
 import { FormandoPercursoSidebar } from "./formando-percurso-sidebar";
 import { FormandoPercursoFooter } from "./formando-percurso-footer";
 import { FormandoTarefaBlock } from "./formando-tarefa-block";
@@ -31,6 +30,7 @@ export function FormandoCursoView({
   onRefresh,
   topSlot,
 }: Props) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const unidades = useMemo(
     () => [...percurso.unidades].sort((a, b) => a.ordem - b.ordem),
@@ -83,8 +83,6 @@ export function FormandoCursoView({
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [overlayMeta, setOverlayMeta] = useState<{ atual: string; proximo?: string; nextId: string } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const prevAllDoneRef = useRef(false);
-  const autoAdvanceRef = useRef(false);
 
   const sortedUnidades = useMemo(
     () => unidadesComConteudo,
@@ -116,84 +114,35 @@ export function FormandoCursoView({
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
-  const marcarUnidadeConcluida = useCallback(
-    async (unidadeId: string) => {
-      const items =
-        unidadeId === UNIDADE_FLAT_ID
-          ? percurso.tarefas.filter((t) => !t.moduloUnidadeId && !t.concluido && t.desbloqueado)
-          : percurso.tarefas.filter((t) => t.moduloUnidadeId === unidadeId && !t.concluido && t.desbloqueado);
-      await Promise.all(
-        items.map((t) =>
-          bffFetch(`/api/v1/conteudos-lms/progresso/${t.id}?matriculaId=${encodeURIComponent(matriculaId)}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json", accept: "application/json" },
-            body: JSON.stringify({ percentual: 100, pontuacao: 100 }),
-          }),
-        ),
-      );
-    },
-    [matriculaId, percurso.tarefas],
-  );
+  const aplicarProximoModulo = useCallback(async (nextId: string) => {
+    setActiveUnidadeId(nextId);
+    setActiveTarefaId(null);
+    setSlidePhase("enter");
+    contentRef.current?.scrollTo({ top: 0 });
+    await new Promise((r) => setTimeout(r, 350));
+    setSlidePhase("idle");
+  }, []);
 
-  const aplicarProximoModulo = useCallback(
-    async (nextId: string) => {
-      setActiveUnidadeId(nextId);
-      setActiveTarefaId(null);
-      setSlidePhase("enter");
-      contentRef.current?.scrollTo({ top: 0 });
-      await new Promise((r) => setTimeout(r, 350));
-      setSlidePhase("idle");
-    },
-    [],
-  );
-
-  const avancarModulo = useCallback(
-    async (opts?: { animar?: boolean }) => {
-      const next = proximaUnidade(activeUnidadeId);
-      if (!next || avancarBusy) return;
-      setAvancarBusy(true);
-      try {
-        if (opts?.animar !== false) {
-          setOverlayMeta({ atual: unidadeTitulo, proximo: next.titulo, nextId: next.id });
-          setOverlayOpen(true);
-          setSlidePhase("exit");
-          await new Promise((r) => setTimeout(r, 400));
-        }
-        await marcarUnidadeConcluida(activeUnidadeId);
-        await onRefresh();
-        if (opts?.animar === false) {
-          await aplicarProximoModulo(next.id);
-        }
-      } finally {
-        setAvancarBusy(false);
-      }
-    },
-    [activeUnidadeId, aplicarProximoModulo, avancarBusy, marcarUnidadeConcluida, onRefresh, proximaUnidade, unidadeTitulo],
-  );
+  /** Avanço só por acção do formando no footer - nunca automática nem a forçar conclusões. */
+  const avancarModulo = useCallback(async () => {
+    const next = proximaUnidade(activeUnidadeId);
+    if (!next || avancarBusy) return;
+    setAvancarBusy(true);
+    try {
+      setOverlayMeta({ atual: unidadeTitulo, proximo: next.titulo, nextId: next.id });
+      setOverlayOpen(true);
+      setSlidePhase("exit");
+      await new Promise((r) => setTimeout(r, 400));
+    } finally {
+      setAvancarBusy(false);
+    }
+  }, [activeUnidadeId, avancarBusy, proximaUnidade, unidadeTitulo]);
 
   const handleOverlayDone = useCallback(() => {
     setOverlayOpen(false);
     if (overlayMeta?.nextId) void aplicarProximoModulo(overlayMeta.nextId);
     setOverlayMeta(null);
   }, [aplicarProximoModulo, overlayMeta]);
-
-  useEffect(() => {
-    prevAllDoneRef.current = false;
-    autoAdvanceRef.current = false;
-  }, [activeUnidadeId]);
-
-  useEffect(() => {
-    const items = tarefasActivas.filter((t) => t.desbloqueado);
-    const allDone = items.length > 0 && items.every((t) => t.concluido);
-    const next = proximaUnidade(activeUnidadeId);
-
-    if (allDone && !prevAllDoneRef.current && next && !avancarBusy && !autoAdvanceRef.current) {
-      autoAdvanceRef.current = true;
-      const t = setTimeout(() => void avancarModulo({ animar: true }), 600);
-      return () => clearTimeout(t);
-    }
-    prevAllDoneRef.current = allDone;
-  }, [tarefasActivas, activeUnidadeId, proximaUnidade, avancarBusy, avancarModulo]);
 
   useEffect(() => {
     const root = contentRef.current;
@@ -322,9 +271,11 @@ export function FormandoCursoView({
 
           <FormandoPercursoFooter
             unidades={unidadesComConteudo}
+            tarefas={percurso.tarefas}
             activeUnidadeId={activeUnidadeId}
             busy={avancarBusy}
-            onAvancar={() => void avancarModulo({ animar: true })}
+            onAvancar={() => void avancarModulo()}
+            onSair={() => router.push("/portal/formando")}
           />
         </div>
       </div>

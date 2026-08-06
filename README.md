@@ -46,9 +46,20 @@ npm run dev
 
 Sem Ollama activo, o NexiGuia usa o motor local (keywords) - funciona offline.
 
-### Email transacional (Brevo / Resend)
+### Email transacional (Brevo API)
 
-Notificações usam **só email**. Guia passo a passo: **[docs/EMAIL_SMTP_SETUP.md](./docs/EMAIL_SMTP_SETUP.md)**. Resumo: verificar domínio no Brevo ou Resend → preencher `SMTP_*` e `MAIL_FROM` no `.env` → testar em `/portal/notificacoes`.
+Notificações usam **email** via **Brevo API** (recomendado) ou SMTP/SES. Guia: **[docs/EMAIL_SMTP_SETUP.md](./docs/EMAIL_SMTP_SETUP.md)**.
+
+No `.env`:
+
+```env
+MAIL_PROVIDER=brevo
+BREVO_API_KEY=xkeysib-...
+MAIL_FROM="NexiForma <noreply@teu-dominio.pt>"
+MAIL_REPLY_TO=suporte@teu-dominio.pt
+```
+
+Teste: `node scripts/test-brevo-email.mjs`. Em Brevo → Security, autoriza o IP de dev se a conta tiver whitelist activa.
 
 ### Interface (produção)
 
@@ -182,7 +193,7 @@ Middleware Next protege `/portal/*` (cookie `nexiforma_refresh`).
 - **Assiduidade** – `POST /v1/assiduidade/sessoes/:id/sincronizar` (LMS → folha automática); webhook Zoom `POST /v1/assiduidade/webhooks/zoom` (header `X-Nexiforma-Zoom-Token`).
 - **Sessões** – campos `lmsAtivo`, `zoomMeetingId`, `minutosPresencaMin` (PATCH sessão).
 - **Control Plane** – `GET /v1/control-plane/metrics`, tenants, audit-logs, subscription-keys (super_admin).
-- **UI** – `/portal/lms`, `/portal/formando`, `/plataforma/*` (dashboard, tenants, auditoria).
+- **UI** – `/portal/formando`, `/plataforma/*` (dashboard, tenants, auditoria).
 
 | Browser (BFF) | Nest | Papéis |
 |---------------|------|--------|
@@ -276,11 +287,11 @@ Middleware Next protege `/portal/*` (cookie `nexiforma_refresh`).
 | `POST /api/v1/notificacoes/certificados/acoes-formacao/:id` | aviso certificado | manager, formador |
 | `GET /api/v1/notificacoes/config` | estado email | manager, formador |
 
-### Fase 9 – Certificado QR verificável + assinatura CMD
+### Fase 9 – Certificado QR verificável + sumários assinados
 
 - **Verificação pública** – certificados com QR code e código `NF-XXXXXXXX`; página pública `/verificar/:token`.
 - **Integridade** – hash do conteúdo (formando, acção, curso) detecta alterações pós-emissão.
-- **Assinatura CMD** – sumários com `CMD_SIGNATURE_MODE=mock|oauth`; fluxo mock em `/cmd/assinar`.
+- **Sumários** – assinatura interna ou upload de PDF assinado (apenas `.pdf`).
 - **Revogação** – gestor pode revogar código de verificação.
 
 | Browser (BFF) | Nest | Papéis |
@@ -288,9 +299,9 @@ Middleware Next protege `/portal/*` (cookie `nexiforma_refresh`).
 | `GET /verificar/:token` | página pública validação | – |
 | `GET /api/v1/verificacao/certificados/:token` | dados verificação | público |
 | `GET /api/v1/certificados/.../certificado.html` | certificado + QR | manager, formador, formando |
-| `POST /api/v1/sumarios/:id/assinar-cmd` | iniciar CMD | manager, formador |
-| `POST /api/v1/cmd/assinar/confirmar` | confirmar CMD | público (token) |
-| `GET /cmd/assinar` | simulação CMD (mock) | – |
+| `POST /api/v1/sumarios/:id/assinar` | assinatura interna | manager, formador |
+| `POST /api/v1/sumarios/:id/upload-pdf-assinado` | PDF assinado | manager, formador |
+| `GET /api/v1/sumarios/:id/pdf` | descarregar PDF | manager, formador |
 
 ### Fase 10 – CRM entidades, propostas e formadores CC/CCP
 
@@ -391,7 +402,90 @@ Configura `.env`: `JWT_EXPIRES`, `JWT_REFRESH_EXPIRES` (ex.: `7d`), opcionalment
 ```powershell
 npm run build
 npm run test
+node scripts/a11y-audit.mjs
 ```
+
+## CRM comercial (módulo add-on `crm`)
+
+Pipeline **lead → cliente → nota → proposta → resposta do cliente**. Papel **`comercial`** acede só ao CRM; **faturação AT** é add-on separado (`faturacao_at`) e **só gestor**.
+
+| Área | Portal | API (prefixo `/v1/`) |
+|------|--------|----------------------|
+| Dashboard | `/portal/crm` | `GET /crm/estatisticas` |
+| Leads | `/portal/crm/leads` | `GET|POST /crm/leads`, `POST .../converter` |
+| Notas / IA | `/portal/crm/interaccoes` | `GET|POST /crm/interaccoes` |
+| Propostas | `/portal/propostas` | `GET|POST /propostas`, `POST .../enviar` |
+| Config (gestor) | `/portal/crm/config` | `GET|PUT /crm/config` |
+
+**Leads públicos (website):**
+
+- Webhook HMAC: `POST /v1/public/v1/webhooks/leads/{tenantSlug}`
+- Header: `X-NexiForma-Signature: sha256=<hex>`
+- Payload assinado (v2): JSON canónico com todos os campos (`empresaNome`, `email`, `customFields`, …) - ver `@nexiforma/shared` `signLeadWebhookPayload`
+- API key (Enterprise): `POST /v1/public/v1/leads` + header `X-Api-Key`
+
+**Variáveis essenciais:** `APP_PUBLIC_URL`, `API_PUBLIC_URL`, `NEXT_PUBLIC_API_URL`, `SUBSCRIPTION_KEY_PEPPER`, `MAIL_PROVIDER` + Brevo, `PROPOSTA_RESPOSTA_SECRET` (prod).
+
+## Segurança - como funciona
+
+### Autenticação e sessões
+
+- **Access token** JWT (Bearer) - curto (`JWT_EXPIRES`, ex. 15m); no browser fica em `sessionStorage`.
+- **Refresh token** HttpOnly (`nexiforma_refresh`) - rotação a cada refresh; detecção de reutilização revoga todas as sessões.
+- **Reset password** - token opaco com hash + pepper; `userRef` encriptado obrigatório; invalida tokens anteriores; **revoga sessões refresh** após confirmar.
+- **Lockout login** - configurável por tenant (superadmin); contadores em **Redis** (`REDIS_URL`) em produção multi-instância.
+- **MFA** - lockout após falhas repetidas de TOTP.
+
+### Isolamento multi-tenant
+
+- **JWT** inclui `tenantId`; serviços usam `requireTenantId(user)`.
+- **Prisma extension** injecta `tenantId` em leituras, creates e mutações (`update`/`delete`/`upsert`).
+- **RLS PostgreSQL** - `RLS_ENABLED=true` + script `packages/database/prisma/rls/enable_rls.sql` em produção.
+
+### RBAC e billing
+
+- Papéis JWT: `tenant_manager`, `comercial`, `formador`, `formando`, `super_admin`.
+- **Entitlements** por add-on (`crm`, `faturacao_at`, formação, IA) - `BillingAccessInterceptor` na API; layout portal valida rotas.
+- Comercial **não acede** a faturação AT nem config CRM.
+
+### Endpoints públicos
+
+| Endpoint | Protecção |
+|----------|-----------|
+| Webhook leads CRM | HMAC v2 (todos os campos) + resposta genérica anti-enumeração |
+| API key leads | `SUBSCRIPTION_KEY_PEPPER` + throttle |
+| Zoom/Teams assiduidade | Token obrigatório (`ZOOM_WEBHOOK_TOKEN`, `TEAMS_WEBHOOK_TOKEN`) |
+| Verificação certificado | Throttle 20/min |
+| Stripe webhook | `constructEvent` com raw body |
+
+### SSRF e uploads
+
+- Webhooks outbound (CRM, website sync) - validação URL + DNS + `safeFetch` (HTTPS em prod, blocklist IPs privados).
+- Upload documentos - whitelist MIME + magic bytes.
+- SCORM ZIP - limite entradas/tamanho; rejeita paths com `..`.
+
+### Transporte (web)
+
+- CSP, HSTS (prod), `COOKIE_SECURE`, `TRUST_PROXY` atrás de ALB/nginx.
+- Skip link WCAG → `#main-content` em todas as páginas com `AppProviders`.
+
+### Produção - checklist `.env`
+
+Obrigatório (`validateProductionConfig` em `apps/api/src/config/production-config.ts`):
+
+`JWT_*_PEPPER`, `PASSWORD_RESET_*`, `SUBSCRIPTION_KEY_PEPPER`, `PROPOSTA_RESPOSTA_SECRET`, `TENANT_ACCESS_KEY_PEPPER`, `REDIS_URL`, `RLS_ENABLED=true`, `COOKIE_SECURE=true`, `TRUST_PROXY=true`, `MAIL_PROVIDER` + credenciais + `MAIL_FROM`, `STORAGE_BACKEND=s3`, `STRIPE_SECRET_KEY`, URLs HTTPS (`APP_PUBLIC_URL`, `API_PUBLIC_URL`, `CORS_ORIGIN`).
+
+Ver `.env.example` e `docker-compose.prod.yml` alinhados com estas regras.
+
+## Acessibilidade (a11y)
+
+- **Skip link** - `Saltar para o conteúdo principal` (`components/ui/skip-link.tsx`).
+- **Landmark** - `#main-content` no layout portal/plataforma.
+- **Imagens** - `alt` descritivo em conteúdos; decorativas com `alt=""` + `aria-hidden`.
+- **Tabelas** - wrapper `.table-scroll` para scroll horizontal em mobile.
+- **Auditoria estática:** `node scripts/a11y-audit.mjs` (valida `alt` em `<img>` / `<Image>`).
+
+## Segurança e produto (legado)
 
 Com Docker a correr:
 
@@ -399,10 +493,6 @@ Com Docker a correr:
 $env:DATABASE_URL = "postgresql://nexiforma:nexiforma_dev@localhost:5432/nexiforma?schema=public"
 npm run db:migrate:deploy
 ```
-
-## Segurança e produto
-
-- Produção: `JWT_SECRET`, `JWT_REFRESH_PEPPER` e cookies `Secure`/`SameSite` compatíveis com o teu trajecto HTTPS; KMS/Secrets Manager e Cognito/MFA quando integrares AWS – ver `docs/architecture-mvp.md`.
 
 ## Documentação adicional
 

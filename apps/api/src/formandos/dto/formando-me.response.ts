@@ -1,3 +1,5 @@
+import type { FormandoDocObrigatorioItem } from "../formando-documentos.util";
+
 export type FormandoMeResponse = {
   id: string;
   nome: string;
@@ -10,4 +12,9 @@ export type FormandoMeResponse = {
   emailPresencaDefinidoPeloGestor: boolean;
   tenantLegalName: string | null;
   tenantSlug: string | null;
+  documentosObrigatorios?: {
+    items: FormandoDocObrigatorioItem[];
+    completo: boolean;
+    emFalta: string[];
+  };
 };

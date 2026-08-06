@@ -10,6 +10,7 @@ import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { notifyCrmSugestoesUpdated } from "@/lib/crm/sugestoes-events";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { CrmContextNav, SUGESTOES_NAV } from "@/components/crm/crm-context-nav";
+import { ListPagination } from "@/components/crm/list-pagination";
 import {
   Alert,
   Badge,
@@ -61,6 +62,7 @@ function acaoPlaneada(s: { metadata?: unknown; titulo: string; tipo: string; est
 function SugestaoCard({
   s,
   canManageCrm,
+  writeDisabled,
   busy,
   fromPath,
   onAceitar,
@@ -68,6 +70,7 @@ function SugestaoCard({
 }: {
   s: Sugestao;
   canManageCrm: boolean;
+  writeDisabled: boolean;
   busy: boolean;
   fromPath: string;
   onAceitar: (id: string) => void;
@@ -124,11 +127,11 @@ function SugestaoCard({
           </div>
           {canManageCrm && s.estado === "PENDENTE" ? (
             <div className="flex gap-2 shrink-0">
-              <Button size="sm" disabled={busy} onClick={() => onAceitar(s.id)}>
+              <Button size="sm" disabled={busy || writeDisabled} onClick={() => onAceitar(s.id)}>
                 <Check className="h-3.5 w-3.5" />
                 Aceitar e executar
               </Button>
-              <Button size="sm" variant="secondary" disabled={busy} onClick={() => onRejeitar(s.id)}>
+              <Button size="sm" variant="secondary" disabled={busy || writeDisabled} onClick={() => onRejeitar(s.id)}>
                 <X className="h-3.5 w-3.5" />
                 Rejeitar
               </Button>
@@ -142,7 +145,7 @@ function SugestaoCard({
 
 export default function CrmSugestoesIaPage() {
   const pathname = usePathname();
-  const { canManageCrm } = useTenantRole();
+  const { canManageCrm, writeDisabled } = useTenantRole();
   const [pendentes, setPendentes] = useState<Sugestao[]>([]);
   const [historico, setHistorico] = useState<Sugestao[]>([]);
   const [loading, setLoading] = useState(true);
@@ -150,17 +153,21 @@ export default function CrmSugestoesIaPage() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
+  const [acceptId, setAcceptId] = useState<string | null>(null);
   const [rejectMotivo, setRejectMotivo] = useState<string>(CRM_SUGESTAO_REJEICAO_MOTIVOS[0]);
   const [rejectComentario, setRejectComentario] = useState("");
+  const [pendentesPage, setPendentesPage] = useState(1);
+  const [historicoPage, setHistoricoPage] = useState(1);
+  const pageSize = 20;
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     const headers = { accept: "application/json" };
     const [pRes, aRes, rRes] = await Promise.all([
-      bffFetch("/api/v1/crm/sugestoes-ia?estado=PENDENTE&limit=100", { headers }),
-      bffFetch("/api/v1/crm/sugestoes-ia?estado=ACEITE&limit=100", { headers }),
-      bffFetch("/api/v1/crm/sugestoes-ia?estado=REJEITADA&limit=100", { headers }),
+      bffFetch("/api/v1/crm/sugestoes-ia?estado=PENDENTE&limit=50", { headers }),
+      bffFetch("/api/v1/crm/sugestoes-ia?estado=ACEITE&limit=50", { headers }),
+      bffFetch("/api/v1/crm/sugestoes-ia?estado=REJEITADA&limit=50", { headers }),
     ]);
     setLoading(false);
     if (!pRes.ok) {
@@ -185,14 +192,16 @@ export default function CrmSugestoesIaPage() {
     void load();
   }, [load]);
 
-  async function aceitar(id: string) {
+  async function aceitar() {
+    if (!acceptId) return;
     setBusy(true);
     setMsg(null);
-    const res = await bffFetch(`/api/v1/crm/sugestoes-ia/${id}/aceitar`, {
+    const res = await bffFetch(`/api/v1/crm/sugestoes-ia/${acceptId}/aceitar`, {
       method: "POST",
       headers: { accept: "application/json" },
     });
     setBusy(false);
+    setAcceptId(null);
     if (!res.ok) setError(await parseApiError(res));
     else {
       const data = (await res.json()) as {
@@ -204,6 +213,10 @@ export default function CrmSugestoesIaPage() {
       void load();
     }
   }
+
+  const acceptSugestao = acceptId ? pendentes.find((s) => s.id === acceptId) : null;
+  const pendentesSlice = pendentes.slice((pendentesPage - 1) * pageSize, pendentesPage * pageSize);
+  const historicoSlice = historico.slice((historicoPage - 1) * pageSize, historicoPage * pageSize);
 
   async function rejeitar() {
     if (!rejectId) return;
@@ -235,7 +248,7 @@ export default function CrmSugestoesIaPage() {
       {msg && <Alert variant="success" className="mb-4">{msg}</Alert>}
 
       {loading ? (
-        <p className="text-sm text-slate-500">A carregar…</p>
+        <p className="text-sm text-slate-500" role="status">A carregar sugestões…</p>
       ) : (
         <div className="space-y-8">
           <section className="space-y-3">
@@ -253,17 +266,26 @@ export default function CrmSugestoesIaPage() {
                 </CardContent>
               </Card>
             ) : (
-              pendentes.map((s) => (
-                <SugestaoCard
-                  key={s.id}
-                  s={s}
-                  canManageCrm={canManageCrm}
-                  busy={busy}
-                  fromPath={pathname}
-                  onAceitar={(id) => void aceitar(id)}
-                  onRejeitar={setRejectId}
+              <>
+                {pendentesSlice.map((s) => (
+                  <SugestaoCard
+                    key={s.id}
+                    s={s}
+                    canManageCrm={canManageCrm}
+                    writeDisabled={writeDisabled}
+                    busy={busy}
+                    fromPath={pathname}
+                    onAceitar={setAcceptId}
+                    onRejeitar={setRejectId}
+                  />
+                ))}
+                <ListPagination
+                  page={pendentesPage}
+                  pageSize={pageSize}
+                  total={pendentes.length}
+                  onPageChange={setPendentesPage}
                 />
-              ))
+              </>
             )}
           </section>
 
@@ -274,21 +296,54 @@ export default function CrmSugestoesIaPage() {
             {historico.length === 0 ? (
               <p className="text-sm text-slate-500">Ainda não há sugestões aceites ou rejeitadas.</p>
             ) : (
-              historico.map((s) => (
-                <SugestaoCard
-                  key={s.id}
-                  s={s}
-                  canManageCrm={false}
-                  busy={busy}
-                  fromPath={pathname}
-                  onAceitar={() => undefined}
-                  onRejeitar={() => undefined}
+              <>
+                {historicoSlice.map((s) => (
+                  <SugestaoCard
+                    key={s.id}
+                    s={s}
+                    canManageCrm={false}
+                    writeDisabled={writeDisabled}
+                    busy={busy}
+                    fromPath={pathname}
+                    onAceitar={() => undefined}
+                    onRejeitar={() => undefined}
+                  />
+                ))}
+                <ListPagination
+                  page={historicoPage}
+                  pageSize={pageSize}
+                  total={historico.length}
+                  onPageChange={setHistoricoPage}
                 />
-              ))
+              </>
             )}
           </section>
         </div>
       )}
+
+      <Dialog open={!!acceptId} onOpenChange={(o) => !o && setAcceptId(null)}>
+        <DialogContent title="Aceitar sugestão">
+          <div className="space-y-3">
+            {acceptSugestao && acaoPlaneada(acceptSugestao) ? (
+              <p className="text-sm text-violet-300">
+                Será executado: {acaoPlaneada(acceptSugestao)}
+              </p>
+            ) : (
+              <p className="text-sm text-slate-400">
+                Confirma que deseja aceitar e executar esta sugestão comercial?
+              </p>
+            )}
+            <div className="flex gap-2">
+              <Button disabled={busy} onClick={() => void aceitar()}>
+                Aceitar e executar
+              </Button>
+              <Button variant="secondary" onClick={() => setAcceptId(null)}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!rejectId} onOpenChange={(o) => !o && setRejectId(null)}>
         <DialogContent title="Rejeitar sugestão">

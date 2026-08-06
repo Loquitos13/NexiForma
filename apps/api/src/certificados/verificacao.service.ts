@@ -5,9 +5,14 @@
 
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 import QRCode from "qrcode";
 import * as crypto from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
+import {
+  isCertificadoTokenExpired,
+  resolveCertificadoVerificacaoTtlDays,
+} from "./certificado-verificacao-ttl.util";
 
 export interface VerificacaoResultado {
   valido: boolean;
@@ -36,6 +41,7 @@ export interface VerificacaoResultado {
   };
   hash?: string;
   validadoEm?: string;
+  motivo?: string;
 }
 
 @Injectable()
@@ -83,7 +89,7 @@ export class VerificacaoCertificadoService {
       });
     }
 
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     const verificacaoUrl = `${appUrl}/verificar/${certVerif.codigoPublico}`;
 
     // Gerar QR
@@ -136,13 +142,20 @@ export class VerificacaoCertificadoService {
       throw new NotFoundException("Certificado não encontrado.");
     }
 
-    // Verificar se foi revogado
     const revogado = certVerif.revogadoEm !== null;
+    const ttlDays = resolveCertificadoVerificacaoTtlDays(
+      this.config.get<string>("CERTIFICADO_VERIFICACAO_TOKEN_TTL_DAYS"),
+    );
+    const expirado = isCertificadoTokenExpired({
+      emitidoEm: certVerif.emitidoEm,
+      tokenExpiresAt: certVerif.tokenExpiresAt,
+      ttlDays,
+    });
 
     const acao = certVerif.matricula.turma.acaoFormacao;
 
     return {
-      valido: !revogado && !!certVerif.emitidoEm,
+      valido: !revogado && !expirado && !!certVerif.emitidoEm,
       certificado: {
         codigoPublico: certVerif.codigoPublico,
         emitidoEm: certVerif.emitidoEm?.toISOString() ?? "N/A",
@@ -162,6 +175,11 @@ export class VerificacaoCertificadoService {
       },
       hash: certVerif.hashConteudo || undefined,
       validadoEm: new Date().toISOString(),
+      motivo: revogado
+        ? "Certificado revogado."
+        : expirado
+          ? "Link de verificação expirado."
+          : undefined,
     };
   }
 

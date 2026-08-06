@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { canAccessFaturacaoPortal } from "@nexiforma/shared";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
 import { useCrmStats } from "@/lib/crm/crm-stats-context";
 import { Badge } from "@/components/ui";
 import { cn } from "@/lib/ui/cn";
@@ -12,16 +14,18 @@ type Tab = {
   label: string;
   exact?: boolean;
   managerOnly?: boolean;
+  /** Requer add-on de faturação AT além de ser gestor. */
+  faturacaoOnly?: boolean;
   badgeFromStats?: boolean;
 };
 
 const CRM_TABS: Tab[] = [
-  { href: "/portal/crm", label: "Dashboard", exact: true },
+  { href: "/portal/crm", label: "Dashboard", exact: true, managerOnly: true },
   { href: "/portal/crm/leads", label: "Leads" },
   { href: "/portal/crm/interaccoes", label: "Notas comerciais" },
   { href: "/portal/crm/sugestoes-ia", label: "Sugestões IA", badgeFromStats: true },
-  { href: "/portal/crm/faturas", label: "Faturas", managerOnly: true },
-  { href: "/portal/crm/faturacao", label: "Dados faturação", managerOnly: true },
+  { href: "/portal/crm/faturas", label: "Faturas", managerOnly: true, faturacaoOnly: true },
+  { href: "/portal/crm/faturacao", label: "Dados faturação", managerOnly: true, faturacaoOnly: true },
   { href: "/portal/crm/config", label: "Configuração", managerOnly: true },
   { href: "/portal/crm/audit", label: "Audit", managerOnly: true },
 ];
@@ -33,11 +37,17 @@ function tabActive(tab: Tab, pathname: string) {
 
 export function CrmSectionNav() {
   const pathname = usePathname();
-  const { canManage } = useTenantRole();
+  const { canManage, role } = useTenantRole();
+  const { entitlements } = useTenantEntitlements();
+  const canAccessFaturacao = canAccessFaturacaoPortal(role, entitlements);
   const { stats } = useCrmStats();
   const pendentes = stats.sugestoesIaPendentes;
 
-  const tabs = CRM_TABS.filter((t) => !t.managerOnly || canManage);
+  const tabs = CRM_TABS.filter((t) => {
+    if (t.faturacaoOnly) return canAccessFaturacao;
+    if (t.managerOnly) return canManage;
+    return true;
+  });
 
   return (
     <nav
@@ -99,4 +109,3 @@ export function useCrmSugestoesPendentes() {
   const { stats, refresh } = useCrmStats();
   return { pendentes: stats.sugestoesIaPendentes, refresh };
 }
-

@@ -11,6 +11,11 @@ type ScrollRevealProps = {
   immediate?: boolean;
 };
 
+function isInViewport(el: HTMLElement): boolean {
+  const rect = el.getBoundingClientRect();
+  return rect.top < window.innerHeight * 0.92 && rect.bottom > 0;
+}
+
 export function ScrollReveal({
   children,
   className = "",
@@ -19,50 +24,32 @@ export function ScrollReveal({
 }: ScrollRevealProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(immediate);
-  const lastScrollY = useRef(0);
-  const scrollDir = useRef<"up" | "down">("down");
 
   useEffect(() => {
     if (immediate) return;
 
-    const onScroll = () => {
-      const y = window.scrollY;
-      scrollDir.current = y > lastScrollY.current ? "down" : "up";
-      lastScrollY.current = y;
-    };
-
-    lastScrollY.current = window.scrollY;
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, [immediate]);
-
-  useEffect(() => {
-    if (immediate) return;
-
-    const el = ref.current;
-    if (!el) return;
-
-    const rect = el.getBoundingClientRect();
-    if (rect.top < window.innerHeight * 0.92 && rect.bottom > 0) {
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reducedMotion) {
       setVisible(true);
+      return;
     }
-  }, [immediate]);
-
-  useEffect(() => {
-    if (immediate) return;
 
     const el = ref.current;
     if (!el) return;
+
+    if (isInViewport(el)) {
+      setVisible(true);
+      return;
+    }
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && scrollDir.current === "down") {
+        if (entry?.isIntersecting) {
           setVisible(true);
-        } else if (!entry.isIntersecting && scrollDir.current === "up") {
-          setVisible(false);
+          observer.disconnect();
         }
       },
-      { threshold: 0.12, rootMargin: "0px 0px -6% 0px" },
+      { threshold: 0.08, rootMargin: "0px 0px -4% 0px" },
     );
 
     observer.observe(el);
@@ -77,7 +64,7 @@ export function ScrollReveal({
         "scroll-reveal transition-all duration-700 ease-out motion-reduce:transition-none motion-reduce:opacity-100 motion-reduce:translate-y-0",
         visible
           ? "opacity-100 translate-y-0"
-          : "opacity-0 translate-y-8 pointer-events-none",
+          : "opacity-0 translate-y-8",
         className,
       ].join(" ")}
       style={{ transitionDelay: visible ? `${delay}ms` : "0ms" }}

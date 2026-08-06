@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 import Stripe from "stripe";
 
 type StripeClient = InstanceType<typeof Stripe>;
@@ -81,7 +82,7 @@ export class BillingService {
       throw new NotFoundException("Tenant não encontrado.");
     }
 
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     const successUrl = `${appUrl}/portal/billing?success=1`;
     const cancelUrl = `${appUrl}/portal/billing?cancel=1`;
 

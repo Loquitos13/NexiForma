@@ -46,6 +46,8 @@ import {
 
   invokeSigoSoapMethod,
 
+  listSigoWsdlMethods,
+
   soapResponseToXml,
 
 } from "./soap/sigo-soap-client.util";
@@ -84,7 +86,9 @@ export class SigoSoapService {
 
 
 
-  async testConnection(runtime: ResolvedSigoRuntime): Promise<{ ok: boolean; message: string }> {
+  async testConnection(
+    runtime: ResolvedSigoRuntime,
+  ): Promise<{ ok: boolean; message: string; wsdlMethods?: string[] }> {
 
     if (runtime.mode !== "soap") {
 
@@ -100,7 +104,7 @@ export class SigoSoapService {
 
       try {
 
-        await createSigoSoapClient({
+        const client = await createSigoSoapClient({
 
           wsdlUrl: runtime.wsdlUrl,
 
@@ -114,7 +118,13 @@ export class SigoSoapService {
 
         });
 
-        return { ok: true, message: "Cliente SOAP criado a partir do WSDL (TLS 1.2+, WS-Security)." };
+        const wsdlMethods = listSigoWsdlMethods(client);
+
+        return {
+          ok: true,
+          message: "Cliente SOAP criado a partir do WSDL (TLS 1.2+, WS-Security).",
+          wsdlMethods,
+        };
 
       } catch (e) {
 

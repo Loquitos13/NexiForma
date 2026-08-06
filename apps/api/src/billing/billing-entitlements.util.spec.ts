@@ -1,4 +1,5 @@
-import { resolveTenantEntitlements, isApiPathAllowed, isPortalPathAllowedByEntitlements } from "@nexiforma/shared";
+import { resolveTenantEntitlements, isApiPathAllowed, isPortalPathAllowedByEntitlements, canAccessFaturacaoPortal } from "@nexiforma/shared";
+import { resolvePostLoginPath } from "@nexiforma/shared";
 
 describe("resolveTenantEntitlements - módulos avulsos", () => {
   it("plano modular + CRM activa só comercial, sem faturação nem Core", () => {
@@ -35,9 +36,24 @@ describe("resolveTenantEntitlements - módulos avulsos", () => {
     expect(e.canAccessCrm).toBe(true);
     expect(e.canAccessFaturacao).toBe(true);
     expect(e.canAccessCoreFormation).toBe(true);
+    expect(e.canAccessEnterpriseFeatures).toBe(true);
     expect(e.activeAddons).toEqual(
       expect.arrayContaining(["crm", "faturacao_at", "formacao_teams", "inteligencia_ia"]),
     );
+  });
+
+  it("Starter não inclui funcionalidades Enterprise", () => {
+    const e = resolveTenantEntitlements("starter", []);
+    expect(e.canAccessEnterpriseFeatures).toBe(false);
+  });
+
+  it("subscrição cancelada bloqueia módulos mas mantém billing", () => {
+    const e = resolveTenantEntitlements("enterprise", [], { subscriptionStatus: "CANCELED" });
+    expect(e.subscriptionActive).toBe(false);
+    expect(e.canAccessCrm).toBe(false);
+    expect(e.canAccessEnterpriseFeatures).toBe(false);
+    expect(isPortalPathAllowedByEntitlements("/portal/billing", e)).toBe(true);
+    expect(isPortalPathAllowedByEntitlements("/portal/enterprise", e)).toBe(false);
   });
 
   it("Starter + CRM add-on mantém Core formação", () => {
@@ -74,6 +90,32 @@ describe("module-access enforcement", () => {
     expect(isApiPathAllowed("propostas", crmOnly)).toBe(true);
   });
 
+  it("comercial com CRM acede a entidades-cliente e propostas", () => {
+    expect(
+      isApiPathAllowed("entidades-cliente", crmOnly, { role: "comercial", kind: "tenant" }),
+    ).toBe(true);
+    expect(
+      isApiPathAllowed("propostas", crmOnly, { role: "comercial", kind: "tenant" }),
+    ).toBe(true);
+    expect(
+      isApiPathAllowed("crm/leads", crmOnly, { role: "comercial", kind: "tenant" }),
+    ).toBe(true);
+    expect(
+      isApiPathAllowed("calendario/eventos", crmOnly, { role: "comercial", kind: "tenant" }),
+    ).toBe(true);
+    expect(
+      isPortalPathAllowedByEntitlements("/portal/calendario", crmOnly, "comercial"),
+    ).toBe(true);
+    expect(
+      isApiPathAllowed("integracoes/disponibilidade", crmOnly, {
+        role: "comercial",
+        kind: "tenant",
+      }),
+    ).toBe(true);
+    expect(isApiPathAllowed("integracoes/disponibilidade", crmOnly)).toBe(true);
+    expect(isApiPathAllowed("integracoes", crmOnly)).toBe(false);
+  });
+
   it("permite faturação API em modular só Faturação AT", () => {
     expect(isApiPathAllowed("crm/faturas", fatOnly)).toBe(true);
     expect(isApiPathAllowed("entidades-cliente", fatOnly)).toBe(true);
@@ -92,6 +134,13 @@ describe("module-access enforcement", () => {
     expect(isPortalPathAllowedByEntitlements("/portal/acoes", formacaoOnly)).toBe(true);
   });
 
+  it("portal enterprise só no plano Enterprise", () => {
+    const ent = resolveTenantEntitlements("enterprise", []);
+    const starter = resolveTenantEntitlements("starter", []);
+    expect(isPortalPathAllowedByEntitlements("/portal/enterprise", ent)).toBe(true);
+    expect(isPortalPathAllowedByEntitlements("/portal/enterprise", starter)).toBe(false);
+  });
+
   it("formando enterprise acede a lms e calendário", () => {
     const ent = resolveTenantEntitlements("enterprise", []);
     expect(
@@ -103,6 +152,16 @@ describe("module-access enforcement", () => {
     expect(
       isApiPathAllowed("v1/lms/minhas-sessoes", ent, { role: "formando", kind: "tenant" }),
     ).toBe(true);
+    expect(
+      isApiPathAllowed("presenca-checkin/abc", ent, { role: "formando", kind: "tenant" }),
+    ).toBe(true);
+  });
+
+  it("formando com formação core acede ao check-in QR", () => {
+    const ent = resolveTenantEntitlements("modular", ["formacao_core"]);
+    expect(
+      isApiPathAllowed("presenca-checkin/token123", ent, { role: "formando", kind: "tenant" }),
+    ).toBe(true);
   });
 
   it("formando modular sem módulos não acede a lms", () => {
@@ -110,5 +169,33 @@ describe("module-access enforcement", () => {
     expect(
       isApiPathAllowed("lms/minhas-sessoes", modularVazio, { role: "formando", kind: "tenant" }),
     ).toBe(false);
+  });
+});
+
+describe("resolvePostLoginPath com entitlements", () => {
+  it("rejeita next enterprise para tenant starter", () => {
+    const starter = resolveTenantEntitlements("starter", []);
+    expect(
+      resolvePostLoginPath("tenant_manager", "tenant", "/portal/enterprise", starter),
+    ).toBe("/portal");
+  });
+
+  it("permite next enterprise para tenant enterprise", () => {
+    const enterprise = resolveTenantEntitlements("enterprise", []);
+    expect(
+      resolvePostLoginPath("tenant_manager", "tenant", "/portal/enterprise", enterprise),
+    ).toBe("/portal/enterprise");
+  });
+
+  it("comercial sem CRM não acede a faturação", () => {
+    const fatOnly = resolveTenantEntitlements("modular", ["faturacao_at"]);
+    expect(canAccessFaturacaoPortal("comercial", fatOnly)).toBe(false);
+    expect(canAccessFaturacaoPortal("tenant_manager", fatOnly)).toBe(true);
+    expect(
+      isPortalPathAllowedByEntitlements("/portal/crm/faturas", fatOnly, "comercial"),
+    ).toBe(false);
+    expect(
+      resolvePostLoginPath("comercial", "tenant", "/portal/crm/faturas", fatOnly),
+    ).toBe("/acesso-negado");
   });
 });

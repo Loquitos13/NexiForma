@@ -1,4 +1,5 @@
 const REMEMBER_KEY = "nexiforma_login_remember";
+/** Chave legada - já não se usa para auth; só se limpa. */
 const SLUG_KEY = "nexiforma_login_tenant_slug";
 const EMAIL_KEY = "nexiforma_login_email";
 
@@ -30,19 +31,26 @@ export function setRememberLogin(remember: boolean): void {
   write(REMEMBER_KEY, remember ? "1" : "0");
 }
 
-/** Slug do tenant - persistido sempre que conhecido (convite, URL, login). */
+/**
+ * Slug já não é lido do storage (evita «Entidade seleccionada inválida» ao mudar de email).
+ * A entidade vem só de `?slug=` na URL ou da escolha explícita no modal.
+ */
 export function getSavedTenantSlug(): string {
-  return read(SLUG_KEY)?.trim() ?? "";
+  return "";
 }
 
-export function persistTenantSlug(slug: string): void {
-  const clean = slug.trim().toLowerCase();
-  if (clean) write(SLUG_KEY, clean);
+/** Limpa resíduos antigos; não grava slug para auth. */
+export function persistTenantSlug(_slug?: string): void {
+  clearTenantSlug();
 }
 
-/** Login equipa NexiForma - não reutilizar slug de tenant guardado. */
 export function clearTenantSlug(): void {
   write(SLUG_KEY, null);
+}
+
+/** Remove slug residual após logout / ecrã de login. */
+export function clearPersistedTenantContext(): void {
+  clearTenantSlug();
 }
 
 /** Email guardado apenas quando «Memorizar» está activo. */
@@ -53,11 +61,12 @@ export function getSavedEmail(): string {
 
 export function persistLoginPreferences(input: {
   remember: boolean;
-  tenantSlug: string;
+  tenantSlug?: string;
   email: string;
 }): void {
   setRememberLogin(input.remember);
-  persistTenantSlug(input.tenantSlug);
+  // Nunca guardar slug - resolve-se no login (email / picker / ?slug=).
+  clearTenantSlug();
   if (input.remember) {
     write(EMAIL_KEY, input.email.trim().toLowerCase());
   } else {

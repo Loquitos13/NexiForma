@@ -8,12 +8,14 @@ import type { Prisma, QuizPergunta, QuizTentativa } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
+import { FormadorNotificacoesService } from "../notificacoes/formador-notificacoes.service";
 import type { CreateQuizPerguntaDto, SubmitQuizDto, UpdateQuizPerguntaDto } from "./dto/quizzes.dto";
 import {
   notaMinimaParaDesbloquearProximo,
   tarefaDesbloqueada,
   unidadesOrdenadas,
 } from "@nexiforma/shared";
+import { prazoConclusaoAtingido } from "../conteudos-lms/lms-prazo.util";
 
 type OpcaoQuiz = { id: string; texto: string; correta?: boolean };
 
@@ -31,7 +33,10 @@ export type QuizSubmitResult = QuizTentativa & {
 
 @Injectable()
 export class QuizzesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly formadorNotificacoes: FormadorNotificacoesService,
+  ) {}
 
   listPerguntas(user: RequestUser, moduloId: string): Promise<QuizPergunta[]> {
     const tenantId = requireTenantId(user);
@@ -194,6 +199,10 @@ export class QuizzesService {
       },
     });
 
+    if (aprovado) {
+      void this.formadorNotificacoes.notifyIfPercursoCompleto(tenantId, matriculaId);
+    }
+
     return { ...tentativa, notaMinima, feedback };
   }
 
@@ -202,13 +211,38 @@ export class QuizzesService {
     matriculaId: string,
     modulo: { id: string; cursoId: string; moduloUnidadeId: string | null },
   ): Promise<void> {
-    const [unidades, modulos, progressos] = await Promise.all([
+    const [unidades, modulos, progressos, desbloqueios, matricula] = await Promise.all([
       this.prisma.moduloUnidade.findMany({ where: { tenantId, cursoId: modulo.cursoId } }),
       this.prisma.moduloConteudo.findMany({
         where: { tenantId, cursoId: modulo.cursoId, publicado: true },
       }),
       this.prisma.progressoModulo.findMany({ where: { tenantId, matriculaId } }),
+      this.prisma.matriculaUnidadeDesbloqueio.findMany({
+        where: { tenantId, matriculaId },
+        select: { moduloUnidadeId: true },
+      }),
+      this.prisma.matricula.findFirst({
+        where: { id: matriculaId, tenantId },
+        select: { turma: { select: { acaoFormacaoId: true } } },
+      }),
     ]);
+
+    if (modulo.moduloUnidadeId && matricula?.turma?.acaoFormacaoId) {
+      const prazo = await this.prisma.acaoModuloPrazoLms.findUnique({
+        where: {
+          acaoFormacaoId_moduloUnidadeId: {
+            acaoFormacaoId: matricula.turma.acaoFormacaoId,
+            moduloUnidadeId: modulo.moduloUnidadeId,
+          },
+        },
+        select: { prazoConclusao: true },
+      });
+      if (prazo && prazoConclusaoAtingido(prazo.prazoConclusao)) {
+        throw new ForbiddenException(
+          "O limite de conclusão deste módulo foi atingido. Já não é possível responder.",
+        );
+      }
+    }
 
     const progressoRows = progressos.map((p) => ({
       moduloId: p.moduloId,
@@ -216,8 +250,17 @@ export class QuizzesService {
       pontuacao: p.pontuacao,
       concluidoEm: p.concluidoEm,
     }));
+    const desbloqueiosManuais = new Set(desbloqueios.map((d) => d.moduloUnidadeId));
 
-    if (!tarefaDesbloqueada(unidades, modulos, progressoRows, modulo.id)) {
+    if (!tarefaDesbloqueada(unidades, modulos, progressoRows, modulo.id, { desbloqueiosManuais })) {
+      const unidade = modulo.moduloUnidadeId
+        ? unidades.find((u) => u.id === modulo.moduloUnidadeId)
+        : null;
+      if (unidade?.lockManual && !desbloqueiosManuais.has(unidade.id)) {
+        throw new ForbiddenException(
+          "Este módulo ainda está bloqueado. O formador ou o gestor precisam de o libertar em Tarefas.",
+        );
+      }
       const sorted = unidadesOrdenadas(unidades);
       const idx = sorted.findIndex((u) => u.id === modulo.moduloUnidadeId);
       const prev = idx > 0 ? sorted[idx - 1] : null;

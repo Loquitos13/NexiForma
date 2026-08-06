@@ -33,9 +33,11 @@ type Props = {
   leads: KanbanLead[];
   onMoved?: () => void;
   onSelect?: (lead: KanbanLead) => void;
+  /** Drop em CONVERTIDO: abrir fluxo real de conversão (NIF → cliente). */
+  onRequestConvert?: (lead: KanbanLead) => void;
 };
 
-export function LeadsKanbanBoard({ leads, onMoved, onSelect }: Props) {
+export function LeadsKanbanBoard({ leads, onMoved, onSelect, onRequestConvert }: Props) {
   const [localLeads, setLocalLeads] = useState(leads);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverEstado, setDragOverEstado] = useState<LeadEstado | null>(null);
@@ -65,6 +67,11 @@ export function LeadsKanbanBoard({ leads, onMoved, onSelect }: Props) {
       const lead = localLeads.find((l) => l.id === leadId);
       if (!lead || lead.estado === estado) return;
 
+      if (estado === "CONVERTIDO") {
+        onRequestConvert?.(lead);
+        return;
+      }
+
       const snapshot = localLeads;
       setLocalLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, estado } : l)));
       setMovingId(leadId);
@@ -85,7 +92,7 @@ export function LeadsKanbanBoard({ leads, onMoved, onSelect }: Props) {
       }
       onMoved?.();
     },
-    [localLeads, onMoved],
+    [localLeads, onMoved, onRequestConvert],
   );
 
   function handleDragStart(e: React.DragEvent, lead: KanbanLead) {
@@ -230,7 +237,8 @@ export function LeadsKanbanBoard({ leads, onMoved, onSelect }: Props) {
 export function KanbanHelpLink() {
   return (
     <p className="mb-3 text-xs text-slate-500">
-      Arraste cartões entre colunas para actualizar o estado - a mudança é guardada automaticamente.{" "}
+      Arraste cartões entre colunas para actualizar o estado. Ao soltar em{" "}
+      <span className="text-slate-300">Convertido</span>, é pedido o NIF para criar o cliente.{" "}
       <Link href="/portal/crm/config" className="text-violet-400 hover:underline">
         Automatizações
       </Link>{" "}

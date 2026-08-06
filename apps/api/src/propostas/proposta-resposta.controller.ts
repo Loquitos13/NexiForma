@@ -1,4 +1,5 @@
-import { All, Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
+import { All, Body, Controller, Get, Post, Query, Req, UseGuards } from "@nestjs/common";
+import type { Request } from "express";
 import { Public } from "../auth/decorators/public.decorator";
 import { HttpQueryMethodGuard } from "../common/http-query.guard";
 import { TokenQueryDto } from "../common/dto/token-query.dto";
@@ -27,11 +28,13 @@ export class PropostaRespostaController {
   }
 
   @Post()
-  responder(@Body() dto: ResponderPropostaDto) {
+  responder(@Body() dto: ResponderPropostaDto, @Req() req: Request) {
+    const ip = typeof req.ip === "string" ? req.ip : undefined;
     return this.proposal.responderPropostaPorToken(
       dto.token.trim(),
       dto.acao,
       dto.motivo?.trim() || undefined,
+      ip,
     );
   }
 }

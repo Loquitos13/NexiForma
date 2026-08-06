@@ -16,7 +16,7 @@ export const API_ALWAYS_ALLOWED_PREFIXES = [
 ] as const;
 
 /** Prefixos API públicos (sem JWT tenant). */
-export const API_PUBLIC_PREFIXES = ["public", "docs", "verificar", "cmd"] as const;
+export const API_PUBLIC_PREFIXES = ["public", "docs", "verificar"] as const;
 
 const CORE_FORMATION_API = [
   "cursos",
@@ -46,7 +46,16 @@ const CORE_FORMATION_API = [
 
 const CRM_API = ["crm", "entidades-cliente", "propostas"] as const;
 
-/** Rotas `crm/*` de faturação AT (não exigem módulo CRM comercial). */
+function isFaturacaoPortalPath(pathname: string): boolean {
+  return (
+    pathname === "/portal/crm/faturas" ||
+    pathname.startsWith("/portal/crm/faturas/") ||
+    pathname === "/portal/crm/faturacao" ||
+    pathname.startsWith("/portal/crm/faturacao/")
+  );
+}
+
+/** Rotas `crm/*` de faturação AT (módulo add-on; não exige CRM comercial). */
 function isFaturacaoCrmApiPath(normalized: string): boolean {
   if (/^crm\/propostas\/[^/]+\/faturar/.test(normalized)) return true;
   return (
@@ -57,9 +66,23 @@ function isFaturacaoCrmApiPath(normalized: string): boolean {
 
 function isCrmCommercialApiPath(normalized: string): boolean {
   const seg = firstSegment(normalized);
-  if (seg === "propostas") return true;
+  if (seg === "propostas" || seg === "entidades-cliente" || seg === "calendario") {
+    return true;
+  }
   if (seg !== "crm") return false;
   return !isFaturacaoCrmApiPath(normalized);
+}
+
+/** Leitura do estado Teams/Zoom (sem segredos) - CRM e formação. */
+function isIntegracoesTeamsReadinessPath(normalized: string): boolean {
+  return (
+    normalized === "integracoes/disponibilidade" ||
+    normalized.startsWith("integracoes/disponibilidade/")
+  );
+}
+
+function teamsReadinessModuleAllowed(ent: TenantEntitlements): boolean {
+  return ent.canAccessFormacaoTeams || ent.canAccessCrm;
 }
 
 const TEAMS_API = [
@@ -81,6 +104,8 @@ const FORMANDO_PORTAL_API = [
   "formacoes",
   "formando-portal",
   "notificacoes",
+  /** Check-in de presença via QR (sessão presencial / híbrida). */
+  "presenca-checkin",
 ] as const;
 
 const IA_API = ["relatorios"] as const;
@@ -150,6 +175,9 @@ function segmentAllowed(segment: string, ent: TenantEntitlements, normalizedPath
     if (/^integracoes\/moodle/.test(normalizedPath)) {
       return ent.canAccessCoreFormation;
     }
+    if (isIntegracoesTeamsReadinessPath(normalizedPath)) {
+      return teamsReadinessModuleAllowed(ent);
+    }
     return ent.canAccessFormacaoTeams;
   }
   if ((TEAMS_API as readonly string[]).includes(segment)) {
@@ -190,8 +218,18 @@ export function isApiPathAllowed(
     return false;
   }
 
+  if (opts?.role === "formador") {
+    if (segment === "consent" || segment === "auth" || segment === "rgpd") return true;
+    if (normalized === "formadores/me" || normalized.startsWith("formadores/me/")) {
+      return ent.canAccessCoreFormation || ent.canAccessFormacaoTeams;
+    }
+  }
+
   if (opts?.role === "comercial") {
     if (isFaturacaoCrmApiPath(normalized)) return false;
+    if (isIntegracoesTeamsReadinessPath(normalized)) {
+      return teamsReadinessModuleAllowed(ent);
+    }
     if (!isCrmCommercialApiPath(normalized)) {
       if ((API_ALWAYS_ALLOWED_PREFIXES as readonly string[]).includes(segment)) {
         return segment !== "guide" || ent.canAccessInteligenciaIa;
@@ -217,8 +255,14 @@ function portalPrefixAllowed(pathname: string, ent: TenantEntitlements): boolean
     { prefix: "/portal/parceiros", allow: (e) => e.canAccessCrm },
     { prefix: "/portal/propostas", allow: (e) => e.canAccessCrm },
     { prefix: "/portal/contratos", allow: (e) => e.canAccessCrm },
-    { prefix: "/portal/fluxo", allow: (e) => e.canAccessCoreFormation || e.canAccessFormacaoTeams },
-    { prefix: "/portal/calendario", allow: (e) => e.canAccessCoreFormation || e.canAccessFormacaoTeams },
+    {
+      prefix: "/portal/fluxo",
+      allow: (e) => e.canAccessCoreFormation || e.canAccessFormacaoTeams || e.canAccessCrm,
+    },
+    {
+      prefix: "/portal/calendario",
+      allow: (e) => e.canAccessCoreFormation || e.canAccessFormacaoTeams || e.canAccessCrm,
+    },
     { prefix: "/portal/relatorios", allow: (e) => e.canAccessRelatoriosDashboard },
     { prefix: "/portal/cursos", allow: (e) => e.canAccessCoreFormation },
     { prefix: "/portal/formacoes", allow: (e) => e.canAccessCoreFormation },
@@ -226,9 +270,13 @@ function portalPrefixAllowed(pathname: string, ent: TenantEntitlements): boolean
     { prefix: "/portal/catalogo-ufcd", allow: (e) => e.canAccessCoreFormation },
     { prefix: "/portal/matriculas", allow: (e) => e.canAccessCoreFormation },
     { prefix: "/portal/formandos", allow: (e) => e.canAccessCoreFormation },
+    /** Self-service do formador (antes de /portal/formadores). */
+    {
+      prefix: "/portal/formador",
+      allow: (e) => e.canAccessCoreFormation || e.canAccessFormacaoTeams,
+    },
     { prefix: "/portal/formadores", allow: (e) => e.canAccessCoreFormation },
     { prefix: "/portal/avaliacoes", allow: (e) => e.canAccessCoreFormation },
-    { prefix: "/portal/lms", allow: (e) => e.canAccessCoreFormation || e.canAccessFormacaoTeams },
     { prefix: "/portal/conteudos", allow: (e) => e.canAccessCoreFormation },
     { prefix: "/portal/documentos", allow: (e) => e.canAccessCoreFormation },
     { prefix: "/portal/compliance", allow: (e) => e.canAccessCoreFormation },
@@ -236,7 +284,7 @@ function portalPrefixAllowed(pathname: string, ent: TenantEntitlements): boolean
     { prefix: "/portal/certificados", allow: (e) => e.canAccessCoreFormation },
     { prefix: "/portal/sigo", allow: (e) => e.canAccessCoreFormation },
     { prefix: "/portal/integracoes", allow: (e) => e.canAccessFormacaoTeams || e.canAccessCoreFormation },
-    { prefix: "/portal/enterprise", allow: () => true },
+    { prefix: "/portal/enterprise", allow: (e) => e.canAccessEnterpriseFeatures },
     { prefix: "/portal/formando", allow: (e) => e.canAccessCoreFormation || e.canAccessFormacaoTeams },
     { prefix: "/portal/demo", allow: () => true },
   ];
@@ -254,12 +302,32 @@ function portalPrefixAllowed(pathname: string, ent: TenantEntitlements): boolean
 export function isPortalPathAllowedByEntitlements(
   pathname: string,
   ent: TenantEntitlements | null | undefined,
+  role?: JwtRole | null,
 ): boolean {
-  if (!ent) return true;
+  if (role === "comercial" && isFaturacaoPortalPath(pathname)) {
+    return false;
+  }
+
+  if (
+    role === "comercial" &&
+    ent?.canAccessCrm &&
+    (pathname === "/portal/calendario" || pathname.startsWith("/portal/calendario/"))
+  ) {
+    return true;
+  }
+
+  if (
+    role === "comercial" &&
+    (pathname === "/portal/contratos" || pathname.startsWith("/portal/contratos/"))
+  ) {
+    return false;
+  }
 
   for (const base of PORTAL_ALWAYS_PATHS) {
     if (pathname === base || pathname.startsWith(`${base}/`)) return true;
   }
+
+  if (!ent) return false;
 
   return portalPrefixAllowed(pathname, ent);
 }
@@ -271,12 +339,14 @@ export function defaultPortalHome(ent: TenantEntitlements, role: JwtRole | null)
       ? "/portal/formando"
       : "/acesso-negado";
   }
-  if (role === "comercial" && ent.canAccessCrm) return "/portal/crm";
+  if (role === "comercial") {
+    return ent.canAccessCrm ? "/portal/crm/leads" : "/acesso-negado";
+  }
   if (ent.isModularSubscription) {
     if (ent.canAccessCrm) return "/portal/crm";
     if (ent.canAccessFaturacao) return "/portal/crm/faturas";
     if (ent.canAccessCoreFormation) return "/portal";
-    if (ent.canAccessFormacaoTeams) return role === "formador" ? "/portal/acoes" : "/portal/lms";
+    if (ent.canAccessFormacaoTeams) return "/portal/acoes";
     if (ent.canAccessInteligenciaIa) return "/portal/relatorios";
     return "/portal/billing";
   }
@@ -287,7 +357,8 @@ export function navHrefAllowedByEntitlements(
   href: string,
   ent: TenantEntitlements | null | undefined,
 ): boolean {
-  if (!ent) return true;
+  if (!ent) return false;
   if (href === "/portal") return true;
+  if (href === "/portal/enterprise") return ent.canAccessEnterpriseFeatures;
   return isPortalPathAllowedByEntitlements(href, ent);
 }

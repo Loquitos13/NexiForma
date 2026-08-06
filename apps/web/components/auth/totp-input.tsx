@@ -1,16 +1,19 @@
 "use client";
 
-import { useRef } from "react";
+import { useId, useRef } from "react";
 
 export function TotpInput({
   value,
   onChange,
   disabled,
+  label = "Código de verificação de 6 dígitos",
 }: {
   value: string;
   onChange: (v: string) => void;
   disabled?: boolean;
+  label?: string;
 }) {
+  const groupId = useId();
   const refs = useRef<(HTMLInputElement | null)[]>([]);
   const digits = value.padEnd(6, " ").slice(0, 6).split("");
 
@@ -34,7 +37,12 @@ export function TotpInput({
   }
 
   return (
-    <div className="flex justify-center gap-2 sm:gap-2.5">
+    <div
+      id={groupId}
+      role="group"
+      aria-label={label}
+      className="flex justify-center gap-1.5 sm:gap-2.5"
+    >
       {digits.map((d, i) => (
         <input
           key={i}
@@ -47,13 +55,14 @@ export function TotpInput({
           maxLength={1}
           disabled={disabled}
           value={d.trim()}
+          aria-label={`Dígito ${i + 1} de 6`}
           onChange={(e) => setDigit(i, e.target.value)}
           onKeyDown={(e) => onKeyDown(i, e.key)}
           onPaste={(e) => {
             e.preventDefault();
             onPaste(e.clipboardData.getData("text"));
           }}
-          className="h-12 w-10 sm:h-14 sm:w-12 rounded-xl border border-slate-600/60 bg-slate-900/90 text-center text-xl font-mono font-semibold text-slate-100 outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
+          className="h-11 w-9 sm:h-14 sm:w-12 rounded-xl border border-slate-600/60 bg-slate-900/90 text-center text-lg sm:text-xl font-mono font-semibold text-slate-100 outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
         />
       ))}
     </div>

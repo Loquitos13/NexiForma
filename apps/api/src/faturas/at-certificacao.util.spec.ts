@@ -36,12 +36,15 @@ describe("at-certificacao.util", () => {
         atCertificadoRef: null,
         softwareCertificado: "SW-999",
         comunicacaoAtiva: false,
+        atLicencaAceiteEm: new Date(),
+        atLicencaVersao: "contrato-adesao-ws-anexo-ii-v1",
       },
       series: [{ codigo: "2026", tipo: "FT", codigoValidacaoAt: "ABCD1234" }],
       softwarePlataforma: null,
       modoServidor: "production",
     });
     expect(r.prontaProducao).toBe(true);
+    expect(r.items.find((i) => i.id === "licenca_anexo_ii")?.ok).toBe(true);
     expect(r.items.find((i) => i.id === "software_certificado")?.ok).toBe(true);
   });
 

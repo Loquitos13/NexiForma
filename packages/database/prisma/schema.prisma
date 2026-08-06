@@ -54,6 +54,8 @@ enum AuditActorType {
   SUPERADMIN_USER
   SYSTEM
   TENANT_USER
+  /// Cliente/público via link (proposta, etc.) - sem sessão autenticada
+  PUBLIC_LINK
 
   @@schema("control_plane")
 }
@@ -122,6 +124,24 @@ model PasswordResetToken {
   @@schema("control_plane")
 }
 
+/// Token opaco para confirmação de email de utilizadores do tenant (hash SHA-256 na BD).
+model EmailConfirmationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  userId    String    @map("user_id") @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  email     String
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([email])
+  @@index([expiresAt])
+  @@map("email_confirmation_tokens")
+  @@schema("control_plane")
+}
+
 model Tenant {
   id          String              @id @default(uuid()) @db.Uuid
   slug        String              @unique
@@ -148,6 +168,7 @@ model Tenant {
   propostasComerciais PropostaComercial[]
   leadsComerciais     LeadComercial[]
   interaccoesComerciais InteraccaoComercial[]
+  calendarioEventos     CalendarioEvento[]
   calendarioLembreteLogs CalendarioLembreteLog[]
   sugestoesIaComerciais SugestaoIaComercial[]
   configFaturacao     ConfigFaturacaoTenant?
@@ -160,9 +181,11 @@ model Tenant {
   formadores      FormadorProfile[]
   cursos          Curso[]
   acoesFormacao   AcaoFormacao[]
+  acaoModuloPrazosLms AcaoModuloPrazoLms[]
   turmas          Turma[]
   matriculas      Matricula[]
   cronogramas     Cronograma[]
+  cronogramaImportJobs CronogramaImportJob[]
   sessoesFormacao SessaoFormacao[]
   sumarios        Sumario[]
   folhasPresenca  FolhaPresenca[]
@@ -180,6 +203,9 @@ model Tenant {
   rgpdPedidos RgpdPedido[]
   rgpdConsents RgpdConsent[]
   documentosAnexo DocumentoAnexo[]
+  matriculaDocumentos MatriculaDocumento[]
+  documentosRequisicao DocumentoRequisicao[]
+  matriculaUnidadeDesbloqueios MatriculaUnidadeDesbloqueio[]
   quizPerguntas QuizPergunta[]
   quizTentativas QuizTentativa[]
   avaliacoesFormando AvaliacaoFormando[]
@@ -450,9 +476,14 @@ model ImpersonationSession {
 
 enum TenantUserRole {
   ADMIN
+  /// @deprecated Preferir COORDENADOR_PEDAGOGICO
   COORDENADOR
+  COORDENADOR_COMERCIAL
+  COORDENADOR_PEDAGOGICO
+  COORDENADOR_FINANCEIRO
   FORMADOR
   FORMANDO
+  /// @deprecated Preferir COORDENADOR_FINANCEIRO
   FINANCEIRO
   COMERCIAL
 
@@ -542,7 +573,9 @@ model User {
   propostasEnviadas          PropostaComercial[] @relation("PropostaEnviadaPor")
   propostasCriadas           PropostaComercial[] @relation("PropostaCriadaPor")
   interaccoesComerciaisCriadas InteraccaoComercial[] @relation("InteraccaoCriadaPor")
+  calendarioEventosCriados     CalendarioEvento[] @relation("CalendarioEventoCriadoPor")
   sugestoesIaValidadas       SugestaoIaComercial[] @relation("SugestaoIaValidadaPor")
+  cronogramaImportJobs       CronogramaImportJob[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -557,7 +590,7 @@ model TenantInvite {
   email        String
   displayName  String?        @map("display_name")
   role         TenantUserRole
-  /// NIF DGERT guardado no convite — garante ficha em Formandos antes de aceitar.
+  /// NIF DGERT guardado no convite - garante ficha em Formandos antes de aceitar.
   formandoNif      String?        @map("formando_nif") @db.VarChar(9)
   formandoTelefone String?        @map("formando_telefone") @db.VarChar(48)
   tokenHash    String         @unique @map("token_hash")
@@ -596,6 +629,7 @@ model EntidadeCliente {
   documentos DocumentoAnexo[]
   interaccoes InteraccaoComercial[]
   sugestoesIa SugestaoIaComercial[]
+  calendarioEventos CalendarioEvento[]
 
   @@unique([tenantId, nif])
   @@index([tenantId])
@@ -623,6 +657,7 @@ model FormandoProfile {
   entidadeCliente EntidadeCliente? @relation(fields: [entidadeClienteId], references: [id], onDelete: SetNull)
   matriculas      Matricula[]
   documentos      DocumentoAnexo[]
+  documentosRequisicao DocumentoRequisicao[]
 
   @@unique([tenantId, nif])
   @@index([tenantId])
@@ -638,6 +673,10 @@ model FormadorProfile {
   nomeCompleto    String           @map("nome_completo")
   nif              String
   email            String
+  /// Email a usar no Zoom/Teams para assiduidade (opcional; senão usa o email da conta).
+  emailPresenca    String?          @map("email_presenca")
+  telefone         String?
+  morada           String?          @db.Text
   ccNumero         String?          @map("cc_numero")
   ccpNumero        String?          @map("ccp_numero")
   ccValidade       DateTime?        @map("cc_validade") @db.Date
@@ -649,6 +688,7 @@ model FormadorProfile {
 
   sessoesFormacao SessaoFormacao[]
   modulosUnidade  ModuloUnidade[]
+  documentos      DocumentoAnexo[]
 
   @@unique([tenantId, nif])
   @@index([tenantId])
@@ -670,6 +710,8 @@ model Curso {
   metodoEnsino      String?         @map("metodo_ensino") @db.Text
   coverStorageKey   String?         @map("cover_storage_key")
   publicado         Boolean         @default(false)
+  /// Predefinição documental da inscrição (universais + docs por edição).
+  configuracaoMatricula Json?       @map("configuracao_matricula")
   createdAt         DateTime        @default(now()) @map("created_at")
 
   tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -698,6 +740,8 @@ model AcaoFormacao {
   publicado       Boolean          @default(false)
   /// Configuração original de agenda (repetição, horários) para sync com website.
   agendaTemplate  Json?            @map("agenda_template")
+  /// Snapshot documental desta edição (horas/valor/contrato diferem por acção).
+  configuracaoMatricula Json?      @map("configuracao_matricula")
   createdAt       DateTime         @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -705,14 +749,38 @@ model AcaoFormacao {
 
   turmas    Turma[]
   cronogramas Cronograma[]
+  cronogramaImportJobs CronogramaImportJob[]
   arquivosExportacao ArquivoExportacao[]
   sigoSubmissoes SigoSubmissao[]
   sigoCertificadosFormando SigoCertificadoFormando[]
   documentosAnexo DocumentoAnexo[]
+  documentosRequisicao DocumentoRequisicao[]
+  prazosModuloLms AcaoModuloPrazoLms[]
 
   @@unique([tenantId, codigoInterno])
   @@index([tenantId])
   @@map("acoes_formacao")
+  @@schema("public")
+}
+
+/// Prazo de entrega LMS das tarefas de um módulo nesta edição (acção).
+model AcaoModuloPrazoLms {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  acaoFormacaoId  String   @map("acao_formacao_id") @db.Uuid
+  moduloUnidadeId String   @map("modulo_unidade_id") @db.Uuid
+  prazoConclusao  DateTime @map("prazo_conclusao") @db.Date
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  acaoFormacao  AcaoFormacao  @relation(fields: [acaoFormacaoId], references: [id], onDelete: Cascade)
+  moduloUnidade ModuloUnidade @relation(fields: [moduloUnidadeId], references: [id], onDelete: Cascade)
+
+  @@unique([acaoFormacaoId, moduloUnidadeId])
+  @@index([tenantId, acaoFormacaoId])
+  @@index([tenantId, prazoConclusao])
+  @@map("acao_modulo_prazos_lms")
   @@schema("public")
 }
 
@@ -727,6 +795,7 @@ model Turma {
   acaoFormacao AcaoFormacao   @relation(fields: [acaoFormacaoId], references: [id], onDelete: Cascade)
   matriculas     Matricula[]
   folhasPresenca FolhaPresenca[]
+  sessoesFormacao SessaoFormacao[]
 
   @@unique([tenantId, acaoFormacaoId, codigo])
   @@index([tenantId])
@@ -754,6 +823,9 @@ model Matricula {
   sigoSincronizacoes    SigoSincronizacaoFormando[]
   quizTentativas QuizTentativa[]
   avaliacoes AvaliacaoFormando[]
+  documentosAnexo DocumentoAnexo[]
+  documentosMatricula MatriculaDocumento[]
+  unidadeDesbloqueios MatriculaUnidadeDesbloqueio[]
 
   @@unique([turmaId, formandoId])
   @@index([tenantId])
@@ -773,6 +845,7 @@ model Cronograma {
   tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   acaoFormacao AcaoFormacao     @relation(fields: [acaoFormacaoId], references: [id], onDelete: Cascade)
   sessoes      SessaoFormacao[]
+  importJobs   CronogramaImportJob[]
 
   @@unique([tenantId, acaoFormacaoId, versao])
   @@index([tenantId])
@@ -780,15 +853,60 @@ model Cronograma {
   @@schema("public")
 }
 
+enum CronogramaImportJobStatus {
+  A_PROCESSAR
+  RASCUNHO
+  FALHA
+  APLICADO
+  DESCARTADO
+
+  @@schema("public")
+}
+
+/// Job / rascunho de importação de cronograma via IA (processamento em background).
+model CronogramaImportJob {
+  id               String                     @id @default(uuid()) @db.Uuid
+  tenantId         String                     @map("tenant_id") @db.Uuid
+  cronogramaId     String                     @map("cronograma_id") @db.Uuid
+  acaoFormacaoId   String                     @map("acao_formacao_id") @db.Uuid
+  criadoPorUserId  String                     @map("criado_por_user_id") @db.Uuid
+  status           CronogramaImportJobStatus  @default(A_PROCESSAR)
+  nomeFicheiro     String?                    @map("nome_ficheiro") @db.VarChar(240)
+  /// Texto fonte (pode ser limpo após RASCUNHO para poupar espaço).
+  textoFonte       String?                    @map("texto_fonte") @db.Text
+  /// Draft normalizado: { sessoes, prazoConclusaoLms, avisos, legendaResumo }.
+  resultado        Json?
+  erro             String?                    @db.Text
+  progresso        Int                        @default(5)
+  createdAt        DateTime                   @default(now()) @map("created_at")
+  updatedAt        DateTime                   @updatedAt @map("updated_at")
+  concludedAt      DateTime?                  @map("concluded_at")
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cronograma   Cronograma   @relation(fields: [cronogramaId], references: [id], onDelete: Cascade)
+  acaoFormacao AcaoFormacao @relation(fields: [acaoFormacaoId], references: [id], onDelete: Cascade)
+  criadoPor    User         @relation(fields: [criadoPorUserId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, criadoPorUserId, status])
+  @@index([tenantId, cronogramaId, status])
+  @@index([tenantId, acaoFormacaoId, status])
+  @@map("cronograma_import_jobs")
+  @@schema("public")
+}
+
 model SessaoFormacao {
   id              String           @id @default(uuid()) @db.Uuid
   tenantId        String           @map("tenant_id") @db.Uuid
   cronogramaId    String           @map("cronograma_id") @db.Uuid
+  /// Turma a que a sessão pertence.
+  turmaId         String?          @map("turma_id") @db.Uuid
   numeroSessao    Int              @map("numero_sessao")
   data            DateTime         @db.Date
   horaInicio      String           @map("hora_inicio") // HH:mm
   horaFim         String           @map("hora_fim")
   local           String?
+  /// Nome do módulo/unidade no cronograma (ex.: import IA) - usado na UI quando não há ligação a ModuloUnidade.
+  titulo          String?          @db.VarChar(200)
   modalidade      String
   estado          SessaoEstado     @default(AGENDADA)
   lmsAtivo        Boolean          @default(false) @map("lms_ativo")
@@ -801,10 +919,19 @@ model SessaoFormacao {
   iniciadaEm      DateTime?        @map("iniciada_em")
   terminadaEm     DateTime?        @map("terminada_em")
   formadorPresente Boolean?        @map("formador_presente")
+  /// Contador de presença do formador (inicia ao abrir/entrar na sessão).
+  formadorEntradaEm DateTime?      @map("formador_entrada_em")
+  formadorSaidaEm   DateTime?      @map("formador_saida_em")
+  formadorDuracaoSegundos Int?     @map("formador_duracao_segundos")
+  /// Token único para QR de check-in de presença (gerado ao iniciar a sessão; rota a cada 5 min).
+  presencaQrToken String?          @unique @map("presenca_qr_token")
+  /// Validade do token QR actual (após isto a API gera um novo).
+  presencaQrExpiresAt DateTime?    @map("presenca_qr_expires_at")
   createdAt       DateTime         @default(now()) @map("created_at")
 
   tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   cronograma Cronograma @relation(fields: [cronogramaId], references: [id], onDelete: Cascade)
+  turma      Turma?     @relation(fields: [turmaId], references: [id], onDelete: Cascade)
   formador   FormadorProfile? @relation(fields: [formadorId], references: [id], onDelete: SetNull)
   moduloUnidade ModuloUnidade? @relation(fields: [moduloUnidadeId], references: [id], onDelete: SetNull)
 
@@ -812,8 +939,9 @@ model SessaoFormacao {
   folhasPresenca  FolhaPresenca[]
   acessosLms      AcessoLms[]
 
-  @@unique([cronogramaId, numeroSessao])
+  @@unique([cronogramaId, turmaId, numeroSessao])
   @@index([tenantId])
+  @@index([turmaId])
   @@map("sessoes_formacao")
   @@schema("public")
 }
@@ -824,9 +952,14 @@ model Sumario {
   sessaoId           String          @map("sessao_id") @db.Uuid
   conteudo           String          @db.Text
   assinaturaRef      String?         @map("assinatura_ref")
+  /// interna | pdf_upload
   assinaturaTipo     String?         @default("interna") @map("assinatura_tipo")
   assinaturaMetadata Json?           @map("assinatura_metadata")
   assinadoEm         DateTime?       @map("assinado_em")
+  /// PDF assinado carregado (substitui CMD).
+  pdfStorageKey      String?         @map("pdf_storage_key")
+  pdfNomeFicheiro    String?         @map("pdf_nome_ficheiro")
+  pdfSha256          String?         @map("pdf_sha256") @db.VarChar(64)
   imutavel           Boolean         @default(false)
   createdAt          DateTime        @default(now()) @map("created_at")
 
@@ -847,8 +980,12 @@ model FolhaPresenca {
   fechadaEm            DateTime? @map("fechada_em")
   validadaFormadorEm   DateTime? @map("validada_formador_em")
   validadaFormadorPor  String?   @map("validada_formador_por") @db.Uuid
+  /// Nome manuscrito do formador na validação (igual ao fluxo do sumário).
+  validacaoFormadorAssinaturaNome String? @map("validacao_formador_assinatura_nome") @db.VarChar(120)
   aprovadaGestorEm     DateTime? @map("aprovada_gestor_em")
   aprovadaGestorPor    String?   @map("aprovada_gestor_por") @db.Uuid
+  /// Nome manuscrito do gestor/coordenador na aprovação (igual ao fluxo do sumário).
+  aprovacaoAssinaturaNome String? @map("aprovacao_assinatura_nome") @db.VarChar(120)
   createdAt            DateTime  @default(now()) @map("created_at")
 
   tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -915,6 +1052,8 @@ model ModuloUnidade {
   cargaHoras Int?     @map("carga_horas")
   ordem      Int      @default(0)
   notaMinima Int?     @map("nota_minima")
+  /// Se true, o módulo fica bloqueado até desbloqueio explícito por matrícula (gestor ou formando).
+  lockManual Boolean  @default(false) @map("lock_manual")
   formadorId String?  @map("formador_id") @db.Uuid
   createdAt  DateTime @default(now()) @map("created_at")
 
@@ -923,9 +1062,31 @@ model ModuloUnidade {
   formador  FormadorProfile? @relation(fields: [formadorId], references: [id], onDelete: SetNull)
   conteudos ModuloConteudo[]
   sessoes   SessaoFormacao[]
+  desbloqueios MatriculaUnidadeDesbloqueio[]
+  prazosLms AcaoModuloPrazoLms[]
 
   @@index([tenantId, cursoId])
   @@map("modulos_unidade")
+  @@schema("public")
+}
+
+/// Desbloqueio manual de um módulo (unidade) para uma matrícula específica.
+model MatriculaUnidadeDesbloqueio {
+  id                    String   @id @default(uuid()) @db.Uuid
+  tenantId              String   @map("tenant_id") @db.Uuid
+  matriculaId           String   @map("matricula_id") @db.Uuid
+  moduloUnidadeId       String   @map("modulo_unidade_id") @db.Uuid
+  desbloqueadoPorUserId String?  @map("desbloqueado_por_user_id") @db.Uuid
+  desbloqueadoEm        DateTime @default(now()) @map("desbloqueado_em")
+  motivo                String?
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  matricula     Matricula     @relation(fields: [matriculaId], references: [id], onDelete: Cascade)
+  moduloUnidade ModuloUnidade @relation(fields: [moduloUnidadeId], references: [id], onDelete: Cascade)
+
+  @@unique([matriculaId, moduloUnidadeId])
+  @@index([tenantId])
+  @@map("matricula_unidade_desbloqueios")
   @@schema("public")
 }
 
@@ -1023,12 +1184,15 @@ model CertificadoVerificacao {
   hashConteudo     String    @map("hash_conteudo")
   emitidoPorUserId String?   @map("emitido_por_user_id") @db.Uuid
   emitidoEm        DateTime  @default(now()) @map("emitido_em")
+  /// Expiração do link/token opaco (e código NF-* na verificação pública).
+  tokenExpiresAt   DateTime? @map("token_expires_at")
   revogadoEm       DateTime? @map("revogado_em")
 
   tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   matricula Matricula @relation(fields: [matriculaId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+  @@index([tokenExpiresAt])
   @@map("certificados_verificacao")
   @@schema("public")
 }
@@ -1262,16 +1426,29 @@ model InteraccaoComercial {
   leadComercialId     String?                       @map("lead_comercial_id") @db.Uuid
   agendadoPara       DateTime?                     @map("agendado_para")
   agendadoFim        DateTime?                     @map("agendado_fim")
+  teamsMeetingId     String?                       @map("teams_meeting_id") @db.Text
+  salaJoinUrl        String?                       @map("sala_join_url") @db.Text
+  reuniaoEstado      String?                       @default("AGENDADA") @map("reuniao_estado") @db.VarChar(16)
+  reuniaoIniciadaEm  DateTime?                     @map("reuniao_iniciada_em")
+  reuniaoTerminadaEm DateTime?                     @map("reuniao_terminada_em")
+  reuniaoDuracaoSegundos Int?                      @map("reuniao_duracao_segundos")
+  reuniaoOrigemId    String?                       @map("reuniao_origem_id") @db.Uuid
   participantesIds   Json?                         @default("[]") @map("participantes_ids")
   /// Perfis convidados (ex.: COMERCIAL, FORMADOR, FINANCEIRO) quando não há participantes explícitos.
   audienciaRoles     Json?                         @default("[]") @map("audiencia_roles")
-  criadoPorUserId    String                        @map("criado_por_user_id") @db.Uuid
+  /// Identificador imutável do autor (auditoria) - mantém-se mesmo após eliminar a conta.
+  criadoPorAutorId     String                        @map("criado_por_autor_id") @db.Uuid
+  criadoPorDisplayName String                        @map("criado_por_display_name")
+  criadoPorEmail       String                        @map("criado_por_email")
+  criadoPorUserId      String?                       @map("criado_por_user_id") @db.Uuid
   createdAt           DateTime                      @default(now()) @map("created_at")
 
   tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   entidadeCliente EntidadeCliente? @relation(fields: [entidadeClienteId], references: [id], onDelete: SetNull)
   leadComercial   LeadComercial?   @relation(fields: [leadComercialId], references: [id], onDelete: SetNull)
-  criadoPor       User             @relation("InteraccaoCriadaPor", fields: [criadoPorUserId], references: [id], onDelete: Restrict)
+  criadoPor       User?            @relation("InteraccaoCriadaPor", fields: [criadoPorUserId], references: [id], onDelete: SetNull)
+  reuniaoOrigem   InteraccaoComercial?  @relation("ReuniaoFollowUp", fields: [reuniaoOrigemId], references: [id], onDelete: SetNull)
+  notasFollowUp   InteraccaoComercial[] @relation("ReuniaoFollowUp")
   sugestoesIa     SugestaoIaComercial[]
 
   @@index([tenantId])
@@ -1279,7 +1456,42 @@ model InteraccaoComercial {
   @@index([tenantId, leadComercialId])
   @@index([tenantId, processamentoEstado])
   @@index([tenantId, agendadoPara])
+  @@index([criadoPorAutorId])
   @@map("interaccoes_comerciais")
+  @@schema("public")
+}
+
+enum CalendarioEventoTipo {
+  LEMBRETE
+  EVENTO
+
+  @@schema("public")
+}
+
+/// Lembretes pessoais e eventos atribuídos pelo gestor (visíveis nos alvos).
+model CalendarioEvento {
+  id                String               @id @default(uuid()) @db.Uuid
+  tenantId          String               @map("tenant_id") @db.Uuid
+  tipo              CalendarioEventoTipo
+  titulo            String               @db.VarChar(300)
+  descricao         String?              @db.Text
+  inicio            DateTime
+  fim               DateTime?
+  criadoPorUserId   String               @map("criado_por_user_id") @db.Uuid
+  entidadeClienteId String?              @map("entidade_cliente_id") @db.Uuid
+  alvoUserIds       Json                 @default("[]") @map("alvo_user_ids")
+  alvoRoles         Json                 @default("[]") @map("alvo_roles")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  criadoPor       User             @relation("CalendarioEventoCriadoPor", fields: [criadoPorUserId], references: [id], onDelete: Cascade)
+  entidadeCliente EntidadeCliente? @relation(fields: [entidadeClienteId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, inicio])
+  @@index([criadoPorUserId])
+  @@index([entidadeClienteId])
+  @@map("calendario_eventos")
   @@schema("public")
 }
 
@@ -1376,6 +1588,10 @@ model ConfigFaturacaoTenant {
   atWfaPasswordEnc    String?  @map("at_wfa_password_enc") @db.Text
   atCertificadoRef    String?  @map("at_certificado_ref")
   softwareCertificado String?  @map("software_certificado")
+  /// Aceite da Licença Anexo II (Contrato de adesão webservice AT) pelo contribuinte.
+  atLicencaAceiteEm   DateTime? @map("at_licenca_aceite_em")
+  atLicencaAceitePorUserId String? @map("at_licenca_aceite_por_user_id") @db.Uuid
+  atLicencaVersao     String?  @map("at_licenca_versao") @db.VarChar(64)
   comunicacaoAtiva    Boolean  @default(false) @map("comunicacao_ativa")
   comunicacaoAutomatica Boolean @default(false) @map("comunicacao_automatica")
   createdAt           DateTime @default(now()) @map("created_at")
@@ -1402,7 +1618,8 @@ model SerieFaturacao {
   ativo                Boolean            @default(true)
   createdAt            DateTime           @default(now()) @map("created_at")
 
-  tenant  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Histórico fiscal: proibido apagar séries via cascade de tenant.
+  tenant  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   faturas FaturaComercial[]
 
   @@unique([tenantId, codigo, tipo])
@@ -1443,8 +1660,9 @@ model FaturaComercial {
   createdAt         DateTime     @default(now()) @map("created_at")
   updatedAt         DateTime     @updatedAt @map("updated_at")
 
-  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  entidadeCliente EntidadeCliente       @relation(fields: [entidadeClienteId], references: [id], onDelete: Cascade)
+  /// Histórico fiscal imutável: proibido apagar faturas (cascade tenant/cliente bloqueado).
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  entidadeCliente EntidadeCliente       @relation(fields: [entidadeClienteId], references: [id], onDelete: Restrict)
   proposta        PropostaComercial?    @relation(fields: [propostaId], references: [id], onDelete: SetNull)
   serie           SerieFaturacao        @relation(fields: [serieId], references: [id], onDelete: Restrict)
   emitidaPor      User?                 @relation("FaturaEmitidaPor", fields: [emitidaPorUserId], references: [id], onDelete: SetNull)
@@ -1871,8 +2089,11 @@ model DocumentoAnexo {
   entidadeClienteId String?  @map("entidade_cliente_id") @db.Uuid
   acaoFormacaoId    String?  @map("acao_formacao_id") @db.Uuid
   formandoId        String?  @map("formando_id") @db.Uuid
-  categoria         String?  // cc | bi | carta_conducao
-  lado              String?  // frente | verso (apenas CC)
+  formadorId       String?  @map("formador_id") @db.Uuid
+  /// Se preenchido, o anexo é específico desta inscrição (não universal do formando).
+  matriculaId       String?  @map("matricula_id") @db.Uuid
+  categoria         String?  // universais: cv, certificado_habilitacoes, … | inscrição: declaracao_inscricao, …
+  lado              String?  // frente | verso | unico
   nome              String
   storageKey        String   @map("storage_key")
   mimeType          String   @map("mime_type")
@@ -1884,10 +2105,66 @@ model DocumentoAnexo {
   entidadeCliente EntidadeCliente? @relation(fields: [entidadeClienteId], references: [id], onDelete: SetNull)
   acaoFormacao    AcaoFormacao?    @relation(fields: [acaoFormacaoId], references: [id], onDelete: SetNull)
   formando        FormandoProfile? @relation(fields: [formandoId], references: [id], onDelete: Cascade)
+  formador       FormadorProfile? @relation(fields: [formadorId], references: [id], onDelete: Cascade)
+  matricula       Matricula?       @relation(fields: [matriculaId], references: [id], onDelete: Cascade)
+  itensMatricula  MatriculaDocumento[]
+  documentosRequisicao DocumentoRequisicao[]
 
   @@index([tenantId])
   @@index([formandoId])
+  @@index([formadorId])
+  @@index([matriculaId])
   @@map("documentos_anexo")
+  @@schema("public")
+}
+
+/// Pedido do gestor ao formando de documento adicional («outros documentos»).
+model DocumentoRequisicao {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  titulo           String
+  descricao        String?   @db.Text
+  formandoId       String    @map("formando_id") @db.Uuid
+  matriculaId      String?   @map("matricula_id") @db.Uuid
+  acaoFormacaoId   String?   @map("acao_formacao_id") @db.Uuid
+  estado           String    @default("pendente") // pendente | submetido | cancelado
+  documentoAnexoId String?   @map("documento_anexo_id") @db.Uuid
+  createdByUserId  String    @map("created_by_user_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  submetidoEm      DateTime? @map("submetido_em")
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  formando       FormandoProfile @relation(fields: [formandoId], references: [id], onDelete: Cascade)
+  acaoFormacao   AcaoFormacao?   @relation(fields: [acaoFormacaoId], references: [id], onDelete: SetNull)
+  documentoAnexo DocumentoAnexo? @relation(fields: [documentoAnexoId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([formandoId, estado])
+  @@index([acaoFormacaoId])
+  @@map("documento_requisicoes")
+  @@schema("public")
+}
+
+/// Checklist documental por inscrição (declaração, contrato, regulamento).
+model MatriculaDocumento {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  matriculaId      String    @map("matricula_id") @db.Uuid
+  categoria        String
+  estado           String    @default("pendente") // pendente | enviado | aceite
+  documentoAnexoId String?   @map("documento_anexo_id") @db.Uuid
+  aceiteEm         DateTime? @map("aceite_em")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  matricula      Matricula       @relation(fields: [matriculaId], references: [id], onDelete: Cascade)
+  documentoAnexo DocumentoAnexo? @relation(fields: [documentoAnexoId], references: [id], onDelete: SetNull)
+
+  @@unique([matriculaId, categoria])
+  @@index([tenantId])
+  @@map("matricula_documentos")
   @@schema("public")
 }
 

@@ -11,11 +11,11 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { FormadorScopeService } from "../common/formador-scope.service";
 import { requireTenantId } from "../common/tenant-scope";
+import { FormadorNotificacoesService } from "../notificacoes/formador-notificacoes.service";
 import { StorageService } from "../storage/storage.service";
 import { sanitizeLmsHtml } from "../common/sanitize-html.util";
 import type { CreateModuloConteudoDto, CreateModuloUnidadeDto, UpdateModuloUnidadeDto, UpdateProgressoModuloDto } from "./dto/conteudos-lms.dto";
-import {
-  moduloDesbloqueado,
+import { moduloDesbloqueado,
   notaMinimaParaDesbloquearProximo,
   pontuacaoModulo,
   pontuacaoTarefa,
@@ -23,7 +23,9 @@ import {
   tarefasOrdenadas,
   unidadesOrdenadas,
   validarModuloConteudoCompleto,
+  canManageFormacao,
 } from "@nexiforma/shared";
+import { prazoConclusaoAtingido, prazoYmd } from "./lms-prazo.util";
 
 const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 
@@ -109,6 +111,7 @@ export class ConteudosLmsService {
     private readonly prisma: PrismaService,
     private readonly formadorScope: FormadorScopeService,
     private readonly storage: StorageService,
+    private readonly formadorNotificacoes: FormadorNotificacoesService,
   ) {}
 
   async listModulos(user: RequestUser, cursoId: string): Promise<ModuloConteudo[]> {
@@ -183,6 +186,7 @@ export class ConteudosLmsService {
         formadorId: dto.formadorId !== undefined ? dto.formadorId : undefined,
         ordem: dto.ordem,
         notaMinima: dto.notaMinima !== undefined ? dto.notaMinima : undefined,
+        lockManual: dto.lockManual !== undefined ? dto.lockManual : undefined,
       },
     });
   }
@@ -403,7 +407,7 @@ export class ConteudosLmsService {
 
   private async assertCanViewModuloMedia(user: RequestUser, modulo: ModuloConteudo): Promise<void> {
     const tenantId = requireTenantId(user);
-    if (user.role === "tenant_manager") return;
+    if (canManageFormacao(user.role)) return;
 
     if (user.role === "formador") {
       await this.formadorScope.assertCanEditCurso(user, modulo.cursoId);
@@ -440,7 +444,7 @@ export class ConteudosLmsService {
         turma: {
           include: {
             acaoFormacao: {
-              select: { cursoId: true, dataFim: true, prazoConclusaoLms: true },
+              select: { id: true, cursoId: true, dataFim: true, prazoConclusaoLms: true },
             },
           },
         },
@@ -450,10 +454,11 @@ export class ConteudosLmsService {
       throw new NotFoundException("Matrícula ou formação não encontrada.");
     }
 
-    // Conteúdos LMS são por curso — todas as acções do mesmo curso partilham o percurso.
+    // Conteúdos LMS são por curso - todas as acções do mesmo curso partilham o percurso.
     const cursoIdResolved = matricula.turma.acaoFormacao.cursoId;
+    const acaoId = matricula.turma.acaoFormacao.id;
 
-    const [unidades, modulos, progressos] = await Promise.all([
+    const [unidades, modulos, progressos, desbloqueios, prazosModulo] = await Promise.all([
       this.prisma.moduloUnidade.findMany({
         where: { tenantId, cursoId: cursoIdResolved },
         orderBy: [{ ordem: "asc" }, { createdAt: "asc" }],
@@ -465,7 +470,34 @@ export class ConteudosLmsService {
       this.prisma.progressoModulo.findMany({
         where: { tenantId, matriculaId },
       }),
+      this.prisma.matriculaUnidadeDesbloqueio.findMany({
+        where: { tenantId, matriculaId },
+        select: { moduloUnidadeId: true },
+      }),
+      // Client Prisma pode ainda não ter o model (generate pendente) - não derrubar o percurso.
+      (() => {
+        const prazoDb = (
+          this.prisma as unknown as {
+            acaoModuloPrazoLms?: {
+              findMany: (args: {
+                where: { tenantId: string; acaoFormacaoId: string };
+                select: { moduloUnidadeId: true; prazoConclusao: true };
+              }) => Promise<{ moduloUnidadeId: string; prazoConclusao: Date }[]>;
+            };
+          }
+        ).acaoModuloPrazoLms;
+        if (!prazoDb) return Promise.resolve([] as { moduloUnidadeId: string; prazoConclusao: Date }[]);
+        return prazoDb
+          .findMany({
+            where: { tenantId, acaoFormacaoId: acaoId },
+            select: { moduloUnidadeId: true, prazoConclusao: true },
+          })
+          .catch(() => [] as { moduloUnidadeId: string; prazoConclusao: Date }[]);
+      })(),
     ]);
+    const prazoPorUnidade = new Map(
+      prazosModulo.map((p) => [p.moduloUnidadeId, p.prazoConclusao.toISOString().slice(0, 10)]),
+    );
 
     const progressoRows = progressos.map((p) => ({
       moduloId: p.moduloId,
@@ -473,21 +505,34 @@ export class ConteudosLmsService {
       pontuacao: p.pontuacao,
       concluidoEm: p.concluidoEm,
     }));
+    const desbloqueiosManuais = new Set(desbloqueios.map((d) => d.moduloUnidadeId));
+    const lockOpts = { desbloqueiosManuais };
 
+    const now = new Date();
     const unidadesOut = unidadesOrdenadas(unidades).map((u, idx) => {
       const anterior = idx > 0 ? unidadesOrdenadas(unidades)[idx - 1] : null;
       const pontuacao = pontuacaoModulo(modulos, progressoRows, u.id);
-      const desbloqueado = moduloDesbloqueado(unidades, modulos, progressoRows, u.id);
+      const prazoModulo = prazoPorUnidade.get(u.id) ?? null;
+      const prazoAtingido = prazoModulo ? prazoConclusaoAtingido(prazoModulo, now) : false;
+      const desbloqueado =
+        !prazoAtingido &&
+        moduloDesbloqueado(unidades, modulos, progressoRows, u.id, lockOpts);
       return {
         id: u.id,
         titulo: u.titulo,
         descricao: u.descricao,
         ordem: u.ordem,
         notaMinima: u.notaMinima,
+        lockManual: u.lockManual,
+        desbloqueioManual: desbloqueiosManuais.has(u.id),
         pontuacao,
         desbloqueado,
         notaMinimaAnterior: anterior ? notaMinimaParaDesbloquearProximo(anterior) : null,
         tituloModuloAnterior: anterior?.titulo ?? null,
+        prazoConclusaoLms: prazoModulo,
+        prazoEmAtraso: Boolean(
+          prazoAtingido && (pontuacao ?? 0) < (u.notaMinima ?? 60),
+        ),
       };
     });
 
@@ -501,6 +546,10 @@ export class ConteudosLmsService {
             concluidoEm: prog.concluidoEm,
           }
         : undefined;
+      const prazoModulo = m.moduloUnidadeId
+        ? (prazoPorUnidade.get(m.moduloUnidadeId) ?? null)
+        : null;
+      const prazoAtingido = prazoModulo ? prazoConclusaoAtingido(prazoModulo, now) : false;
       return {
         id: m.id,
         titulo: m.titulo,
@@ -519,7 +568,9 @@ export class ConteudosLmsService {
         pontuacao: pontuacaoTarefa(progresso, m),
         percentual: prog?.percentual ?? 0,
         concluido: !!prog?.concluidoEm,
-        desbloqueado: tarefaDesbloqueada(unidades, modulos, progressoRows, m.id),
+        desbloqueado:
+          !prazoAtingido &&
+          tarefaDesbloqueada(unidades, modulos, progressoRows, m.id, lockOpts),
       };
     });
 
@@ -527,7 +578,6 @@ export class ConteudosLmsService {
     const concluidos = tarefasOut.filter((t) => t.concluido).length;
     const acao = matricula?.turma.acaoFormacao;
     const limite = acao?.prazoConclusaoLms ?? acao?.dataFim ?? null;
-    const now = new Date();
     const msDia = 86_400_000;
     const diasRestantes =
       limite != null ? Math.ceil((limite.getTime() - now.getTime()) / msDia) : null;
@@ -555,15 +605,16 @@ export class ConteudosLmsService {
     };
   }
 
-  /** Progresso LMS agregado dos formandos nas acções do formador. */
+  /** Progresso LMS agregado dos formandos nas acções do formador (ou todas, se gestor). */
   async resumoProgressoFormador(user: RequestUser) {
     const tenantId = requireTenantId(user);
-    if (user.role !== "formador") {
-      throw new ForbiddenException("Apenas formadores.");
+    if (user.role !== "formador" && !canManageFormacao(user.role)) {
+      throw new ForbiddenException("Sem permissão.");
     }
 
-    const acaoIds = await this.formadorScope.assignedAcaoIds(user);
-    if (!acaoIds?.length) {
+    const assigned = await this.formadorScope.assignedAcaoIds(user);
+    // null = gestor (sem filtro); [] = formador sem acções
+    if (assigned !== null && !assigned.length) {
       return {
         geral: { percentual: 0, concluidas: 0, totalTarefas: 0, formandosAtivos: 0 },
         acoes: [],
@@ -571,7 +622,10 @@ export class ConteudosLmsService {
     }
 
     const acoes = await this.prisma.acaoFormacao.findMany({
-      where: { tenantId, id: { in: acaoIds } },
+      where: {
+        tenantId,
+        ...(assigned ? { id: { in: assigned } } : {}),
+      },
       select: {
         id: true,
         titulo: true,
@@ -643,6 +697,7 @@ export class ConteudosLmsService {
           percentual,
           concluidas,
           total: totalTarefas,
+          completo: totalTarefas > 0 && concluidas >= totalTarefas,
         };
       });
 
@@ -723,7 +778,7 @@ export class ConteudosLmsService {
       dto.pontuacao ?? (percentual >= 100 ? 100 : percentual > 0 ? percentual : null);
     const concluidoEm = percentual >= 100 ? new Date() : null;
 
-    return this.prisma.progressoModulo.upsert({
+    const row = await this.prisma.progressoModulo.upsert({
       where: { matriculaId_moduloId: { matriculaId, moduloId } },
       create: {
         tenantId,
@@ -742,6 +797,70 @@ export class ConteudosLmsService {
         ...(concluidoEm ? { concluidoEm } : {}),
       },
     });
+
+    if (concluidoEm) {
+      void this.formadorNotificacoes.notifyIfPercursoCompleto(tenantId, matriculaId);
+    }
+    return row;
+  }
+
+  /** Detalhe do percurso LMS de um formando (para formador atribuído à acção). */
+  async progressoDetalheFormador(user: RequestUser, matriculaId: string) {
+    const tenantId = requireTenantId(user);
+    if (user.role !== "formador" && !canManageFormacao(user.role)) {
+      throw new ForbiddenException("Sem permissão.");
+    }
+
+    const matricula = await this.prisma.matricula.findFirst({
+      where: { id: matriculaId, tenantId },
+      select: {
+        id: true,
+        estado: true,
+        formando: { select: { nome: true, nif: true, email: true } },
+        turma: {
+          select: {
+            codigo: true,
+            nome: true,
+            acaoFormacaoId: true,
+            acaoFormacao: {
+              select: {
+                id: true,
+                codigoInterno: true,
+                titulo: true,
+                cursoId: true,
+                curso: { select: { designacao: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!matricula) {
+      throw new NotFoundException("Matrícula não encontrada.");
+    }
+
+    if (user.role === "formador") {
+      await this.formadorScope.assertCanAccessAcao(user, matricula.turma.acaoFormacaoId);
+    }
+
+    const percurso = await this.getPercursoFormando(
+      user,
+      matricula.turma.acaoFormacao.cursoId,
+      matriculaId,
+    );
+
+    return {
+      matriculaId: matricula.id,
+      formando: matricula.formando,
+      turma: { codigo: matricula.turma.codigo, nome: matricula.turma.nome },
+      acao: {
+        id: matricula.turma.acaoFormacao.id,
+        codigoInterno: matricula.turma.acaoFormacao.codigoInterno,
+        titulo: matricula.turma.acaoFormacao.titulo,
+        cursoDesignacao: matricula.turma.acaoFormacao.curso.designacao,
+      },
+      percurso,
+    };
   }
 
   private async assertTarefaAcessivel(
@@ -749,13 +868,38 @@ export class ConteudosLmsService {
     matriculaId: string,
     modulo: ModuloConteudo,
   ): Promise<void> {
-    const [unidades, modulos, progressos] = await Promise.all([
+    const [unidades, modulos, progressos, desbloqueios, matricula] = await Promise.all([
       this.prisma.moduloUnidade.findMany({ where: { tenantId, cursoId: modulo.cursoId } }),
       this.prisma.moduloConteudo.findMany({
         where: { tenantId, cursoId: modulo.cursoId, publicado: true },
       }),
       this.prisma.progressoModulo.findMany({ where: { tenantId, matriculaId } }),
+      this.prisma.matriculaUnidadeDesbloqueio.findMany({
+        where: { tenantId, matriculaId },
+        select: { moduloUnidadeId: true },
+      }),
+      this.prisma.matricula.findFirst({
+        where: { id: matriculaId, tenantId },
+        select: { turma: { select: { acaoFormacaoId: true } } },
+      }),
     ]);
+
+    if (modulo.moduloUnidadeId && matricula?.turma?.acaoFormacaoId) {
+      const prazo = await this.prisma.acaoModuloPrazoLms.findUnique({
+        where: {
+          acaoFormacaoId_moduloUnidadeId: {
+            acaoFormacaoId: matricula.turma.acaoFormacaoId,
+            moduloUnidadeId: modulo.moduloUnidadeId,
+          },
+        },
+        select: { prazoConclusao: true },
+      });
+      if (prazo && prazoConclusaoAtingido(prazo.prazoConclusao)) {
+        throw new ForbiddenException(
+          "O limite de conclusão deste módulo foi atingido. Já não é possível responder.",
+        );
+      }
+    }
 
     const progressoRows = progressos.map((p) => ({
       moduloId: p.moduloId,
@@ -763,8 +907,17 @@ export class ConteudosLmsService {
       pontuacao: p.pontuacao,
       concluidoEm: p.concluidoEm,
     }));
+    const lockOpts = { desbloqueiosManuais: new Set(desbloqueios.map((d) => d.moduloUnidadeId)) };
 
-    if (!tarefaDesbloqueada(unidades, modulos, progressoRows, modulo.id)) {
+    if (!tarefaDesbloqueada(unidades, modulos, progressoRows, modulo.id, lockOpts)) {
+      const unidade = modulo.moduloUnidadeId
+        ? unidades.find((u) => u.id === modulo.moduloUnidadeId)
+        : null;
+      if (unidade?.lockManual && !lockOpts.desbloqueiosManuais.has(unidade.id)) {
+        throw new ForbiddenException(
+          "Este módulo está bloqueado. O gestor ou o formando associado devem libertá-lo para continuares.",
+        );
+      }
       const unidadeId = modulo.moduloUnidadeId;
       const prev = unidadeId
         ? unidadesOrdenadas(unidades).find((u, i, arr) => arr[i + 1]?.id === unidadeId)
@@ -776,16 +929,529 @@ export class ConteudosLmsService {
     }
   }
 
+  /**
+   * Estado de libertação de módulos (lock manual) para todos os formandos da acção.
+   * Inclui filtro de permissões: formador só opera módulos das suas sessões.
+   */
+  async estadoLibertarAcao(user: RequestUser, acaoId: string) {
+    const tenantId = requireTenantId(user);
+    if (user.role !== "formador" && !canManageFormacao(user.role)) {
+      throw new ForbiddenException("Sem permissão.");
+    }
+    await this.formadorScope.assertCanAccessAcao(user, acaoId);
+
+    const acao = await this.prisma.acaoFormacao.findFirst({
+      where: { id: acaoId, tenantId },
+      select: {
+        id: true,
+        cursoId: true,
+        turmas: {
+          select: {
+            id: true,
+            codigo: true,
+            nome: true,
+            matriculas: {
+              where: { estado: "ATIVA" },
+              select: {
+                id: true,
+                formando: { select: { nome: true, nif: true } },
+              },
+              orderBy: { formando: { nome: "asc" } },
+            },
+          },
+          orderBy: { codigo: "asc" },
+        },
+      },
+    });
+    if (!acao) throw new NotFoundException("Acção não encontrada.");
+
+    const [unidades, operaveis, prazos, tarefas] = await Promise.all([
+      this.prisma.moduloUnidade.findMany({
+        where: { tenantId, cursoId: acao.cursoId },
+        orderBy: [{ ordem: "asc" }, { createdAt: "asc" }],
+        select: {
+          id: true,
+          titulo: true,
+          codigo: true,
+          ordem: true,
+          lockManual: true,
+          _count: { select: { conteudos: true } },
+        },
+      }),
+      this.formadorScope.moduloIdsOperaveisNaAcao(user, acaoId),
+      this.prisma.acaoModuloPrazoLms.findMany({
+        where: { tenantId, acaoFormacaoId: acaoId },
+        select: { moduloUnidadeId: true, prazoConclusao: true },
+      }),
+      this.prisma.moduloConteudo.findMany({
+        where: { tenantId, cursoId: acao.cursoId, publicado: true },
+        select: { id: true, moduloUnidadeId: true },
+      }),
+    ]);
+
+    const prazoPorUnidade = new Map(
+      prazos.map((p) => [p.moduloUnidadeId, prazoYmd(p.prazoConclusao)]),
+    );
+    const now = new Date();
+
+    const matriculas = acao.turmas.flatMap((t) =>
+      t.matriculas.map((m) => ({
+        matriculaId: m.id,
+        turmaId: t.id,
+        turmaCodigo: t.codigo,
+        nome: m.formando.nome,
+        nif: m.formando.nif,
+      })),
+    );
+    const matriculaIds = matriculas.map((m) => m.matriculaId);
+    const tarefaIds = tarefas.map((t) => t.id);
+    type DesbloqueioRow = {
+      matriculaId: string;
+      moduloUnidadeId: string;
+      desbloqueadoEm: Date;
+    };
+    type ProgressoRow = {
+      matriculaId: string;
+      moduloId: string;
+      concluidoEm: Date | null;
+    };
+    const [desbloqueios, progressos] = await Promise.all([
+      matriculaIds.length > 0
+        ? this.prisma.matriculaUnidadeDesbloqueio.findMany({
+            where: { tenantId, matriculaId: { in: matriculaIds } },
+            select: {
+              matriculaId: true,
+              moduloUnidadeId: true,
+              desbloqueadoEm: true,
+            },
+          })
+        : Promise.resolve([] as DesbloqueioRow[]),
+      matriculaIds.length > 0 && tarefaIds.length > 0
+        ? this.prisma.progressoModulo.findMany({
+            where: {
+              tenantId,
+              matriculaId: { in: matriculaIds },
+              moduloId: { in: tarefaIds },
+            },
+            select: { matriculaId: true, moduloId: true, concluidoEm: true },
+          })
+        : Promise.resolve([] as ProgressoRow[]),
+    ]);
+    const unlockKey = new Set(
+      desbloqueios.map((d) => `${d.matriculaId}:${d.moduloUnidadeId}`),
+    );
+    const concluidasKey = new Set(
+      progressos
+        .filter((p) => p.concluidoEm)
+        .map((p) => `${p.matriculaId}:${p.moduloId}`),
+    );
+    const tarefasPorModulo = new Map<string, string[]>();
+    for (const t of tarefas) {
+      if (!t.moduloUnidadeId) continue;
+      const list = tarefasPorModulo.get(t.moduloUnidadeId) ?? [];
+      list.push(t.id);
+      tarefasPorModulo.set(t.moduloUnidadeId, list);
+    }
+    const totalFormandos = matriculas.length;
+    const isGestor = canManageFormacao(user.role);
+
+    return {
+      acaoId: acao.id,
+      cursoId: acao.cursoId,
+      turmas: acao.turmas.map((t) => ({
+        id: t.id,
+        codigo: t.codigo,
+        nome: t.nome,
+      })),
+      modulos: unidades.map((u) => {
+        const libertados = matriculas.filter((m) =>
+          unlockKey.has(`${m.matriculaId}:${u.id}`),
+        ).length;
+        const podeOperar = operaveis === null || operaveis.includes(u.id);
+        const prazoConclusao = prazoPorUnidade.get(u.id) ?? null;
+        const prazoAtingido = prazoConclusao
+          ? prazoConclusaoAtingido(prazoConclusao, now)
+          : false;
+        /**
+         * Switch «Desbloqueado» = libertação explícita para todos os formandos.
+         * Sem registos de desbloqueio fica Bloqueado (mesmo que lockManual esteja off).
+         * Com limite atingido trata-se como bloqueado na UI.
+         */
+        const desbloqueado =
+          !prazoAtingido &&
+          (totalFormandos > 0 ? libertados === totalFormandos : false);
+        const tarefasModulo = tarefasPorModulo.get(u.id) ?? [];
+        const progressoFormandos = matriculas.map((m) => {
+          const total = tarefasModulo.length;
+          const concluidos = tarefasModulo.filter((tid) =>
+            concluidasKey.has(`${m.matriculaId}:${tid}`),
+          ).length;
+          const percentual =
+            total > 0 ? Math.round((concluidos / total) * 1000) / 10 : 0;
+          return {
+            matriculaId: m.matriculaId,
+            nome: m.nome,
+            nif: m.nif,
+            turmaCodigo: m.turmaCodigo,
+            concluidos,
+            total,
+            percentual,
+            libertado: unlockKey.has(`${m.matriculaId}:${u.id}`),
+          };
+        });
+        return {
+          id: u.id,
+          titulo: u.titulo,
+          codigo: u.codigo,
+          ordem: u.ordem,
+          lockManual: u.lockManual,
+          totalConteudos: u._count.conteudos,
+          totalFormandos,
+          libertados: prazoAtingido ? 0 : libertados,
+          desbloqueado,
+          prazoConclusao,
+          prazoAtingido,
+          podeOperar,
+          podeDesbloquear: podeOperar && !prazoAtingido,
+          podeBloquear: isGestor,
+          podeDefinirPrazo: isGestor,
+          progressoFormandos,
+        };
+      }),
+      formandos: matriculas.map((m) => ({
+        ...m,
+        desbloqueios: unidades
+          .filter((u) => unlockKey.has(`${m.matriculaId}:${u.id}`))
+          .map((u) => u.id),
+      })),
+    };
+  }
+
+  /**
+   * Liga/desliga o módulo (tarefas) para todos os formandos da acção.
+   * Desbloquear: gestor ou formador das sessões do módulo.
+   * Bloquear: só gestor.
+   */
+  async setModuloTarefasAcao(
+    user: RequestUser,
+    acaoId: string,
+    unidadeId: string,
+    desbloqueado: boolean,
+  ) {
+    const tenantId = requireTenantId(user);
+    if (user.role !== "formador" && !canManageFormacao(user.role)) {
+      throw new ForbiddenException("Sem permissão.");
+    }
+    await this.formadorScope.assertCanAccessAcao(user, acaoId);
+
+    if (desbloqueado) {
+      await this.formadorScope.assertCanLiberarModuloNaAcao(user, acaoId, unidadeId);
+    } else if (!canManageFormacao(user.role)) {
+      throw new ForbiddenException("Só o gestor pode voltar a bloquear o módulo.");
+    }
+
+    const acao = await this.prisma.acaoFormacao.findFirst({
+      where: { id: acaoId, tenantId },
+      select: {
+        id: true,
+        cursoId: true,
+        turmas: {
+          select: {
+            matriculas: {
+              where: { estado: "ATIVA" },
+              select: { id: true },
+            },
+          },
+        },
+      },
+    });
+    if (!acao) throw new NotFoundException("Acção não encontrada.");
+
+    const unidade = await this.prisma.moduloUnidade.findFirst({
+      where: { id: unidadeId, tenantId, cursoId: acao.cursoId },
+      select: { id: true, lockManual: true },
+    });
+    if (!unidade) throw new NotFoundException("Módulo não encontrado neste curso.");
+
+    if (desbloqueado) {
+      const prazo = await this.prisma.acaoModuloPrazoLms.findUnique({
+        where: {
+          acaoFormacaoId_moduloUnidadeId: {
+            acaoFormacaoId: acaoId,
+            moduloUnidadeId: unidadeId,
+          },
+        },
+        select: { prazoConclusao: true },
+      });
+      if (prazo && prazoConclusaoAtingido(prazo.prazoConclusao)) {
+        throw new ForbiddenException(
+          "O limite de conclusão deste módulo já foi atingido. Altera ou remove o limite para desbloquear.",
+        );
+      }
+    }
+
+    const matriculaIds = acao.turmas.flatMap((t) => t.matriculas.map((m) => m.id));
+
+    if (desbloqueado) {
+      if (!unidade.lockManual) {
+        await this.prisma.moduloUnidade.update({
+          where: { id: unidadeId },
+          data: { lockManual: true },
+        });
+      }
+      for (const matriculaId of matriculaIds) {
+        await this.prisma.matriculaUnidadeDesbloqueio.upsert({
+          where: {
+            matriculaId_moduloUnidadeId: { matriculaId, moduloUnidadeId: unidadeId },
+          },
+          create: {
+            tenantId,
+            matriculaId,
+            moduloUnidadeId: unidadeId,
+            desbloqueadoPorUserId: user.sub,
+            motivo: "tarefas_acao",
+          },
+          update: {
+            desbloqueadoPorUserId: user.sub,
+            desbloqueadoEm: new Date(),
+            motivo: "tarefas_acao",
+          },
+        });
+      }
+    } else {
+      await this.aplicarBloqueioModuloAcao(tenantId, acaoId, unidadeId, matriculaIds);
+    }
+
+    return this.estadoLibertarAcao(user, acaoId);
+  }
+
+  /**
+   * Define/remove o limite de conclusão do módulo nesta acção (só gestor).
+   * Se o limite já tiver passado (00:00 do dia seguinte), o bloqueio corre em background.
+   */
+  async setModuloPrazoAcao(
+    user: RequestUser,
+    acaoId: string,
+    unidadeId: string,
+    prazoConclusao: string | null,
+  ) {
+    const tenantId = requireTenantId(user);
+    if (!canManageFormacao(user.role)) {
+      throw new ForbiddenException("Só o gestor pode definir o limite de conclusão.");
+    }
+
+    const acao = await this.prisma.acaoFormacao.findFirst({
+      where: { id: acaoId, tenantId },
+      select: { id: true, cursoId: true },
+    });
+    if (!acao) throw new NotFoundException("Acção não encontrada.");
+
+    const unidade = await this.prisma.moduloUnidade.findFirst({
+      where: { id: unidadeId, tenantId, cursoId: acao.cursoId },
+      select: { id: true },
+    });
+    if (!unidade) throw new NotFoundException("Módulo não encontrado neste curso.");
+
+    if (prazoConclusao == null || prazoConclusao.trim() === "") {
+      await this.prisma.acaoModuloPrazoLms.deleteMany({
+        where: { tenantId, acaoFormacaoId: acaoId, moduloUnidadeId: unidadeId },
+      });
+    } else {
+      const ymd = prazoYmd(prazoConclusao);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+        throw new BadRequestException("Data de limite inválida (usa YYYY-MM-DD).");
+      }
+      await this.prisma.acaoModuloPrazoLms.upsert({
+        where: {
+          acaoFormacaoId_moduloUnidadeId: {
+            acaoFormacaoId: acaoId,
+            moduloUnidadeId: unidadeId,
+          },
+        },
+        create: {
+          tenantId,
+          acaoFormacaoId: acaoId,
+          moduloUnidadeId: unidadeId,
+          prazoConclusao: new Date(ymd),
+        },
+        update: { prazoConclusao: new Date(ymd) },
+      });
+
+      // Bloqueio assíncrono se o limite já chegou (não bloqueia a resposta HTTP).
+      if (prazoConclusaoAtingido(ymd)) {
+        void this.aplicarBloqueioModuloAcao(tenantId, acaoId, unidadeId).catch(() => undefined);
+      }
+    }
+
+    return this.estadoLibertarAcao(user, acaoId);
+  }
+
+  /** Cron / fire-and-forget: bloqueia módulos com prazo ≤ hoje (00:00 local). */
+  async processarBloqueiosPorPrazo(): Promise<{ bloqueados: number; acoes: number }> {
+    const prazos = await this.prisma.acaoModuloPrazoLms.findMany({
+      select: {
+        tenantId: true,
+        acaoFormacaoId: true,
+        moduloUnidadeId: true,
+        prazoConclusao: true,
+      },
+    });
+    const now = new Date();
+    const alvo = prazos.filter((p) => prazoConclusaoAtingido(p.prazoConclusao, now));
+    const acoes = new Set<string>();
+    let bloqueados = 0;
+    for (const p of alvo) {
+      const changed = await this.aplicarBloqueioModuloAcao(
+        p.tenantId,
+        p.acaoFormacaoId,
+        p.moduloUnidadeId,
+      );
+      if (changed) {
+        bloqueados += 1;
+        acoes.add(p.acaoFormacaoId);
+      }
+    }
+    return { bloqueados, acoes: acoes.size };
+  }
+
+  /**
+   * Força lockManual + remove desbloqueios das matrículas activas da acção.
+   * @returns true se havia desbloqueios ou precisou activar lock.
+   */
+  private async aplicarBloqueioModuloAcao(
+    tenantId: string,
+    acaoId: string,
+    unidadeId: string,
+    matriculaIdsPrefetched?: string[],
+  ): Promise<boolean> {
+    let matriculaIds = matriculaIdsPrefetched;
+    if (!matriculaIds) {
+      const acao = await this.prisma.acaoFormacao.findFirst({
+        where: { id: acaoId, tenantId },
+        select: {
+          turmas: {
+            select: {
+              matriculas: {
+                where: { estado: "ATIVA" },
+                select: { id: true },
+              },
+            },
+          },
+        },
+      });
+      matriculaIds = acao?.turmas.flatMap((t) => t.matriculas.map((m) => m.id)) ?? [];
+    }
+
+    const unidade = await this.prisma.moduloUnidade.findFirst({
+      where: { id: unidadeId, tenantId },
+      select: { id: true, lockManual: true },
+    });
+    if (!unidade) return false;
+
+    let changed = false;
+    if (!unidade.lockManual) {
+      await this.prisma.moduloUnidade.update({
+        where: { id: unidadeId },
+        data: { lockManual: true },
+      });
+      changed = true;
+    }
+    if (matriculaIds.length) {
+      const del = await this.prisma.matriculaUnidadeDesbloqueio.deleteMany({
+        where: {
+          tenantId,
+          moduloUnidadeId: unidadeId,
+          matriculaId: { in: matriculaIds },
+        },
+      });
+      if (del.count > 0) changed = true;
+    }
+    return changed;
+  }
+
+  async desbloquearUnidadeMatricula(
+    user: RequestUser,
+    matriculaId: string,
+    unidadeId: string,
+    motivo?: string,
+  ) {
+    const tenantId = requireTenantId(user);
+    const matricula = await this.prisma.matricula.findFirst({
+      where: { id: matriculaId, tenantId },
+      include: {
+        formando: { select: { userId: true } },
+        turma: { select: { acaoFormacao: { select: { cursoId: true, id: true } } } },
+      },
+    });
+    if (!matricula) throw new NotFoundException("Matrícula não encontrada.");
+
+    const isGestor = canManageFormacao(user.role);
+    if (user.role === "formador") {
+      await this.formadorScope.assertCanLiberarModuloNaAcao(
+        user,
+        matricula.turma.acaoFormacao.id,
+        unidadeId,
+      );
+    } else if (!isGestor) {
+      throw new ForbiddenException(
+        "Só o gestor da entidade ou o formador da sessão (módulo leccionado) podem libertar o módulo.",
+      );
+    }
+
+    const unidade = await this.prisma.moduloUnidade.findFirst({
+      where: { id: unidadeId, tenantId, cursoId: matricula.turma.acaoFormacao.cursoId },
+    });
+    if (!unidade) throw new NotFoundException("Módulo não encontrado neste curso.");
+    if (!unidade.lockManual) {
+      throw new BadRequestException("Este módulo não tem lock manual activo.");
+    }
+
+    return this.prisma.matriculaUnidadeDesbloqueio.upsert({
+      where: {
+        matriculaId_moduloUnidadeId: { matriculaId, moduloUnidadeId: unidadeId },
+      },
+      create: {
+        tenantId,
+        matriculaId,
+        moduloUnidadeId: unidadeId,
+        desbloqueadoPorUserId: user.sub,
+        motivo: motivo?.trim() || null,
+      },
+      update: {
+        desbloqueadoPorUserId: user.sub,
+        desbloqueadoEm: new Date(),
+        motivo: motivo?.trim() || null,
+      },
+    });
+  }
+
+  async bloquearUnidadeMatricula(user: RequestUser, matriculaId: string, unidadeId: string) {
+    const tenantId = requireTenantId(user);
+    if (!canManageFormacao(user.role)) {
+      throw new ForbiddenException("Só o gestor pode voltar a bloquear o módulo.");
+    }
+    await this.assertMatriculaAccess(user, matriculaId, tenantId);
+    await this.prisma.matriculaUnidadeDesbloqueio.deleteMany({
+      where: { tenantId, matriculaId, moduloUnidadeId: unidadeId },
+    });
+  }
+
   private async assertMatriculaAccess(user: RequestUser, matriculaId: string, tenantId: string) {
     const matricula = await this.prisma.matricula.findFirst({
       where: { id: matriculaId, tenantId },
-      include: { formando: { select: { userId: true } } },
+      include: {
+        formando: { select: { userId: true } },
+        turma: { select: { acaoFormacaoId: true } },
+      },
     });
     if (!matricula) {
       throw new NotFoundException("Matrícula não encontrada.");
     }
     if (user.role === "formando" && matricula.formando.userId !== user.sub) {
       throw new ForbiddenException("Só podes ver o teu progresso.");
+    }
+    if (user.role === "formador") {
+      await this.formadorScope.assertCanAccessAcao(user, matricula.turma.acaoFormacaoId);
     }
   }
 }

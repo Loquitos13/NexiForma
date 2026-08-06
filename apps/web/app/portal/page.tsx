@@ -21,6 +21,7 @@ import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
 import { Alert, Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { EmailBounceAlert, EmailStatusBanner } from "@/components/portal/email-status-banner";
+import { PriorityAlertsBanner } from "@/components/dashboard/priority-alerts-banner";
 import { cn } from "@/lib/ui/cn";
 
 type Dashboard = {
@@ -177,40 +178,44 @@ export default function PortalDashboardPage() {
                 : "Acompanhe turmas, sessões e conteúdos atribuídos."}
             </p>
           </div>
-          {canManage ? (
-            <div className="flex flex-wrap gap-2">
-              {entitlements?.canAccessInteligenciaIa ? (
-                <Link href="/portal/relatorios">
-                  <Button size="sm">
-                    <BarChart3 className="h-3.5 w-3.5" />
-                    Relatórios
-                  </Button>
-                </Link>
-              ) : null}
-              {entitlements?.canAccessCrm ? (
-                <Link href="/portal/crm">
-                  <Button size="sm" variant="secondary">
-                    <TrendingUp className="h-3.5 w-3.5" />
-                    CRM
-                  </Button>
-                </Link>
-              ) : null}
-              {(entitlements?.canAccessCoreFormation || entitlements?.canAccessFormacaoTeams) ? (
-                <Link href="/portal/fluxo">
-                  <Button size="sm" variant="secondary">
-                    <Activity className="h-3.5 w-3.5" />
-                    Fluxo guiado
-                  </Button>
-                </Link>
-              ) : null}
-            </div>
-          ) : null}
+          <div className="flex flex-wrap gap-2">
+            {canManage && entitlements?.canAccessInteligenciaIa ? (
+              <Link href="/portal/relatorios">
+                <Button size="sm">
+                  <BarChart3 className="h-3.5 w-3.5" />
+                  Relatórios
+                </Button>
+              </Link>
+            ) : null}
+            {canManage && entitlements?.canAccessCrm ? (
+              <Link href="/portal/crm">
+                <Button size="sm" variant="secondary">
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  CRM
+                </Button>
+              </Link>
+            ) : null}
+            {entitlements?.canAccessCoreFormation ||
+            entitlements?.canAccessFormacaoTeams ||
+            entitlements?.canAccessCrm ? (
+              <Link href="/portal/fluxo">
+                <Button size="sm" variant="secondary">
+                  <Activity className="h-3.5 w-3.5" />
+                  Fluxo guiado
+                </Button>
+              </Link>
+            ) : null}
+          </div>
         </div>
       </div>
 
       {error ? <Alert variant="error">{error}</Alert> : null}
       <EmailStatusBanner />
       <EmailBounceAlert />
+
+      {canManage && entitlements?.canAccessCoreFormation && alertas.length > 0 ? (
+        <PriorityAlertsBanner alertas={alertas} />
+      ) : null}
 
       {canManage ? (
         <section aria-labelledby="executive-heading">

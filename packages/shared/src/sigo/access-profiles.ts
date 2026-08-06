@@ -27,21 +27,24 @@ export const SIGO_ACOES_ACESSO: readonly SigoAcaoAcesso[] = [
 
 export const SIGO_PERFIS_PADRAO: SigoPerfisAcesso = {
   configurar: ["ADMIN"],
-  submeter: ["ADMIN", "COORDENADOR"],
-  reconciliar: ["ADMIN", "COORDENADOR"],
-  sincronizar: ["ADMIN", "COORDENADOR"],
-  certificar: ["ADMIN", "COORDENADOR"],
-  emitirCertificadoLocal: ["ADMIN", "COORDENADOR"],
-  descarregarSigo: ["ADMIN", "COORDENADOR", "FORMADOR", "FORMANDO"],
-  notificarFormandos: ["ADMIN", "COORDENADOR"],
+  submeter: ["ADMIN", "COORDENADOR_PEDAGOGICO", "COORDENADOR"],
+  reconciliar: ["ADMIN", "COORDENADOR_PEDAGOGICO", "COORDENADOR"],
+  sincronizar: ["ADMIN", "COORDENADOR_PEDAGOGICO", "COORDENADOR"],
+  certificar: ["ADMIN", "COORDENADOR_PEDAGOGICO", "COORDENADOR"],
+  emitirCertificadoLocal: ["ADMIN", "COORDENADOR_PEDAGOGICO", "COORDENADOR"],
+  descarregarSigo: ["ADMIN", "COORDENADOR_PEDAGOGICO", "COORDENADOR", "FORMADOR", "FORMANDO"],
+  notificarFormandos: ["ADMIN", "COORDENADOR_PEDAGOGICO", "COORDENADOR"],
 };
 
 const ROLE_LABELS: Record<TenantUserRole, string> = {
   ADMIN: "Administrador",
-  COORDENADOR: "Coordenador",
+  COORDENADOR: "Coordenador Pedagógico",
+  COORDENADOR_COMERCIAL: "Coordenador Comercial",
+  COORDENADOR_PEDAGOGICO: "Coordenador Pedagógico",
+  COORDENADOR_FINANCEIRO: "Coordenador Financeiro",
   FORMADOR: "Formador",
   FORMANDO: "Formando",
-  FINANCEIRO: "Financeiro",
+  FINANCEIRO: "Coordenador Financeiro",
   COMERCIAL: "Comercial",
 };
 
@@ -64,6 +67,9 @@ function isTenantUserRole(value: unknown): value is TenantUserRole {
   return (
     value === "ADMIN" ||
     value === "COORDENADOR" ||
+    value === "COORDENADOR_COMERCIAL" ||
+    value === "COORDENADOR_PEDAGOGICO" ||
+    value === "COORDENADOR_FINANCEIRO" ||
     value === "FORMADOR" ||
     value === "FORMANDO" ||
     value === "FINANCEIRO" ||

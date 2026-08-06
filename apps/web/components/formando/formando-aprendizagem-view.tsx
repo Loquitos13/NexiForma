@@ -15,6 +15,7 @@ import {
   resolverPresencaAtiva,
   type SessaoPresencaAtiva,
 } from "@/lib/lms/use-presenca-sessao";
+import { useMinhasSessoesPoll } from "@/lib/lms/use-minhas-sessoes-poll";
 import { TempoPresencaAoVivo } from "@/components/lms/tempo-presenca-ao-vivo";
 import { SessaoLiveHero } from "@/components/formando/sessao-live-hero";
 import { FormandoCursoView } from "@/components/formando/formando-curso-view";
@@ -73,10 +74,14 @@ type UnidadeItem = {
   titulo: string;
   ordem: number;
   notaMinima: number | null;
+  lockManual?: boolean;
+  desbloqueioManual?: boolean;
   pontuacao: number | null;
   desbloqueado: boolean;
   notaMinimaAnterior: number | null;
   tituloModuloAnterior: string | null;
+  prazoConclusaoLms?: string | null;
+  prazoEmAtraso?: boolean;
 };
 
 type PercursoBlock = PercursoFormando;
@@ -251,12 +256,16 @@ export function FormandoAprendizagemView({ matriculaId }: Props) {
     void load();
   });
 
-  useEffect(() => {
-    const sessaoLive = block?.sessoes.some((s) => s.iniciadaEm && !s.terminadaEm);
-    if (!sessaoLive) return;
-    const id = setInterval(() => void load(), 3000);
-    return () => clearInterval(id);
-  }, [block, load]);
+  // Poll contínuo das sessões (mesmo sem sessão ao vivo) - o banner actualiza
+  // quando o formador inicia/termina sem o formando fazer refresh.
+  useMinhasSessoesPoll((raw) => {
+    const blocks = raw as MinhasSessoes[];
+    const found = blocks.find((b) => b.matriculaId === matriculaId) ?? null;
+    if (found) {
+      setError(null);
+      setBlock(found);
+    }
+  });
 
   useEffect(() => {
     void load();
@@ -616,12 +625,46 @@ export function FormandoAprendizagemView({ matriculaId }: Props) {
                         return (
                           <div key={unidade.id} className={!unidade.desbloqueado ? "opacity-80" : undefined}>
                             <div className="flex flex-wrap items-center justify-between gap-2 mb-2 pl-3 border-l-2 border-teal-500/50">
-                              <h5 className="text-sm font-semibold text-teal-400">{unidade.titulo}</h5>
-                              {!unidade.desbloqueado && unidade.tituloModuloAnterior ? (
-                                <span className="text-[11px] text-amber-500/90">
-                                  Requer {unidade.notaMinimaAnterior ?? 60}% em «{unidade.tituloModuloAnterior}»
-                                </span>
-                              ) : null}
+                              <div className="min-w-0">
+                                <h5 className="text-sm font-semibold text-teal-400">{unidade.titulo}</h5>
+                                {unidade.prazoConclusaoLms ? (
+                                  <p
+                                    className={`text-[11px] mt-0.5 ${
+                                      unidade.prazoEmAtraso ? "text-red-400" : "text-slate-500"
+                                    }`}
+                                  >
+                                    Entrega até {unidade.prazoConclusaoLms}
+                                    {unidade.prazoEmAtraso ? " · em atraso" : ""}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                {!unidade.desbloqueado && unidade.lockManual && !unidade.desbloqueioManual ? (
+                                  <button
+                                    type="button"
+                                    className="text-[11px] px-2 py-1 rounded bg-amber-600/80 hover:bg-amber-500 text-white font-medium"
+                                    onClick={() => {
+                                      void (async () => {
+                                        const r = await bffFetch(
+                                          `/api/v1/conteudos-lms/matriculas/${block.matriculaId}/unidades/${unidade.id}/desbloquear`,
+                                          { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+                                        );
+                                        if (r.ok) await load();
+                                      })();
+                                    }}
+                                  >
+                                    Libertar módulo
+                                  </button>
+                                ) : null}
+                                {!unidade.desbloqueado && unidade.tituloModuloAnterior ? (
+                                  <span className="text-[11px] text-amber-500/90">
+                                    Requer {unidade.notaMinimaAnterior ?? 60}% em «{unidade.tituloModuloAnterior}»
+                                  </span>
+                                ) : null}
+                                {!unidade.desbloqueado && unidade.lockManual && !unidade.desbloqueioManual ? (
+                                  <span className="text-[11px] text-amber-500/90">Bloqueado (lock manual)</span>
+                                ) : null}
+                              </div>
                             </div>
                             {items.length === 0 ? (
                               <p className="text-xs text-slate-600 italic pl-3">Sem tarefas neste módulo.</p>

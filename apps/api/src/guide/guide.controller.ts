@@ -4,6 +4,7 @@ import type { Request } from "express";
 import type { JwtRole } from "@nexiforma/shared";
 import { OptionalJwtAuthGuard } from "../auth/guards/optional-jwt-auth.guard";
 import type { RequestUser } from "../auth/types/access-token-payload";
+import { BillingEntitlementsService } from "../billing/billing-entitlements.service";
 import { GuideChatDto } from "./dto/guide-chat.dto";
 import { GuideService } from "./guide.service";
 
@@ -11,25 +12,35 @@ type ReqWithUser = Request & { user?: RequestUser | null };
 
 @Controller("guide")
 export class GuideController {
-  constructor(private readonly guide: GuideService) {}
+  constructor(
+    private readonly guide: GuideService,
+    private readonly entitlements: BillingEntitlementsService,
+  ) {}
+
+  private async resolveEntitlements(user?: RequestUser | null) {
+    if (!user?.tenantId || user.role === "super_admin") return null;
+    return this.entitlements.forTenant(user.tenantId);
+  }
 
   @Post("chat")
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @UseGuards(OptionalJwtAuthGuard)
-  chat(@Body() dto: GuideChatDto, @Req() req: ReqWithUser) {
+  async chat(@Body() dto: GuideChatDto, @Req() req: ReqWithUser) {
     const role = (req.user?.role ?? null) as JwtRole | null;
-    return this.guide.chat(dto.message.trim(), dto.pathname, role, dto.history);
+    const ent = await this.resolveEntitlements(req.user);
+    return this.guide.chat(dto.message.trim(), dto.pathname, role, dto.history, ent);
   }
 
   @Get("search")
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @UseGuards(OptionalJwtAuthGuard)
-  search(
+  async search(
     @Query("q") q: string | undefined,
     @Query("pathname") pathname: string | undefined,
     @Req() req: ReqWithUser,
   ) {
     const role = (req.user?.role ?? null) as JwtRole | null;
-    return this.guide.search(q ?? "", pathname ?? "/portal", role);
+    const ent = await this.resolveEntitlements(req.user);
+    return this.guide.search(q ?? "", pathname ?? "/portal", role, ent, req.user);
   }
 }

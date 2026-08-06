@@ -6,6 +6,10 @@ import {
   forwardRef,
 } from "@nestjs/common";
 import type { LeadComercial, Prisma } from "@nexiforma/database";
+import {
+  CrmCustomFieldValidationError,
+  validateCustomFieldsForEntity,
+} from "@nexiforma/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { parseDateRangeFilter } from "../common/date-range.util";
@@ -19,6 +23,7 @@ import { ProposalService } from "./proposal.service";
 import { CrmAuditService } from "./crm-audit.service";
 import { CrmWebhooksService } from "./crm-webhooks.service";
 import { CrmAutomationService } from "./crm-automation.service";
+import { CrmConfigService } from "./crm-config.service";
 import type { PublicCreateLeadDto } from "./dto/public-lead.dto";
 import type {
   ConverterLeadDto,
@@ -27,12 +32,28 @@ import type {
   MarcarLeadPerdidoDto,
   UpdateLeadDto,
 } from "./dto/leads.dto";
+import { assertDadosClienteCompletos } from "../faturas/faturacao-dados-legais.util";
+import { ViesService } from "../vies/vies.service";
 
 const LEAD_INCLUDE = {
-  entidadeCliente: { select: { id: true, nome: true, nif: true } },
+  entidadeCliente: {
+    select: { id: true, nome: true, nif: true, moradaFiscal: true },
+  },
   atribuido: { select: { id: true, displayName: true, email: true } },
   criadoPor: { select: { id: true, displayName: true, email: true } },
 } satisfies Prisma.LeadComercialInclude;
+
+function leadMoradaFiscalFromMetadata(
+  metadata: Prisma.JsonValue | null | undefined,
+): string | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return null;
+  }
+  const raw = (metadata as Prisma.JsonObject).moradaFiscal;
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  return trimmed.length >= 5 ? trimmed : null;
+}
 
 export type LeadListFilters = {
   estado?: string;
@@ -107,7 +128,25 @@ export class LeadsService {
     private readonly webhooks: CrmWebhooksService,
     @Inject(forwardRef(() => CrmAutomationService))
     private readonly automation: CrmAutomationService,
+    private readonly crmConfig: CrmConfigService,
+    private readonly vies: ViesService,
   ) {}
+
+  private async validateLeadCustomFields(
+    tenantId: string,
+    customFields?: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | undefined> {
+    if (!customFields) return undefined;
+    const cfg = await this.crmConfig.getByTenantId(tenantId);
+    try {
+      return validateCustomFieldsForEntity(cfg.customFieldDefs, "lead", customFields);
+    } catch (err) {
+      if (err instanceof CrmCustomFieldValidationError) {
+        throw new BadRequestException(err.message);
+      }
+      throw err;
+    }
+  }
 
   async list(user: RequestUser, filters?: LeadListFilters): Promise<PaginatedList<LeadComercial>> {
     const tenantId = requireTenantId(user);
@@ -172,14 +211,38 @@ export class LeadsService {
       if (!entidade) {
         throw new BadRequestException("Cliente não encontrado.");
       }
+      assertDadosClienteCompletos({
+        nome: entidade.nome,
+        nif: entidade.nif,
+        moradaFiscal: entidade.moradaFiscal,
+      });
+    } else {
+      const morada = dto.moradaFiscal?.trim() ?? "";
+      if (!nif || nif.length !== 9) {
+        throw new BadRequestException(
+          "NIF e morada fiscal são obrigatórios ao criar um lead sem cliente existente.",
+        );
+      }
+      if (morada.length < 5) {
+        throw new BadRequestException(
+          "Morada fiscal é obrigatória ao criar um lead sem cliente existente.",
+        );
+      }
     }
 
     const codigo = dto.codigo?.trim() || this.gerarCodigo();
     const responsavelId = dto.atribuidoUserId ?? user.sub;
 
+    const validatedCustom = await this.validateLeadCustomFields(tenantId, dto.customFields);
+    const moradaFiscal = dto.moradaFiscal?.trim() || undefined;
     const metadata: Prisma.InputJsonValue | undefined =
-      dto.customFields && Object.keys(dto.customFields).length
-        ? ({ customFields: dto.customFields } as Prisma.InputJsonValue)
+      validatedCustom || moradaFiscal
+        ? ({
+            ...(validatedCustom && Object.keys(validatedCustom).length
+              ? { customFields: validatedCustom }
+              : {}),
+            ...(moradaFiscal ? { moradaFiscal } : {}),
+          } as Prisma.InputJsonValue)
         : undefined;
 
     const lead = await this.prisma.leadComercial.create({
@@ -216,6 +279,16 @@ export class LeadsService {
       throw new BadRequestException("NIF inválido.");
     }
 
+    const cfg = await this.crmConfig.getByTenantId(tenantId);
+    let validatedCustom: Record<string, unknown> | undefined;
+    if (dto.customFields && Object.keys(dto.customFields).length > 0) {
+      validatedCustom = validateCustomFieldsForEntity(
+        cfg.customFieldDefs,
+        "lead",
+        dto.customFields,
+      ) as Record<string, unknown>;
+    }
+
     const comercial = await this.prisma.user.findFirst({
       where: {
         tenantId,
@@ -227,7 +300,7 @@ export class LeadsService {
 
     const metadata: Prisma.InputJsonValue = {
       source: opts?.source ?? "public",
-      ...(dto.customFields ? { customFields: dto.customFields as Prisma.InputJsonValue } : {}),
+      ...(validatedCustom ? { customFields: validatedCustom as Prisma.InputJsonValue } : {}),
     };
 
     const lead = await this.prisma.leadComercial.create({
@@ -287,6 +360,17 @@ export class LeadsService {
       throw new BadRequestException("Lead fechado - não pode ser editado.");
     }
 
+    if (dto.estado === "CONVERTIDO" && !existing.entidadeClienteId) {
+      throw new BadRequestException(
+        "Para converter o lead em cliente use a acção Converter (é necessário NIF).",
+      );
+    }
+    if (dto.estado === "PERDIDO") {
+      throw new BadRequestException(
+        "Para marcar o lead como perdido use a acção dedicada (permite indicar o motivo).",
+      );
+    }
+
     const nif = dto.nif !== undefined ? dto.nif.replace(/\D/g, "") || null : undefined;
     if (nif && !this.validarNif(nif)) {
       throw new BadRequestException("NIF inválido.");
@@ -295,6 +379,11 @@ export class LeadsService {
     if (dto.atribuidoUserId) {
       await this.assertUser(tenantId, dto.atribuidoUserId);
     }
+
+    const validatedCustom =
+      dto.customFields !== undefined
+        ? await this.validateLeadCustomFields(tenantId, dto.customFields)
+        : undefined;
 
     const updated = await this.prisma.leadComercial.update({
       where: { id },
@@ -319,7 +408,7 @@ export class LeadsService {
           ? {
               metadata: {
                 ...((existing.metadata as Prisma.JsonObject) ?? {}),
-                customFields: dto.customFields as Prisma.InputJsonValue,
+                customFields: (validatedCustom ?? {}) as Prisma.InputJsonValue,
               } as Prisma.InputJsonValue,
             }
           : {}),
@@ -379,8 +468,24 @@ export class LeadsService {
       throw new BadRequestException("NIF inválido.");
     }
 
+    const moradaFiscal =
+      dto.moradaFiscal?.trim() ||
+      leadMoradaFiscalFromMetadata(lead.metadata) ||
+      "";
+    if (moradaFiscal.length < 5) {
+      throw new BadRequestException(
+        "Morada fiscal é obrigatória para converter em entidade cliente.",
+      );
+    }
+
     const nome = (dto.nome ?? lead.empresaNome).trim();
-    const entidade = await this.resolverOuCriarEntidade(tenantId, lead, nif, nome);
+    const entidade = await this.resolverOuCriarEntidade(
+      tenantId,
+      lead,
+      nif,
+      nome,
+      moradaFiscal,
+    );
 
     const updatedLead = await this.prisma.leadComercial.update({
       where: { id },
@@ -419,9 +524,10 @@ export class LeadsService {
     let entidadeClienteId = lead.entidadeClienteId;
     if (!entidadeClienteId) {
       const nif = (lead.nif ?? "").replace(/\D/g, "");
-      if (!nif || nif.length !== 9 || !this.validarNif(nif)) {
+      const moradaFiscal = leadMoradaFiscalFromMetadata(lead.metadata);
+      if (!nif || nif.length !== 9 || !this.validarNif(nif) || !moradaFiscal) {
         throw new BadRequestException(
-          "Indique um NIF válido no lead antes de criar a proposta. A conversão em cliente ocorre automaticamente quando o cliente aceitar a proposta.",
+          "Converta o lead em cliente (NIF e morada fiscal) antes de criar a proposta, ou preencha esses dados no lead.",
         );
       }
       const entidade = await this.resolverOuCriarEntidade(
@@ -429,11 +535,18 @@ export class LeadsService {
         lead,
         nif,
         lead.empresaNome.trim(),
+        moradaFiscal,
       );
       entidadeClienteId = entidade.id;
       await this.prisma.leadComercial.update({
         where: { id: lead.id },
         data: { entidadeClienteId: entidade.id, nif },
+      });
+    } else if (lead.entidadeCliente) {
+      assertDadosClienteCompletos({
+        nome: lead.entidadeCliente.nome,
+        nif: lead.entidadeCliente.nif,
+        moradaFiscal: lead.entidadeCliente.moradaFiscal,
       });
     }
 
@@ -458,16 +571,25 @@ export class LeadsService {
     lead: LeadComercial,
     nif: string,
     nome: string,
+    moradaFiscal: string,
   ) {
+    const nifNorm = nif.trim();
+    const confirmado = await this.vies.assertConfirmado(nifNorm, "empresa");
+    const nomeFinal = nome.trim() || confirmado.nome?.trim() || "";
+    const moradaFinal =
+      moradaFiscal.trim() || confirmado.morada?.split("\n").join(", ").trim() || "";
+    assertDadosClienteCompletos({ nome: nomeFinal, nif: nifNorm, moradaFiscal: moradaFinal });
+
     let entidade = await this.prisma.entidadeCliente.findUnique({
-      where: { tenantId_nif: { tenantId, nif } },
+      where: { tenantId_nif: { tenantId, nif: nifNorm } },
     });
 
     if (entidade) {
       entidade = await this.prisma.entidadeCliente.update({
         where: { id: entidade.id },
         data: {
-          nome,
+          nome: nomeFinal,
+          moradaFiscal: moradaFinal || entidade.moradaFiscal,
           email: lead.email ?? entidade.email,
           telefone: lead.telefone ?? entidade.telefone,
         },
@@ -476,8 +598,9 @@ export class LeadsService {
       entidade = await this.prisma.entidadeCliente.create({
         data: {
           tenantId,
-          nif,
-          nome,
+          nif: nifNorm,
+          nome: nomeFinal,
+          moradaFiscal: moradaFinal,
           email: lead.email,
           telefone: lead.telefone,
         },

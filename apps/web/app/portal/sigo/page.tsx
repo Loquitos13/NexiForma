@@ -5,7 +5,7 @@ import { Download, RefreshCw, Upload } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
-import { Alert, Button } from "@/components/ui";
+import { Alert, Button, Card, CardContent, PageHeader, TableScroll } from "@/components/ui";
 import { SigoTenantConfigPanel } from "@/components/portal/sigo-tenant-config";
 
 type SigoErro = { codigo?: string; mensagem: string; campo?: string };
@@ -20,6 +20,27 @@ type Submissao = {
   reconciledAt: string | null;
   createdAt: string;
   acaoFormacao?: { codigoInterno: string; titulo: string };
+  _count?: { sincronizacoesFormando: number };
+};
+
+type SyncFormando = {
+  id: string;
+  matriculaId: string;
+  formandoNome: string;
+  nif: string;
+  operacao: string;
+  transacaoId: string | null;
+  estado: string;
+  soapFaultCode: string | null;
+  soapFaultString: string | null;
+  responseResumo: string | null;
+  updatedAt: string;
+};
+
+type SyncHistorico = {
+  submissaoId: string;
+  resumo: { total: number; sucesso: number; erro: number; duplicado: number; pendente: number };
+  formandos: SyncFormando[];
 };
 
 type SigoConfig = {
@@ -59,10 +80,12 @@ const estadoStyle: Record<string, string> = {
   ERRO: "bg-red-500/10 text-red-400 border-red-500/20",
   SUBMETIDA: "bg-blue-500/10 text-blue-400 border-blue-500/20",
   PENDENTE: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
+  SUCESSO: "bg-green-500/10 text-green-400 border-green-500/20",
+  DUPLICADO: "bg-amber-500/10 text-amber-300 border-amber-500/20",
 };
 
 export default function SigoPage() {
-  const { canManage } = useTenantRole();
+  const { canManageFormacao: canManage } = useTenantRole();
   const [config, setConfig] = useState<SigoConfig | null>(null);
   const [rows, setRows] = useState<Submissao[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,6 +93,8 @@ export default function SigoPage() {
   const [busyCertId, setBusyCertId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [certificados, setCertificados] = useState<Record<string, CertificadoSigo[]>>({});
+  const [syncHistorico, setSyncHistorico] = useState<Record<string, SyncHistorico>>({});
+  const [expandedSyncId, setExpandedSyncId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -142,6 +167,23 @@ export default function SigoPage() {
     );
   }
 
+  async function carregarSincronizacoes(id: string) {
+    if (syncHistorico[id]) {
+      setExpandedSyncId(expandedSyncId === id ? null : id);
+      return;
+    }
+    const res = await bffFetch(`/api/v1/sigo/submissoes/${id}/sincronizacoes`, {
+      headers: { accept: "application/json" },
+    });
+    if (!res.ok) {
+      setError(await parseApiError(res));
+      return;
+    }
+    const data = (await res.json()) as SyncHistorico;
+    setSyncHistorico((prev) => ({ ...prev, [id]: data }));
+    setExpandedSyncId(id);
+  }
+
   async function carregarCertificados(id: string) {
     if (certificados[id]) {
       setExpandedId(expandedId === id ? null : id);
@@ -199,21 +241,20 @@ export default function SigoPage() {
   }
 
   return (
-    <div className="max-w-5xl space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-50">SIGO</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Submissões, reconciliação e trilho de auditoria para importação oficial DGEEC.
-        </p>
-      </div>
+    <>
+      <PageHeader
+        title="SIGO"
+        description="Submissões, reconciliação e trilho de auditoria para importação oficial DGEEC."
+      />
 
-      {error ? <Alert variant="error">{error}</Alert> : null}
-      {msg ? <Alert variant="success">{msg}</Alert> : null}
+      {error ? <Alert variant="error" className="mb-4">{error}</Alert> : null}
+      {msg ? <Alert variant="success" className="mb-4">{msg}</Alert> : null}
 
       {canManage ? <SigoTenantConfigPanel onSaved={() => void load()} /> : null}
 
       {config ? (
-        <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-4 space-y-3">
+        <Card className="mb-6">
+        <CardContent className="pt-5 space-y-3">
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="text-slate-400">Modo API:</span>
             <span className="font-semibold text-slate-200">{config.mode}</span>
@@ -230,13 +271,9 @@ export default function SigoPage() {
           </div>
           {!config.configured || config.mode === "disabled" ? (
             <p className="text-xs text-amber-200/90">
-              Configure credenciais SIGO acima (NIF + API key DGEEC). Em produção cada entidade usa o seu acesso;
-              a plataforma fornece apenas o endpoint base (
-              {config.platformBaseUrl ? (
-                <code className="text-amber-100">{config.platformBaseUrl}</code>
-              ) : (
-                <code className="text-amber-100">SIGO_API_BASE_URL</code>
-              )}
+              Configure credenciais SIGO acima (SOAP/WS-Security ou HTTP dev). Em produção cada entidade usa o seu
+              acesso; a plataforma define o modo (
+              <code className="text-amber-100">{config.mode}</code>
               ).
             </p>
           ) : (
@@ -250,19 +287,23 @@ export default function SigoPage() {
               </Button>
             </div>
           )}
-        </div>
+        </CardContent>
+        </Card>
       ) : null}
 
       {loading ? (
         <p className="text-sm text-slate-500">A carregar…</p>
       ) : rows.length === 0 ? (
-        <div className="text-center py-12 rounded-2xl bg-slate-900/50 border border-slate-700/30">
-          <Upload className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-          <p className="text-sm text-slate-500">Sem submissões SIGO.</p>
-          <p className="text-xs text-slate-600 mt-1">Submeta uma acção a partir do dossiê pedagógico.</p>
-        </div>
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Upload className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+            <p className="text-sm text-slate-500">Sem submissões SIGO.</p>
+            <p className="text-xs text-slate-600 mt-1">Submeta uma acção a partir do dossiê pedagógico.</p>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 overflow-hidden">
+        <Card>
+        <TableScroll>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-700/30">
@@ -279,7 +320,9 @@ export default function SigoPage() {
               {rows.map((r) => {
                 const erros = Array.isArray(r.erros) ? r.erros : [];
                 const certs = certificados[r.id] ?? [];
+                const sync = syncHistorico[r.id];
                 const expanded = expandedId === r.id;
+                const syncExpanded = expandedSyncId === r.id;
                 return (
                   <Fragment key={r.id}>
                   <tr className="hover:bg-slate-800/30 align-top">
@@ -315,6 +358,15 @@ export default function SigoPage() {
                       {r.submittedAt ? new Date(r.submittedAt).toLocaleString("pt-PT") : "–"}
                     </td>
                     <td className="px-4 py-3 text-right space-y-1">
+                      {(r._count?.sincronizacoesFormando ?? 0) > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => void carregarSincronizacoes(r.id)}
+                          className="block ml-auto px-3 py-1.5 rounded-lg border border-purple-500/30 text-xs font-medium text-purple-300 hover:bg-purple-500/10"
+                        >
+                          {syncExpanded ? "Ocultar sync" : `Sync formandos (${r._count?.sincronizacoesFormando})`}
+                        </button>
+                      ) : null}
                       {canManage && r.estado === "SUBMETIDA" ? (
                         <button
                           type="button"
@@ -359,10 +411,55 @@ export default function SigoPage() {
                       ) : null}
                     </td>
                   </tr>
+                  {syncExpanded && sync ? (
+                    <tr key={`${r.id}-sync`} className="bg-purple-950/20">
+                      <td colSpan={5} className="px-4 py-3">
+                        <div className="text-xs text-slate-400 mb-2">
+                          Histórico SOAP: {sync.resumo.sucesso} OK · {sync.resumo.erro} erro ·{" "}
+                          {sync.resumo.duplicado} duplicado · {sync.resumo.pendente} pendente
+                        </div>
+                        <div className="table-scroll-shell rounded-xl border border-slate-700/40">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b border-slate-700/30 text-slate-500">
+                                <th className="text-left px-3 py-2">Formando</th>
+                                <th className="text-left px-3 py-2">Transacção</th>
+                                <th className="text-left px-3 py-2">Estado</th>
+                                <th className="text-left px-3 py-2">Mensagem</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-700/20">
+                              {sync.formandos.map((s) => (
+                                <tr key={s.id}>
+                                  <td className="px-3 py-2 text-slate-300">
+                                    {s.formandoNome}
+                                    <span className="block font-mono text-[10px] text-slate-500">{s.nif}</span>
+                                  </td>
+                                  <td className="px-3 py-2 font-mono text-slate-400">
+                                    {s.transacaoId?.slice(0, 12) ?? "–"}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <span
+                                      className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${estadoStyle[s.estado] ?? estadoStyle.PENDENTE}`}
+                                    >
+                                      {s.estado}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 text-slate-400">
+                                    {s.soapFaultString ?? s.responseResumo ?? "–"}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
                   {expanded && certs.length > 0 ? (
                     <tr key={`${r.id}-certs`} className="bg-slate-950/40">
                       <td colSpan={5} className="px-4 py-3">
-                        <div className="rounded-xl border border-slate-700/40 overflow-hidden">
+                        <div className="table-scroll-shell rounded-xl border border-slate-700/40">
                           <table className="w-full text-xs">
                             <thead>
                               <tr className="border-b border-slate-700/30 text-slate-500">
@@ -409,8 +506,9 @@ export default function SigoPage() {
               })}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
+        </Card>
       )}
-    </div>
+    </>
   );
 }

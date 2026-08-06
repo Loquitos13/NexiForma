@@ -7,7 +7,16 @@ export { HTTP_QUERY_METHOD, type HttpQueryMethod } from "./http/query-method";
 export { sanitizeLmsHtml } from "./sanitize/sanitize-lms-html";
 
 /** Roles normalizados nos JWT (independentes do enum Prisma `TenantUserRole`). */
-export const JWT_ROLES = ["super_admin", "tenant_manager", "comercial", "formador", "formando"] as const;
+export const JWT_ROLES = [
+  "super_admin",
+  "tenant_manager",
+  "coordenador_comercial",
+  "coordenador_pedagogico",
+  "coordenador_financeiro",
+  "comercial",
+  "formador",
+  "formando",
+] as const;
 export type JwtRole = (typeof JWT_ROLES)[number];
 
 export const JWT_KINDS = ["platform", "tenant"] as const;
@@ -24,20 +33,39 @@ export {
 } from "./auth/mfa-apps";
 
 export {
+  LOGIN_LOCKOUT_FIELD_LIMITS,
+  clampLoginLockoutConfig,
+  mergeTenantLoginLockoutMetadata,
+  parseTenantLoginLockoutConfig,
+  resolveLoginLockoutPolicy,
+  resolvedPolicyToMinutes,
+  type LoginLockoutDefaults,
+  type ResolvedLoginLockoutPolicy,
+  type TenantLoginLockoutConfig,
+} from "./auth/login-lockout";
+
+export {
   canAccessPlatformArea,
   canAccessPortalArea,
   canManageCrm,
+  canManageFormacao,
+  canManageFaturacao,
+  canAccessFaturacaoPortal,
   CRM_PORTAL_PATHS,
   CRM_FATURACAO_PORTAL_PATHS,
   defaultDashboardPath,
   isPortalPathAllowedByRole,
   isComercial,
   isComercialCrmPortalPath,
+  isCoordenadorComercial,
+  isCoordenadorFinanceiro,
+  isCoordenadorPedagogico,
   isCrmFaturacaoPortalPath,
   isCrmPortalPath,
   isFormador,
   isFormando,
   isFormandoPortalPath,
+  isFormandoSharedPortalPath,
   isSuperAdmin,
   isTenantManager,
   isTenantStaff,
@@ -110,8 +138,11 @@ export {
   estadoPresencaCsvLabel,
   isEstadoPresenca,
   labelEstadoPresencaOuPorAssinalar,
+  labelOrigemPresenca,
+  origemPresencaBadgeVariant,
   presenteFromEstado,
   type EstadoPresenca,
+  type OrigemPresenca,
 } from "./lms/presenca-estado";
 
 export {
@@ -128,6 +159,8 @@ export {
   resolverEmailNotificacaoFormando,
   resolverEmailNotificacaoFormador,
   resolverEmailUtilizador,
+  isEmailNaoEntregavelDev,
+  resolverEmailEntregavel,
   type EmailNotificacaoFormandoInput,
   type EmailNotificacaoFormadorInput,
 } from "./notificacoes/email-destinatario";
@@ -292,9 +325,12 @@ export {
   SIGO_ESTADOS_ACAO,
   SIGO_TIPOS_DOC_IDENTIFICACAO,
   SIGO_HABILITACOES_CNQ,
+  SIGO_HABILITACOES_QNQ,
   SIGO_SOAP_FAULT_MESSAGES,
   mapAcaoEstadoToSigo,
   traduzirSigoSoapFault,
+  normalizarHabilitacaoQnq,
+  labelHabilitacaoQnq,
   extrairSigoFormandoMetadata,
   type SigoAcaoAcesso,
   type SigoPerfisAcesso,
@@ -306,6 +342,13 @@ export {
 } from "./sigo";
 
 export {
+  assertSafeOutboundUrl,
+  isBlockedHostname,
+  isPrivateIpAddress,
+  type SsrfUrlOptions,
+} from "./security/ssrf-url";
+
+export {
   CRM_SUGESTAO_REJEICAO_MOTIVOS,
   type CrmDadosExtraidosIa,
   type CrmGatilhoVendaIa,
@@ -314,6 +357,19 @@ export {
   type CrmProximoPassoIa,
   type CrmSugestaoRejeicaoMotivo,
 } from "./crm/interacao-ia";
+export {
+  CRM_PUBLIC_LEAD_WEBHOOK_PATH,
+  buildCrmLeadWebhookBffUrl,
+  buildCrmLeadWebhookUrl,
+  CRM_LEAD_WEBHOOK_SIGNATURE_VERSION,
+  buildLeadWebhookSignPayload,
+  signLeadWebhookPayload,
+  signLeadWebhookPayloadV1,
+  verifyLeadWebhookSignature,
+  CrmCustomFieldValidationError,
+  customFieldDefsForEntity,
+  validateCustomFieldsForEntity,
+} from "./crm";
 export {
   CRM_SUGESTAO_ACOES,
   chaveSugestaoComercial,

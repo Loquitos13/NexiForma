@@ -25,7 +25,10 @@ export {
 export {
   calcularProrataCredito,
   resolveTenantEntitlements,
+  type BillingAccessContext,
+  type TenantBillingStatus,
   type TenantEntitlements,
+  type TenantSubscriptionStatus,
 } from "./entitlements";
 
 export {

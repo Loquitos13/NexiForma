@@ -20,19 +20,19 @@ export class SigoController {
   ) {}
 
   @Get("config")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   config(@CurrentUser() user: RequestUser) {
     return this.sigo.getConfig(user);
   }
 
   @Get("tenant-config")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   getTenantConfig(@CurrentUser() user: RequestUser) {
     return this.tenantConfig.getPublicConfig(user);
   }
 
   @Put("tenant-config")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   upsertTenantConfig(
     @CurrentUser() user: RequestUser,
     @Body() dto: UpdateSigoTenantConfigDto,
@@ -41,25 +41,25 @@ export class SigoController {
   }
 
   @Post("config/testar")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   testarConfig(@CurrentUser() user: RequestUser) {
     return this.sigo.testConnection(user);
   }
 
   @Get("submissoes")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   submissoes(@CurrentUser() user: RequestUser, @Query("acaoId") acaoId?: string): Promise<unknown> {
     return this.sigo.listSubmissoes(user, acaoId);
   }
 
   @Get("acoes-formacao/:acaoId/submissoes")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   submissoesAcao(@CurrentUser() user: RequestUser, @Param("acaoId", ParseUUIDPipe) acaoId: string): Promise<unknown> {
     return this.sigo.listSubmissoesAcao(user, acaoId);
   }
 
   @Get("acoes-formacao/:acaoId/certificados")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   certificadosAcao(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
@@ -68,7 +68,7 @@ export class SigoController {
   }
 
   @Get("submissoes/:id/certificados")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   certificadosSubmissao(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -77,7 +77,7 @@ export class SigoController {
   }
 
   @Post("submissoes/:id/certificados/sincronizar")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   sincronizarCertificados(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -89,7 +89,7 @@ export class SigoController {
   }
 
   @Get("certificados/:id/download")
-  @Roles("tenant_manager", "formador", "formando")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador", "formando")
   async downloadCertificado(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -101,26 +101,35 @@ export class SigoController {
     res.send(pkg.buffer);
   }
 
+  @Get("submissoes/:id/sincronizacoes")
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  sincronizacoesFormando(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return this.sigo.listSincronizacoesFormando(user, id);
+  }
+
   @Post("submissoes/:id/reconciliar")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   reconcile(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string): Promise<unknown> {
     return this.sigo.reconcile(user, id);
   }
 
   @Post("submissoes/:id/reenviar")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   resubmit(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
     return this.sigo.resubmit(user, id);
   }
 
   @Post("acoes-formacao/:acaoId/submit")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   submit(@CurrentUser() user: RequestUser, @Param("acaoId") acaoId: string) {
     return this.sigo.submitAcao(user, acaoId);
   }
 
   @Post("acoes-formacao/:acaoId/certificar")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   certificar(@CurrentUser() user: RequestUser, @Param("acaoId", ParseUUIDPipe) acaoId: string) {
     return this.sigo.certificarAcao(user, acaoId);
   }

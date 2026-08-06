@@ -17,7 +17,7 @@ export class CertificadosController {
   ) {}
 
   @Get("acoes-formacao/:acaoId")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   listByAcao(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
@@ -26,7 +26,7 @@ export class CertificadosController {
   }
 
   @Get("matricula/:matriculaId/certificado.html")
-  @Roles("tenant_manager", "formador", "formando")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador", "formando")
   async certificadoHtml(
     @CurrentUser() user: RequestUser,
     @Param("matriculaId", ParseUUIDPipe) matriculaId: string,
@@ -42,7 +42,7 @@ export class CertificadosController {
   }
 
   @Post("matricula/:matriculaId/verificacao/emitir")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   emitirVerificacao(
     @CurrentUser() user: RequestUser,
     @Param("matriculaId", ParseUUIDPipe) matriculaId: string,
@@ -51,7 +51,7 @@ export class CertificadosController {
   }
 
   @Post("matricula/:matriculaId/verificacao/revogar")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   revogarVerificacao(
     @CurrentUser() user: RequestUser,
     @Param("matriculaId", ParseUUIDPipe) matriculaId: string,

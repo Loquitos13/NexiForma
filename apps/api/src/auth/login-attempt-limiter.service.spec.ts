@@ -28,4 +28,18 @@ describe("LoginAttemptLimiterService", () => {
     await service.clear("tenant", id);
     await expect(service.assertNotLocked("tenant", id)).resolves.toBeUndefined();
   });
+
+  it("não bloqueia quando lockout está desactivado", async () => {
+    const id = "demo:u@x.pt";
+    const disabled = {
+      enabled: false,
+      maxAttempts: 5,
+      windowMs: 900_000,
+      lockoutMs: 900_000,
+    };
+    for (let i = 0; i < 10; i += 1) {
+      await service.recordFailure("tenant", id, disabled);
+    }
+    await expect(service.assertNotLocked("tenant", id, disabled)).resolves.toBeUndefined();
+  });
 });

@@ -48,7 +48,7 @@ const features: Array<{
     color: "text-amber-400",
     icon: Plug,
     title: "Integrações oficiais",
-    body: "SIGO (DGEEC), Autoridade Tributária, CMD para assinatura qualificada e billing Stripe.",
+    body: "SIGO (DGEEC), Autoridade Tributária, sumários com PDF assinado e billing Stripe.",
   },
   {
     color: "text-pink-400",
@@ -72,7 +72,7 @@ const steps = [
   {
     n: "03",
     title: "Exporta e factura",
-    body: "Gera exports SIGO, certificados CMD e documentos fiscais sem duplicar trabalho.",
+    body: "Gera exports SIGO, certificados verificáveis e documentos fiscais sem duplicar trabalho.",
   },
   {
     n: "04",
@@ -84,7 +84,7 @@ const steps = [
 const integrations = [
   { name: "SIGO", desc: "Export JSON, CSV e API" },
   { name: "AT", desc: "Faturação e SAF-T PT" },
-  { name: "CMD", desc: "Assinatura qualificada" },
+  { name: "PDF", desc: "Sumários assinados" },
   { name: "Stripe", desc: "Subscrições SaaS" },
   { name: "Zoom / Teams", desc: "Presenças automáticas" },
   { name: "SCORM", desc: "Conteúdos e progresso" },
@@ -122,7 +122,7 @@ export function WelcomePageContent() {
           </p>
           <p className="text-sm text-slate-500 max-w-xl mb-7 leading-relaxed">
             Do primeiro contacto comercial à inspeção DGERT: leads, propostas, ações formativas,
-            certificados CMD e documentos fiscais num só sistema.
+            certificados verificáveis e documentos fiscais num só sistema.
           </p>
           <div className="flex flex-wrap gap-3">
             <Link

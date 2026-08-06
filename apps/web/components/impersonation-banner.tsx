@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { persistAuthFromResponse } from "@/lib/client/auth-login";
+import { resolvePostLoginPath } from "@/lib/client/jwt-role";
 
 type Me = {
   impersonating?: boolean;
@@ -28,8 +30,20 @@ export function ImpersonationBanner() {
 
   async function terminar() {
     setBusy(true);
-    await bffFetch("/api/auth/impersonation/end", { method: "POST" });
+    const res = await bffFetch("/api/auth/impersonation/end", { method: "POST" });
     setBusy(false);
+    if (res.ok) {
+      await persistAuthFromResponse(res);
+      const meRes = await bffFetch("/api/auth/me", { headers: { accept: "application/json" } });
+      if (meRes.ok) {
+        const me = (await meRes.json()) as { accessToken?: string };
+        if (me.accessToken) {
+          router.push(resolvePostLoginPath(me.accessToken, null, null));
+          router.refresh();
+          return;
+        }
+      }
+    }
     router.push("/login");
     router.refresh();
   }

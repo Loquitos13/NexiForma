@@ -5,9 +5,11 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ArrowLeft, CheckCircle2, Circle, ExternalLink, Save, Shield } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
+import { canAccessFaturacaoPortal } from "@nexiforma/shared";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { AT_DOC_LINKS } from "@/lib/crm/at-doc-links";
-import { Alert, Badge, Button, Input, PageHeader, Textarea } from "@/components/ui";
+import { Alert, Badge, Button, Dialog, DialogContent, Input, PageHeader, Textarea } from "@/components/ui";
 
 type Config = {
   nomeEmpresa: string;
@@ -28,6 +30,15 @@ type Config = {
   softwareCertificadoEfectivo?: string | null;
   comunicacaoAtiva: boolean;
   comunicacaoAutomatica?: boolean;
+  atLicencaAceiteEm?: string | null;
+  atLicencaVersao?: string | null;
+};
+
+type LicencaAt = {
+  versao: string;
+  texto: string;
+  aceite: boolean;
+  aceiteEm: string | null;
 };
 
 type Serie = {
@@ -72,7 +83,9 @@ const EXEMPLO_IBAN = "PT50000201231234567890154";
 const EXEMPLO_BIC = "BBPIPTPL";
 
 export default function CrmFaturacaoConfigPage() {
-  const { canManage } = useTenantRole();
+  const { role, writeDisabled } = useTenantRole();
+  const { entitlements } = useTenantEntitlements();
+  const canAccessFaturacao = canAccessFaturacaoPortal(role, entitlements);
   const [config, setConfig] = useState<Config | null>(null);
   const [series, setSeries] = useState<Serie[]>([]);
   const [certificacao, setCertificacao] = useState<Certificacao | null>(null);
@@ -94,11 +107,14 @@ export default function CrmFaturacaoConfigPage() {
   const [softwareCertificado, setSoftwareCertificado] = useState("");
   const [comunicacaoAtiva, setComunicacaoAtiva] = useState(false);
   const [comunicacaoAutomatica, setComunicacaoAutomatica] = useState(false);
+  const [licencaAt, setLicencaAt] = useState<LicencaAt | null>(null);
+  const [aceitarLicenca, setAceitarLicenca] = useState(false);
   const [serieCodigos, setSerieCodigos] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [comunicarTodasOpen, setComunicarTodasOpen] = useState(false);
 
   const applyPayload = useCallback(
     (data: {
@@ -106,6 +122,7 @@ export default function CrmFaturacaoConfigPage() {
       series?: Serie[];
       certificacao?: Certificacao;
       integracao?: Integracao;
+      licencaAt?: LicencaAt;
     }) => {
       const c = data.config;
       setConfig(c);
@@ -126,6 +143,10 @@ export default function CrmFaturacaoConfigPage() {
       setSoftwareCertificado(c.softwareCertificado ?? "");
       setComunicacaoAtiva(c.comunicacaoAtiva);
       setComunicacaoAutomatica(!!c.comunicacaoAutomatica);
+      if (data.licencaAt) {
+        setLicencaAt(data.licencaAt);
+        setAceitarLicenca(false);
+      }
       if (data.series) {
         setSeries(data.series);
         setSerieCodigos(
@@ -196,6 +217,7 @@ export default function CrmFaturacaoConfigPage() {
       softwareCertificado: softwareCertificado.trim() || null,
       comunicacaoAtiva,
       comunicacaoAutomatica,
+      ...(aceitarLicenca && !licencaAt?.aceite ? { aceitarLicencaAtWs: true } : {}),
     };
     const res = await bffFetch("/api/v1/crm/config/faturacao", {
       method: "PATCH",
@@ -260,6 +282,7 @@ export default function CrmFaturacaoConfigPage() {
   }
 
   async function comunicarTodasSeriesAt() {
+    setComunicarTodasOpen(false);
     setBusy(true);
     setError(null);
     setMsg(null);
@@ -349,11 +372,14 @@ export default function CrmFaturacaoConfigPage() {
     integracao?.mode === "production" && !certificacao?.prontaProducao;
   const comunicacaoBloqueada = producaoBloqueada && !modoSandbox;
 
-  if (!canManage) {
+  if (!canAccessFaturacao) {
     return (
       <div className="max-w-3xl space-y-4">
         <h1 className="text-2xl font-bold text-slate-50">Faturação</h1>
-        <p className="text-sm text-slate-400">Apenas o gestor pode configurar dados de faturação.</p>
+        <p className="text-sm text-slate-400">
+          Módulo de faturação AT reservado ao gestor. Active o add-on <strong>faturacao_at</strong> na
+          subscrição para configurar séries e comunicação AT.
+        </p>
       </div>
     );
   }
@@ -540,8 +566,8 @@ export default function CrmFaturacaoConfigPage() {
                     type="button"
                     size="sm"
                     variant="secondary"
-                    disabled={busy}
-                    onClick={() => void comunicarTodasSeriesAt()}
+                    disabled={busy || writeDisabled}
+                    onClick={() => setComunicarTodasOpen(true)}
                   >
                     Registar todas na AT
                   </Button>
@@ -569,7 +595,7 @@ export default function CrmFaturacaoConfigPage() {
                       type="button"
                       size="sm"
                       variant="secondary"
-                      disabled={busy}
+                      disabled={busy || writeDisabled}
                       onClick={() => void comunicarSerieAt(s.id)}
                     >
                       Registar AT
@@ -578,7 +604,7 @@ export default function CrmFaturacaoConfigPage() {
                       type="button"
                       size="sm"
                       variant="secondary"
-                      disabled={busy}
+                      disabled={busy || writeDisabled}
                       onClick={() => void guardarCodigoSerie(s.id)}
                     >
                       Guardar manual
@@ -663,12 +689,56 @@ export default function CrmFaturacaoConfigPage() {
                 <p className="text-xs text-slate-500 mt-1">Password guardada de forma encriptada.</p>
               ) : null}
             </div>
+            <div className="rounded-lg border border-amber-500/25 bg-amber-950/20 p-3 space-y-3">
+              <p className="text-xs font-medium text-amber-200">
+                Licença Anexo II - Serviços web AT
+              </p>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                O Contrato de adesão exige que o contribuinte aceite expressamente a licença de
+                utilização antes de invocar os webservices de comunicação de faturas.
+              </p>
+              {licencaAt?.texto ? (
+                <Textarea
+                  readOnly
+                  value={licencaAt.texto}
+                  className="min-h-[180px] text-[11px] font-mono leading-relaxed text-slate-300"
+                />
+              ) : (
+                <p className="text-xs text-slate-500">A carregar texto da licença…</p>
+              )}
+              {licencaAt?.aceite ? (
+                <p className="text-xs text-emerald-400">
+                  Licença aceite
+                  {licencaAt.aceiteEm
+                    ? ` em ${new Date(licencaAt.aceiteEm).toLocaleString("pt-PT")}`
+                    : ""}
+                  {licencaAt.versao ? ` · versão ${licencaAt.versao}` : ""}.
+                </p>
+              ) : (
+                <label className="flex items-start gap-2 text-sm text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={aceitarLicenca}
+                    onChange={(e) => setAceitarLicenca(e.target.checked)}
+                    disabled={writeDisabled || busy}
+                    className="mt-1 rounded border-slate-600"
+                  />
+                  <span>
+                    Li e aceito a Licença de utilização dos serviços web da AT (Anexo II). Sem este
+                    aceite não é possível activar a comunicação nem testar a ligação.
+                  </span>
+                </label>
+              )}
+            </div>
             <label className="flex items-center gap-2 text-sm text-slate-300">
               <input
                 type="checkbox"
                 checked={comunicacaoAtiva}
                 onChange={(e) => setComunicacaoAtiva(e.target.checked)}
-                disabled={comunicacaoBloqueada}
+                disabled={
+                  comunicacaoBloqueada ||
+                  (!licencaAt?.aceite && !aceitarLicenca)
+                }
                 className="rounded border-slate-600"
               />
               Comunicação AT activa{modoSandbox ? " (sandbox)" : " (produção)"}
@@ -683,13 +753,24 @@ export default function CrmFaturacaoConfigPage() {
               />
               Comunicar automaticamente ao emitir fatura
             </label>
+            {!licencaAt?.aceite && !aceitarLicenca ? (
+              <p className="text-xs text-amber-400/90">
+                Aceite a Licença Anexo II acima antes de activar a comunicação AT.
+              </p>
+            ) : null}
             {producaoBloqueada ? (
               <p className="text-xs text-amber-400/90">
                 Complete a checklist de certificação antes de activar comunicação em produção.
               </p>
             ) : null}
             {(modoSandbox || integracao?.configured) && !comunicacaoBloqueada ? (
-              <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => void testarAt()}>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={busy || writeDisabled || !licencaAt?.aceite}
+                onClick={() => void testarAt()}
+              >
                 Testar ligação AT
               </Button>
             ) : null}
@@ -807,7 +888,7 @@ export default function CrmFaturacaoConfigPage() {
             </div>
           </section>
 
-          <Button type="submit" disabled={busy}>
+          <Button type="submit" disabled={busy || writeDisabled}>
             <Save className="h-3.5 w-3.5" />
             Guardar configuração
           </Button>
@@ -821,6 +902,22 @@ export default function CrmFaturacaoConfigPage() {
           ) : null}
         </form>
       )}
+
+      <Dialog open={comunicarTodasOpen} onOpenChange={setComunicarTodasOpen}>
+        <DialogContent
+          title="Comunicar séries à AT"
+          description="Todas as séries configuradas serão registadas no webservice da Autoridade Tributária. Confirma que os códigos e credenciais estão correctos?"
+        >
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setComunicarTodasOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" disabled={busy} onClick={() => void comunicarTodasSeriesAt()}>
+              Confirmar comunicação
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

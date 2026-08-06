@@ -2,6 +2,9 @@ import type { JwtRole, TenantEntitlements } from "@nexiforma/shared";
 import {
   BILLING_ADDON_LABELS,
   isComercial,
+  isCoordenadorComercial,
+  isCoordenadorFinanceiro,
+  isCoordenadorPedagogico,
   isFormandoPortalPath,
   isPortalPathAllowedByEntitlements,
   navHrefAllowedByEntitlements,
@@ -15,7 +18,7 @@ export interface NavItem {
   label: string;
   icon?: string;
   minRole?: JwtRole;
-  /** Oculta o item para estes papéis (ex.: formador sem página LMS global). */
+  /** Oculta o item para estes papéis. */
   excludeRoles?: JwtRole[];
 }
 
@@ -31,7 +34,7 @@ export interface NavGroup {
   label: string;
   items: NavItem[];
   minRole?: JwtRole;
-  /** Módulo de subscrição — o grupo só aparece se o tenant tiver acesso. */
+  /** Módulo de subscrição - o grupo só aparece se o tenant tiver acesso. */
   module?: NavModuleId;
   /** Nome comercial na sidebar (ex. «CRM Comercial»). */
   moduleLabel?: string;
@@ -81,6 +84,21 @@ export function navGroupTitle(group: NavGroup): string {
   return group.moduleLabel ?? group.label;
 }
 
+/** Mantém a 1.ª ocorrência de cada href (ex.: Calendário em Geral, não repetir no CRM). */
+function dedupeNavGroupsByHref(groups: NavGroup[]): NavGroup[] {
+  const seen = new Set<string>();
+  return groups
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((item) => {
+        if (seen.has(item.href)) return false;
+        seen.add(item.href);
+        return true;
+      }),
+    }))
+    .filter((g) => g.items.length > 0);
+}
+
 function enrichFaturacaoGroup(group: NavGroup, ent: TenantEntitlements | null | undefined): NavGroup {
   if (group.module !== "faturacao" || !ent || ent.canAccessCrm) return group;
   const hasClientes = group.items.some((i) => i.href === "/portal/clientes");
@@ -118,45 +136,46 @@ export function filterGroups(
 
   if (isComercial(role)) {
     const crmModule = groups.find((g) => g.module === "crm");
-    const geral: NavGroup = {
+    const fluxo: NavGroup = {
       label: "Geral",
       collapsible: false,
-      items: [
-        { href: "/portal/crm", label: "CRM Dashboard", icon: "PieChart" },
-        { href: "/portal/calendario", label: "Calendário", icon: "Calendar" },
-      ],
+      items: [{ href: "/portal/fluxo", label: "Fluxo guiado", icon: "Workflow" }],
     };
     const privacy: NavGroup = {
       label: "Conta",
       collapsible: false,
       items: [{ href: "/portal/rgpd", label: "RGPD", icon: "Lock" }],
     };
+    const filteredFluxo = { ...fluxo, items: byEntitlements(fluxo.items) };
     const filteredPrivacy = { ...privacy, items: byEntitlements(privacy.items) };
     if (!entitlements?.canAccessCrm) {
-      return filteredPrivacy.items.length ? [filteredPrivacy] : [];
+      return [filteredFluxo, filteredPrivacy].filter((g) => g.items.length > 0);
     }
-    return [
-      { ...geral, items: byEntitlements(geral.items) },
-      crmModule
-        ? {
-            ...crmModule,
-            items: byEntitlements(
-              crmModule.items.filter((i) => i.minRole !== "tenant_manager"),
-            ),
-          }
-        : null,
-      filteredPrivacy,
-    ]
-      .filter((g): g is NavGroup => Boolean(g && g.items.length > 0));
+    return dedupeNavGroupsByHref(
+      [
+        filteredFluxo,
+        crmModule
+          ? {
+              ...crmModule,
+              items: byEntitlements(
+                crmModule.items.filter((i) => i.minRole !== "tenant_manager"),
+              ),
+            }
+          : null,
+        filteredPrivacy,
+      ].filter((g): g is NavGroup => Boolean(g && g.items.length > 0)),
+    );
   }
 
-  return applyModuleFilter(groups, entitlements)
-    .filter((g) => !g.minRole || roleSatisfies(role, g.minRole))
-    .map((g) => ({
-      ...g,
-      items: byEntitlements(g.items.filter((i) => !i.minRole || roleSatisfies(role, i.minRole))),
-    }))
-    .filter((g) => g.items.length > 0);
+  return dedupeNavGroupsByHref(
+    applyModuleFilter(groups, entitlements)
+      .filter((g) => !g.minRole || roleSatisfies(role, g.minRole))
+      .map((g) => ({
+        ...g,
+        items: byEntitlements(g.items.filter((i) => !i.minRole || roleSatisfies(role, i.minRole))),
+      }))
+      .filter((g) => g.items.length > 0),
+  );
 }
 
 /** Hrefs visíveis na sidebar para o papel (inclui sub-rotas, ex. /portal/acoes/[id]). */
@@ -175,36 +194,57 @@ export function isPortalPathAllowed(
   if (!role) return false;
   if (role === "super_admin") return false;
 
-  if (entitlements && !isPortalPathAllowedByEntitlements(pathname, entitlements)) {
+  const path = (pathname.split("?")[0]?.split("#")[0] ?? pathname).replace(/\/$/, "") || "/";
+
+  // Ecrã cheio do QR de presença (formador/gestor) - fora do menu, mas permitido.
+  if (path.startsWith("/portal/formador/presenca-qr")) {
+    return role === "formador" || role === "tenant_manager" || role === "coordenador_pedagogico";
+  }
+
+  if (entitlements && !isPortalPathAllowedByEntitlements(path, entitlements, role)) {
     return false;
   }
 
+  if (isCoordenadorComercial(role) || isCoordenadorFinanceiro(role) || isCoordenadorPedagogico(role)) {
+    // entitlements já aplicados; validar pelos hrefs do menu
+    const allowed = allowedNavHrefs(role, entitlements);
+    return (
+      path.startsWith("/portal/demo/") ||
+      allowed.some((href) => {
+        if (href === "/portal") return path === "/portal";
+        return path === href || path.startsWith(`${href}/`);
+      })
+    );
+  }
+
   if (role === "tenant_manager") {
-    return entitlements
-      ? isPortalPathAllowedByEntitlements(pathname, entitlements)
-      : true;
+    if (!entitlements) return false;
+    return isPortalPathAllowedByEntitlements(path, entitlements, role);
   }
   if (role === "comercial") {
     return (
-      pathname.startsWith("/portal/demo/") ||
-      pathname.startsWith("/portal/calendario") ||
-      isComercialCrmPortalPath(pathname) ||
-      pathname.startsWith("/portal/rgpd")
+      path.startsWith("/portal/demo/") ||
+      isComercialCrmPortalPath(path) ||
+      path.startsWith("/portal/rgpd") ||
+      path === "/portal/fluxo" ||
+      path.startsWith("/portal/fluxo/")
     );
   }
   if (role === "formando") {
     return (
-      isFormandoPortalPath(pathname) ||
-      pathname.startsWith("/portal/demo/") ||
-      pathname.startsWith("/portal/suporte")
+      isFormandoPortalPath(path) ||
+      path.startsWith("/portal/demo/") ||
+      path.startsWith("/portal/suporte") ||
+      path === "/portal/fluxo" ||
+      path.startsWith("/portal/fluxo/")
     );
   }
-  if (pathname.startsWith("/portal/demo/")) return true;
+  if (path.startsWith("/portal/demo/")) return true;
 
   const allowed = allowedNavHrefs(role, entitlements);
   return allowed.some((href) => {
-    if (href === "/portal") return pathname === "/portal" || pathname === "/portal/";
-    return pathname === href || pathname.startsWith(`${href}/`);
+    if (href === "/portal") return path === "/portal";
+    return path === href || path.startsWith(`${href}/`);
   });
 }
 
@@ -214,8 +254,8 @@ export const NAV_GROUPS: NavGroup[] = [
     collapsible: false,
     items: [
       { href: "/portal", label: "Dashboard", icon: "LayoutDashboard" },
-      { href: "/portal/fluxo", label: "Fluxo guiado", icon: "Workflow", minRole: "tenant_manager" },
-      { href: "/portal/calendario", label: "Calendario", icon: "Calendar" },
+      { href: "/portal/fluxo", label: "Fluxo guiado", icon: "Workflow" },
+      { href: "/portal/calendario", label: "Calendário", icon: "Calendar" },
       { href: "/portal/suporte", label: "Suporte", icon: "LifeBuoy" },
     ],
   },
@@ -225,17 +265,18 @@ export const NAV_GROUPS: NavGroup[] = [
     moduleLabel: BILLING_ADDON_LABELS.crm,
     icon: "PieChart",
     items: [
-      { href: "/portal/crm", label: "CRM Dashboard", icon: "PieChart" },
+      { href: "/portal/crm", label: "CRM Dashboard", icon: "PieChart", minRole: "coordenador_comercial" },
       { href: "/portal/crm/leads", label: "Leads", icon: "UserPlus" },
       { href: "/portal/crm/interaccoes", label: "Notas comerciais", icon: "MessageSquare" },
+      { href: "/portal/calendario", label: "Calendário", icon: "Calendar" },
       { href: "/portal/crm/sugestoes-ia", label: "Sugestões IA", icon: "Sparkles" },
       { href: "/portal/clientes", label: "Clientes", icon: "Building2" },
       { href: "/portal/parceiros", label: "Parceiros", icon: "Handshake" },
       { href: "/portal/propostas", label: "Propostas", icon: "FileText" },
-      { href: "/portal/propostas/config", label: "Modelo propostas", icon: "Settings", minRole: "tenant_manager" },
-      { href: "/portal/contratos", label: "Contratos", icon: "FileCheck" },
+      { href: "/portal/propostas/config", label: "Modelo propostas", icon: "Settings", minRole: "coordenador_comercial" },
+      { href: "/portal/contratos", label: "Contratos", icon: "FileCheck", minRole: "coordenador_comercial" },
     ],
-    minRole: "tenant_manager",
+    minRole: "coordenador_comercial",
   },
   {
     label: "Faturação",
@@ -246,7 +287,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/portal/crm/faturas", label: "Faturas", icon: "Receipt" },
       { href: "/portal/crm/faturacao", label: "Dados faturação", icon: "Settings" },
     ],
-    minRole: "tenant_manager",
+    minRole: "coordenador_financeiro",
   },
   {
     label: "Inteligência",
@@ -263,30 +304,28 @@ export const NAV_GROUPS: NavGroup[] = [
     collapsible: true,
     icon: "Bell",
     items: [{ href: "/portal/notificacoes", label: "Notificacoes", icon: "Bell" }],
-    minRole: "tenant_manager",
   },
   {
-    label: "Formacao",
+    label: "Formação",
     module: "formacao_core",
     moduleLabel: BILLING_ADDON_LABELS.formacao_core,
     icon: "GraduationCap",
     items: [
       { href: "/portal/cursos", label: "Cursos", icon: "BookOpen" },
-      { href: "/portal/formacoes", label: "Formacoes website", icon: "Globe", minRole: "tenant_manager" },
-      { href: "/portal/acoes", label: "Accoes", icon: "GraduationCap" },
-      { href: "/portal/catalogo-ufcd", label: "Catalogo UFCD", icon: "Library" },
-      { href: "/portal/matriculas", label: "Inscricoes", icon: "UserPlus", minRole: "tenant_manager" },
-      { href: "/portal/formandos", label: "Formandos", icon: "Users", minRole: "tenant_manager" },
-      { href: "/portal/formadores", label: "Formadores", icon: "UserCheck", minRole: "tenant_manager" },
-      { href: "/portal/avaliacoes", label: "Avaliacoes", icon: "ClipboardCheck", minRole: "tenant_manager" },
-      { href: "/portal/lms", label: "LMS & Assiduidade", icon: "Monitor", excludeRoles: ["formador"], minRole: "tenant_manager" },
-      { href: "/portal/conteudos", label: "Conteudos LMS", icon: "Package" },
-      { href: "/portal/documentos", label: "Documentos", icon: "FolderOpen", minRole: "tenant_manager" },
-      { href: "/portal/compliance", label: "Compliance DGERT", icon: "ShieldCheck", minRole: "tenant_manager" },
-      { href: "/portal/dossie", label: "Dossie & Exports", icon: "FolderOpen", minRole: "tenant_manager" },
-      { href: "/portal/certificados", label: "Certificados", icon: "Award", minRole: "tenant_manager" },
-      { href: "/portal/sigo", label: "SIGO", icon: "Upload", minRole: "tenant_manager" },
-      { href: "/portal/integracoes", label: "Plugins", icon: "Plug", minRole: "tenant_manager" },
+      { href: "/portal/formacoes", label: "Formações website", icon: "Globe", minRole: "coordenador_comercial" },
+      { href: "/portal/acoes", label: "Acções", icon: "GraduationCap" },
+      { href: "/portal/catalogo-ufcd", label: "Catálogo UFCD", icon: "Library" },
+      { href: "/portal/matriculas", label: "Inscrições", icon: "UserPlus", minRole: "coordenador_pedagogico" },
+      { href: "/portal/formandos", label: "Formandos", icon: "Users", minRole: "coordenador_pedagogico" },
+      { href: "/portal/formadores", label: "Formadores", icon: "UserCheck", minRole: "coordenador_pedagogico" },
+      { href: "/portal/avaliacoes", label: "Avaliações", icon: "ClipboardCheck", minRole: "coordenador_pedagogico" },
+      { href: "/portal/progresso-lms", label: "Progresso LMS", icon: "BarChart3" },
+      { href: "/portal/conteudos", label: "Conteúdos LMS", icon: "Package" },
+      { href: "/portal/compliance", label: "Compliance DGERT", icon: "ShieldCheck", minRole: "coordenador_pedagogico" },
+      { href: "/portal/dossie", label: "Dossiê & Exports", icon: "FolderOpen", minRole: "coordenador_pedagogico" },
+      { href: "/portal/certificados", label: "Certificados", icon: "Award", minRole: "coordenador_pedagogico" },
+      { href: "/portal/sigo", label: "SIGO", icon: "Upload", minRole: "coordenador_pedagogico" },
+      { href: "/portal/integracoes", label: "Plugins", icon: "Plug", minRole: "coordenador_pedagogico" },
     ],
   },
   {
@@ -295,16 +334,32 @@ export const NAV_GROUPS: NavGroup[] = [
     moduleLabel: BILLING_ADDON_LABELS.formacao_teams,
     icon: "Video",
     items: [
-      { href: "/portal/acoes", label: "Accoes", icon: "GraduationCap" },
-      { href: "/portal/calendario", label: "Calendario", icon: "Calendar" },
-      { href: "/portal/lms", label: "LMS & Assiduidade", icon: "Monitor", excludeRoles: ["formador"], minRole: "tenant_manager" },
-      { href: "/portal/integracoes", label: "Plugins", icon: "Plug", minRole: "tenant_manager" },
+      { href: "/portal/acoes", label: "Acções", icon: "GraduationCap" },
+      { href: "/portal/calendario", label: "Calendário", icon: "Calendar" },
+      { href: "/portal/integracoes", label: "Plugins", icon: "Plug", minRole: "coordenador_pedagogico" },
     ],
   },
   {
     label: "Conta",
     collapsible: false,
-    items: [{ href: "/portal/rgpd", label: "RGPD", icon: "Lock" }],
+    items: [
+      { href: "/portal/rgpd", label: "RGPD", icon: "Lock" },
+      {
+        href: "/portal/formador/perfil",
+        label: "O meu perfil",
+        icon: "UserCheck",
+        minRole: "formador",
+        // Só o papel formador: coordenadores herdam minRole via roleSatisfies.
+        excludeRoles: [
+          "tenant_manager",
+          "coordenador_pedagogico",
+          "coordenador_comercial",
+          "coordenador_financeiro",
+          "comercial",
+          "formando",
+        ],
+      },
+    ],
   },
   {
     label: "Administracao",

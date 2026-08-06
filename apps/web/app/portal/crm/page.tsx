@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
   Building2,
@@ -15,6 +16,8 @@ import {
 } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
+import { canAccessFaturacaoPortal } from "@nexiforma/shared";
 import { parseApiError } from "@/lib/ui/backoffice";
 import {
   Alert,
@@ -66,12 +69,20 @@ type Proposta = {
 const PIPELINE: PropostaEstado[] = ["RASCUNHO", "ENVIADA", "ACEITE", "REJEITADA"];
 
 export default function CrmDashboardPage() {
-  const { canManage } = useTenantRole();
+  const router = useRouter();
+  const { role, canManage, loading: roleLoading } = useTenantRole();
+  const { entitlements } = useTenantEntitlements();
+  const canAccessFaturacao = canAccessFaturacaoPortal(role, entitlements);
   const [stats, setStats] = useState<Estatisticas | null>(null);
   const [propostas, setPropostas] = useState<Proposta[]>([]);
   const [pipelineCounts, setPipelineCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (roleLoading) return;
+    if (!canManage) router.replace("/portal/crm/leads");
+  }, [canManage, roleLoading, router]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -139,6 +150,10 @@ export default function CrmDashboardPage() {
     },
   ];
 
+  if (roleLoading || !canManage) {
+    return null;
+  }
+
   return (
     <>
       <PageHeader
@@ -192,7 +207,7 @@ export default function CrmDashboardPage() {
         />
       </div>
 
-      {canManage ? (
+      {canAccessFaturacao ? (
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6">
         <KpiCard
           icon={<FileText className="h-5 w-5 text-teal-400" />}
@@ -321,7 +336,7 @@ export default function CrmDashboardPage() {
               <Sparkles className="h-4 w-4" />
               Inbox sugestões IA
             </Link>
-            {canManage ? (
+            {canAccessFaturacao ? (
               <Link href="/portal/crm/faturas" className={cn(buttonVariants({ variant: "secondary" }), "w-full justify-start")}>
                 <FileText className="h-4 w-4" />
                 Faturação

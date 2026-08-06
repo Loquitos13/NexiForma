@@ -215,6 +215,13 @@ export class UpdateConfigFaturacaoDto {
   @IsOptional()
   comunicacaoAutomatica?: boolean;
 
+  /**
+   * Aceite explícito da Licença Anexo II (Contrato adesão webservice AT).
+   * Obrigatório para activar comunicação AT / invocar webservices.
+   */
+  @IsOptional()
+  aceitarLicencaAtWs?: boolean;
+
   @IsOptional()
   @IsString()
   @MaxLength(32)
@@ -231,12 +238,6 @@ export class UpdateSerieFaturacaoDto {
   @IsString()
   @MaxLength(16)
   codigoValidacaoAt?: string | null;
-}
-
-export class SolicitarAnulacaoFaturaDto {
-  @IsString()
-  @MaxLength(2000)
-  motivo!: string;
 }
 
 export class AnularFaturaDto {

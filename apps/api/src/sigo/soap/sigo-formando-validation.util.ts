@@ -92,7 +92,7 @@ export function validarFormandoSigo(f: SigoFormandoParaValidacao): SigoValidatio
   if (!sigo.habilitacaoLiteraria?.trim()) {
     erros.push({
       codigo: "FORMANDO_HABILITACAO_AUSENTE",
-      mensagem: `«${f.nome}»: habilitações literárias em falta (código CNQ/SIGO).`,
+      mensagem: `«${f.nome}»: habilitações literárias em falta (nível QNQ/SIGO).`,
       campo: "formandos.metadata.sigo.habilitacaoLiteraria",
     });
   } else if (
@@ -102,7 +102,7 @@ export function validarFormandoSigo(f: SigoFormandoParaValidacao): SigoValidatio
   ) {
     erros.push({
       codigo: "FORMANDO_HABILITACAO_INVALIDA",
-      mensagem: `«${f.nome}»: código habilitação «${sigo.habilitacaoLiteraria}» não está na tabela CNQ.`,
+      mensagem: `«${f.nome}»: nível de habilitação «${sigo.habilitacaoLiteraria}» inválido (use QNQ 1–4 ou 6–8).`,
       campo: "formandos.metadata.sigo.habilitacaoLiteraria",
     });
   }

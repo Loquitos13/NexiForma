@@ -14,6 +14,19 @@
         "arn:aws:s3:::nexiforma-storage",
         "arn:aws:s3:::nexiforma-storage/*"
       ]
+    },
+    {
+      "Sid": "NexiFormaStorageKmsOptional",
+      "Effect": "Allow",
+      "Action": [
+        "kms:Decrypt",
+        "kms:Encrypt",
+        "kms:GenerateDataKey",
+        "kms:DescribeKey"
+      ],
+      "Resource": [
+        "arn:aws:kms:eu-west-1:ACCOUNT_ID:key/KEY_ID"
+      ]
     }
   ]
 }

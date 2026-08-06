@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Shield } from "lucide-react";
+import { buildRgpdConsentText } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { Button } from "@/components/ui/button";
@@ -69,6 +70,8 @@ export function ConsentModal({ blocking = false, onClose, onResolved, open = tru
 
   if (!visible) return null;
 
+  const policyText = buildRgpdConsentText(data.tenantLegalName ?? "a entidade formadora");
+
   return (
     <div
       className={`fixed inset-0 z-[100] flex items-center justify-center p-4 ${
@@ -96,8 +99,8 @@ export function ConsentModal({ blocking = false, onClose, onResolved, open = tru
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-700/40 bg-slate-900/60 p-4 text-sm text-slate-300 leading-relaxed whitespace-pre-line max-h-64 overflow-y-auto">
-            {data.consentText}
+          <div className="rounded-xl border border-slate-700/40 bg-slate-900/60 p-4 text-sm text-slate-300 leading-relaxed whitespace-pre-line max-h-[min(50vh,28rem)] overflow-y-auto">
+            {policyText}
           </div>
 
           {data.userAccepted !== null && !data.required ? (

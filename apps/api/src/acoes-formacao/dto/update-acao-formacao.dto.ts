@@ -1,5 +1,14 @@
-import { IsDateString, IsIn, IsOptional, IsString, MaxLength, ValidateIf } from "class-validator";
+import {
+  IsDateString,
+  IsIn,
+  IsObject,
+  IsOptional,
+  IsString,
+  MaxLength,
+  ValidateIf,
+} from "class-validator";
 
+/** Aceites no DTO; EM_CURSO/CONCLUIDA são rejeitados no serviço (fluxos dedicados). */
 const ESTADOS = ["PLANEADA", "EM_CURSO", "CONCLUIDA", "CANCELADA"] as const;
 
 export class UpdateAcaoFormacaoDto {
@@ -24,4 +33,9 @@ export class UpdateAcaoFormacaoDto {
   @IsOptional()
   @IsIn(ESTADOS)
   estado?: (typeof ESTADOS)[number];
+
+  /** Snapshot documental desta edição (contrato/declaração moldados a horas/valor). */
+  @IsOptional()
+  @IsObject()
+  configuracaoMatricula?: Record<string, unknown> | null;
 }

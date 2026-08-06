@@ -12,6 +12,10 @@ import {
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { decodeJwtRole } from "@/lib/client/jwt-role";
 import { getAccessToken } from "@/lib/client/access-token";
+import {
+  NEXI_GUIA_ASK_EVENT,
+  type NexiGuiaAskDetail,
+} from "@/lib/client/nexi-guia-events";
 import { Button } from "@/components/ui/button";
 
 type ChatMessage = {
@@ -254,6 +258,22 @@ export function NexiGuia() {
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, open, thinking]);
+
+  useEffect(() => {
+    const onAsk = (ev: Event) => {
+      const detail = (ev as CustomEvent<NexiGuiaAskDetail>).detail;
+      const prompt = detail?.prompt?.trim();
+      if (!prompt) return;
+      setOpen(true);
+      if (detail.autoSend === false) {
+        setInput(prompt);
+        return;
+      }
+      void submit(prompt);
+    };
+    window.addEventListener(NEXI_GUIA_ASK_EVENT, onAsk);
+    return () => window.removeEventListener(NEXI_GUIA_ASK_EVENT, onAsk);
+  }, [submit]);
 
   return (
     <>

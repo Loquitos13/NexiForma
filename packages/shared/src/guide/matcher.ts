@@ -1,5 +1,14 @@
-import { canManageCrm, isComercial, isCrmPortalPath, isFormador, isFormando, roleSatisfies } from "../access";
 import type { JwtRole } from "../index";
+import type { TenantEntitlements } from "../billing/entitlements";
+import {
+  isComercial,
+  isFormador,
+  isFormando,
+  isPortalPathAllowedByRole,
+  isSuperAdmin,
+  roleSatisfies,
+} from "../access";
+import { isPortalPathAllowedByEntitlements } from "../billing/module-access";
 import { GUIDE_DESTINATIONS } from "./destinations";
 import { GUIDE_KNOWLEDGE, type GuideKnowledgeEntry } from "./knowledge";
 import { NEXIGUIA_INTRO, NEXIGUIA_OUT_OF_SCOPE } from "./identity";
@@ -34,7 +43,7 @@ const EXTERNAL_ADMIN =
   /\b(validar|verificar|consultar|como saber|saber se|e valido|é valido|esta valido|está valido)\b[\s\S]{0,40}\b(nif|nipc|niss|iban|cartao cidadao|cc)\b|\b(nif|nipc|niss|iban)\b[\s\S]{0,30}\b(valido|valida|validar|verificar)\b|\b(ine|instituto nacional de estatistica|seguranca social|financas|autoridade tributaria)\b/;
 
 const NEXIFORMA_SCOPE =
-  /\b(nexiforma|nexigui|dgert|sigo|dgeec|lms|scorm|crm|lead|fatura|faturacao|saft|at\b|cmd|rgpd|formando|formador|tenant|ufcd|compliance|dossie|dossier|matricula|inscricao|proposta|contrato|certificado|integracao|zoom|teams|portal|accao|acao formativa|curso|turma|sumario|lead|proposta)\b/;
+  /\b(nexiforma|nexigui|dgert|sigo|dgeec|lms|scorm|crm|lead|fatura|faturacao|saft|at\b|rgpd|formando|formador|tenant|ufcd|compliance|dossie|dossier|matricula|inscricao|proposta|contrato|certificado|integracao|zoom|teams|portal|accao|acao formativa|curso|turma|sumario|lead|proposta)\b/;
 
 const PROFILE_INTENT =
   /\b(perfil|conta|definicoes|configuracoes|settings|preferencias|meus dados|alterar dados|ver perfil)\b/;
@@ -58,20 +67,34 @@ function tokens(text: string): string[] {
     .filter((t) => t.length > 1);
 }
 
-function destinationAllowed(dest: GuideDestination, role: JwtRole | null): boolean {
+function destinationAllowed(
+  dest: GuideDestination,
+  role: JwtRole | null,
+  entitlements?: TenantEntitlements | null,
+): boolean {
   if (dest.publicOnly) return true;
   if (!role) return false;
-  if (dest.minRole === "super_admin") return role === "super_admin";
+
+  const href = dest.href.split("#")[0]!;
+
+  if (href.startsWith("/#")) return true;
+
   if (dest.formandoOnly) return isFormando(role);
+  if (dest.formadorOnly) return isFormador(role);
   if (isFormando(role)) return false;
-  if (isComercial(role)) {
-    return (
-      dest.minRole === "comercial" ||
-      isCrmPortalPath(dest.href) ||
-      dest.href === "/portal/rgpd"
-    );
+
+  if (dest.minRole === "super_admin" || href.startsWith("/plataforma")) {
+    return isSuperAdmin(role);
   }
-  if (canManageCrm(role) && isCrmPortalPath(dest.href)) return true;
+
+  if (href.startsWith("/portal")) {
+    if (!isPortalPathAllowedByRole(href, role)) return false;
+    if (entitlements && !isPortalPathAllowedByEntitlements(href, entitlements, role)) {
+      return false;
+    }
+    return true;
+  }
+
   if (dest.minRole && !roleSatisfies(role, dest.minRole)) return false;
   return true;
 }
@@ -85,18 +108,26 @@ function labelForHref(href: string): string {
   return findDestination(href)?.label ?? href;
 }
 
-function relatedLinks(hrefs: string[] | undefined, role: JwtRole | null) {
+function relatedLinks(
+  hrefs: string[] | undefined,
+  role: JwtRole | null,
+  entitlements?: TenantEntitlements | null,
+) {
   if (!hrefs) return [];
   return hrefs
     .filter((href) => {
       const dest = findDestination(href);
-      return dest ? destinationAllowed(dest, role) : href.startsWith("/#");
+      return dest ? destinationAllowed(dest, role, entitlements) : href.startsWith("/#");
     })
     .map((href) => ({ href, label: labelForHref(href) }));
 }
 
-function userCanAccessAny(hrefs: string[] | undefined, role: JwtRole | null): boolean {
-  return relatedLinks(hrefs, role).length > 0;
+function userCanAccessAny(
+  hrefs: string[] | undefined,
+  role: JwtRole | null,
+  entitlements?: TenantEntitlements | null,
+): boolean {
+  return relatedLinks(hrefs, role, entitlements).length > 0;
 }
 
 function relatedBoost(pathname: string | undefined, dest: GuideDestination): number {
@@ -235,8 +266,11 @@ function scoreKnowledge(
   return best && best.score >= 6 ? best : null;
 }
 
-function listAllowed(role: JwtRole | null): GuideDestination[] {
-  return GUIDE_DESTINATIONS.filter((d) => destinationAllowed(d, role));
+function listAllowed(
+  role: JwtRole | null,
+  entitlements?: TenantEntitlements | null,
+): GuideDestination[] {
+  return GUIDE_DESTINATIONS.filter((d) => destinationAllowed(d, role, entitlements));
 }
 
 function primaryDestinationForKnowledge(entry: GuideKnowledgeEntry): GuideDestination | undefined {
@@ -259,15 +293,15 @@ function explainDestination(dest: GuideDestination, role: JwtRole | null): Guide
   };
 }
 
-function formadorProfileAnswer(role: JwtRole | null): GuideAnswerResult {
+function formadorProfileAnswer(_role: JwtRole | null): GuideResult {
   return {
-    type: "answer",
+    type: "navigate",
+    href: "/portal/formador/perfil",
+    label: "O meu perfil",
+    description: "Dados pessoais, segurança e documentos do formador.",
+    confidence: 0.95,
     reply:
-      "O portal do formador não inclui página de perfil - a gestão da conta fica com o gestor da entidade. Posso mostrar-te cursos, ações formativas, LMS e conteúdos.",
-    related: listAllowed(role)
-      .filter((d) => !d.publicOnly && !d.href.includes("#"))
-      .slice(0, 4)
-      .map((d) => ({ href: d.href, label: d.label })),
+      "Podes gerir o teu perfil em «O meu perfil»: dados pessoais, palavra-passe e documentos obrigatórios (CV, identificação e CCP).",
   };
 }
 
@@ -611,8 +645,12 @@ export function getAllowedDestinations(role: JwtRole | null): GuideDestination[]
   return listAllowed(role);
 }
 
-export function canAccessDestination(dest: GuideDestination, role: JwtRole | null): boolean {
-  return destinationAllowed(dest, role);
+export function canAccessDestination(
+  dest: GuideDestination,
+  role: JwtRole | null,
+  entitlements?: TenantEntitlements | null,
+): boolean {
+  return destinationAllowed(dest, role, entitlements);
 }
 
 export function findGuideDestinationByHref(href: string): GuideDestination | undefined {
@@ -646,11 +684,11 @@ export function searchGuideDestinations(
   ctx: GuideQueryContext | JwtRole | null,
   limit = 8,
 ): GuideSearchHit[] {
-  const { role } = resolveCtx(ctx);
+  const { role, pathname, entitlements } = resolveCtx(ctx);
   const trimmed = query.trim();
 
   if (!trimmed) {
-    return listAllowed(role)
+    return listAllowed(role, entitlements)
       .filter((d) => !d.href.includes("#") && (!role || !d.publicOnly))
       .slice(0, limit)
       .map((dest) => ({
@@ -663,7 +701,7 @@ export function searchGuideDestinations(
   }
 
   const queryTokens = tokens(trimmed);
-  const ranked = listAllowed(role)
+  const ranked = listAllowed(role, entitlements)
     .filter((d) => !role || !d.publicOnly)
     .map((dest) => ({
       dest,

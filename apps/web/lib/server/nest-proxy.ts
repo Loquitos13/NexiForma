@@ -5,8 +5,12 @@ import {
   resolveUpstreamAuthorization,
 } from "./auth-bff";
 
-/** Não faz proxy das rotas de auth (cookies BFF apenas em `/api/auth/*`). */
-const SKIP_AUTH_ROUTE = /^auth(\/|$)/i;
+/** Não faz proxy das rotas de auth (cookies BFF apenas em `/api/auth/*`). OAuth social passa por aqui. */
+export function shouldBlockV1AuthProxy(path: string): boolean {
+  if (/^auth\/oauth\//i.test(path)) return false;
+  if (/^auth\/public\//i.test(path)) return false;
+  return /^auth(\/|$)/i.test(path);
+}
 
 function rewriteSetCookiePathForBff(setCookie: string): string {
   return setCookie.replace(/;\s*([Pp]ath)=\/v1\//g, "; Path=/api/v1/");
@@ -59,25 +63,40 @@ function copyIngressHeaders(from: Headers, to: Headers): void {
 
 const PROXY_TIMEOUT_CAP_MS = 600_000;
 
-/** Rotas de análise IA / PDF podem exceder 60s - alinhar com NEXIGUIA_LLM_TIMEOUT_MS. */
+/** Rotas de análise IA / PDF podem exceder 60s - alinhar com NEXIGUIA_LLM_* timeouts. */
 function resolveUpstreamTimeoutMs(path: string): number {
   const isDev = process.env.NODE_ENV === "development";
   const defaultMs = Number(
     process.env.NEXI_BACKEND_PROXY_TIMEOUT_MS ?? (isDev ? "12000" : "60000"),
   );
-  if (!/^relatorios\/insights/i.test(path)) {
+
+  const isInsights = /^relatorios\/insights/i.test(path);
+  const isCronogramaImportIa = /^cronogramas\/[^/]+\/importar-ia\/analisar$/i.test(path);
+  if (!isInsights && !isCronogramaImportIa) {
     return defaultMs;
   }
 
-  const explicit = process.env.NEXI_BACKEND_PROXY_INSIGHTS_TIMEOUT_MS;
-  if (explicit) {
-    return Math.min(Number(explicit), PROXY_TIMEOUT_CAP_MS);
+  if (isInsights) {
+    const explicit = process.env.NEXI_BACKEND_PROXY_INSIGHTS_TIMEOUT_MS;
+    if (explicit) {
+      return Math.min(Number(explicit), PROXY_TIMEOUT_CAP_MS);
+    }
+  }
+
+  if (isCronogramaImportIa) {
+    const explicit = process.env.NEXI_BACKEND_PROXY_IMPORT_IA_TIMEOUT_MS;
+    if (explicit) {
+      return Math.min(Number(explicit), PROXY_TIMEOUT_CAP_MS);
+    }
   }
 
   const llmMs = Number(process.env.NEXIGUIA_LLM_TIMEOUT_MS ?? "120000");
-  // PDF/descrições por gráfico usam pelo menos 120s na API + margem para dashboard/PDF.
-  const apiBudget = Math.max(llmMs, 120_000);
-  return Math.min(apiBudget + 30_000, PROXY_TIMEOUT_CAP_MS);
+  const importMs = Number(process.env.NEXIGUIA_LLM_IMPORT_TIMEOUT_MS ?? "180000");
+  // Insights/PDF: ≥120s; import cronograma: orçamento da importação + margem do proxy.
+  const apiBudget = isCronogramaImportIa
+    ? Math.max(importMs, llmMs, 180_000)
+    : Math.max(llmMs, 120_000);
+  return Math.min(apiBudget + 45_000, PROXY_TIMEOUT_CAP_MS);
 }
 
 /**
@@ -92,7 +111,7 @@ export async function proxyV1ToNest(req: Request, pathSegments: string[]): Promi
     });
   }
 
-  if (SKIP_AUTH_ROUTE.test(path)) {
+  if (shouldBlockV1AuthProxy(path)) {
     return new Response(
       JSON.stringify({
         message:

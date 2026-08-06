@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Post, Query, UseGuards, ParseUUIDPipe } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+  ParseUUIDPipe,
+} from "@nestjs/common";
 import type { Turma } from "@nexiforma/database";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
@@ -15,7 +25,7 @@ export class TurmasController {
 
   /** Filtro opcional por acção (`?acaoFormacaoId=uuid`). */
   @Get()
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   list(
     @CurrentUser() user: RequestUser,
     @Query("acaoFormacaoId", new ParseUUIDPipe({ optional: true }))
@@ -25,11 +35,20 @@ export class TurmasController {
   }
 
   @Post()
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   create(
     @CurrentUser() user: RequestUser,
     @Body() dto: CreateTurmaDto,
   ): Promise<Turma> {
     return this.turmas.create(user, dto);
+  }
+
+  @Delete(":id")
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  remove(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return this.turmas.remove(user, id);
   }
 }

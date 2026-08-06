@@ -68,7 +68,7 @@ const VIEW_RULES: ViewRule[] = [
     label: "Detalhe da ação formativa",
     description: "Turmas, sessões, sumários e matrículas da ação.",
     area: "portal",
-    related: ["/portal/acoes", "/portal/lms", "/portal/dossie"],
+    related: ["/portal/acoes", "/portal/progresso-lms", "/portal/dossie"],
     hints: ["LMS", "dossiê", "lista de ações"],
   },
   {
@@ -246,14 +246,6 @@ const VIEW_RULES: ViewRule[] = [
     area: "auth",
     related: ["/portal", "/login"],
     hints: ["dashboard", "entrar"],
-  },
-  {
-    prefix: "/cmd/assinar",
-    label: "Assinatura CMD",
-    description: "Fluxo de assinatura qualificada de certificados.",
-    area: "public",
-    related: ["/login", "/portal/certificados"],
-    hints: ["certificados", "entrar"],
   },
   {
     prefix: "/convite/",

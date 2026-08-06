@@ -3,16 +3,23 @@ import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
+import { escapeHtml } from "./cronograma-export.util";
 import {
-  atribuirCoresFormadores,
-  codigoModuloFallback,
-  construirGrelhaMes,
-  escapeHtml,
-  horasEntre,
-  iterarMeses,
-  mesLabelPt,
-  toDateKey,
-} from "./cronograma-export.util";
+  buildVngColumns,
+  buildVngFaixas,
+  buildVngLegenda,
+  buildVngMonthSpans,
+  cronogramaTituloFuncionamento,
+  formatHorarioFaixa,
+  groupFaixasForRender,
+  toLocalDateKey,
+  VNG_FAIXA_CORES,
+  VNG_PRAZO_COR,
+  VNG_PRAZO_TEXTO,
+  type VngModuloRef,
+  type VngPrazoInput,
+  type VngSessaoInput,
+} from "./cronograma-vng-export.util";
 
 type TenantMeta = {
   branding?: { logoUrl?: string; logoStorageKey?: string };
@@ -44,6 +51,13 @@ export class CronogramaHtmlExportService {
           include: {
             curso: true,
             turmas: { take: 1, orderBy: { codigo: "asc" } },
+            prazosModuloLms: {
+              include: {
+                moduloUnidade: {
+                  select: { id: true, codigo: true, titulo: true, ordem: true },
+                },
+              },
+            },
           },
         },
         sessoes: {
@@ -51,7 +65,7 @@ export class CronogramaHtmlExportService {
           include: {
             formador: { select: { id: true, nomeCompleto: true } },
             moduloUnidade: {
-              select: { id: true, codigo: true, titulo: true, formadorId: true },
+              select: { id: true, codigo: true, titulo: true, ordem: true },
             },
           },
         },
@@ -73,104 +87,129 @@ export class CronogramaHtmlExportService {
     const meta = (tenant.metadata ?? {}) as TenantMeta;
     const acao = cronograma.acaoFormacao;
     const curso = acao.curso;
+    const cfg = meta.cronograma ?? {};
 
-    const modulos = await this.prisma.moduloUnidade.findMany({
+    const modulosDb = await this.prisma.moduloUnidade.findMany({
       where: { tenantId, cursoId: curso.id },
       orderBy: [{ ordem: "asc" }, { createdAt: "asc" }],
-      include: { formador: { select: { id: true, nomeCompleto: true } } },
+      select: { id: true, codigo: true, titulo: true, ordem: true },
     });
+    const modulosCurso: VngModuloRef[] = modulosDb.map((m) => ({
+      id: m.id,
+      codigo: m.codigo,
+      titulo: m.titulo,
+      ordem: m.ordem,
+    }));
 
-    const formadorIds = new Set<string>();
-    for (const m of modulos) {
-      if (m.formadorId) formadorIds.add(m.formadorId);
+    const sessoesInput: VngSessaoInput[] = cronograma.sessoes.map((s) => ({
+      data: s.data,
+      horaInicio: s.horaInicio,
+      horaFim: s.horaFim,
+      modalidade: s.modalidade,
+      titulo: s.titulo,
+      numeroSessao: s.numeroSessao,
+      modulo: s.moduloUnidade
+        ? {
+            id: s.moduloUnidade.id,
+            codigo: s.moduloUnidade.codigo,
+            titulo: s.moduloUnidade.titulo,
+            ordem: s.moduloUnidade.ordem,
+          }
+        : null,
+    }));
+
+    const prazosInput: VngPrazoInput[] = acao.prazosModuloLms.map((p) => ({
+      data: p.prazoConclusao,
+      modulo: {
+        id: p.moduloUnidade.id,
+        codigo: p.moduloUnidade.codigo,
+        titulo: p.moduloUnidade.titulo,
+        ordem: p.moduloUnidade.ordem,
+      },
+    }));
+
+    const inicioKey = toLocalDateKey(acao.dataInicio);
+    const fimKey = toLocalDateKey(acao.dataFim);
+    let rangeInicio = inicioKey;
+    let rangeFim = fimKey;
+    for (const s of sessoesInput) {
+      const k = toLocalDateKey(s.data);
+      if (compareKey(k, rangeInicio) < 0) rangeInicio = k;
+      if (compareKey(k, rangeFim) > 0) rangeFim = k;
     }
-    for (const s of cronograma.sessoes) {
-      if (s.formadorId) formadorIds.add(s.formadorId);
-      if (s.moduloUnidade?.formadorId) formadorIds.add(s.moduloUnidade.formadorId);
-    }
-    const cores = atribuirCoresFormadores([...formadorIds]);
-
-    const horasPorModulo = new Map<string, number>();
-    for (const s of cronograma.sessoes) {
-      if (!s.moduloUnidadeId) continue;
-      const h = horasEntre(s.horaInicio, s.horaFim);
-      horasPorModulo.set(s.moduloUnidadeId, (horasPorModulo.get(s.moduloUnidadeId) ?? 0) + h);
-    }
-
-    const modulosRows = modulos
-      .map((m) => {
-        const codigo = m.codigo?.trim() || codigoModuloFallback(m.titulo);
-        const horas = m.cargaHoras ?? horasPorModulo.get(m.id) ?? 0;
-        const fid = m.formadorId ?? "";
-        const bg = fid ? cores.get(fid) ?? "#e2e8f0" : "#f1f5f9";
-        const formadorNome = m.formador?.nomeCompleto ?? "-";
-        return `<tr>
-          <td class="c-cod">${escapeHtml(codigo)}</td>
-          <td>${escapeHtml(m.titulo)}</td>
-          <td class="c-num">${horas ? Math.round(horas * 10) / 10 : "-"}</td>
-          <td class="c-form" style="background:${bg}">${escapeHtml(formadorNome)}</td>
-        </tr>`;
-      })
-      .join("");
-
-    const sessoesPorDia = new Map<string, Array<{ label: string; bg: string }>>();
-    for (const s of cronograma.sessoes) {
-      const key = toDateKey(s.data);
-      const codigo =
-        s.moduloUnidade?.codigo?.trim() ||
-        (s.moduloUnidade?.titulo ? codigoModuloFallback(s.moduloUnidade.titulo) : `S${s.numeroSessao}`);
-      const horas = Math.round(horasEntre(s.horaInicio, s.horaFim) * 10) / 10;
-      const fid = s.formadorId ?? s.moduloUnidade?.formadorId ?? "";
-      const bg = fid ? cores.get(fid) ?? "#b8d4f0" : "#b8d4f0";
-      const horasTxt = Number.isInteger(horas)
-        ? `${horas}h`
-        : `${horas.toFixed(1).replace(".", ",").replace(/,0$/, "")}h`;
-      const label = `${codigo} (${horasTxt})`;
-      const arr = sessoesPorDia.get(key) ?? [];
-      arr.push({ label, bg });
-      sessoesPorDia.set(key, arr);
+    for (const p of prazosInput) {
+      const k = toLocalDateKey(p.data);
+      if (compareKey(k, rangeInicio) < 0) rangeInicio = k;
+      if (compareKey(k, rangeFim) > 0) rangeFim = k;
     }
 
-    const meses = iterarMeses(toDateKey(acao.dataInicio), toDateKey(acao.dataFim));
-    const grelhasHtml = meses
-      .map(({ year, month }) => {
-        const cells = construirGrelhaMes(year, month, sessoesPorDia);
-        const headerDays = Array.from({ length: 31 }, (_, i) => `<th>${i + 1}</th>`).join("");
-        const bodyCells = cells
-          .map((c) => {
-            if (c.tipo === "invalido") return `<td class="inv"></td>`;
-            if (c.tipo === "fds") return `<td class="fds">${c.fds}</td>`;
-            if (c.tipo === "sessao") {
-              return `<td class="ses" style="background:${c.bg}"><span>${escapeHtml(c.label ?? "")}</span></td>`;
-            }
-            return `<td></td>`;
-          })
-          .join("");
-        return `<table class="cal">
-          <caption>${escapeHtml(mesLabelPt(year, month))}</caption>
-          <thead><tr>${headerDays}</tr></thead>
-          <tbody><tr>${bodyCells}</tr></tbody>
-        </table>`;
-      })
-      .join("");
+    const columns = buildVngColumns(rangeInicio, rangeFim);
+    const monthSpans = buildVngMonthSpans(columns);
+    const faixas = buildVngFaixas(sessoesInput, modulosCurso, prazosInput);
+    const faixasRender = groupFaixasForRender(faixas);
+    const legenda = buildVngLegenda(sessoesInput, modulosCurso, faixas);
 
     const logoSrc = await this.resolverLogoSrc(meta);
-    const cfg = meta.cronograma ?? {};
-    const funcionamento = cfg.funcionamento ?? "pos_laboral";
-    const metodologias = cfg.metodologias ?? ["formacao_acao"];
-    const turma = acao.turmas[0];
-    const codigoAcao = turma?.codigo ?? acao.codigoInterno;
-
-    const horarioInicio = cfg.horarioInicio ?? cronograma.sessoes[0]?.horaInicio ?? "-";
-    const horarioFim = cfg.horarioFim ?? cronograma.sessoes[0]?.horaFim ?? "-";
-    const sabInicio = cfg.horarioSabadoInicio?.trim();
-    const sabFim = cfg.horarioSabadoFim?.trim();
-    const horarioSabadoHtml =
-      sabInicio && sabFim
-        ? ` · Sábados ${escapeHtml(sabInicio)} – ${escapeHtml(sabFim)}`
-        : "";
-
+    const local = cfg.local?.trim() || "A definir";
+    const tituloCronograma = cronogramaTituloFuncionamento(cfg.funcionamento);
     const filename = `cronograma-${acao.codigoInterno}-v${cronograma.versao}.html`;
+
+    const monthHeaderCells = monthSpans
+      .map(
+        (m) =>
+          `<th class="mes" colspan="${m.colSpan}">${escapeHtml(m.label)}</th>`,
+      )
+      .join("");
+    const dayHeaderCells = columns
+      .map((c) => `<th class="dia">${c.day}</th>`)
+      .join("");
+    const weekdayHeaderCells = columns
+      .map((c) => `<th class="dow">${escapeHtml(c.weekday)}</th>`)
+      .join("");
+
+    const bodyRows = faixasRender
+      .map(({ faixa, showGrupo, grupoRowSpan }) => {
+        const bg = VNG_FAIXA_CORES[faixa.tipo];
+        const horario = formatHorarioFaixa(faixa);
+        const grupoTd = showGrupo
+          ? `<td class="grupo" rowspan="${grupoRowSpan}">${escapeHtml(faixa.grupoLabel)}</td>`
+          : "";
+        const horarioTd =
+          faixa.tipo === "auto"
+            ? `<td class="horario auto-h"></td>`
+            : `<td class="horario">${escapeHtml(horario)}</td>`;
+        const cells = columns
+          .map((c) => {
+            const cell = faixa.cells[c.dateKey];
+            if (!cell) return `<td class="empty"></td>`;
+            if (cell.isPrazo) {
+              return `<td class="cel prazo" style="background:${VNG_PRAZO_COR};color:${VNG_PRAZO_TEXTO}"><span>${escapeHtml(cell.label)}</span></td>`;
+            }
+            return `<td class="cel ${faixa.tipo}" style="background:${bg}"><span>${escapeHtml(cell.label)}</span></td>`;
+          })
+          .join("");
+        return `<tr>${grupoTd}${horarioTd}${cells}</tr>`;
+      })
+      .join("");
+
+    const legendaTipos = `
+      <div class="leg-tipos">
+        <span class="swatch" style="background:${VNG_FAIXA_CORES.presencial}"></span>
+        Aulas presenciais em sala referentes a cada módulo
+        <span class="swatch" style="background:${VNG_FAIXA_CORES.sincrona}"></span>
+        Sessões em vídeo-conferência (síncronas)
+        <span class="swatch" style="background:${VNG_FAIXA_CORES.auto}"></span>
+        Sessões em e-learning / auto-aprendizagem
+        <span class="swatch" style="background:${VNG_PRAZO_COR}"></span>
+        Data limite para conclusão das tarefas do(s) módulo(s)
+      </div>`;
+
+    const legendaCodigos = legenda
+      .map(
+        (item) =>
+          `<div class="leg-item"><strong>${escapeHtml(item.codigo)}</strong> ${escapeHtml(item.titulo)}</div>`,
+      )
+      .join("");
 
     const html = `<!DOCTYPE html>
 <html lang="pt">
@@ -178,90 +217,163 @@ export class CronogramaHtmlExportService {
   <meta charset="utf-8"/>
   <title>Cronograma – ${escapeHtml(acao.titulo)}</title>
   <style>
-    @page { size: A4 landscape; margin: 10mm; }
-    @media print { .no-print { display: none; } }
+    @page { size: A4 landscape; margin: 6mm; }
+    @media print {
+      .no-print { display: none !important; }
+      html, body { width: 100%; height: auto; overflow: hidden; }
+      body { padding: 0; }
+      .sheet { width: 100%; max-height: none; overflow: visible; }
+      table.grelha { page-break-inside: avoid; }
+      .legenda { page-break-inside: avoid; }
+    }
     * { box-sizing: border-box; }
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 8pt; color: #111; margin: 0; padding: 8mm; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #333; padding: 2px 3px; vertical-align: middle; text-align: center; }
-    .hdr { margin-bottom: 6px; }
-    .hdr td { border: 1px solid #333; padding: 6px; vertical-align: middle; }
-    .hdr .logo { width: 22%; text-align: center; }
-    .hdr .logo img { max-height: 52px; max-width: 160px; object-fit: contain; }
-    .hdr .titulo { width: 56%; font-size: 13pt; font-weight: bold; text-align: center; }
-    .hdr .dgert { width: 22%; text-align: center; font-size: 7pt; font-weight: bold; color: #1a5276; }
-    .meta td { text-align: left; font-size: 7.5pt; padding: 3px 5px; }
-    .meta .lbl { font-weight: bold; white-space: nowrap; }
-    .mods th { background: #f0f0f0; font-size: 7pt; }
-    .mods .c-cod { width: 8%; font-weight: bold; }
-    .mods .c-num { width: 8%; }
-    .mods .c-form { text-align: left; font-size: 7pt; }
-    .chk { display: inline-flex; align-items: center; gap: 3px; margin-right: 10px; font-size: 7pt; }
-    .chk input { margin: 0; }
-    .cals { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
-    .cal { font-size: 6pt; }
-    .cal caption { font-weight: bold; text-align: left; padding: 2px 0; font-size: 7pt; }
-    .cal th { background: #eee; padding: 1px; min-width: 14px; }
-    .cal td { height: 22px; min-width: 14px; padding: 0; font-size: 5.5pt; font-weight: bold; }
-    .cal td.inv { background: #111; }
-    .cal td.fds { background: #d9d9d9; color: #555; }
-    .cal td.ses span { display: block; line-height: 1.1; padding: 1px; }
-    .no-print { margin-bottom: 8px; }
-    .no-print button { background: #2563eb; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+    html, body {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8pt;
+      color: #111;
+      margin: 0;
+      padding: 4mm;
+    }
+    .sheet { width: 100%; max-width: 100%; overflow: hidden; }
+    .no-print { margin-bottom: 6px; }
+    .no-print button {
+      background: #2563eb; color: #fff; border: none;
+      padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 10pt;
+    }
+    .top {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 8px; margin-bottom: 4px; border-bottom: 2px solid #1a5276; padding-bottom: 4px;
+    }
+    .top .entidade { flex: 1; font-size: 7.5pt; line-height: 1.3; }
+    .top .entidade strong { font-size: 9pt; display: block; margin-bottom: 1px; }
+    .top .logo img { max-height: 36px; max-width: 110px; object-fit: contain; }
+    h1 {
+      font-size: 11pt; margin: 0 0 1px; color: #1a5276; font-weight: bold;
+    }
+    h2 {
+      font-size: 8.5pt; margin: 0 0 4px; font-weight: bold; text-transform: uppercase;
+    }
+    .meta {
+      display: grid; grid-template-columns: 1.2fr 1fr; gap: 2px 12px;
+      margin-bottom: 6px; font-size: 7.5pt;
+    }
+    .meta .lbl { font-weight: bold; }
+    .grelha-wrap { width: 100%; max-width: 100%; overflow: hidden; }
+    table.grelha {
+      border-collapse: collapse;
+      width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
+    }
+    table.grelha th, table.grelha td {
+      border: 1px solid #444; padding: 2px 1px; text-align: center;
+      vertical-align: middle; font-size: 6.5pt;
+      overflow: hidden;
+    }
+    table.grelha th.mes {
+      background: #1a5276; color: #fff; font-size: 7.5pt; font-weight: bold; padding: 3px 1px;
+    }
+    table.grelha th.dia {
+      background: #e8eef4; font-weight: bold; font-size: 7pt;
+    }
+    table.grelha th.dow {
+      background: #f5f5f5; font-size: 6pt; color: #444; font-weight: normal;
+    }
+    table.grelha col.col-grupo { width: 9%; }
+    table.grelha col.col-horario { width: 10%; }
+    table.grelha td.grupo {
+      text-align: left; font-weight: bold; font-size: 6.5pt;
+      background: #f0f4f8; padding: 3px 2px;
+      word-break: break-word; hyphens: auto;
+    }
+    table.grelha td.horario {
+      text-align: left; font-size: 6.5pt;
+      background: #fafafa; padding: 3px 2px;
+      word-break: break-word; white-space: normal;
+    }
+    table.grelha td.auto-h { background: #fffef5; }
+    table.grelha td.cel {
+      font-weight: bold; font-size: 6.5pt; line-height: 1.1;
+    }
+    table.grelha td.cel span {
+      display: block; padding: 1px 0; word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    table.grelha td.cel.prazo { font-weight: bold; }
+    table.grelha td.empty { background: #fff; }
+    .legenda { margin-top: 6px; font-size: 7pt; }
+    .legenda h3 { font-size: 8pt; margin: 0 0 4px; }
+    .leg-tipos { margin-bottom: 4px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+    .swatch {
+      display: inline-block; width: 11px; height: 11px; border: 1px solid #666;
+      margin-right: 3px; vertical-align: middle;
+    }
+    .leg-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1px 10px;
+    }
+    .leg-item { padding: 1px 0; }
+    .leg-item strong {
+      display: inline-block; min-width: 52px; margin-right: 4px;
+      padding: 1px 3px; background: #eef3f8; border: 1px solid #99a;
+      font-size: 6.5pt;
+    }
+    .empty-msg { color: #666; font-size: 8pt; padding: 8px 0; }
   </style>
 </head>
 <body>
   <div class="no-print"><button type="button" onclick="window.print()">Imprimir / Guardar PDF</button></div>
+  <div class="sheet">
+  <div class="top">
+    <div class="entidade">
+      <strong>${escapeHtml(tenant.legalName)}</strong>
+      ${tenant.nif ? `NIF ${escapeHtml(tenant.nif)}` : ""}
+    </div>
+    ${logoSrc ? `<div class="logo"><img src="${logoSrc}" alt="Logo"/></div>` : ""}
+  </div>
 
-  <table class="hdr">
-    <tr>
-      <td class="logo">${logoSrc ? `<img src="${logoSrc}" alt="Logo"/>` : `<strong>${escapeHtml(tenant.legalName)}</strong>`}</td>
-      <td class="titulo">CRONOGRAMA DA ACÇÃO DE FORMAÇÃO</td>
-      <td class="dgert">ENTIDADE CERTIFICADA<br/>DGERT</td>
-    </tr>
-  </table>
+  <h1>${escapeHtml(tituloCronograma)}</h1>
+  <h2>${escapeHtml(curso.designacao || acao.titulo)}</h2>
 
-  <table class="meta">
-    <tr>
-      <td><span class="lbl">Entidade:</span> ${escapeHtml(tenant.legalName)}</td>
-      <td><span class="lbl">Acção:</span> ${escapeHtml(curso.designacao)}</td>
-      <td><span class="lbl">Nº:</span> ${escapeHtml(codigoAcao)}</td>
-    </tr>
-    <tr>
-      <td><span class="lbl">Local:</span> ${escapeHtml(cfg.local ?? "A definir")}</td>
-      <td><span class="lbl">Duração:</span> ${curso.cargaHoras} horas</td>
-      <td>
-        <span class="lbl">Horário:</span>
-        Início ${escapeHtml(horarioInicio)}
-        Fim ${escapeHtml(horarioFim)}${horarioSabadoHtml}
-      </td>
-    </tr>
-    <tr>
-      <td colspan="3">
-        <span class="lbl">Funcionamento:</span>
-        <label class="chk"><input type="checkbox" ${funcionamento === "laboral" ? "checked" : ""} disabled/> Laboral</label>
-        <label class="chk"><input type="checkbox" ${funcionamento === "pos_laboral" ? "checked" : ""} disabled/> Pós-Laboral</label>
-        <label class="chk"><input type="checkbox" ${funcionamento === "misto" ? "checked" : ""} disabled/> Misto</label>
-        &nbsp;&nbsp;
-        <span class="lbl">Metodologias:</span>
-        <label class="chk"><input type="checkbox" ${metodologias.includes("elearning") ? "checked" : ""} disabled/> Formação à distância</label>
-        <label class="chk"><input type="checkbox" ${metodologias.includes("formacao_acao") ? "checked" : ""} disabled/> Formação-Acção</label>
-        <label class="chk"><input type="checkbox" ${metodologias.includes("outras") ? "checked" : ""} disabled/> Outras</label>
-      </td>
-    </tr>
-  </table>
+  <div class="meta">
+    <div><span class="lbl">Local de realização:</span> ${escapeHtml(local)}</div>
+    <div><span class="lbl">Data de início:</span> ${formatDatePt(inicioKey)}</div>
+    <div><span class="lbl">Acção:</span> ${escapeHtml(acao.codigoInterno)} – ${escapeHtml(acao.titulo)}</div>
+    <div><span class="lbl">Data de fim:</span> ${formatDatePt(fimKey)}</div>
+  </div>
 
-  <table class="mods" style="margin-top:6px">
+  ${
+    columns.length === 0 || faixas.length === 0
+      ? `<p class="empty-msg">Sem sessões no período para construir a grelha.</p>`
+      : `<div class="grelha-wrap"><table class="grelha">
+    <colgroup>
+      <col class="col-grupo"/>
+      <col class="col-horario"/>
+      ${columns.map(() => "<col/>").join("")}
+    </colgroup>
     <thead>
-      <tr><th>Código</th><th>Módulos</th><th>Nr Horas</th><th>Formador</th></tr>
+      <tr>
+        <th class="grupo" rowspan="3" colspan="2">Horário</th>
+        ${monthHeaderCells}
+      </tr>
+      <tr>${dayHeaderCells}</tr>
+      <tr>${weekdayHeaderCells}</tr>
     </thead>
     <tbody>
-      ${modulosRows || `<tr><td colspan="4" style="text-align:left;padding:6px">Sem módulos definidos no curso.</td></tr>`}
+      ${bodyRows}
     </tbody>
-  </table>
+  </table></div>`
+  }
 
-  <div class="cals">${grelhasHtml || "<p>Sem período de formação definido.</p>"}</div>
-  <p style="margin-top:8px;font-size:6.5pt;color:#555">Legenda calendário: código da sessão ou módulo (ex.: S1 = sessão 1) e duração em horas. Células «S»/«D» = fim de semana sem formação.</p>
+  <div class="legenda">
+    <h3>Legenda</h3>
+    ${legendaTipos}
+    <div class="leg-grid">${legendaCodigos || "<div>Sem códigos de sessão.</div>"}</div>
+  </div>
 </body>
 </html>`;
 
@@ -283,4 +395,14 @@ export class CronogramaHtmlExportService {
     }
     return null;
   }
+}
+
+function compareKey(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function formatDatePt(dateKey: string): string {
+  const [y, m, d] = dateKey.split("-");
+  if (!y || !m || !d) return dateKey;
+  return `${d}/${m}/${y}`;
 }

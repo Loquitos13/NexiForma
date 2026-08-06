@@ -34,7 +34,7 @@ export const GUIDE_DESTINATIONS: GuideDestination[] = [
     href: "/#integracoes",
     label: "Integrações",
     description: "Integrações nativas apresentadas no website.",
-    keywords: ["integracoes", "sigo", "at", "cmd", "stripe"],
+    keywords: ["integracoes", "sigo", "at", "stripe"],
     publicOnly: true,
   },
   {
@@ -54,9 +54,8 @@ export const GUIDE_DESTINATIONS: GuideDestination[] = [
   {
     href: "/portal/fluxo",
     label: "Fluxo guiado",
-    description: "Passo a passo da operação formativa.",
-    keywords: ["fluxo", "guiado", "passo a passo", "onboarding operacional"],
-    minRole: "tenant_manager",
+    description: "Passo a passo CRM e formação, filtrado pelo teu papel.",
+    keywords: ["fluxo", "guiado", "passo a passo", "onboarding operacional", "tutorial", "crm"],
   },
   {
     href: "/portal/calendario",
@@ -77,7 +76,7 @@ export const GUIDE_DESTINATIONS: GuideDestination[] = [
     label: "CRM Dashboard",
     description: "Pipeline comercial e KPIs.",
     keywords: ["crm", "crm dashboard", "comercial", "vendas", "pipeline", "negocio"],
-    minRole: "comercial",
+    minRole: "tenant_manager",
   },
   {
     href: "/portal/crm/leads",
@@ -108,11 +107,25 @@ export const GUIDE_DESTINATIONS: GuideDestination[] = [
     minRole: "comercial",
   },
   {
+    href: "/portal/crm/interaccoes",
+    label: "Notas comerciais",
+    description: "Registo de reuniões e contactos comerciais.",
+    keywords: ["notas", "interaccoes", "interacoes", "reunioes", "contactos comerciais"],
+    minRole: "comercial",
+  },
+  {
+    href: "/portal/crm/sugestoes-ia",
+    label: "Sugestões IA",
+    description: "Sugestões comerciais geradas por IA.",
+    keywords: ["sugestoes", "sugestoes ia", "ia comercial", "inbox ia"],
+    minRole: "comercial",
+  },
+  {
     href: "/portal/crm/faturas",
     label: "Faturas",
     description: "Emissão e gestão de faturas.",
     keywords: ["faturas", "fatura", "faturacao", "documentos fiscais", "at"],
-    minRole: "comercial",
+    minRole: "tenant_manager",
   },
   {
     href: "/portal/crm/faturacao",
@@ -182,12 +195,6 @@ export const GUIDE_DESTINATIONS: GuideDestination[] = [
     minRole: "tenant_manager",
   },
   {
-    href: "/portal/lms",
-    label: "LMS e assiduidade",
-    description: "Presenças, Zoom/Teams e painel LMS.",
-    keywords: ["lms", "assiduidade", "presencas", "presenca", "zoom", "teams", "online"],
-  },
-  {
     href: "/portal/conteudos",
     label: "Conteúdos LMS",
     description: "Módulos SCORM e materiais.",
@@ -218,7 +225,7 @@ export const GUIDE_DESTINATIONS: GuideDestination[] = [
     href: "/portal/certificados",
     label: "Certificados",
     description: "Emissão de certificados.",
-    keywords: ["certificados", "certificado", "cmd", "assinatura"],
+    keywords: ["certificados", "certificado", "assinatura"],
     minRole: "tenant_manager",
   },
   {
@@ -311,5 +318,21 @@ export const GUIDE_DESTINATIONS: GuideDestination[] = [
     description: "Dados pessoais e RGPD.",
     keywords: ["perfil", "conta", "dados", "rgpd", "exportar dados"],
     formandoOnly: true,
+  },
+  // Portal formador
+  {
+    href: "/portal/formador/perfil",
+    label: "O meu perfil",
+    description: "Dados pessoais, palavra-passe e documentos do formador.",
+    keywords: [
+      "perfil formador",
+      "meu perfil",
+      "minha conta",
+      "documentos formador",
+      "ccp",
+      "palavra passe",
+      "password",
+    ],
+    formadorOnly: true,
   },
 ];

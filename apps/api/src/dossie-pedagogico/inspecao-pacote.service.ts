@@ -91,16 +91,29 @@ export class InspecaoPacoteService {
       select: { id: true, versao: true },
     });
 
-    const [dossiePkg, sigoPkg, htmlPkg, complianceDetail, presencasCsv, lmsJson, validacaoSigo] =
-      await Promise.all([
-        this.dossie.buildExportPackage(user, acaoId),
-        this.sigo.buildSigoJsonPackage(user, acaoId),
-        this.html.buildPrintableHtml(user, acaoId),
-        this.compliance.getByAcao(user, acaoId),
-        this.buildPresencasCsv(tenantId, acaoId),
-        this.buildLmsEvidenciasJson(tenantId, acaoId),
-        this.sigo.validateForSigo(user, acaoId),
-      ]);
+    const [
+      dossiePkg,
+      sigoPkg,
+      htmlPkg,
+      complianceDetail,
+      presencasCsv,
+      lmsJson,
+      validacaoSigo,
+      avaliacoesJson,
+      certificadosJson,
+      documentosMatriculaJson,
+    ] = await Promise.all([
+      this.dossie.buildExportPackage(user, acaoId),
+      this.sigo.buildSigoJsonPackage(user, acaoId),
+      this.html.buildPrintableHtml(user, acaoId),
+      this.compliance.getByAcao(user, acaoId),
+      this.buildPresencasCsv(tenantId, acaoId),
+      this.buildLmsEvidenciasJson(tenantId, acaoId),
+      this.sigo.validateForSigo(user, acaoId),
+      this.buildAvaliacoesJson(tenantId, acaoId),
+      this.buildCertificadosJson(tenantId, acaoId),
+      this.buildDocumentosMatriculaJson(tenantId, acaoId),
+    ]);
 
     const cronogramaPkg = cronogramaAprovado
       ? await this.cronogramaHtml.buildPrintableHtml(user, cronogramaAprovado.id)
@@ -124,10 +137,22 @@ export class InspecaoPacoteService {
       "compliance/validacao-sigo.json",
       "evidencias/presencas.csv",
       "evidencias/lms-progresso.json",
+      "evidencias/avaliacoes.json",
+      "evidencias/certificados.json",
+      "evidencias/documentos-matricula.json",
     ];
     if (cronogramaPkg) {
       ficheiros.push(`cronograma/${cronogramaPkg.filename}`);
     }
+
+    const evidenciasExtra = {
+      avaliacoes: JSON.parse(avaliacoesJson) as { totalRegistos: number },
+      certificados: JSON.parse(certificadosJson) as { totalRegistos: number },
+      documentosMatricula: JSON.parse(documentosMatriculaJson) as {
+        totalRegistos: number;
+        porCategoria: Record<string, number>;
+      },
+    };
 
     const manifest = {
       schema: INSPECAO_PACOTE_SCHEMA,
@@ -144,6 +169,12 @@ export class InspecaoPacoteService {
       cronogramaVersao: cronogramaAprovado?.versao ?? null,
       prontoInspecao: complianceDetail.checklist.prontoInspecao,
       scoreObrigatorioPercent: complianceDetail.checklist.scoreObrigatorioPercent,
+      evidenciasAuditoria: {
+        avaliacoes: evidenciasExtra.avaliacoes.totalRegistos,
+        certificados: evidenciasExtra.certificados.totalRegistos,
+        documentosMatricula: evidenciasExtra.documentosMatricula.totalRegistos,
+        documentosPorCategoria: evidenciasExtra.documentosMatricula.porCategoria,
+      },
     };
 
     const readme =
@@ -158,7 +189,11 @@ export class InspecaoPacoteService {
       (cronogramaPkg ? `- cronograma/ – cronograma DGERT transferível (HTML)\n` : "") +
       `- sigo/ – export SIGO (JSON + CSV formandos)\n` +
       `- compliance/ – checklist DGERT e validação SIGO\n` +
-      `- evidencias/ – presenças detalhadas e progresso LMS\n\n` +
+      `- evidencias/ – presenças, LMS, avaliações, certificados e documentos de matrícula\n\n` +
+      `Evidências extra (auditoria):\n` +
+      `  avaliações: ${evidenciasExtra.avaliacoes.totalRegistos}\n` +
+      `  certificados: ${evidenciasExtra.certificados.totalRegistos}\n` +
+      `  docs matrícula: ${evidenciasExtra.documentosMatricula.totalRegistos}\n\n` +
       `Score obrigatórios: ${complianceDetail.checklist.scoreObrigatorioPercent}%\n` +
       `Pronto inspecção: sim\n`;
 
@@ -191,6 +226,12 @@ export class InspecaoPacoteService {
     );
     zip.addFile("evidencias/presencas.csv", Buffer.from(presencasCsv, "utf8"));
     zip.addFile("evidencias/lms-progresso.json", Buffer.from(lmsJson, "utf8"));
+    zip.addFile("evidencias/avaliacoes.json", Buffer.from(avaliacoesJson, "utf8"));
+    zip.addFile("evidencias/certificados.json", Buffer.from(certificadosJson, "utf8"));
+    zip.addFile(
+      "evidencias/documentos-matricula.json",
+      Buffer.from(documentosMatriculaJson, "utf8"),
+    );
 
     const buffer = zip.toBuffer();
     const filename = `dossie-tecnico-pedagogico-${slug}-${geradoEm.slice(0, 10)}.zip`;
@@ -317,6 +358,124 @@ export class InspecaoPacoteService {
     });
 
     return [header, ...lines].join("\n");
+  }
+
+  private async buildAvaliacoesJson(tenantId: string, acaoId: string): Promise<string> {
+    const rows = await this.prisma.avaliacaoFormando.findMany({
+      where: { tenantId, matricula: { turma: { acaoFormacaoId: acaoId } } },
+      include: {
+        matricula: {
+          include: {
+            formando: { select: { nome: true, nif: true } },
+            turma: { select: { codigo: true } },
+          },
+        },
+      },
+      orderBy: { avaliadoEm: "desc" },
+    });
+    return JSON.stringify(
+      {
+        schema: "nexiforma.avaliacoes_evidencias.v1",
+        acaoFormacaoId: acaoId,
+        totalRegistos: rows.length,
+        avaliacoes: rows.map((r) => ({
+          turma: r.matricula.turma.codigo,
+          formando: r.matricula.formando.nome,
+          nif: r.matricula.formando.nif,
+          tipo: r.tipo,
+          nota: r.nota,
+          observacoes: r.observacoes,
+          avaliadoEm: r.avaliadoEm,
+        })),
+      },
+      null,
+      2,
+    );
+  }
+
+  private async buildCertificadosJson(tenantId: string, acaoId: string): Promise<string> {
+    const rows = await this.prisma.certificadoVerificacao.findMany({
+      where: {
+        tenantId,
+        revogadoEm: null,
+        matricula: { turma: { acaoFormacaoId: acaoId } },
+      },
+      include: {
+        matricula: {
+          include: {
+            formando: { select: { nome: true, nif: true } },
+            turma: { select: { codigo: true } },
+          },
+        },
+      },
+      orderBy: { emitidoEm: "desc" },
+    });
+    return JSON.stringify(
+      {
+        schema: "nexiforma.certificados_evidencias.v1",
+        acaoFormacaoId: acaoId,
+        totalRegistos: rows.length,
+        certificados: rows.map((r) => ({
+          turma: r.matricula.turma.codigo,
+          formando: r.matricula.formando.nome,
+          nif: r.matricula.formando.nif,
+          codigoPublico: r.codigoPublico,
+          emitidoEm: r.emitidoEm,
+          tokenExpiresAt: r.tokenExpiresAt,
+          hashConteudo: r.hashConteudo,
+        })),
+      },
+      null,
+      2,
+    );
+  }
+
+  private async buildDocumentosMatriculaJson(tenantId: string, acaoId: string): Promise<string> {
+    const rows = await this.prisma.matriculaDocumento.findMany({
+      where: { tenantId, matricula: { turma: { acaoFormacaoId: acaoId } } },
+      include: {
+        matricula: {
+          include: {
+            formando: { select: { nome: true, nif: true } },
+            turma: { select: { codigo: true } },
+          },
+        },
+        documentoAnexo: {
+          select: { id: true, nome: true, mimeType: true, tamanhoBytes: true },
+        },
+      },
+      orderBy: [{ categoria: "asc" }, { updatedAt: "desc" }],
+    });
+    const porCategoria: Record<string, number> = {};
+    for (const r of rows) {
+      porCategoria[r.categoria] = (porCategoria[r.categoria] ?? 0) + 1;
+    }
+    return JSON.stringify(
+      {
+        schema: "nexiforma.documentos_matricula_evidencias.v1",
+        acaoFormacaoId: acaoId,
+        totalRegistos: rows.length,
+        porCategoria,
+        documentos: rows.map((r) => ({
+          turma: r.matricula.turma.codigo,
+          formando: r.matricula.formando.nome,
+          nif: r.matricula.formando.nif,
+          categoria: r.categoria,
+          estado: r.estado,
+          aceiteEm: r.aceiteEm,
+          anexo: r.documentoAnexo
+            ? {
+                id: r.documentoAnexo.id,
+                nome: r.documentoAnexo.nome,
+                mimeType: r.documentoAnexo.mimeType,
+                tamanhoBytes: r.documentoAnexo.tamanhoBytes,
+              }
+            : null,
+        })),
+      },
+      null,
+      2,
+    );
   }
 
   private async buildLmsEvidenciasJson(tenantId: string, acaoId: string): Promise<string> {

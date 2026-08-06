@@ -152,6 +152,12 @@ export class DossiePedagogicoService {
 
                       assinadoEm: true,
 
+                      assinaturaTipo: true,
+
+                      pdfNomeFicheiro: true,
+
+                      pdfStorageKey: true,
+
                       createdAt: true,
 
                     },
@@ -167,6 +173,8 @@ export class DossiePedagogicoService {
                       fechadaEm: true,
 
                       validadaFormadorEm: true,
+
+                      aprovadaGestorEm: true,
 
                       _count: { select: { presencas: true } },
 
@@ -260,7 +268,14 @@ export class DossiePedagogicoService {
 
     }
 
-
+    const matriculaWhere = { tenantId, turma: { acaoFormacaoId: acaoId }, estado: "ATIVA" as const };
+    const [totalAvaliacoes, totalCertificados, totalDocumentosMatricula] = await Promise.all([
+      this.prisma.avaliacaoFormando.count({ where: { tenantId, matricula: matriculaWhere } }),
+      this.prisma.certificadoVerificacao.count({
+        where: { tenantId, revogadoEm: null, matricula: matriculaWhere },
+      }),
+      this.prisma.matriculaDocumento.count({ where: { tenantId, matricula: matriculaWhere } }),
+    ]);
 
     const dgert = buildDgertChecklist({
 
@@ -293,6 +308,12 @@ export class DossiePedagogicoService {
       presencasPresentes,
 
       presencasTotal,
+
+      totalAvaliacoes,
+
+      totalCertificados,
+
+      totalDocumentosMatricula,
 
     });
 
@@ -399,6 +420,8 @@ export class DossiePedagogicoService {
                 fechadaEm: f.fechadaEm,
 
                 validadaFormadorEm: f.validadaFormadorEm,
+
+                aprovadaGestorEm: f.aprovadaGestorEm,
 
                 totalPresencas: f._count.presencas,
 

@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { randomBytes } from "crypto";
 import type { CrmTenantConfig } from "@nexiforma/shared";
+import { assertSafeOutboundUrl } from "@nexiforma/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { requireTenantId } from "../common/tenant-scope";
 import type { RequestUser } from "../auth/types/access-token-payload";
@@ -10,6 +11,14 @@ const EMPTY: CrmTenantConfig = {
   outboundWebhooks: [],
   automations: [],
 };
+
+/** Email sync OAuth ainda não disponível - nunca activar em produção. */
+function normalizeEmailSync(
+  emailSync: CrmTenantConfig["emailSync"],
+): CrmTenantConfig["emailSync"] | undefined {
+  if (!emailSync) return undefined;
+  return { ...emailSync, enabled: false };
+}
 
 function parseCrmConfig(metadata: unknown): CrmTenantConfig {
   if (!metadata || typeof metadata !== "object") return { ...EMPTY };
@@ -23,7 +32,7 @@ function parseCrmConfig(metadata: unknown): CrmTenantConfig {
     automations: Array.isArray(c.automations) ? (c.automations as CrmTenantConfig["automations"]) : [],
     emailSync:
       c.emailSync && typeof c.emailSync === "object"
-        ? (c.emailSync as CrmTenantConfig["emailSync"])
+        ? normalizeEmailSync(c.emailSync as CrmTenantConfig["emailSync"])
         : undefined,
   };
 }
@@ -49,14 +58,20 @@ export class CrmConfigService {
       select: { metadata: true },
     });
     if (!tenant) throw new NotFoundException("Tenant não encontrado.");
+    if (patch.emailSync?.enabled) {
+      throw new BadRequestException(
+        "Sincronização de email Gmail/M365 ainda não está disponível. Configure apenas quando OAuth estiver activo.",
+      );
+    }
     const current = parseCrmConfig(tenant.metadata);
     const next: CrmTenantConfig = {
       customFieldDefs: patch.customFieldDefs ?? current.customFieldDefs,
       leadWebhookSecret: patch.leadWebhookSecret ?? current.leadWebhookSecret,
       outboundWebhooks: patch.outboundWebhooks ?? current.outboundWebhooks,
       automations: patch.automations ?? current.automations,
-      emailSync: patch.emailSync ?? current.emailSync,
+      emailSync: normalizeEmailSync(patch.emailSync ?? current.emailSync),
     };
+    this.validateOutboundWebhooks(next.outboundWebhooks);
     const metadata = {
       ...(typeof tenant.metadata === "object" && tenant.metadata ? tenant.metadata : {}),
       crm: next,
@@ -81,5 +96,22 @@ export class CrmConfigService {
     const secret = randomBytes(24).toString("hex");
     await this.update(user, { leadWebhookSecret: secret });
     return { leadWebhookSecret: secret };
+  }
+
+  private validateOutboundWebhooks(webhooks: CrmTenantConfig["outboundWebhooks"]): void {
+    const requireHttps = process.env.NODE_ENV === "production";
+    for (const hook of webhooks) {
+      if (!hook.active) continue;
+      try {
+        assertSafeOutboundUrl(hook.url, {
+          requireHttps,
+          allowHttp: !requireHttps,
+        });
+      } catch (e) {
+        throw new BadRequestException(
+          e instanceof Error ? e.message : "URL de webhook outbound inválida.",
+        );
+      }
+    }
   }
 }

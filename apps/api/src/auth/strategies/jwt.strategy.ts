@@ -83,6 +83,8 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
         where: {
           id: impersonationSessionId,
           jwtJti,
+          targetUserId: sub,
+          tenantId,
           revokedAt: null,
           expiresAt: { gt: new Date() },
         },

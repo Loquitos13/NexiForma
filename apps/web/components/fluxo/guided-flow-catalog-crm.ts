@@ -1,0 +1,187 @@
+import type { GuidedFlowModule } from "./guided-flow-types";
+
+const crm = (ent: { canAccessCrm: boolean }) => ent.canAccessCrm;
+
+/** Fluxos guiados CRM / negócio. */
+export const GUIDED_FLOW_CRM: GuidedFlowModule[] = [
+  {
+    id: "crm-criar-lead",
+    title: "Criar uma lead",
+    description: "Registar um contacto comercial e acompanhar no pipeline.",
+    category: "negocio",
+    audiences: ["gestor", "comercial"],
+    visible: ({ ent }) => crm(ent),
+    steps: [
+      {
+        title: "Abrir leads",
+        description: "Vai a CRM → Leads para ver o pipeline e a lista de contactos.",
+        href: "/portal/crm/leads",
+        helpPrompt: "Como crio e acompanho uma lead no CRM?",
+      },
+      {
+        title: "Nova lead",
+        description:
+          "Clica em «Nova lead», preenche nome, email/telefone, origem e entidade (se já existir).",
+        tip: "Usa o NIF ou nome da empresa para associar a um cliente existente.",
+      },
+      {
+        title: "Estado e responsável",
+        description:
+          "Define o estado no funil (ex.: novo, em contacto) e o comercial responsável.",
+      },
+      {
+        title: "Seguir no dashboard",
+        description: "Confirma no CRM Dashboard ou na ficha da lead as próximas acções sugeridas.",
+        href: "/portal/crm",
+      },
+    ],
+  },
+  {
+    id: "crm-nota-comercial",
+    title: "Criar uma nota comercial",
+    description: "Registar interacções, reuniões e follow-ups com leads ou clientes.",
+    category: "negocio",
+    audiences: ["gestor", "comercial"],
+    visible: ({ ent }) => crm(ent),
+    steps: [
+      {
+        title: "Abrir notas comerciais",
+        description: "Vai a CRM → Notas comerciais (interacções).",
+        href: "/portal/crm/interaccoes",
+      },
+      {
+        title: "Nova nota",
+        description:
+          "Associa a nota a uma lead ou cliente, escolhe o tipo (chamada, email, reunião, outro) e escreve o resumo.",
+      },
+      {
+        title: "Reunião Teams (opcional)",
+        description:
+          "Se for reunião, podes criar/ligar sala Teams e, no fim, terminar a reunião com notas.",
+        tip: "As notas ficam no histórico da entidade e alimentam sugestões IA (se o módulo estiver activo).",
+      },
+      {
+        title: "Confirmar na ficha",
+        description: "Abre a lead/cliente e verifica que a interacção aparece na timeline.",
+      },
+    ],
+  },
+  {
+    id: "crm-calendario",
+    title: "Calendário comercial",
+    description: "Agendar e consultar reuniões e compromissos do CRM.",
+    category: "negocio",
+    audiences: ["gestor", "comercial"],
+    visible: ({ ent }) => crm(ent),
+    steps: [
+      {
+        title: "Abrir calendário",
+        description: "Usa o Calendário do portal (vista partilhada com a equipa comercial).",
+        href: "/portal/calendario",
+      },
+      {
+        title: "Criar evento / reunião",
+        description:
+          "Cria um evento ligado a lead ou cliente, com data, hora e participantes.",
+        tip: "Podes também criar a reunião a partir de uma nota comercial.",
+      },
+      {
+        title: "Acompanhar o dia",
+        description: "Consulta a vista semanal/diária para não perder follow-ups.",
+      },
+    ],
+  },
+  {
+    id: "crm-proposta",
+    title: "Criar e enviar proposta",
+    description: "Gerar uma proposta comercial a partir de um cliente ou lead.",
+    category: "negocio",
+    audiences: ["gestor", "comercial"],
+    visible: ({ ent }) => crm(ent),
+    steps: [
+      {
+        title: "Abrir propostas",
+        description: "Vai a Propostas no menu CRM.",
+        href: "/portal/propostas",
+      },
+      {
+        title: "Nova proposta",
+        description:
+          "Selecciona cliente/lead, adiciona linhas (formação, valores, descontos) e grava o rascunho.",
+      },
+      {
+        title: "Pré-visualizar e enviar",
+        description:
+          "Revê o documento, envia o link de resposta ao cliente e acompanha o estado (aceite/recusado).",
+        tip: "O modelo de proposta pode ser ajustado em «Modelo propostas» (gestor).",
+      },
+    ],
+  },
+  {
+    id: "crm-cliente",
+    title: "Gerir clientes e parceiros",
+    description: "Ficha de cliente, documentos e histórico comercial.",
+    category: "negocio",
+    audiences: ["gestor", "comercial"],
+    visible: ({ ent }) => crm(ent),
+    steps: [
+      {
+        title: "Lista de clientes",
+        description: "Abre Clientes para pesquisar por nome ou NIF.",
+        href: "/portal/clientes",
+      },
+      {
+        title: "Ficha do cliente",
+        description:
+          "Consulta propostas, notas, contactos e sugestões. Actualiza dados fiscais quando necessário.",
+      },
+      {
+        title: "Parceiros",
+        description: "Usa Parceiros para entidades com relação comercial distinta.",
+        href: "/portal/parceiros",
+      },
+    ],
+  },
+  {
+    id: "crm-dashboard",
+    title: "Pipeline e dashboard CRM",
+    description: "Visão geral do funil, alertas e atalhos do dia.",
+    category: "negocio",
+    audiences: ["gestor", "comercial"],
+    visible: ({ ent }) => crm(ent),
+    steps: [
+      {
+        title: "Abrir CRM Dashboard",
+        description: "Vai a CRM Dashboard para o resumo do pipeline.",
+        href: "/portal/crm",
+      },
+      {
+        title: "Prioridades do dia",
+        description:
+          "Usa leads quentes, notas pendentes e sugestões IA (se activas) para planear contactos.",
+      },
+    ],
+  },
+  {
+    id: "faturacao",
+    title: "Faturação",
+    description: "Emitir faturas e configurar dados fiscais AT.",
+    category: "negocio",
+    audiences: ["gestor", "comercial"],
+    visible: ({ ent, canManageFaturacao }) =>
+      canManageFaturacao && ent.canAccessFaturacao,
+    steps: [
+      {
+        title: "Dados de faturação",
+        description: "Confirma série, dados fiscais e configuração AT.",
+        href: "/portal/crm/faturacao",
+        helpPrompt: "Como configuro a faturação e emito uma fatura?",
+      },
+      {
+        title: "Emitir fatura",
+        description: "Em Faturas, cria a partir de proposta aceite ou directamente.",
+        href: "/portal/crm/faturas",
+      },
+    ],
+  },
+];

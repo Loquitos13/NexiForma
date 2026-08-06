@@ -14,7 +14,7 @@ export class QuizzesController {
   constructor(private readonly quizzes: QuizzesService) {}
 
   @Get("modulos/:moduloId/perguntas")
-  @Roles("tenant_manager", "formador", "formando")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador", "formando")
   perguntas(
     @CurrentUser() user: RequestUser,
     @Param("moduloId", ParseUUIDPipe) moduloId: string,
@@ -26,13 +26,13 @@ export class QuizzesController {
   }
 
   @Post("perguntas")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   createPergunta(@CurrentUser() user: RequestUser, @Body() dto: CreateQuizPerguntaDto): Promise<QuizPergunta> {
     return this.quizzes.createPergunta(user, dto);
   }
 
   @Patch("perguntas/:id")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   updatePergunta(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -42,7 +42,7 @@ export class QuizzesController {
   }
 
   @Delete("perguntas/:id")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   deletePergunta(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -62,7 +62,7 @@ export class QuizzesController {
   }
 
   @Get("tentativas")
-  @Roles("tenant_manager", "formador", "formando")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador", "formando")
   tentativas(
     @CurrentUser() user: RequestUser,
     @Query("matriculaId") matriculaId: string,

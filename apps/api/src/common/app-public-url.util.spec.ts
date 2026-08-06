@@ -1,5 +1,10 @@
 import { ConfigService } from "@nestjs/config";
-import { isAllowedAppPublicUrl, resolveAppPublicUrl } from "./app-public-url.util";
+import {
+  isAllowedAppPublicUrl,
+  resolveAppPublicUrl,
+  resolveAppPublicUrlForLinks,
+  runWithAppPublicUrl,
+} from "./app-public-url.util";
 
 function mockConfig(values: Record<string, string | undefined>): ConfigService {
   return {
@@ -31,5 +36,16 @@ describe("app-public-url", () => {
       headers: { "x-nexiforma-app-public-url": "http://192.168.1.86:3000" },
     });
     expect(url).toBe("https://app.nexiforma.pt");
+  });
+
+  it("resolveAppPublicUrlForLinks usa contexto do pedido HTTP", () => {
+    const config = mockConfig({
+      NODE_ENV: "development",
+      APP_PUBLIC_URL: "http://localhost:3000",
+    });
+    const url = runWithAppPublicUrl("http://192.168.1.86:3000", () =>
+      resolveAppPublicUrlForLinks(config),
+    );
+    expect(url).toBe("http://192.168.1.86:3000");
   });
 });

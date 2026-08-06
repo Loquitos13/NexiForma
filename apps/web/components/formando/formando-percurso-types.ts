@@ -20,6 +20,8 @@ export type UnidadePercurso = {
   titulo: string;
   ordem: number;
   notaMinima: number | null;
+  lockManual?: boolean;
+  desbloqueioManual?: boolean;
   pontuacao: number | null;
   desbloqueado: boolean;
   notaMinimaAnterior: number | null;

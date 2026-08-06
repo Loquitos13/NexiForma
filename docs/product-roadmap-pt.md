@@ -22,7 +22,7 @@ Este documento descreve o que **já existe**, o que **falta** para ser referênc
 
 Entidades certificadas vivem de **passar inspeções sem stress**. Falta:
 
-- **Assinatura qualificada** (CMD / Chave Móvel) - **depende serviço pago AMA**; em pausa
+- **Sumários assinados** – assinatura interna ou upload de PDF assinado (apenas `.pdf`)
 - **Pacote único de inspeção** – ZIP automático: dossiê + presenças + sumários + cronograma aprovado + evidências LMS
 - **Simulador de inspeção** – score preditivo com histórico de entidades similares
 - **Catálogo UFCD oficial** – validação contra referencial DGEEC actualizado
@@ -86,7 +86,7 @@ Entidades certificadas vivem de **passar inspeções sem stress**. Falta:
 | Fase | Foco | Impacto mercado PT |
 |------|------|-------------------|
 | **8** | Notificações (email/SMS) + pacote inspeção ZIP | Alto – reduz trabalho manual |
-| **9** | Certificado QR verificável (+ assinatura CMD se cliente pagar AMA) | Alto – confiança legal |
+| **9** | Certificado QR verificável + sumários (assinatura interna / PDF) | Alto – confiança legal |
 | **10** | CRM entidades + propostas + formadores CCP | Médio – vendas B2B (**parcial ✅**) |
 | **10B** | **Faturação AT no CRM** (emitir + comunicar webservice) | Alto – ciclo comercial completo |
 | **11** | PWA formando + quiz engine | Médio – retenção formandos (**parcial: PWA SW + quiz ✅**) |

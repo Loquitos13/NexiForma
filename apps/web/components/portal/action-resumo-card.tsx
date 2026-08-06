@@ -38,9 +38,11 @@ type Props = {
   canEdit: boolean;
   busy?: boolean;
   onSave: (data: EditForm) => Promise<void>;
+  /** Requisito DGERT a destacar (ex. acao_periodo, acao_estado). */
+  focusRequisito?: string | null;
 };
 
-const ESTADOS = ["PLANEADA", "EM_CURSO", "CONCLUIDA", "CANCELADA"] as const;
+const ESTADOS = ["PLANEADA", "CANCELADA"] as const;
 
 function fmtDate(value: string | null | undefined): string {
   if (!value) return "-";
@@ -66,13 +68,25 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-export function ActionResumoCard({ acao, canEdit, busy = false, onSave }: Props) {
+export function ActionResumoCard({
+  acao,
+  canEdit,
+  busy = false,
+  onSave,
+  focusRequisito = null,
+}: Props) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<EditForm>(() => toForm(acao));
+  const focusPeriodo = focusRequisito === "acao_periodo";
+  const focusEstado = focusRequisito === "acao_estado";
 
   useEffect(() => {
     if (!editing) setForm(toForm(acao));
   }, [acao, editing]);
+
+  useEffect(() => {
+    if (canEdit && (focusPeriodo || focusEstado)) setEditing(true);
+  }, [canEdit, focusPeriodo, focusEstado]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -101,18 +115,33 @@ export function ActionResumoCard({ acao, canEdit, busy = false, onSave }: Props)
               value={form.titulo}
               onChange={(e) => setForm((x) => ({ ...x, titulo: e.target.value }))}
             />
-            <Select
-              label="Estado"
-              value={form.estado}
-              onChange={(e) => setForm((x) => ({ ...x, estado: e.target.value }))}
+            <div
+              data-dgert-target="acao_estado"
+              className={cn(
+                focusEstado &&
+                  "rounded-lg ring-2 ring-amber-400/55 ring-offset-2 ring-offset-slate-950 p-2 -m-2",
+              )}
             >
-              {ESTADOS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </Select>
-            <div className="grid grid-cols-2 gap-4">
+              <Select
+                label="Estado"
+                value={form.estado}
+                onChange={(e) => setForm((x) => ({ ...x, estado: e.target.value }))}
+              >
+                {Array.from(new Set<string>([...ESTADOS, form.estado])).map((s) => (
+                  <option key={s} value={s} disabled={s === "EM_CURSO" || s === "CONCLUIDA"}>
+                    {s === "EM_CURSO" ? "EM_CURSO (automático)" : s === "CONCLUIDA" ? "CONCLUIDA (via confirmação)" : s}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div
+              data-dgert-target="acao_periodo"
+              className={cn(
+                "grid grid-cols-2 gap-4",
+                focusPeriodo &&
+                  "rounded-lg ring-2 ring-amber-400/55 ring-offset-2 ring-offset-slate-950 p-2 -m-2",
+              )}
+            >
               <Input
                 label="Início"
                 type="date"

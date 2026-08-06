@@ -9,6 +9,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { MailService } from "../mail/mail.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
+import { matriculaDocumentosSeedRows } from "../formandos/matricula-documentos.util";
 
 function tempPassword(): string {
   return randomBytes(9).toString("base64url").slice(0, 12);
@@ -173,8 +174,14 @@ export class ControlPlaneTenantOpsService {
       throw new BadRequestException("Formando já matriculado nesta turma.");
     }
 
-    const matricula = await this.prisma.matricula.create({
-      data: { tenantId, turmaId: dto.turmaId, formandoId: dto.formandoId },
+    const matricula = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.matricula.create({
+        data: { tenantId, turmaId: dto.turmaId, formandoId: dto.formandoId },
+      });
+      await tx.matriculaDocumento.createMany({
+        data: matriculaDocumentosSeedRows(tenantId, created.id),
+      });
+      return created;
     });
 
     await this.audit.log({
@@ -323,8 +330,14 @@ export class ControlPlaneTenantOpsService {
         });
         actions.push("matricula_reactivated");
       } else if (!matricula) {
-        const created = await this.prisma.matricula.create({
-          data: { tenantId, turmaId: opts.turmaId, formandoId },
+        const created = await this.prisma.$transaction(async (tx) => {
+          const m = await tx.matricula.create({
+            data: { tenantId, turmaId: opts.turmaId!, formandoId },
+          });
+          await tx.matriculaDocumento.createMany({
+            data: matriculaDocumentosSeedRows(tenantId, m.id),
+          });
+          return m;
         });
         actions.push(`matricula_created:${created.id}`);
       }

@@ -1,12 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DOSSIE_DGERT_DOCUMENTOS, DOSSIE_DGERT_TOTAL } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
 import { downloadResponseAsFile } from "@/lib/client/download-response";
 import { openHtmlForPrint } from "@/lib/client/open-html-for-print";
+import {
+  isValidNifPtClient,
+  resolveDgertRequisitoHref,
+} from "@/lib/dossie/dgert-requisito";
+import { Alert, Button, Card, CardContent, CardHeader, CardTitle, PageHeader, Select } from "@/components/ui";
+import {
+  SumarioAssinaturaModal,
+  type SumarioAssinaturaConfirm,
+} from "@/components/portal/sumario-assinatura-modal";
 
 type AcaoOption = { id: string; codigoInterno: string; titulo: string };
 type ChecklistItem = { id: string; label: string; ok: boolean; detalhe?: string; grupo?: string; severidade?: string; accaoSugerida?: string };
@@ -15,7 +24,11 @@ type SigoValidacao = { validadoEm: string; prontoParaImportacaoSigo?: boolean; p
 type ArquivoExport = { id: string; tipo: "DOSSIE_JSON" | "SIGO_JSON" | "DOSSIE_HTML" | "INSPECAO_ZIP"; nomeFicheiro: string; mimeType: string; tamanhoBytes: number; createdAt: string; expiresAt: string | null; createdBy?: { email: string; displayName: string | null } };
 type DossiePayload = {
   geradoEm: string; acaoFormacao: Record<string, unknown>; curso: Record<string, unknown>;
-  turmas: Array<{ codigo: string; nome: string; matriculas: Array<{ formando: { nome: string; nif: string } }> }>;
+  turmas: Array<{
+    codigo: string;
+    nome: string;
+    matriculas: Array<{ formando: { id?: string; nome: string; nif: string } }>;
+  }>;
   cronograma: { sessoes: Array<{
     id: string;
     numeroSessao: number;
@@ -27,10 +40,19 @@ type DossiePayload = {
     terminadaEm?: string | null;
     formadorPresente?: boolean | null;
     formador?: { nomeCompleto: string } | null;
-    sumarios: Array<{ id: string; conteudo: string; imutavel: boolean; assinadoEm?: string | null }>;
+    sumarios: Array<{
+      id: string;
+      conteudo: string;
+      imutavel: boolean;
+      assinadoEm?: string | null;
+      assinaturaTipo?: string | null;
+      pdfNomeFicheiro?: string | null;
+      pdfStorageKey?: string | null;
+    }>;
     folhasPresenca: Array<{
       fechadaEm: string | null;
       validadaFormadorEm?: string | null;
+      aprovadaGestorEm?: string | null;
       presentes: number;
       totalPresencas: number;
     }>;
@@ -39,9 +61,6 @@ type DossiePayload = {
   assiduidade: { taxaPresenca: number | null; presencasMarcadas: number; presencasRegistadas: number };
   checklist: { items: ChecklistItem[]; grupos?: Array<{ id: string; label: string; concluidos: number; total: number }>; scorePercent: number; scoreObrigatorioPercent?: number; prontoInspecao?: boolean; concluidosObrigatorios?: number; totalObrigatorios?: number; concluidos: number; total: number };
 };
-
-const inputClass = "w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-sm text-slate-200 placeholder:text-slate-500 outline-none focus:border-blue-500/40 transition-colors";
-const selectClass = "w-full max-w-md px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-sm text-slate-200 outline-none focus:border-blue-500/40 transition-colors";
 
 export default function DossiePedagogicoPage() {
   const [acaoFromUrl, setAcaoFromUrl] = useState("");
@@ -56,9 +75,9 @@ export default function DossiePedagogicoPage() {
   const [sigoApiMode, setSigoApiMode] = useState<string>("disabled");
   const [arquivos, setArquivos] = useState<ArquivoExport[]>([]);
   const [lastSumarioId, setLastSumarioId] = useState("");
-  const [cmdMode, setCmdMode] = useState<string>("disabled");
   const [sessaoSumarioId, setSessaoSumarioId] = useState("");
-  const [sumarioTexto, setSumarioTexto] = useState("");
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [sumarioModalOpen, setSumarioModalOpen] = useState(false);
 
   const loadAcoes = useCallback(async () => {
     const res = await bffFetch("/api/v1/acoes-formacao", { headers: { accept: "application/json" } });
@@ -86,7 +105,6 @@ export default function DossiePedagogicoPage() {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { void bffFetch("/api/v1/cmd/config", { headers: { accept: "application/json" } }).then(async (r) => { if (r.ok) { const cfg = (await r.json()) as { mode?: string }; setCmdMode(cfg.mode ?? "disabled"); } }); }, []);
   useEffect(() => { void bffFetch("/api/v1/sigo/config", { headers: { accept: "application/json" } }).then(async (r) => { if (r.ok) { const cfg = (await r.json()) as { mode?: string; configured?: boolean }; setSigoApiMode(cfg.configured ? (cfg.mode ?? "http") : "disabled"); } }); }, []);
   useEffect(() => { const acao = new URLSearchParams(window.location.search).get("acao"); if (acao) setAcaoFromUrl(acao); }, []);
   useEffect(() => { void (async () => { const list = await loadAcoes(); setAcoes(list); if (list.length) { const pick = acaoFromUrl && list.some((a) => a.id === acaoFromUrl) ? acaoFromUrl : list[0].id; setSelectedAcaoId(pick); } })(); }, [loadAcoes, acaoFromUrl]);
@@ -94,31 +112,108 @@ export default function DossiePedagogicoPage() {
 
   async function parseErr(res: Response) { const d = (await res.json().catch(() => null)) as { message?: string | string[] } | null; if (Array.isArray(d?.message)) return d.message.join(", "); if (typeof d?.message === "string") return d.message; return `HTTP ${res.status}`; }
 
-  async function guardarSumario(e: FormEvent) {
-    e.preventDefault(); if (!sessaoSumarioId || sumarioTexto.trim().length < 10) return;
-    setBusy(true); setMsg(null); setError(null);
-    const res = await bffFetch(`/api/v1/sumarios/sessao/${sessaoSumarioId}`, { method: "POST", headers: { "Content-Type": "application/json", accept: "application/json" }, body: JSON.stringify({ conteudo: sumarioTexto.trim() }) });
-    if (!res.ok) { setError(await parseErr(res)); setBusy(false); return; }
-    const created = (await res.json()) as { id: string };
-    setMsg("Sumario guardado."); setLastSumarioId(created.id); setSumarioTexto("");
-    await loadDossie(selectedAcaoId); setBusy(false);
+  const sessaoSumarioActiva = useMemo(
+    () => dossie?.cronograma?.sessoes.find((s) => s.id === sessaoSumarioId) ?? null,
+    [dossie, sessaoSumarioId],
+  );
+  const sumarioActivo = useMemo(() => {
+    if (!sessaoSumarioActiva) return null;
+    const signed = sessaoSumarioActiva.sumarios.find((s) => s.imutavel);
+    if (signed) return signed;
+    if (lastSumarioId) {
+      return (
+        sessaoSumarioActiva.sumarios.find((s) => s.id === lastSumarioId) ??
+        sessaoSumarioActiva.sumarios.find((s) => !s.imutavel) ??
+        null
+      );
+    }
+    return sessaoSumarioActiva.sumarios.find((s) => !s.imutavel) ?? null;
+  }, [sessaoSumarioActiva, lastSumarioId]);
+
+  async function confirmarSumarioAssinatura(payload: SumarioAssinaturaConfirm) {
+    if (!sessaoSumarioId) return;
+    if (!sessaoSumarioActiva?.terminadaEm) {
+      setError("O sumário só pode ser registado depois de a sessão ser terminada.");
+      return;
+    }
+    if (sumarioActivo?.imutavel) {
+      setError("Sumário já assinado - não editável.");
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    setError(null);
+    try {
+      let sumarioId = sumarioActivo?.id ?? (lastSumarioId || null);
+      const saveRes = sumarioId
+        ? await bffFetch(`/api/v1/sumarios/${sumarioId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", accept: "application/json" },
+            body: JSON.stringify({ conteudo: payload.conteudo }),
+          })
+        : await bffFetch(`/api/v1/sumarios/sessao/${sessaoSumarioId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", accept: "application/json" },
+            body: JSON.stringify({ conteudo: payload.conteudo }),
+          });
+      if (!saveRes.ok) {
+        setError(await parseErr(saveRes));
+        return;
+      }
+      if (!sumarioId) {
+        const created = (await saveRes.json()) as { id: string };
+        sumarioId = created.id;
+      }
+      const signRes = await bffFetch(`/api/v1/sumarios/${sumarioId}/assinar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ nomeAssinatura: payload.nomeAssinatura }),
+      });
+      if (!signRes.ok) {
+        setError(await parseErr(signRes));
+        setLastSumarioId(sumarioId);
+        await loadDossie(selectedAcaoId);
+        return;
+      }
+      setSumarioModalOpen(false);
+      setLastSumarioId("");
+      setMsg("Sumário registado e assinado.");
+      await loadDossie(selectedAcaoId);
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function assinarSumarioInterno() {
-    if (!lastSumarioId) return; setBusy(true); setError(null); setMsg(null);
-    const res = await bffFetch(`/api/v1/sumarios/${lastSumarioId}/assinar`, { method: "POST", headers: { accept: "application/json" } });
-    if (!res.ok) { setError(await parseErr(res)); setBusy(false); return; }
-    setMsg("Sumario assinado (interna)."); setLastSumarioId("");
-    await loadDossie(selectedAcaoId); setBusy(false);
-  }
-
-  async function assinarSumarioCmd() {
-    if (!lastSumarioId) return; setBusy(true); setError(null); setMsg(null);
-    const res = await bffFetch(`/api/v1/sumarios/${lastSumarioId}/assinar-cmd`, { method: "POST", headers: { accept: "application/json" } });
-    if (!res.ok) { setError(await parseErr(res)); setBusy(false); return; }
-    const data = (await res.json()) as { authorizeUrl?: string; message?: string };
-    if (data.authorizeUrl) window.open(data.authorizeUrl, "_blank", "noopener,noreferrer");
-    setMsg(data.message ?? "Assinatura CMD iniciada."); setBusy(false);
+  async function uploadPdfAssinado() {
+    const sumarioId = sumarioActivo?.id ?? lastSumarioId;
+    if (!sumarioId || !pdfFile) return;
+    if (!sessaoSumarioActiva?.terminadaEm) {
+      setError("O sumário só pode ser registado depois de a sessão ser terminada.");
+      return;
+    }
+    if (pdfFile.type !== "application/pdf" && !pdfFile.name.toLowerCase().endsWith(".pdf")) {
+      setError("Apenas ficheiros PDF (.pdf) são aceites.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setMsg(null);
+    const form = new FormData();
+    form.append("file", pdfFile);
+    const res = await bffFetch(`/api/v1/sumarios/${sumarioId}/upload-pdf-assinado`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      setError(await parseErr(res));
+      setBusy(false);
+      return;
+    }
+    setMsg("PDF assinado carregado. Sumário fechado.");
+    setLastSumarioId("");
+    setPdfFile(null);
+    await loadDossie(selectedAcaoId);
+    setBusy(false);
   }
 
   async function exportar(tipo: string) {
@@ -142,10 +237,10 @@ export default function DossiePedagogicoPage() {
         setBusy(false);
         return;
       }
-      setMsg("Documento aberto para impressao.");
+      setMsg("Documento aberto para impressão.");
     } else {
       await downloadResponseAsFile(res, `dossie-${acao?.codigoInterno ?? "export"}.${ext}`);
-      setMsg(`Export ${tipo.toUpperCase()} concluido.`);
+      setMsg(`Export ${tipo.toUpperCase()} concluído.`);
     }
     setBusy(false);
   }
@@ -155,7 +250,7 @@ export default function DossiePedagogicoPage() {
     const res = await bffFetch(`/api/v1/sigo/acoes-formacao/${selectedAcaoId}/submit`, { method: "POST", headers: { accept: "application/json" } });
     if (!res.ok) { setError(await parseErr(res)); setBusy(false); return; }
     const data = (await res.json()) as { referenceId?: string; message?: string };
-    setMsg(data.message ?? `Submissao SIGO: ${data.referenceId ?? "ok"}`); setBusy(false);
+    setMsg(data.message ?? `Submissão SIGO: ${data.referenceId ?? "ok"}`); setBusy(false);
   }
 
   async function certificarSigoApi() {
@@ -168,8 +263,8 @@ export default function DossiePedagogicoPage() {
     };
     const certs = data.certificados;
     setMsg(
-      `Certificacao SIGO: ${data.estado ?? "ok"}` +
-        (certs ? ` – ${certs.transferidos ?? 0} PDF(s), ${certs.disponiveis ?? 0} disponiveis.` : "."),
+      `Certificação SIGO: ${data.estado ?? "ok"}` +
+        (certs ? ` – ${certs.transferidos ?? 0} PDF(s), ${certs.disponiveis ?? 0} disponíveis.` : "."),
     );
     setBusy(false);
   }
@@ -190,7 +285,7 @@ export default function DossiePedagogicoPage() {
   }
 
   function formatBytes(n: number) { if (n < 1024) return `${n} B`; if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`; return `${(n / (1024 * 1024)).toFixed(1)} MB`; }
-  function labelTipo(tipo: ArquivoExport["tipo"]) { const m: Record<string, string> = { DOSSIE_JSON: "Dossie JSON", SIGO_JSON: "SIGO JSON", DOSSIE_HTML: "Dossie HTML", INSPECAO_ZIP: "Pacote inspecao" }; return m[tipo] ?? tipo; }
+  function labelTipo(tipo: ArquivoExport["tipo"]) { const m: Record<string, string> = { DOSSIE_JSON: "Dossiê JSON", SIGO_JSON: "SIGO JSON", DOSSIE_HTML: "Dossiê HTML", INSPECAO_ZIP: "Pacote inspeção" }; return m[tipo] ?? tipo; }
 
   const score = dossie?.checklist.scoreObrigatorioPercent ?? dossie?.checklist.scorePercent ?? 0;
   const scoreColor = score >= 85 ? "#4ade80" : score >= 50 ? "#fbbf24" : "#f87171";
@@ -198,15 +293,43 @@ export default function DossiePedagogicoPage() {
   const prontoInspecao = dossie?.checklist.prontoInspecao ?? false;
   const pendenciasObrigatorias = (dossie?.checklist.totalObrigatorios ?? DOSSIE_DGERT_TOTAL) - (dossie?.checklist.concluidosObrigatorios ?? 0);
 
+  const formandoIdNifInvalido = useMemo(() => {
+    if (!dossie?.turmas?.length) return undefined;
+    for (const t of dossie.turmas) {
+      for (const m of t.matriculas) {
+        if (m.formando.id && !isValidNifPtClient(m.formando.nif)) {
+          return m.formando.id;
+        }
+      }
+    }
+    return undefined;
+  }, [dossie?.turmas]);
+
+  const resolveCtx = useMemo(
+    () => ({
+      acaoId: selectedAcaoId,
+      cursoId: typeof dossie?.curso?.id === "string" ? dossie.curso.id : undefined,
+      formandoIdNifInvalido,
+    }),
+    [selectedAcaoId, dossie?.curso?.id, formandoIdNifInvalido],
+  );
+
   const documentosStatus = useMemo(() => {
-    if (!dossie?.checklist.items.length) return DOSSIE_DGERT_DOCUMENTOS.map((d) => ({ ...d, ok: false }));
+    if (!dossie?.checklist.items.length) {
+      return DOSSIE_DGERT_DOCUMENTOS.map((d) => ({
+        ...d,
+        ok: false,
+        href: resolveDgertRequisitoHref(d.checklistId, resolveCtx),
+      }));
+    }
     const byId = new Map(dossie.checklist.items.map((i) => [i.id, i]));
     return DOSSIE_DGERT_DOCUMENTOS.map((d) => ({
       ...d,
       ok: byId.get(d.checklistId)?.ok ?? false,
       detalhe: byId.get(d.checklistId)?.detalhe,
+      href: resolveDgertRequisitoHref(d.checklistId, resolveCtx),
     }));
-  }, [dossie?.checklist.items]);
+  }, [dossie?.checklist.items, resolveCtx]);
 
   async function gerarDossieTecnico() {
     if (!selectedAcaoId || !prontoInspecao) return;
@@ -224,44 +347,41 @@ export default function DossiePedagogicoPage() {
   }
 
   return (
-    <div className="max-w-5xl space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-50">Dossiê técnico-pedagógico</h1>
-        <p className="text-sm text-slate-500 mt-1 max-w-3xl">
-          {DOSSIE_DGERT_TOTAL} documentos automatizados para auditorias DGERT - o pacote só é gerado quando
-          todos os requisitos obrigatórios estão cumpridos. Processos que costumam levar semanas ou meses
-          ficam prontos num clique.
-        </p>
-      </div>
+    <>
+      <PageHeader
+        title="Dossiê técnico-pedagógico"
+        description={`${DOSSIE_DGERT_TOTAL} documentos automatizados para auditorias DGERT, com evidências de avaliações, certificados e documentos de matrícula no pacote ZIP. Só é gerado quando os requisitos obrigatórios estão cumpridos.`}
+      />
 
-      {error ? <div className="flex items-start gap-2.5 rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3"><p className="text-sm text-red-300">{error}</p></div> : null}
-      {msg ? <div className="flex items-start gap-2.5 rounded-xl bg-green-950/30 border border-green-500/25 px-4 py-3"><p className="text-sm text-green-300">{msg}</p></div> : null}
+      {error ? <Alert variant="error" className="mb-4">{error}</Alert> : null}
+      {msg ? <Alert variant="success" className="mb-4">{msg}</Alert> : null}
 
       {acoes.length === 0 ? (
-        <p className="text-sm text-slate-500">Sem accoes de formacao. Corre o seed ou cria na API.</p>
+        <p className="text-sm text-slate-500">Sem acções de formação. Corre o seed ou cria na API.</p>
       ) : (
-        <>
-          {/* Geracao do dossie */}
-          <div className="rounded-2xl bg-gradient-to-br from-slate-900/80 to-slate-900/40 border border-slate-700/30 p-5">
+        <div className="space-y-6">
+          {/* Geração do dossiê */}
+          <Card className="bg-gradient-to-br from-slate-900/80 to-slate-900/40">
+            <CardContent className="pt-5">
             <div className="flex flex-wrap items-end gap-3 mb-5">
               <div className="flex-1 min-w-[240px]">
-                <label className="block text-sm font-medium text-slate-400 mb-1.5">Acção de formação</label>
-                <select value={selectedAcaoId} onChange={(e) => setSelectedAcaoId(e.target.value)} className={selectClass}>
+                <Select label="Acção de formação" value={selectedAcaoId} onChange={(e) => setSelectedAcaoId(e.target.value)} className="max-w-md">
                   {acoes.map((a) => <option key={a.id} value={a.id}>{a.codigoInterno} – {a.titulo}</option>)}
-                </select>
+                </Select>
               </div>
-              <button
-                type="button"
+              <Button
                 disabled={busy || !selectedAcaoId || !dossie || !prontoInspecao}
                 onClick={() => void gerarDossieTecnico()}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 disabled:opacity-50 disabled:from-slate-700 disabled:to-slate-700 text-white text-sm font-semibold transition-all shadow-lg shadow-amber-900/20"
+                className="bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 shadow-lg shadow-amber-900/20"
               >
                 Gerar dossiê ({DOSSIE_DGERT_TOTAL} documentos)
-              </button>
+              </Button>
               {selectedAcaoId ? (
-                <Link href={`/portal/acoes/${selectedAcaoId}?tab=compliance`} className="px-3.5 py-2 rounded-lg border border-slate-600/40 text-sm font-medium text-slate-300 hover:bg-slate-800/40 transition-colors">
-                  Ver requisitos
-                </Link>
+                <Button variant="secondary" asChild>
+                  <Link href={`/portal/acoes/${selectedAcaoId}?tab=compliance`}>
+                    Ver requisitos
+                  </Link>
+                </Button>
               ) : null}
             </div>
 
@@ -273,53 +393,85 @@ export default function DossiePedagogicoPage() {
                     : `Faltam ${pendenciasObrigatorias} requisito(s) obrigatório(s) - complete o checklist antes de gerar.`}
                 </p>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {documentosStatus.map((doc) => (
-                    <div
-                      key={doc.checklistId}
-                      className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
-                        doc.ok
-                          ? "border-green-500/25 bg-green-500/5 text-slate-200"
-                          : "border-slate-700/40 bg-slate-800/30 text-slate-500"
-                      }`}
-                    >
-                      <span className={`mt-0.5 shrink-0 ${doc.ok ? "text-green-400" : "text-red-400"}`}>
-                        {doc.ok ? "✓" : "○"}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="font-medium truncate">{String(doc.ordem).padStart(2, "0")}. {doc.label}</p>
-                        <p className="text-[10px] text-slate-600 truncate">{doc.filename}</p>
+                  {documentosStatus.map((doc) => {
+                    const className = `flex items-start gap-2 rounded-lg border px-3 py-2 text-xs transition-colors ${
+                      doc.ok
+                        ? "border-green-500/25 bg-green-500/5 text-slate-200"
+                        : "border-amber-500/30 bg-amber-500/5 text-slate-300 hover:border-amber-400/50 hover:bg-amber-500/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                    }`;
+                    const body = (
+                      <>
+                        <span className={`mt-0.5 shrink-0 ${doc.ok ? "text-green-400" : "text-amber-400"}`}>
+                          {doc.ok ? "✓" : "○"}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium truncate">
+                            {String(doc.ordem).padStart(2, "0")}. {doc.label}
+                          </p>
+                          <p className={`text-[10px] truncate ${doc.ok ? "text-slate-600" : "text-amber-500/80"}`}>
+                            {doc.ok ? doc.filename : "Clique para concluir →"}
+                          </p>
+                        </div>
+                      </>
+                    );
+                    if (!doc.ok && doc.href) {
+                      return (
+                        <Link
+                          key={doc.checklistId}
+                          href={doc.href}
+                          className={className}
+                          title={`Ir resolver: ${doc.label}`}
+                        >
+                          {body}
+                        </Link>
+                      );
+                    }
+                    return (
+                      <div key={doc.checklistId} className={className}>
+                        {body}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </>
             ) : null}
-          </div>
+            </CardContent>
+          </Card>
 
-          {/* Exports avancados */}
-          <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
-            <h2 className="text-sm font-semibold text-slate-200 mb-1">Exports avançados</h2>
-            <p className="text-xs text-slate-500 mb-3">Downloads individuais (requerem requisitos cumpridos para o pacote ZIP).</p>
+          {/* Exports avançados */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Exports para auditoria</CardTitle>
+              <p className="text-xs text-slate-500">
+                O pacote ZIP inclui documentos DGERT, SIGO, checklist, presenças, LMS, avaliações, certificados e documentos de matrícula.
+                Downloads individuais também disponíveis.
+              </p>
+            </CardHeader>
+            <CardContent className="pt-0">
             <div className="flex flex-wrap gap-2">
-              <button type="button" disabled={busy || !selectedAcaoId || !dossie || !prontoInspecao} onClick={() => void exportar("inspecao")} className="px-3.5 py-2 rounded-lg bg-amber-700/80 hover:bg-amber-600 disabled:opacity-50 text-white text-sm font-medium transition-colors">Pacote ZIP</button>
-              <button type="button" disabled={busy || !selectedAcaoId || !dossie} onClick={() => void exportar("json")} className="px-3.5 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm font-medium transition-colors">JSON</button>
-              <button type="button" disabled={busy || !selectedAcaoId || !dossie} onClick={() => void exportar("sigo")} className="px-3.5 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-sm font-medium transition-colors">SIGO JSON</button>
-              <button type="button" disabled={busy || !selectedAcaoId || !dossie} onClick={() => void exportar("html")} className="px-3.5 py-2 rounded-lg bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-white text-sm font-medium transition-colors">HTML / PDF</button>
-              <button type="button" disabled={busy || !selectedAcaoId || !dossie} onClick={() => void exportar("csv")} className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium transition-colors">SIGO CSV</button>
+              <Button variant="secondary" className="bg-amber-700/80 text-white hover:bg-amber-600 border-0" disabled={busy || !selectedAcaoId || !dossie || !prontoInspecao} onClick={() => void exportar("inspecao")}>Pacote inspeção (ZIP)</Button>
+              <Button variant="teal" disabled={busy || !selectedAcaoId || !dossie} onClick={() => void exportar("json")}>JSON</Button>
+              <Button className="bg-purple-600 hover:bg-purple-500" disabled={busy || !selectedAcaoId || !dossie} onClick={() => void exportar("sigo")}>SIGO JSON</Button>
+              <Button variant="secondary" disabled={busy || !selectedAcaoId || !dossie} onClick={() => void exportar("html")}>HTML / PDF</Button>
+              <Button className="bg-indigo-600 hover:bg-indigo-500" disabled={busy || !selectedAcaoId || !dossie} onClick={() => void exportar("csv")}>SIGO CSV</Button>
               {sigoApiMode !== "disabled" ? (
                 <>
-                  <button type="button" disabled={busy || !selectedAcaoId || !sigoPronto} onClick={() => void submeterSigoApi()} className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-medium transition-colors">Submeter SIGO API</button>
-                  <button type="button" disabled={busy || !selectedAcaoId || !sigoPronto} onClick={() => void certificarSigoApi()} className="px-3.5 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium transition-colors">Certificar (SIGO completo)</button>
+                  <Button className="bg-emerald-600 hover:bg-emerald-500" disabled={busy || !selectedAcaoId || !sigoPronto} onClick={() => void submeterSigoApi()}>Submeter SIGO API</Button>
+                  <Button className="bg-emerald-800 hover:bg-emerald-700" disabled={busy || !selectedAcaoId || !sigoPronto} onClick={() => void certificarSigoApi()}>Certificar (SIGO completo)</Button>
                 </>
               ) : null}
             </div>
-          </div>
+            </CardContent>
+          </Card>
 
           {/* Archived files */}
           {dossie ? (
-            <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
-              <h2 className="text-sm font-semibold text-slate-200 mb-1">Arquivos exportados (storage)</h2>
-              <p className="text-xs text-slate-500 mb-4">Gera versoes persistidas do dossie/SIGO/HTML para auditoria e download posterior.</p>
+            <Card>
+              <CardHeader>
+                <CardTitle>Arquivos exportados (storage)</CardTitle>
+                <p className="text-xs text-slate-500">Gera versões persistidas do dossiê/SIGO/HTML para auditoria e download posterior.</p>
+              </CardHeader>
+              <CardContent className="pt-0">
               <div className="flex flex-wrap gap-2 mb-4">
                 <button type="button" disabled={busy || !prontoInspecao} onClick={() => void arquivarExport("INSPECAO_ZIP")} className="px-3 py-1.5 rounded-lg bg-amber-700/60 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-medium transition-colors">Arquivar dossiê (ZIP)</button>
                 <button type="button" disabled={busy} onClick={() => void arquivarExport("DOSSIE_JSON")} className="px-3 py-1.5 rounded-lg bg-teal-600/60 hover:bg-teal-600 disabled:opacity-50 text-white text-xs font-medium transition-colors">Arquivar JSON</button>
@@ -342,21 +494,25 @@ export default function DossiePedagogicoPage() {
                   ))}
                 </div>
               )}
-            </div>
+              </CardContent>
+            </Card>
           ) : null}
 
           {loading && !dossie ? <p className="text-sm text-slate-500 text-center py-4">A carregar...</p> : null}
-        </>
+        </div>
       )}
 
       {dossie ? (
-        <>
+        <div className="mt-6 space-y-6">
           {/* SIGO Validation */}
           {validacaoSigo ? (
-            <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
-              <h2 className="text-sm font-semibold text-slate-200 mb-2">Validacao SIGO</h2>
+            <Card>
+              <CardHeader>
+                <CardTitle>Validação SIGO</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
               <p className={`text-sm font-semibold mb-3 ${sigoPronto ? "text-green-400" : "text-red-400"}`}>
-                {sigoPronto ? "Pronto para exportacao SIGO (sem erros bloqueantes)." : `${validacaoSigo.erros.length} erro(s) bloqueante(s) – corrige antes de submeter.`}
+                {sigoPronto ? "Pronto para exportação SIGO (sem erros bloqueantes)." : `${validacaoSigo.erros.length} erro(s) bloqueante(s) – corrige antes de submeter.`}
               </p>
               {validacaoSigo.erros.length > 0 ? (
                 <div className="mb-3 space-y-1">
@@ -380,19 +536,23 @@ export default function DossiePedagogicoPage() {
                 </div>
               ) : null}
               <p className="text-[11px] text-slate-600">Validado: {new Date(validacaoSigo.validadoEm).toLocaleString("pt-PT")}</p>
-            </div>
+              </CardContent>
+            </Card>
           ) : null}
 
           {/* Checklist DGERT */}
-          <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
-            <h2 className="text-sm font-semibold text-slate-200 mb-3">Completude (checklist DGERT)</h2>
+          <Card>
+            <CardHeader>
+              <CardTitle>Completude (checklist DGERT)</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
             <p className="text-3xl font-bold mb-1" style={{ color: scoreColor }}>{score}%</p>
             <p className="text-xs text-slate-500 mb-4">
-              obrigatorios ({dossie.checklist.concluidosObrigatorios ?? dossie.checklist.concluidos}/{dossie.checklist.totalObrigatorios ?? dossie.checklist.total})
+              obrigatórios ({dossie.checklist.concluidosObrigatorios ?? dossie.checklist.concluidos}/{dossie.checklist.totalObrigatorios ?? dossie.checklist.total})
             </p>
             {dossie.checklist.prontoInspecao != null ? (
               <p className={`text-sm font-medium mb-3 ${dossie.checklist.prontoInspecao ? "text-green-400" : "text-red-400"}`}>
-                {dossie.checklist.prontoInspecao ? "Todos os criterios obrigatorios cumpridos." : "Ainda existem criterios obrigatorios por cumprir."}
+                {dossie.checklist.prontoInspecao ? "Todos os critérios obrigatórios cumpridos." : "Ainda existem critérios obrigatórios por cumprir."}
               </p>
             ) : null}
             {dossie.checklist.grupos?.length ? (
@@ -405,22 +565,57 @@ export default function DossiePedagogicoPage() {
               </div>
             ) : null}
             <div className="space-y-2">
-              {dossie.checklist.items.map((item) => (
-                <div key={item.id} className={`flex items-start gap-2 text-sm ${item.ok ? "text-slate-200" : "text-slate-500"}`}>
-                  <span className={`mt-0.5 flex-shrink-0 ${item.ok ? "text-green-400" : "text-red-400"}`}>{item.ok ? "✓" : "○"}</span>
-                  <div>
-                    <span>{item.label}</span>
-                    {item.detalhe ? <span className="text-slate-600 text-xs ml-1">({item.detalhe})</span> : null}
-                    {!item.ok && item.accaoSugerida ? <p className="text-slate-600 text-xs mt-0.5 ml-0">→ {item.accaoSugerida}</p> : null}
+              {dossie.checklist.items.map((item) => {
+                const href = !item.ok ? resolveDgertRequisitoHref(item.id, resolveCtx) : null;
+                const rowClass = `flex items-start gap-2 text-sm rounded-lg px-2 py-1.5 -mx-2 ${
+                  item.ok
+                    ? "text-slate-200"
+                    : "text-slate-300 hover:bg-amber-500/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                }`;
+                const content = (
+                  <>
+                    <span className={`mt-0.5 flex-shrink-0 ${item.ok ? "text-green-400" : "text-amber-400"}`}>
+                      {item.ok ? "✓" : "○"}
+                    </span>
+                    <div className="min-w-0">
+                      <span className={!item.ok && href ? "underline decoration-amber-500/40 underline-offset-2" : undefined}>
+                        {item.label}
+                      </span>
+                      {item.severidade === "obrigatorio" && !item.ok ? (
+                        <span className="ml-1.5 text-[10px] font-medium uppercase tracking-wide text-amber-500">
+                          obrigatório
+                        </span>
+                      ) : null}
+                      {item.detalhe ? <span className="text-slate-600 text-xs ml-1">({item.detalhe})</span> : null}
+                      {!item.ok && item.accaoSugerida ? (
+                        <p className="text-slate-500 text-xs mt-0.5">→ {item.accaoSugerida}</p>
+                      ) : null}
+                    </div>
+                  </>
+                );
+                if (href) {
+                  return (
+                    <Link key={item.id} href={href} className={rowClass} title={`Ir resolver: ${item.label}`}>
+                      {content}
+                    </Link>
+                  );
+                }
+                return (
+                  <div key={item.id} className={rowClass}>
+                    {content}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          {/* Curso / accao */}
-          <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
-            <h2 className="text-sm font-semibold text-slate-200 mb-2">Curso / accao</h2>
+          {/* Curso / acção */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Curso / acção</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
             <p className="text-sm text-slate-200">
               <strong>{String(dossie.curso.designacao)}</strong>
               {dossie.curso.codigoUfcd ? ` · UFCD ${String(dossie.curso.codigoUfcd)}` : null}
@@ -430,11 +625,15 @@ export default function DossiePedagogicoPage() {
               {String(dossie.acaoFormacao.codigoInterno)} – {String(dossie.acaoFormacao.titulo)} [{String(dossie.acaoFormacao.estado)}]
             </p>
             {dossie.curso.objetivos ? <p className="text-xs text-slate-400 mt-2 line-clamp-2">{String(dossie.curso.objetivos)}</p> : null}
-          </div>
+            </CardContent>
+          </Card>
 
           {/* Formandos e assiduidade */}
-          <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
-            <h2 className="text-sm font-semibold text-slate-200 mb-3">Formandos e assiduidade</h2>
+          <Card>
+            <CardHeader>
+              <CardTitle>Formandos e assiduidade</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
             <div className="space-y-3">
               {dossie.turmas.map((t) => (
                 <div key={t.codigo}>
@@ -448,26 +647,32 @@ export default function DossiePedagogicoPage() {
               ))}
             </div>
             <p className="text-xs text-slate-500 mt-3">
-              Taxa presenca global:{" "}
+              Taxa de presença global:{" "}
               {dossie.assiduidade.taxaPresenca != null
                 ? `${dossie.assiduidade.taxaPresenca}% (${dossie.assiduidade.presencasMarcadas}/${dossie.assiduidade.presencasRegistadas})`
                 : "–"}
             </p>
-          </div>
+            </CardContent>
+          </Card>
 
-          {/* Sessoes, sumarios e presencas */}
-          <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
-            <h2 className="text-sm font-semibold text-slate-200 mb-3">Sessoes, sumarios e presencas</h2>
+          {/* Sessões, sumários e presenças */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Sessões, sumários e presenças</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
             {!dossie.cronograma?.sessoes.length ? (
-              <p className="text-sm text-slate-500">Sem cronograma/sessoes.</p>
+              <p className="text-sm text-slate-500">Sem cronograma/sessões.</p>
             ) : (
               <div className="divide-y divide-slate-700/20 mb-4">
                 {dossie.cronograma.sessoes.map((s) => {
                   const folha = s.folhasPresenca[0];
                   const folhaEstado = folha
-                    ? folha.validadaFormadorEm || folha.fechadaEm
-                      ? "validada"
-                      : "aberta"
+                    ? folha.fechadaEm || folha.aprovadaGestorEm
+                      ? "aprovada"
+                      : folha.validadaFormadorEm
+                        ? "validada (aberta)"
+                        : "aberta"
                     : null;
                   return (
                   <div key={s.id} className="py-2.5 text-sm border-b border-slate-800/40 last:border-0">
@@ -494,11 +699,35 @@ export default function DossiePedagogicoPage() {
                     <p className="text-xs mt-0.5">
                       {s.sumarios.length ? (
                         <span className={s.sumarios[0].imutavel ? "text-green-400" : "text-yellow-400"}>
-                          {s.sumarios[0].imutavel ? "Sumário assinado" : "Sumário rascunho"}
+                          {s.sumarios[0].imutavel
+                            ? s.sumarios[0].assinaturaTipo === "pdf_upload" || s.sumarios[0].pdfStorageKey
+                              ? "Sumário com PDF assinado"
+                              : "Sumário assinado"
+                            : "Sumário rascunho"}
                         </span>
                       ) : (
                         <span className="text-yellow-400">Sem sumário</span>
                       )}
+                      {s.sumarios[0]?.pdfStorageKey ? (
+                        <button
+                          type="button"
+                          className="ml-2 text-blue-400 hover:text-blue-300 underline"
+                          onClick={() => {
+                            void (async () => {
+                              const res = await bffFetch(`/api/v1/sumarios/${s.sumarios[0].id}/pdf`, {
+                                headers: { accept: "application/pdf" },
+                              });
+                              if (!res.ok) { setError(await parseErr(res)); return; }
+                              await downloadResponseAsFile(
+                                res,
+                                s.sumarios[0].pdfNomeFicheiro ?? `sumario-${s.numeroSessao}.pdf`,
+                              );
+                            })();
+                          }}
+                        >
+                          Ver PDF
+                        </button>
+                      ) : null}
                       {folha ? (
                         <span className="text-slate-500">
                           {" · "}
@@ -516,44 +745,129 @@ export default function DossiePedagogicoPage() {
             )}
 
             {dossie.cronograma?.sessoes.length ? (
-              <form onSubmit={(e) => void guardarSumario(e)} className="space-y-3 max-w-lg">
-                <p className="text-sm font-medium text-slate-400">Registar sumario</p>
-                <select value={sessaoSumarioId} onChange={(e) => setSessaoSumarioId(e.target.value)} className={selectClass}>
+              <div className="space-y-3 max-w-lg">
+                <p className="text-sm font-medium text-slate-400">Registar sumário</p>
+                <Select
+                  value={sessaoSumarioId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setSessaoSumarioId(id);
+                    const sessao = dossie.cronograma?.sessoes.find((s) => s.id === id);
+                    const draft = sessao?.sumarios.find((s) => !s.imutavel);
+                    setLastSumarioId(draft?.id ?? "");
+                    setPdfFile(null);
+                  }}
+                >
                   {dossie.cronograma.sessoes.map((s) => (
-                    <option key={s.id} value={s.id}>Sessao {s.numeroSessao} ({String(s.data).slice(0, 10)})</option>
+                    <option key={s.id} value={s.id}>
+                      Sessão {s.numeroSessao} ({String(s.data).slice(0, 10)})
+                      {s.terminadaEm ? "" : " - por terminar"}
+                    </option>
                   ))}
-                </select>
-                <textarea value={sumarioTexto} onChange={(e) => setSumarioTexto(e.target.value)} placeholder="Conteudos abordados, metodologia, observacoes... (min. 10 caracteres)" required minLength={10} rows={4} className={`${inputClass} resize-y`} />
-                <div className="flex flex-wrap gap-2">
-                  <button type="submit" disabled={busy} className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium transition-colors">Guardar sumario</button>
-                  {lastSumarioId ? (
+                </Select>
+                {!sessaoSumarioActiva?.terminadaEm ? (
+                  <p className="text-xs text-amber-200/90">
+                    O sumário só pode ser preenchido depois de a sessão seleccionada ser terminada.
+                  </p>
+                ) : null}
+                <div className="flex flex-wrap gap-2 items-center">
+                  <Button
+                    type="button"
+                    disabled={
+                      busy ||
+                      !sessaoSumarioId ||
+                      (!sumarioActivo?.imutavel && !sessaoSumarioActiva?.terminadaEm)
+                    }
+                    onClick={() => setSumarioModalOpen(true)}
+                  >
+                    {sumarioActivo?.imutavel
+                      ? "Ver sumário"
+                      : sumarioActivo?.id
+                        ? "Continuar sumário"
+                        : "Registar e assinar"}
+                  </Button>
+                  {sumarioActivo?.id && !sumarioActivo.imutavel && sessaoSumarioActiva?.terminadaEm ? (
                     <>
-                      <button type="button" disabled={busy} onClick={() => void assinarSumarioInterno()} className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium transition-colors">Assinar (interna)</button>
-                      {cmdMode !== "disabled" ? (
-                        <button type="button" disabled={busy} onClick={() => void assinarSumarioCmd()} className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-sm font-medium transition-colors">Assinar com CMD</button>
-                      ) : null}
+                      <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-600/60 text-sm text-slate-300 cursor-pointer hover:border-slate-500">
+                        <span>{pdfFile ? pdfFile.name : "PDF assinado (.pdf)"}</span>
+                        <input
+                          type="file"
+                          accept="application/pdf,.pdf"
+                          className="sr-only"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0] ?? null;
+                            if (
+                              f &&
+                              f.type !== "application/pdf" &&
+                              !f.name.toLowerCase().endsWith(".pdf")
+                            ) {
+                              setError("Apenas ficheiros PDF (.pdf) são aceites.");
+                              setPdfFile(null);
+                              e.target.value = "";
+                              return;
+                            }
+                            setError(null);
+                            setPdfFile(f);
+                          }}
+                        />
+                      </label>
+                      <Button
+                        type="button"
+                        className="bg-emerald-700 hover:bg-emerald-600"
+                        disabled={busy || !pdfFile}
+                        onClick={() => void uploadPdfAssinado()}
+                      >
+                        Carregar PDF assinado
+                      </Button>
                     </>
                   ) : null}
                 </div>
-              </form>
+              </div>
             ) : null}
-          </div>
+            </CardContent>
+          </Card>
 
           {/* Formadores */}
           {dossie.formadores.length > 0 ? (
-            <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
-              <h2 className="text-sm font-semibold text-slate-200 mb-2">Formadores</h2>
+            <Card>
+              <CardHeader>
+                <CardTitle>Formadores</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
                 {dossie.formadores.map((f, i) => (
                   <span key={i}>{f.nomeCompleto} <span className="text-slate-600">· NIF {f.nif}</span></span>
                 ))}
               </div>
-            </div>
+              </CardContent>
+            </Card>
           ) : null}
 
           <p className="text-[11px] text-slate-600">Gerado: {new Date(dossie.geradoEm).toLocaleString("pt-PT")}</p>
-        </>
+        </div>
       ) : null}
-    </div>
+
+      <SumarioAssinaturaModal
+        open={sumarioModalOpen}
+        busy={busy}
+        readOnly={!!sumarioActivo?.imutavel}
+        documento={
+          sessaoSumarioActiva
+            ? {
+                numeroSessao: sessaoSumarioActiva.numeroSessao,
+                data: sessaoSumarioActiva.data,
+                horaInicio: sessaoSumarioActiva.horaInicio,
+                horaFim: sessaoSumarioActiva.horaFim,
+                formadorNome: sessaoSumarioActiva.formador?.nomeCompleto ?? null,
+                conteudo: sumarioActivo?.conteudo ?? "",
+              }
+            : null
+        }
+        onClose={() => {
+          if (!busy) setSumarioModalOpen(false);
+        }}
+        onConfirm={(payload) => void confirmarSumarioAssinatura(payload)}
+      />
+    </>
   );
 }

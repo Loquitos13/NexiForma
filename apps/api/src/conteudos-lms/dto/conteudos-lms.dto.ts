@@ -1,4 +1,16 @@
-import { IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, Max, Min } from "class-validator";
+import {
+  IsBoolean,
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  Min,
+  ValidateIf,
+} from "class-validator";
 
 const TIPOS = ["VIDEO", "PDF", "SCORM", "TEXTO", "QUIZ", "WEBINAR"] as const;
 
@@ -121,6 +133,29 @@ export class UpdateModuloUnidadeDto {
   @Min(0)
   @Max(100)
   notaMinima?: number | null;
+
+  @IsOptional()
+  @IsBoolean()
+  lockManual?: boolean;
+}
+
+export class DesbloquearUnidadeDto {
+  @IsOptional()
+  @IsString()
+  motivo?: string;
+}
+
+export class UpdateModuloTarefasAcaoDto {
+  @IsOptional()
+  @IsBoolean()
+  desbloqueado?: boolean;
+}
+
+/** Limite de conclusão do módulo nesta acção (só gestor). `null` remove o limite. */
+export class UpdateModuloPrazoAcaoDto {
+  @ValidateIf((_, v) => v !== null && v !== undefined)
+  @IsDateString()
+  prazoConclusao!: string | null;
 }
 
 export class UpdateProgressoModuloDto {

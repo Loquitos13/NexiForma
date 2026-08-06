@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
+import { CheckCircle2 } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
-import { isModuloStorageRef, parseVimeoVideoId, parseYoutubeVideoId, resolveModuloConteudoUrl, sanitizeLmsHtml } from "@nexiforma/shared";
+import { isModuloStorageRef, parseYoutubeVideoId, resolveModuloConteudoUrl, sanitizeLmsHtml } from "@nexiforma/shared";
 import { ModuloStoredMedia } from "@/components/lms/ModuloStoredMedia";
 import { ExternalVideoEmbed } from "@/components/lms/ExternalVideoEmbed";
+import { Button } from "@/components/ui";
 import { useAutoConcluirModulo } from "@/lib/lms/use-auto-concluir-modulo";
 
 type ConteudoInfo = {
@@ -115,43 +117,11 @@ export default function ConteudoViewerPage() {
       typeof modulo.metadata.fileName === "string" &&
       /\.(doc|docx|ppt|pptx|xls|xlsx)$/i.test(modulo.metadata.fileName));
 
-  const textoRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (concluido || !modulo) return;
-    const webinarComPlayer =
-      modulo.tipo === "WEBINAR" &&
-      (parseYoutubeVideoId(modulo.urlOuRef) !== null || parseVimeoVideoId(modulo.urlOuRef) !== null);
-    const videoExternoComPlayer = modulo.tipo === "VIDEO" && isExternalVideo;
-    const usaTimerEngagement =
-      !webinarComPlayer &&
-      !videoExternoComPlayer &&
-      (modulo.tipo === "PDF" && mediaUrl && !isOfficeDoc && !mimeType?.startsWith("image/") && !isStored);
-    if (!usaTimerEngagement) return;
-    const secs = modulo.duracaoMin ? Math.max(30, Math.round(modulo.duracaoMin * 60 * 0.7)) : 90;
-    const t = setTimeout(() => void registarConclusao(), secs * 1000);
-    return () => clearTimeout(t);
-  }, [modulo, concluido, isExternalVideo, isOfficeDoc, isStored, mediaUrl, mimeType, registarConclusao]);
-
-  useEffect(() => {
-    if (concluido || !modulo?.conteudoHtml) return;
-    const el = textoRef.current;
-    if (!el) return;
-    function checkScroll() {
-      const node = textoRef.current;
-      if (!node) return;
-      if (node.scrollHeight <= node.clientHeight + 8) {
-        void registarConclusao();
-        return;
-      }
-      if (node.scrollTop + node.clientHeight >= node.scrollHeight * 0.92) {
-        void registarConclusao();
-      }
-    }
-    el.addEventListener("scroll", checkScroll);
-    checkScroll();
-    return () => el.removeEventListener("scroll", checkScroll);
-  }, [modulo?.conteudoHtml, concluido, registarConclusao]);
+  const precisaConfirmacaoManual =
+    !!modulo &&
+    !concluido &&
+    modulo.tipo !== "VIDEO" &&
+    !(modulo.tipo === "WEBINAR" && !!modulo.urlOuRef);
 
   return (
     <div className="max-w-4xl mx-auto px-5 py-8 space-y-6">
@@ -198,7 +168,9 @@ export default function ConteudoViewerPage() {
             </div>
 
             {!concluido ? (
-              <p className="text-xs text-slate-500">A conclusão regista-se automaticamente ao terminares o conteúdo.</p>
+              <p className="text-xs text-slate-500">
+                Confirma a conclusão manualmente (texto/PDF) ou ao terminares o vídeo.
+              </p>
             ) : null}
           </div>
 
@@ -258,7 +230,6 @@ export default function ConteudoViewerPage() {
                       : null
                   }
                   variant="full"
-                  onDocumentoVisualizado={() => void registarConclusao()}
                 />
               </div>
             ) : mimeType?.startsWith("image/") && mediaUrl ? (
@@ -272,7 +243,6 @@ export default function ConteudoViewerPage() {
                 <a
                   href={mediaUrl}
                   download
-                  onClick={() => void registarConclusao()}
                   className="inline-flex px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm font-medium text-white"
                 >
                   Descarregar ficheiro
@@ -293,7 +263,6 @@ export default function ConteudoViewerPage() {
             />
           ) : modulo.conteudoHtml ? (
             <div
-              ref={textoRef}
               className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-6 prose prose-invert prose-sm max-w-none max-h-[70vh] overflow-y-auto"
               dangerouslySetInnerHTML={{ __html: sanitizeLmsHtml(modulo.conteudoHtml) ?? "" }}
             />
@@ -307,7 +276,15 @@ export default function ConteudoViewerPage() {
             </div>
           )}
 
-          {/* Concluded state */}
+          {precisaConfirmacaoManual ? (
+            <div className="flex flex-col items-center gap-2 pt-2">
+              <Button type="button" onClick={() => void registarConclusao()}>
+                <CheckCircle2 className="h-4 w-4" />
+                Marcar como concluído
+              </Button>
+            </div>
+          ) : null}
+
           {concluido ? (
             <div className="rounded-2xl bg-teal-500/5 border border-teal-500/15 p-5 text-center">
               <p className="text-teal-300 font-semibold">Modulo concluido com sucesso!</p>

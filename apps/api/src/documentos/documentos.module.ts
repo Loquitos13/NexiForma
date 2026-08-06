@@ -1,10 +1,11 @@
 import { Module } from "@nestjs/common";
 import { StorageModule } from "../storage/storage.module";
+import { NotificacoesModule } from "../notificacoes/notificacoes.module";
 import { DocumentosController } from "./documentos.controller";
 import { DocumentosService } from "./documentos.service";
 
 @Module({
-  imports: [StorageModule],
+  imports: [StorageModule, NotificacoesModule],
   controllers: [DocumentosController],
   providers: [DocumentosService],
 })

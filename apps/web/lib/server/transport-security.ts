@@ -25,7 +25,10 @@ export function buildContentSecurityPolicy(): string {
 
   const directives = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+    // Next.js dev (Fast Refresh) e alguns chunks precisam de unsafe-eval; em prod usar nonces no futuro.
+    isProd
+      ? "script-src 'self' 'unsafe-inline'"
+      : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",

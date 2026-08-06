@@ -38,23 +38,24 @@ const bindHost = process.env.DEV_BIND_HOST ?? "0.0.0.0";
 const lanIp = process.env.DEV_LAN_IP?.trim() || null;
 const appUrl = (process.env.APP_PUBLIC_URL ?? `http://localhost:${webPort}`).replace(/\/$/, "");
 
-function isPortFree(port) {
+function isPortFree(port, host) {
   return new Promise((resolvePort) => {
     const server = net.createServer();
     server.once("error", () => resolvePort(false));
     server.once("listening", () => {
       server.close(() => resolvePort(true));
     });
-    server.listen(port, "127.0.0.1");
+    server.listen(port, host);
   });
 }
 
-const free = await isPortFree(webPort);
+const free = await isPortFree(webPort, bindHost);
 if (!free) {
   console.error(
-    `\n[NexiForma] Porta ${webPort} já está em uso - a Web não arrancou.\n` +
-      `  • Feche o processo anterior (ex.: outro \`next dev\`)\n` +
+    `\n[NexiForma] Porta ${webPort} (${bindHost}) já está em uso - a Web não arrancou.\n` +
+      `  • Feche o processo anterior (PowerShell: Get-NetTCPConnection -LocalPort ${webPort} | Select OwningProcess)\n` +
       `  • Ou defina WEB_PORT=3002 no .env e APP_PUBLIC_URL=http://localhost:3002\n` +
+      `  • Se a porta estiver ocupada por um Next antigo, todas as rotas podem responder 500 até reiniciar.\n` +
       `  • Login e /api/auth/* só funcionam em ${appUrl} - não abra a API (:${apiPort}) no browser.\n`,
   );
   process.exit(1);

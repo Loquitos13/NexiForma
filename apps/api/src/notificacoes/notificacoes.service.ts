@@ -7,7 +7,9 @@ import { ComplianceAlertasService } from "../compliance/compliance-alertas.servi
 import { CertificadosService } from "../certificados/certificados.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 import { SmsService } from "./sms.service";
+import { EmailTemplates } from "./templates/email.templates";
 import {
   GESTOR_ROLES,
   resolverEmailNotificacaoUtilizador,
@@ -44,7 +46,7 @@ export class NotificacoesService {
         enabled: this.sms.isEnabled(),
         provider: this.sms.getProvider(),
       },
-      appPublicUrl: this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000",
+      appPublicUrl: resolveAppPublicUrlForLinks(this.config),
     };
   }
 
@@ -89,38 +91,27 @@ export class NotificacoesService {
       select: { legalName: true, slug: true },
     });
 
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config).replace(/\/$/, "");
     const linhas =
       alertas.length === 0
-        ? ["Sem alertas activos neste momento."]
+        ? []
         : alertas.map(
             (a) =>
               `[${a.severidade === "critico" ? "CRÍTICO" : "AVISO"}] ${a.codigoInterno}: ${a.mensagem}`,
           );
 
-    const text =
-      `Resumo de alertas NexiForma – ${tenant?.legalName ?? "entidade formadora"}\n\n` +
-      linhas.join("\n") +
-      `\n\nConsulta o portal: ${appUrl}/portal`;
-
-    const html =
-      `<p>Resumo de alertas para <strong>${tenant?.legalName ?? "a entidade"}</strong>:</p>` +
-      (alertas.length
-        ? `<ul>${alertas
-            .map(
-              (a) =>
-                `<li><strong>${a.codigoInterno}</strong> (${a.severidade}): ${a.mensagem}</li>`,
-            )
-            .join("")}</ul>`
-        : `<p>Sem alertas activos.</p>`) +
-      `<p><a href="${appUrl}/portal">Abrir portal</a></p>`;
+    const tpl = EmailTemplates.digestAlertas({
+      entidade: tenant?.legalName ?? "entidade formadora",
+      linhas,
+      portalUrl: `${appUrl}/portal`,
+    });
 
     for (const [to] of emailsUnicos) {
       await this.mail.send({
         to,
-        subject: `NexiForma – ${alertas.length} alerta(s) operacionais`,
-        text,
-        html,
+        subject: tpl.subject,
+        text: tpl.text,
+        html: tpl.html,
       });
     }
 
@@ -162,7 +153,7 @@ export class NotificacoesService {
       },
     });
 
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     let emailsEnviados = 0;
     let smsEnviados = 0;
     const detalhes: string[] = [];
@@ -198,21 +189,22 @@ export class NotificacoesService {
         });
         if (!email) continue;
 
-        const text =
-          `Olá ${m.formando.nome},\n\n` +
-          `Lembrete: amanhã (${dataStr}) tens a sessão ${sessao.numeroSessao} da formação «${acao.titulo}» (${acao.codigoInterno}).` +
-          (horaStr ? `\nHora: ${horaStr}` : "") +
-          `\n\nAcede ao portal: ${appUrl}/portal/formando`;
+        const corpo =
+          `Amanhã (${dataStr}) tem a sessão ${sessao.numeroSessao} da formação «${acao.titulo}» (${acao.codigoInterno}).` +
+          (horaStr ? ` Hora: ${horaStr}.` : "");
+        const tpl = EmailTemplates.lembreteCalendario({
+          nome: m.formando.nome,
+          titulo: `${acao.codigoInterno} – sessão ${sessao.numeroSessao}`,
+          corpo,
+          tipo: "DIA_ANTES",
+          link: `${appUrl}/portal/formando`,
+        });
 
         await this.mail.send({
           to: email,
           subject: `Sessão amanhã – ${acao.codigoInterno}`,
-          text,
-          html:
-            `<p>Olá <strong>${m.formando.nome}</strong>,</p>` +
-            `<p>Amanhã (<strong>${dataStr}</strong>) tens a <strong>sessão ${sessao.numeroSessao}</strong> ` +
-            `da formação «${acao.titulo}».</p>` +
-            `<p><a href="${appUrl}/portal/formando">Abrir portal formando</a></p>`,
+          text: tpl.text,
+          html: tpl.html,
         });
         emailsEnviados += 1;
 
@@ -261,7 +253,7 @@ export class NotificacoesService {
 
     const lista = await this.certificados.listByAcao(user, acaoId);
     const elegiveis = lista.formandos.filter((f) => f.elegivelCertificado);
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
 
     let enviados = 0;
     for (const f of elegiveis) {
@@ -271,17 +263,17 @@ export class NotificacoesService {
       });
       if (!email) continue;
 
+      const tpl = EmailTemplates.certificadoDisponivel({
+        nomeFormando: f.formando.nome,
+        nomeCurso: lista.acao.titulo,
+        codigoFormacao: lista.acao.codigoInterno,
+        portalUrl: `${appUrl}/portal/certificados`,
+      });
       await this.mail.send({
         to: email,
-        subject: `Certificado disponível – ${lista.acao.codigoInterno}`,
-        text:
-          `Olá ${f.formando.nome},\n\n` +
-          `O teu certificado da formação «${lista.acao.titulo}» está disponível.\n` +
-          `Consulta em: ${appUrl}/portal/certificados`,
-        html:
-          `<p>Olá <strong>${f.formando.nome}</strong>,</p>` +
-          `<p>O teu certificado da formação «${lista.acao.titulo}» está disponível.</p>` +
-          `<p><a href="${appUrl}/portal/certificados">Ver certificados</a></p>`,
+        subject: tpl.subject,
+        text: tpl.text,
+        html: tpl.html,
       });
       enviados += 1;
     }

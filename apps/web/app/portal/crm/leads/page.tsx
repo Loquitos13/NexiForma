@@ -53,6 +53,8 @@ import { CrmContextInsights, useSugestoesPendentesPorLead } from "@/components/c
 import { ListPagination } from "@/components/crm/list-pagination";
 import { parsePaginatedList } from "@/lib/crm/paginated-list";
 import { KanbanHelpLink, LeadsKanbanBoard } from "@/components/crm/leads-kanban";
+import { CrmCustomFieldsForm } from "@/components/crm/crm-custom-fields-form";
+import { customFieldDefsForEntity, type CrmCustomFieldDef } from "@nexiforma/shared";
 import { LayoutGrid, List } from "lucide-react";
 
 type Lead = {
@@ -68,7 +70,13 @@ type Lead = {
   valorEstimadoCentavos: number;
   notas: string | null;
   motivoPerda: string | null;
-  entidadeCliente: { id: string; nome: string; nif: string } | null;
+  metadata?: { moradaFiscal?: string } | null;
+  entidadeCliente: {
+    id: string;
+    nome: string;
+    nif: string;
+    moradaFiscal?: string | null;
+  } | null;
   criadoPor: { displayName: string } | null;
   atribuido: { displayName: string } | null;
   updatedAt: string;
@@ -86,10 +94,18 @@ function leadTemNifValido(nif: string | null | undefined): boolean {
   return parseInt(digits[8]!, 10) === expectedDigit;
 }
 
+function leadMoradaFiscal(l: Lead): string {
+  const fromMeta =
+    typeof l.metadata?.moradaFiscal === "string" ? l.metadata.moradaFiscal.trim() : "";
+  if (fromMeta.length >= 5) return fromMeta;
+  const fromEntidade = l.entidadeCliente?.moradaFiscal?.trim() ?? "";
+  return fromEntidade.length >= 5 ? fromEntidade : "";
+}
+
 function leadPodeCriarProposta(l: Lead): boolean {
   if (l.estado === "PERDIDO") return false;
-  if (l.estado === "CONVERTIDO") return !!l.entidadeCliente;
-  return leadTemNifValido(l.nif);
+  if (l.entidadeCliente) return true;
+  return leadTemNifValido(l.nif) && leadMoradaFiscal(l).length >= 5;
 }
 
 const ESTADOS: (LeadEstado | "TODAS")[] = [
@@ -119,6 +135,7 @@ const emptyForm = {
   email: "",
   telefone: "",
   nif: "",
+  moradaFiscal: "",
   origem: "OUTRO" as LeadOrigem,
   valorEuros: "",
   notas: "",
@@ -136,7 +153,7 @@ const MANUAL_CLIENTE = "__manual__";
 
 export default function CrmLeadsPage() {
   const pathname = usePathname();
-  const { canManageCrm, canManage } = useTenantRole();
+  const { canManageCrm, canManage, writeDisabled } = useTenantRole();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -157,7 +174,10 @@ export default function CrmLeadsPage() {
   const sugestoesPorLead = useSugestoesPendentesPorLead();
   const [motivoPerda, setMotivoPerda] = useState("");
   const [convertNif, setConvertNif] = useState("");
+  const [convertMorada, setConvertMorada] = useState("");
   const [form, setForm] = useState(emptyForm);
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>({});
+  const [leadFieldDefs, setLeadFieldDefs] = useState<CrmCustomFieldDef[]>([]);
   const [clientes, setClientes] = useState<ClienteOpt[]>([]);
 
   const loadClientes = useCallback(async () => {
@@ -169,6 +189,16 @@ export default function CrmLeadsPage() {
     if (createOpen) void loadClientes();
   }, [createOpen, loadClientes]);
 
+  useEffect(() => {
+    if (!createOpen || !canManageCrm) return;
+    void (async () => {
+      const res = await bffFetch("/api/v1/crm/config", { headers: { accept: "application/json" } });
+      if (!res.ok) return;
+      const cfg = (await res.json()) as { customFieldDefs?: CrmCustomFieldDef[] };
+      setLeadFieldDefs(customFieldDefsForEntity(cfg.customFieldDefs ?? [], "lead"));
+    })();
+  }, [createOpen, canManageCrm]);
+
   function seleccionarCliente(clienteId: string) {
     if (!clienteId) {
       setForm((f) => ({
@@ -178,6 +208,7 @@ export default function CrmLeadsPage() {
         email: "",
         telefone: "",
         nif: "",
+        moradaFiscal: "",
       }));
       return;
     }
@@ -189,6 +220,7 @@ export default function CrmLeadsPage() {
         email: "",
         telefone: "",
         nif: "",
+        moradaFiscal: "",
       }));
       return;
     }
@@ -201,6 +233,7 @@ export default function CrmLeadsPage() {
       email: c.email ?? "",
       telefone: c.telefone ?? "",
       nif: c.nif,
+      moradaFiscal: "",
     }));
   }
 
@@ -246,6 +279,10 @@ export default function CrmLeadsPage() {
       setForm({ ...emptyForm, codigo: generateLeadCodigo() });
       setCreateOpen(true);
     }
+    const qParam = params.get("q")?.trim();
+    if (qParam) {
+      setListFilters((f) => (f.q === qParam ? f : { ...f, q: qParam }));
+    }
   }, [canManageCrm]);
 
   async function onCreate(e: FormEvent) {
@@ -253,6 +290,18 @@ export default function CrmLeadsPage() {
     if (!form.empresaNome.trim()) {
       setError("Seleccione um cliente ou indique o nome da empresa.");
       return;
+    }
+    const empresaManual =
+      form.entidadeClienteId === MANUAL_CLIENTE || form.entidadeClienteId === "";
+    if (empresaManual) {
+      if (!leadTemNifValido(form.nif)) {
+        setError("NIF válido (9 dígitos) é obrigatório para empresa manual.");
+        return;
+      }
+      if (form.moradaFiscal.trim().length < 5) {
+        setError("Morada fiscal é obrigatória para empresa manual.");
+        return;
+      }
     }
     setBusy(true);
     setError(null);
@@ -275,9 +324,11 @@ export default function CrmLeadsPage() {
         email: form.email || undefined,
         telefone: form.telefone || undefined,
         nif: form.nif || undefined,
+        moradaFiscal: empresaManual ? form.moradaFiscal.trim() : undefined,
         origem: form.origem,
         valorEstimadoCentavos: Number.isFinite(valorCentavos) ? valorCentavos : 0,
         notas: form.notas || undefined,
+        ...(Object.keys(customFields).length ? { customFields } : {}),
       }),
     });
     setBusy(false);
@@ -287,6 +338,7 @@ export default function CrmLeadsPage() {
     }
     setCreateOpen(false);
     setForm(emptyForm);
+    setCustomFields({});
     setMsg("Lead registado.");
     await load();
   }
@@ -325,12 +377,18 @@ export default function CrmLeadsPage() {
 
   async function confirmarConverter() {
     if (!activeLead) return;
+    if (convertMorada.trim().length < 5) {
+      setError("Morada fiscal é obrigatória para converter o lead.");
+      return;
+    }
     setBusy(true);
+    setError(null);
     const res = await bffFetch(`/api/v1/crm/leads/${activeLead.id}/converter`, {
       method: "POST",
       headers: { "Content-Type": "application/json", accept: "application/json" },
       body: JSON.stringify({
         nif: convertNif || activeLead.nif || undefined,
+        moradaFiscal: convertMorada.trim(),
       }),
     });
     setBusy(false);
@@ -341,9 +399,17 @@ export default function CrmLeadsPage() {
     const data = (await res.json()) as { entidade: { id: string; nome: string } };
     setConvertOpen(false);
     setConvertNif("");
+    setConvertMorada("");
     setActiveLead(null);
     setMsg(`Convertido em entidade «${data.entidade.nome}».`);
     await load();
+  }
+
+  function abrirConverter(lead: Lead) {
+    setActiveLead(lead);
+    setConvertNif(lead.nif ?? "");
+    setConvertMorada(leadMoradaFiscal(lead));
+    setConvertOpen(true);
   }
 
   async function criarProposta(lead: Lead) {
@@ -474,7 +540,7 @@ export default function CrmLeadsPage() {
             >
               <LayoutGrid className="h-3.5 w-3.5" /> Kanban
             </Button>
-            <Button size="sm" onClick={() => {
+            <Button size="sm" disabled={writeDisabled} onClick={() => {
             setForm({ ...emptyForm, codigo: generateLeadCodigo() });
             setCreateOpen(true);
           }}>
@@ -506,6 +572,7 @@ export default function CrmLeadsPage() {
             key={e}
             type="button"
             onClick={() => setEstadoFilter(e)}
+            aria-pressed={estadoFilter === e}
             className={`rounded-xl px-3 py-1.5 text-sm border transition-colors ${
               estadoFilter === e
                 ? "border-blue-500/40 bg-blue-500/10 text-blue-300"
@@ -531,6 +598,10 @@ export default function CrmLeadsPage() {
               setActiveLead(l as Lead);
               setNotasOpen(true);
             }}
+            onRequestConvert={(l) => {
+              const lead = leads.find((row) => row.id === l.id) ?? (l as Lead);
+              abrirConverter(lead);
+            }}
           />
         </>
       ) : (
@@ -547,7 +618,7 @@ export default function CrmLeadsPage() {
                 <Button
                   size="sm"
                   variant="secondary"
-                  disabled={busy}
+                  disabled={busy || writeDisabled}
                   onClick={() => {
                     setActiveLead(l);
                     setNotasOpen(true);
@@ -560,7 +631,7 @@ export default function CrmLeadsPage() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={busy}
+                    disabled={busy || writeDisabled}
                     onClick={() => void avancarEstado(l, "CONTACTADO")}
                   >
                     Contactado
@@ -570,7 +641,7 @@ export default function CrmLeadsPage() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={busy}
+                    disabled={busy || writeDisabled}
                     onClick={() => void avancarEstado(l, "QUALIFICADO")}
                   >
                     Qualificar
@@ -581,12 +652,8 @@ export default function CrmLeadsPage() {
                     <Button
                       size="sm"
                       variant="secondary"
-                      disabled={busy}
-                      onClick={() => {
-                        setActiveLead(l);
-                        setConvertNif(l.nif ?? "");
-                        setConvertOpen(true);
-                      }}
+                      disabled={busy || writeDisabled}
+                      onClick={() => abrirConverter(l)}
                     >
                       <Building2 className="h-3.5 w-3.5" />
                       Converter
@@ -594,7 +661,7 @@ export default function CrmLeadsPage() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={busy}
+                      disabled={busy || writeDisabled}
                       onClick={() => {
                         setActiveLead(l);
                         setPerdidoOpen(true);
@@ -608,7 +675,7 @@ export default function CrmLeadsPage() {
                   <Button
                     size="sm"
                     variant="secondary"
-                    disabled={busy}
+                    disabled={busy || writeDisabled}
                     onClick={() => void criarProposta(l)}
                     title={
                       l.estado !== "CONVERTIDO"
@@ -652,12 +719,31 @@ export default function CrmLeadsPage() {
               <option value={MANUAL_CLIENTE}>Outra empresa (manual)</option>
             </Select>
             {empresaManual ? (
-              <Input
-                label="Empresa *"
-                value={form.empresaNome}
-                onChange={(e) => setForm((f) => ({ ...f, empresaNome: e.target.value }))}
-                required
-              />
+              <>
+                <Input
+                  label="Empresa *"
+                  value={form.empresaNome}
+                  onChange={(e) => setForm((f) => ({ ...f, empresaNome: e.target.value }))}
+                  required
+                />
+                <Input
+                  label="NIF *"
+                  value={form.nif}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, nif: e.target.value.replace(/\D/g, "").slice(0, 9) }))
+                  }
+                  maxLength={9}
+                  required
+                />
+                <Textarea
+                  label="Morada fiscal *"
+                  value={form.moradaFiscal}
+                  onChange={(e) => setForm((f) => ({ ...f, moradaFiscal: e.target.value }))}
+                  rows={2}
+                  required
+                  placeholder="Rua, código postal, localidade"
+                />
+              </>
             ) : (
               <p className="text-sm text-slate-400 rounded-lg bg-slate-800/50 px-3 py-2">
                 <span className="text-slate-200 font-medium">{form.empresaNome}</span>
@@ -682,29 +768,19 @@ export default function CrmLeadsPage() {
                 onChange={(e) => setForm((f) => ({ ...f, telefone: e.target.value }))}
               />
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Input
-                label="NIF (opcional)"
-                value={form.nif}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, nif: e.target.value.replace(/\D/g, "").slice(0, 9) }))
-                }
-                maxLength={9}
-              />
-              <Select
-                label="Origem"
-                value={form.origem}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, origem: e.target.value as LeadOrigem }))
-                }
-              >
-                {ORIGENS.map((o) => (
-                  <option key={o} value={o}>
-                    {leadOrigemLabel(o)}
-                  </option>
-                ))}
-              </Select>
-            </div>
+            <Select
+              label="Origem"
+              value={form.origem}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, origem: e.target.value as LeadOrigem }))
+              }
+            >
+              {ORIGENS.map((o) => (
+                <option key={o} value={o}>
+                  {leadOrigemLabel(o)}
+                </option>
+              ))}
+            </Select>
             <Input
               label="Valor estimado (€)"
               value={form.valorEuros}
@@ -717,11 +793,17 @@ export default function CrmLeadsPage() {
               onChange={(e) => setForm((f) => ({ ...f, notas: e.target.value }))}
               rows={3}
             />
+            <CrmCustomFieldsForm
+              defs={leadFieldDefs}
+              values={customFields}
+              onChange={setCustomFields}
+              disabled={busy || writeDisabled}
+            />
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setCreateOpen(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={busy}>
+              <Button type="submit" disabled={busy || writeDisabled}>
                 Guardar lead
               </Button>
             </div>
@@ -741,7 +823,7 @@ export default function CrmLeadsPage() {
             <Button type="button" variant="ghost" onClick={() => setPerdidoOpen(false)}>
               Cancelar
             </Button>
-            <Button variant="secondary" disabled={busy} onClick={() => void confirmarPerdido()}>
+            <Button variant="secondary" disabled={busy || writeDisabled} onClick={() => void confirmarPerdido()}>
               Confirmar
             </Button>
           </div>
@@ -751,7 +833,8 @@ export default function CrmLeadsPage() {
       <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
         <DialogContent title="Converter em entidade cliente">
           <p className="text-sm text-slate-400 mb-3">
-            Cria ou actualiza uma entidade B2B a partir deste lead. O NIF é obrigatório.
+            Cria ou actualiza uma entidade B2B a partir deste lead. NIF e morada fiscal são
+            obrigatórios para faturação e parceiros.
           </p>
           <Input
             label="NIF *"
@@ -760,11 +843,27 @@ export default function CrmLeadsPage() {
             maxLength={9}
             required
           />
+          <Textarea
+            label="Morada fiscal *"
+            value={convertMorada}
+            onChange={(e) => setConvertMorada(e.target.value)}
+            rows={3}
+            required
+            placeholder="Rua, código postal, localidade"
+          />
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="ghost" onClick={() => setConvertOpen(false)}>
               Cancelar
             </Button>
-            <Button disabled={busy || convertNif.length !== 9} onClick={() => void confirmarConverter()}>
+            <Button
+              disabled={
+                busy ||
+                writeDisabled ||
+                convertNif.length !== 9 ||
+                convertMorada.trim().length < 5
+              }
+              onClick={() => void confirmarConverter()}
+            >
               <UserPlus className="h-3.5 w-3.5" />
               Converter
             </Button>

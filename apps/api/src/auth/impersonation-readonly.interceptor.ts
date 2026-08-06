@@ -17,13 +17,24 @@ export class ImpersonationReadonlyInterceptor implements NestInterceptor {
     const req = context.switchToHttp().getRequest<Request & { user?: RequestUser }>();
     const user = req.user;
     const method = req.method.toUpperCase();
-    const path = req.path ?? "";
+    const path = (req.originalUrl ?? req.path ?? "").split("?")[0] ?? "";
+
+    const isEndImpersonation =
+      /\/auth\/impersonation\/end\/?$/i.test(path) ||
+      /\/v1\/auth\/impersonation\/end\/?$/i.test(path);
+
+    /** Aviso pedagógico no logout do formador (não altera dados de formação). */
+    const isAvisarPedagogicoLogout =
+      /\/sessoes-formacao\/pendencias-documentacao\/avisar-pedagogico\/?$/i.test(
+        path,
+      );
 
     if (
       user?.readOnlyImpersonation &&
       user.impersonating &&
       MUTATING.has(method) &&
-      !path.includes("/impersonation/end")
+      !isEndImpersonation &&
+      !isAvisarPedagogicoLogout
     ) {
       throw new ForbiddenException("Personificação read-only – operação não permitida.");
     }

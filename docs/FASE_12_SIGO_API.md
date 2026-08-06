@@ -11,13 +11,14 @@
 | Sub-fase | Conteúdo | Estado |
 |----------|----------|--------|
 | **12.0** | Export manual JSON/CSV + validação UFCD/NIF | ✅ |
-| **12.1** | Adapter `http` / `disabled` + persistência `SigoSubmissao` | ✅ |
-| **12.2** | Cliente HTTP robusto (timeout, retry, parser) | ✅ |
-| **12.3** | Reconciliação `http` (consulta estado remoto) | ✅ |
+| **12.1** | Adapter `http` / `soap` / `disabled` + persistência `SigoSubmissao` | ✅ |
+| **12.2** | Cliente HTTP/SOAP robusto (timeout, retry, parser) | ✅ |
+| **12.3** | Reconciliação `http`/`soap` (consulta estado remoto) | ✅ |
 | **12.4** | UI `/portal/sigo` + dossie «Submeter SIGO API» | ✅ |
-| **12.5** | API oficial DGEEC (contrato definitivo) | ⏳ aguarda DGEEC |
+| **12.5** | API oficial DGEEC (contrato definitivo WSDL/paths) | ⏳ aguarda DGEEC |
 
-> Enquanto a API oficial não estiver publicada, configure `SIGO_API_MODE=disabled` e use export JSON/CSV manual. Quando a DGEEC publicar o contrato, active `http` com `SIGO_API_BASE_URL` e credenciais piloto/produção.
+> **Go-live produção:** `SIGO_API_MODE=disabled` + export JSON/CSV manual + validação (UFCD, NIF, metadados formando).  
+> Quando a DGEEC publicar o contrato: `http` ou `soap` com WSDL/endpoint e credenciais por entidade em `/portal/sigo`.
 
 ---
 
@@ -35,7 +36,7 @@ Dossiê pedagógico → Validação SIGO → Submeter API → Estado SUBMETIDA �
 
 | Método | Rota | Descrição |
 |--------|------|-----------|
-| GET | `/sigo/config` | Modo servidor (`http` / `disabled`) |
+| GET | `/sigo/config` | Modo servidor (`disabled` / `http` / `soap`) |
 | GET | `/sigo/submissoes` | Listar submissões (filtro `?acaoId=`) |
 | GET | `/sigo/acoes-formacao/:acaoId/submissoes` | Histórico por acção |
 | POST | `/sigo/acoes-formacao/:acaoId/submit` | Validar + submeter pacote JSON |
@@ -51,15 +52,25 @@ Dossiê pedagógico → Validação SIGO → Submeter API → Estado SUBMETIDA �
 ## Variáveis de ambiente
 
 ```env
-SIGO_API_MODE=disabled            # http | disabled
-SIGO_API_BASE_URL=https://...     # base URL API DGEEC (modo http)
-SIGO_API_KEY=                     # Bearer token ou API key
-SIGO_API_TIMEOUT_MS=30000
-SIGO_API_STATUS_PATH=/acoes/{referenceId}
-SIGO_API_SUBMIT_PATH=/acoes
-SIGO_API_CERTIFICADOS_PATH=/acoes/{referenceId}/certificados
-SIGO_API_CERTIFICADO_DOWNLOAD_PATH=/certificados/{certificadoId}/download
-SIGO_API_MAX_RETRIES=2
+# Go-live (recomendado até 12.5):
+SIGO_API_MODE=disabled
+
+# HTTP (quando DGEEC publicar REST):
+# SIGO_API_MODE=http
+# SIGO_API_BASE_URL=https://...
+# SIGO_API_KEY=
+# SIGO_API_TIMEOUT_MS=30000
+# SIGO_API_STATUS_PATH=/acoes/{referenceId}
+# SIGO_API_SUBMIT_PATH=/acoes
+# SIGO_API_CERTIFICADOS_PATH=/acoes/{referenceId}/certificados
+# SIGO_API_CERTIFICADO_DOWNLOAD_PATH=/certificados/{certificadoId}/download
+# SIGO_API_MAX_RETRIES=2
+
+# SOAP (quando DGEEC publicar WSDL):
+# SIGO_API_MODE=soap
+# SIGO_SOAP_WSDL_URL=https://.../ServiceMatriculas?wsdl
+# SIGO_SOAP_ENDPOINT=https://.../ServiceMatriculas
+# Credenciais UsernameToken por tenant em /portal/sigo
 ```
 
 ---
@@ -74,8 +85,8 @@ SIGO_API_MAX_RETRIES=2
 
 ### Ordem recomendada
 
-1. Export JSON/CSV manual enquanto `SIGO_API_MODE=disabled`
-2. Quando DGEEC disponibilizar endpoint: `SIGO_API_MODE=http` + credenciais
+1. Go-live: `SIGO_API_MODE=disabled` + export JSON/CSV; completar dados SIGO nos formandos
+2. Quando DGEEC disponibilizar contrato: `SIGO_API_MODE=http` ou `soap` + credenciais
 3. Validar acção no dossiê (`validacao-sigo` sem erros bloqueantes)
 4. Submeter → reconciliar até `ACEITE`
 5. Em caso de `REJEITADA` ou `ERRO`: corrigir dados + **Reenviar**

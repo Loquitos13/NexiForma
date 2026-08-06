@@ -68,6 +68,7 @@ export function ListaEntidades({ onSelect }: ListaEntidadesProps) {
           </Link>
         </p>
       ) : (
+        <div className="table-scroll-shell">
         <table style={bo.table}>
           <thead>
             <tr>
@@ -98,6 +99,7 @@ export function ListaEntidades({ onSelect }: ListaEntidadesProps) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

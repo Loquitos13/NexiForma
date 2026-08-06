@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, BookOpen, Users } from "lucide-react";
+import { ArrowRight, BookOpen, CheckCircle2, Users } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { cn } from "@/lib/ui/cn";
@@ -13,6 +13,7 @@ type FormandoProgresso = {
   percentual: number;
   concluidas: number;
   total: number;
+  completo?: boolean;
 };
 
 type AcaoProgresso = {
@@ -113,10 +114,10 @@ export function FormadorLmsProgressoBlock() {
           </p>
         </div>
         <Link
-          href="/portal/conteudos"
+          href="/portal/progresso-lms"
           className="inline-flex shrink-0 items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
         >
-          Conteúdos <ArrowRight className="h-3 w-3" />
+          Ver detalhe <ArrowRight className="h-3 w-3" />
         </Link>
       </CardHeader>
       <CardContent className="space-y-5 pt-0">
@@ -190,17 +191,27 @@ export function FormadorLmsProgressoBlock() {
                   {expanded && acao.formandosDetalhe.length > 0 ? (
                     <ul className="mt-3 space-y-2 border-t border-slate-800/80 pt-3">
                       {acao.formandosDetalhe.map((f) => (
-                        <li key={f.matriculaId} className="flex items-center gap-3">
-                          <span className="min-w-0 flex-1 truncate text-xs text-slate-300">{f.nome}</span>
-                          <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
-                            {f.concluidas}/{f.total}
-                          </span>
-                          <div className="w-24">
-                            <ProgressBar value={f.percentual} />
-                          </div>
-                          <span className="w-10 shrink-0 text-right text-xs tabular-nums text-slate-400">
-                            {f.percentual}%
-                          </span>
+                        <li key={f.matriculaId}>
+                          <Link
+                            href={`/portal/progresso-lms?acao=${encodeURIComponent(acao.acaoId)}&matricula=${encodeURIComponent(f.matriculaId)}`}
+                            className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-slate-800/40"
+                          >
+                            <span className="min-w-0 flex-1 truncate text-xs text-slate-300">
+                              {f.nome}
+                              {f.completo ? (
+                                <CheckCircle2 className="ml-1 inline h-3 w-3 text-emerald-400" />
+                              ) : null}
+                            </span>
+                            <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
+                              {f.concluidas}/{f.total}
+                            </span>
+                            <div className="w-24">
+                              <ProgressBar value={f.percentual} />
+                            </div>
+                            <span className="w-10 shrink-0 text-right text-xs tabular-nums text-slate-400">
+                              {f.percentual}%
+                            </span>
+                          </Link>
                         </li>
                       ))}
                     </ul>

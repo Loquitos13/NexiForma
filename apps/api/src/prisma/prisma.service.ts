@@ -1,13 +1,14 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { PrismaClient } from "@nexiforma/database";
 import { assertValidUuid } from "../common/uuid.util";
-import { tenantScopeExtension } from "./prisma-tenant.extension";
+import { createTenantScopeExtension } from "./prisma-tenant.extension";
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor() {
     super();
-    const scoped = this.$extends(tenantScopeExtension) as unknown as PrismaClient;
+    let scoped!: PrismaClient;
+    scoped = this.$extends(createTenantScopeExtension(() => scoped)) as unknown as PrismaClient;
 
     return new Proxy(scoped, {
       get: (target, prop, receiver) => {

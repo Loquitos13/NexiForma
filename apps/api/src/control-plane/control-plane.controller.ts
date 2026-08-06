@@ -33,6 +33,8 @@ import {
   UpdateTenantStatusDto,
   UpdateTenantSubscriptionDto,
   UpdatePlatformMeDto,
+  UpdateTenantLoginLockoutDto,
+  ClearTenantLoginLockoutDto,
 } from "./dto/control-plane.dto";
 
 @Controller("control-plane")
@@ -98,6 +100,33 @@ export class ControlPlaneController {
   @Get("tenants/:id")
   getTenant(@Param("id", ParseUUIDPipe) id: string): Promise<Record<string, unknown>> {
     return this.cp.getTenant(id);
+  }
+
+  @Get("tenants/:id/login-lockout")
+  getTenantLoginLockout(@Param("id", ParseUUIDPipe) id: string) {
+    return this.cp.getTenantLoginLockout(id);
+  }
+
+  @Patch("tenants/:id/login-lockout")
+  updateTenantLoginLockout(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: UpdateTenantLoginLockoutDto,
+    @Req() req: Request,
+  ) {
+    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    return this.cp.updateTenantLoginLockout(user, id, dto, ip);
+  }
+
+  @Post("tenants/:id/login-lockout/clear")
+  clearTenantLoginLockout(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: ClearTenantLoginLockoutDto,
+    @Req() req: Request,
+  ) {
+    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    return this.cp.clearTenantLoginLockout(user, id, dto.email, ip);
   }
 
   @Patch("tenants/:id")
@@ -176,8 +205,21 @@ export class ControlPlaneController {
   auditLogs(
     @Query("tenantId") tenantId?: string,
     @Query("limit") limit?: string,
+    @Query("action") action?: string,
+    @Query("actorType") actorType?: string,
+    @Query("since") since?: string,
+    @Query("q") q?: string,
+    @Query("cursor") cursor?: string,
   ): Promise<Record<string, unknown>[]> {
-    return this.cp.listAuditLogs(tenantId, limit ? Number(limit) : undefined);
+    return this.cp.listAuditLogs({
+      tenantId,
+      limit: limit ? Number(limit) : undefined,
+      action,
+      actorType,
+      since,
+      q,
+      cursor,
+    });
   }
 
   @Post("tenants/:id/subscription-keys")

@@ -33,7 +33,7 @@ import { ComplianceModule } from "./compliance/compliance.module";
 import { CertificadosModule } from "./certificados/certificados.module";
 import { NotificacoesModule } from "./notificacoes/notificacoes.module";
 import { VerificacaoModule } from "./verificacao/verificacao.module";
-import { CmdModule } from "./cmd/cmd.module";
+import { ViesModule } from "./vies/vies.module";
 import { UsersModule } from "./users/users.module";
 import { BillingModule } from "./billing/billing.module";
 import { AuditModule } from "./audit/audit.module";
@@ -49,6 +49,7 @@ import { IntegracoesModule } from "./integracoes/integracoes.module";
 import { QuizzesModule } from "./quizzes/quizzes.module";
 import { CatalogoUfcdModule } from "./catalogo-ufcd/catalogo-ufcd.module";
 import { RgpdModule } from "./rgpd/rgpd.module";
+import { BackupModule } from "./backup/backup.module";
 import { ConsentModule } from "./consent/consent.module";
 import { DocumentosModule } from "./documentos/documentos.module";
 import { RelatoriosModule } from "./relatorios/relatorios.module";
@@ -66,6 +67,7 @@ import { GuideModule } from "./guide/guide.module";
 import { ImpersonationReadonlyInterceptor } from "./auth/impersonation-readonly.interceptor";
 import { MustChangePasswordInterceptor } from "./auth/must-change-password.interceptor";
 import { StructuredLogInterceptor } from "./observability/structured-log.interceptor";
+import { AppPublicUrlInterceptor } from "./common/app-public-url.interceptor";
 
 @Module({
   imports: [
@@ -106,7 +108,7 @@ import { StructuredLogInterceptor } from "./observability/structured-log.interce
     CertificadosModule,
     NotificacoesModule,
     VerificacaoModule,
-    CmdModule,
+    ViesModule,
     UsersModule,
     BillingModule,
     LmsModule,
@@ -121,6 +123,7 @@ import { StructuredLogInterceptor } from "./observability/structured-log.interce
     QuizzesModule,
     CatalogoUfcdModule,
     RgpdModule,
+    BackupModule,
     ConsentModule,
     DocumentosModule,
     RelatoriosModule,
@@ -149,6 +152,10 @@ import { StructuredLogInterceptor } from "./observability/structured-log.interce
     {
       provide: APP_INTERCEPTOR,
       useClass: TenantRlsInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AppPublicUrlInterceptor,
     },
     {
       provide: APP_INTERCEPTOR,

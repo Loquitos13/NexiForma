@@ -87,6 +87,23 @@ export async function invokeSigoSoapMethod(
   return (fn as (arg: unknown) => Promise<[SigoSoapOperacaoResponse, string, unknown, string]>)(payload);
 }
 
+export function listSigoWsdlMethods(client: SigoSoapClient): string[] {
+  try {
+    const desc = client.describe() as Record<string, Record<string, Record<string, unknown>>>;
+    const methods = new Set<string>();
+    for (const service of Object.values(desc)) {
+      for (const port of Object.values(service ?? {})) {
+        for (const method of Object.keys(port ?? {})) {
+          methods.add(method);
+        }
+      }
+    }
+    return [...methods].sort();
+  } catch {
+    return [];
+  }
+}
+
 export function soapResponseToXml(lastResponse: string | undefined, result: unknown): string {
   if (typeof lastResponse === "string" && lastResponse.trim()) return lastResponse;
   if (typeof result === "string") return result;

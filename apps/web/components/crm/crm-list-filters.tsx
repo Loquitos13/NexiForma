@@ -59,6 +59,7 @@ export function CrmListFilters({
         <input
           className="w-full rounded-xl border border-slate-700/60 bg-slate-900/80 py-2 pl-9 pr-3 text-sm text-slate-200"
           placeholder={searchPlaceholder}
+          aria-label={searchPlaceholder}
           value={value.q}
           onChange={(e) => patch({ q: e.target.value })}
         />

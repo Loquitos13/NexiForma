@@ -128,7 +128,7 @@ export default function CourseFlowBuilder() {
 
   useEffect(() => { void loadModulos(cursoId); }, [cursoId, loadModulos]);
 
-  // Add module (rascunho — conteúdo e publicação na barra lateral)
+  // Add module (rascunho - conteúdo e publicação na barra lateral)
   async function adicionarModulo(tipo: string = addTipo) {
     if (!cursoId) return;
     setBusy(true);
@@ -177,8 +177,8 @@ export default function CourseFlowBuilder() {
     setModulos((prev) => prev.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)));
     setMsg(
       updated.publicado
-        ? `«${file.name}» carregado e publicado — visível para formandos.`
-        : `«${file.name}» carregado — completa e publica para os formandos verem.`,
+        ? `«${file.name}» carregado e publicado - visível para formandos.`
+        : `«${file.name}» carregado - completa e publica para os formandos verem.`,
     );
   }
 
@@ -261,11 +261,11 @@ export default function CourseFlowBuilder() {
     const updated = (await r.json()) as ModuloNode;
     setModulos((prev) => prev.map((x, i) => (i === idx ? { ...x, ...updated } : x)));
     if (updated.publicado) {
-      setMsg("Guardado e publicado — visível para formandos.");
+      setMsg("Guardado e publicado - visível para formandos.");
     } else if (check.ok && data.publicado === undefined) {
       setMsg("Guardado como rascunho.");
     } else if (!check.ok && data.publicado === undefined) {
-      setMsg("Guardado como rascunho — completa o conteúdo para publicar.");
+      setMsg("Guardado como rascunho - completa o conteúdo para publicar.");
     } else {
       setMsg("Guardado como rascunho.");
     }
@@ -392,7 +392,7 @@ export default function CourseFlowBuilder() {
             <div className="rounded-xl border border-slate-700/40 bg-slate-900/40 px-4 py-3 text-xs text-slate-400">
               <span className="text-slate-300 font-medium">{publicadosCount} publicado(s)</span>
               {rascunhosCount > 0 ? (
-                <span> · {rascunhosCount} rascunho(s) — só os publicados aparecem no portal do formando</span>
+                <span> · {rascunhosCount} rascunho(s) - só os publicados aparecem no portal do formando</span>
               ) : (
                 <span> · visíveis em todas as acções deste curso</span>
               )}

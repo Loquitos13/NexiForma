@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Put,
   Query,
@@ -19,6 +20,7 @@ import { ProposalService } from "./proposal.service";
 import { LeadsService } from "./leads.service";
 import { TrainerManagementService } from "./trainer-management.service";
 import { CrmInteraccoesService } from "./crm-interaccoes.service";
+import { CrmReuniaoTeamsService } from "./crm-reuniao-teams.service";
 import { CrmSugestoesIaService } from "./crm-sugestoes-ia.service";
 import {
   ConverterLeadDto,
@@ -27,7 +29,8 @@ import {
   MarcarLeadPerdidoDto,
   UpdateLeadDto,
 } from "./dto/leads.dto";
-import { CreateInteraccaoDto } from "./dto/interaccoes.dto";
+import { CreateInteraccaoDto, UpdateInteraccaoDto } from "./dto/interaccoes.dto";
+import { TerminarReuniaoCrmDto } from "./dto/terminar-reuniao.dto";
 import { RejeitarSugestaoIaDto } from "./dto/sugestoes-ia.dto";
 import { UpdateCrmConfigDto } from "./dto/crm-config.dto";
 import { CrmConfigService } from "./crm-config.service";
@@ -43,6 +46,7 @@ export class CrmController {
     private readonly leads: LeadsService,
     private readonly trainers: TrainerManagementService,
     private readonly interaccoes: CrmInteraccoesService,
+    private readonly reuniaoTeams: CrmReuniaoTeamsService,
     private readonly sugestoesIa: CrmSugestoesIaService,
     private readonly crmConfig: CrmConfigService,
     private readonly crmAudit: CrmAuditService,
@@ -243,10 +247,48 @@ export class CrmController {
     return this.interaccoes.create(user, dto);
   }
 
+  @Patch("interaccoes/:id")
+  @Roles("tenant_manager", "comercial")
+  actualizarInteraccao(
+    @CurrentUser() user: RequestUser,
+    @Param("id") id: string,
+    @Body() dto: UpdateInteraccaoDto,
+  ) {
+    return this.interaccoes.update(user, id, dto);
+  }
+
+  @Delete("interaccoes/:id")
+  @Roles("tenant_manager", "comercial")
+  eliminarInteraccao(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+    return this.interaccoes.remove(user, id);
+  }
+
   @Post("interaccoes/:id/reprocessar")
   @Roles("tenant_manager", "comercial")
   reprocessarInteraccao(@CurrentUser() user: RequestUser, @Param("id") id: string) {
     return this.interaccoes.reprocessar(user, id);
+  }
+
+  @Post("interaccoes/:id/teams/criar-sala")
+  @Roles("tenant_manager", "comercial")
+  criarSalaTeams(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+    return this.reuniaoTeams.criarSala(user, id);
+  }
+
+  @Post("interaccoes/:id/reuniao/iniciar")
+  @Roles("tenant_manager", "comercial")
+  iniciarReuniao(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+    return this.reuniaoTeams.iniciar(user, id);
+  }
+
+  @Post("interaccoes/:id/reuniao/terminar")
+  @Roles("tenant_manager", "comercial")
+  terminarReuniao(
+    @CurrentUser() user: RequestUser,
+    @Param("id") id: string,
+    @Body() dto: TerminarReuniaoCrmDto,
+  ) {
+    return this.reuniaoTeams.terminar(user, id, dto);
   }
 
   // ── Inbox sugestões IA (human-in-the-loop) ──
@@ -373,7 +415,7 @@ export class CrmController {
   // ── Formadores (gestão de qualificações - só gestor) ──
 
   @Get("formadores")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_comercial")
   listarFormadores(
     @CurrentUser() user: RequestUser,
     @Query("nome") nome?: string,
@@ -390,7 +432,7 @@ export class CrmController {
   }
 
   @Get("formadores/:id")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_comercial")
   obterFormador(
     @CurrentUser() user: RequestUser,
     @Param("id") id: string,
@@ -399,7 +441,7 @@ export class CrmController {
   }
 
   @Put("formadores/:id/qualificacoes")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_comercial")
   atualizarQualificacoes(
     @CurrentUser() user: RequestUser,
     @Param("id") id: string,
@@ -409,7 +451,7 @@ export class CrmController {
   }
 
   @Get("formadores/renovacoes")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_comercial")
   verificarRenovacoes(@CurrentUser() user: RequestUser) {
     const { requireTenantId } = require("../common/tenant-scope");
     const tenantId = requireTenantId(user);
@@ -419,25 +461,25 @@ export class CrmController {
   // ── CRM Enterprise: config, audit, email sync ──
 
   @Get("config")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_comercial")
   obterConfig(@CurrentUser() user: RequestUser) {
     return this.crmConfig.get(user);
   }
 
   @Put("config")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_comercial")
   actualizarConfig(@CurrentUser() user: RequestUser, @Body() dto: UpdateCrmConfigDto) {
     return this.crmConfig.update(user, dto);
   }
 
   @Post("config/webhook-secret/rotate")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_comercial")
   rotacionarWebhookSecret(@CurrentUser() user: RequestUser) {
     return this.crmConfig.rotateLeadWebhookSecret(user);
   }
 
   @Get("audit")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_comercial")
   listarAudit(
     @CurrentUser() user: RequestUser,
     @Query("limit") limit?: string,

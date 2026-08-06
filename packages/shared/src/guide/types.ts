@@ -1,4 +1,5 @@
 import type { JwtRole } from "../index";
+import type { TenantEntitlements } from "../billing/entitlements";
 
 export type GuideViewArea = "public" | "auth" | "portal" | "platform";
 
@@ -15,6 +16,7 @@ export type GuideQueryContext = {
   role: JwtRole | null;
   pathname?: string;
   history?: GuideHistoryTurn[];
+  entitlements?: TenantEntitlements | null;
 };
 
 export type GuideHistoryTurn = {
@@ -32,6 +34,8 @@ export type GuideDestination = {
   minRole?: JwtRole;
   /** Rotas só para formandos */
   formandoOnly?: boolean;
+  /** Rotas só para formadores (self-service) */
+  formadorOnly?: boolean;
   /** Visível sem sessão (website, login) */
   publicOnly?: boolean;
 };
@@ -76,13 +80,17 @@ export type GuideOutOfScopeResult = {
   suggestions: Array<{ href: string; label: string }>;
 };
 
-/** Resultado da pesquisa global de funcionalidades (portal). */
+/** Resultado da pesquisa global do portal (funcionalidades + registos). */
 export type GuideSearchHit = {
   href: string;
   label: string;
   description: string;
   matchedKeywords: string[];
   score: number;
+  /** `registo` = entidade concreta (proposta, lead, cliente…); omitido = funcionalidade. */
+  kind?: "funcionalidade" | "registo";
+  /** Rótulo de secção na UI (ex. «Proposta», «Cliente»). */
+  category?: string;
 };
 
 export type GuideResult =

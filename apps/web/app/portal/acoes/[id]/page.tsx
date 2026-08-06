@@ -1,22 +1,36 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   Calendar,
   CheckCircle2,
   ClipboardList,
   FileText,
+  GraduationCap,
+  ListTodo,
   Users,
 } from "lucide-react";
 import { PortalEnrollmentSection } from "@/app/_components/portal-enrollment-section";
 import { PortalScheduleSection } from "@/app/_components/portal-schedule-section";
 import { ActionResumoCard } from "@/components/portal/action-resumo-card";
+import { AcaoDocumentosOverview } from "@/components/portal/acao-documentos-overview";
+import { AcaoLibertarConteudos } from "@/components/portal/acao-libertar-conteudos";
+import { AcaoPauta } from "@/components/portal/acao-pauta";
+import {
+  DgertRequisitoBanner,
+  useDgertRequisitoId,
+} from "@/components/portal/dgert-requisito-banner";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import {
+  DGERT_REQUISITO_PARAM,
+  resolveDgertRequisitoHref,
+} from "@/lib/dossie/dgert-requisito";
 import { parseApiError } from "@/lib/ui/backoffice";
+import { cn } from "@/lib/ui/cn";
 import {
   Alert,
   Badge,
@@ -37,7 +51,14 @@ type AcaoDetail = {
   dataInicio: string;
   dataFim: string;
   prazoConclusaoLms?: string | null;
-  curso: { id: string; designacao: string; codigoUfcd: string | null; cargaHoras: number };
+  configuracaoMatricula?: unknown;
+  curso: {
+    id: string;
+    designacao: string;
+    codigoUfcd: string | null;
+    cargaHoras: number;
+    configuracaoMatricula?: unknown;
+  };
   turmas: Array<{ id: string; codigo: string; _count?: { matriculas: number } }>;
   cronogramas: Array<{ id: string; versao: number; aprovadoEm: string | null; _count?: { sessoes: number } }>;
 };
@@ -57,7 +78,7 @@ type ComplianceDetail = {
       accaoSugerida?: string;
     }>;
   };
-  pendencias: Array<{ label: string; severidade: string; accaoSugerida?: string }>;
+  pendencias: Array<{ id?: string; label: string; severidade: string; accaoSugerida?: string }>;
   sessoesResumo?: Array<{
     id: string;
     numeroSessao: number;
@@ -73,11 +94,19 @@ type ComplianceDetail = {
   }>;
 };
 
+type ConclusaoProntidao = {
+  ready: boolean;
+  blockers: Array<{ id: string; label: string }>;
+};
+
 const ALL_TABS = [
   { id: "resumo", label: "Resumo", icon: FileText },
+  { id: "documentos", label: "Documentos", icon: ClipboardList },
   { id: "turmas", label: "Turmas", icon: Users },
   { id: "cronograma", label: "Sessões & assiduidade", icon: Calendar },
-  { id: "compliance", label: "Compliance", icon: ClipboardList },
+  { id: "libertar", label: "Tarefas", icon: ListTodo },
+  { id: "pauta", label: "Pauta", icon: GraduationCap },
+  { id: "compliance", label: "Compliance", icon: CheckCircle2 },
 ] as const;
 
 type Tab = (typeof ALL_TABS)[number]["id"];
@@ -88,26 +117,71 @@ function scoreColor(score: number) {
   return "text-red-400";
 }
 
+function normalizeAcaoTabParam(raw: string | null): string | null {
+  if (!raw) return null;
+  return raw === "sessoes" ? "cronograma" : raw;
+}
+
 export default function AcaoDetailPage() {
   const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const acaoId = String(params.id ?? "");
-  const { canManage, isFormador } = useTenantRole();
+  const { canManageFormacao: canManage, isFormador, writeDisabled } = useTenantRole();
   const canEditSessoes = canManage || isFormador;
+  const [formadorProfileId, setFormadorProfileId] = useState<string | null>(null);
   const tabs = ALL_TABS.filter((t) => {
     if (canManage) return true;
-    if (isFormador) return ["resumo", "cronograma"].includes(t.id);
+    if (isFormador) return ["resumo", "cronograma", "libertar", "pauta"].includes(t.id);
     return t.id === "resumo";
   });
-  const [tab, setTab] = useState<Tab>(isFormador ? "cronograma" : "resumo");
+  const defaultTab: Tab = isFormador ? "cronograma" : "resumo";
+  const tabFromUrl = normalizeAcaoTabParam(searchParams.get("tab"));
+  const tab: Tab = useMemo(() => {
+    if (tabFromUrl && tabs.some((x) => x.id === tabFromUrl)) return tabFromUrl as Tab;
+    return defaultTab;
+  }, [tabFromUrl, tabs, defaultTab]);
 
+  const setTab = useCallback(
+    (next: Tab) => {
+      const q = new URLSearchParams(searchParams.toString());
+      q.set("tab", next);
+      // Remove deep-link de requisito ao mudar de tab na UI, para não
+      // «bloquear» o painel (ex.: abrir nova sessão) após um salto da checklist.
+      // Mantém sessaoId/focus para o cronograma recuperar o contexto.
+      q.delete(DGERT_REQUISITO_PARAM);
+      const qs = q.toString();
+      router.replace(qs ? `/portal/acoes/${acaoId}?${qs}` : `/portal/acoes/${acaoId}`, {
+        scroll: false,
+      });
+    },
+    [acaoId, router, searchParams],
+  );
+
+  // Se a URL pede uma tab sem permissão, corrige o query param.
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get("tab");
-    const normalized = t === "sessoes" ? "cronograma" : t;
-    if (normalized && tabs.some((x) => x.id === normalized)) setTab(normalized as Tab);
-  }, [tabs, isFormador]);
+    if (!tabFromUrl) return;
+    if (tabs.some((x) => x.id === tabFromUrl)) return;
+    setTab(defaultTab);
+  }, [tabFromUrl, tabs, defaultTab, setTab]);
+
+  const dgertRequisito = useDgertRequisitoId();
+
+  // Destaca e faz scroll ao alvo do deep-link DGERT (checklist → ecrã correcto).
+  useEffect(() => {
+    if (!dgertRequisito) return;
+    const t = window.setTimeout(() => {
+      const el = document.querySelector(`[data-dgert-target="${dgertRequisito}"]`);
+      if (el instanceof HTMLElement) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 320);
+    return () => window.clearTimeout(t);
+  }, [dgertRequisito, tab]);
 
   const [acao, setAcao] = useState<AcaoDetail | null>(null);
   const [compliance, setCompliance] = useState<ComplianceDetail | null>(null);
+  const [conclusao, setConclusao] = useState<ConclusaoProntidao | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -117,10 +191,15 @@ export default function AcaoDetailPage() {
     if (!acaoId) return;
     setLoading(true);
     setError(null);
-    const [acaoRes, compRes] = await Promise.all([
+    const [acaoRes, compRes, conclRes] = await Promise.all([
       bffFetch(`/api/v1/acoes-formacao/${acaoId}`, { headers: { accept: "application/json" } }),
       canManage
         ? bffFetch(`/api/v1/compliance/acoes-formacao/${acaoId}`, { headers: { accept: "application/json" } })
+        : Promise.resolve(null),
+      canManage
+        ? bffFetch(`/api/v1/acoes-formacao/${acaoId}/conclusao-prontidao`, {
+            headers: { accept: "application/json" },
+          })
         : Promise.resolve(null),
     ]);
     if (!acaoRes.ok) {
@@ -131,12 +210,46 @@ export default function AcaoDetailPage() {
       setAcao(data);
     }
     if (compRes && compRes.ok) setCompliance((await compRes.json()) as ComplianceDetail);
+    if (conclRes && conclRes.ok) setConclusao((await conclRes.json()) as ConclusaoProntidao);
+    else if (canManage) setConclusao(null);
     setLoading(false);
   }, [acaoId, canManage]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!isFormador) {
+      setFormadorProfileId(null);
+      return;
+    }
+    void bffFetch("/api/v1/formadores/me", { headers: { accept: "application/json" } }).then(
+      async (r) => {
+        if (!r.ok) return;
+        const me = (await r.json()) as { id?: string };
+        setFormadorProfileId(me.id ?? null);
+      },
+    );
+  }, [isFormador]);
+
+  async function concluirAcao() {
+    if (!canManage || writeDisabled) return;
+    if (!window.confirm("Confirmar conclusão desta acção? Requer sessões efectuadas, tarefas LMS e compliance DGERT.")) return;
+    setBusy(true);
+    setMsg(null);
+    setError(null);
+    const res = await bffFetch(`/api/v1/acoes-formacao/${acaoId}/concluir`, {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+    if (!res.ok) setError(await parseApiError(res));
+    else {
+      setMsg("Acção marcada como Concluída.");
+      await load();
+    }
+    setBusy(false);
+  }
 
   async function saveAcao(data: {
     titulo: string;
@@ -183,6 +296,11 @@ export default function AcaoDetailPage() {
   const acaoOpt = [{ id: acao.id, codigoInterno: acao.codigoInterno, titulo: acao.titulo }];
   const score = compliance?.checklist.scoreObrigatorioPercent ?? 0;
   const matriculasTotal = acao.turmas.reduce((s, t) => s + (t._count?.matriculas ?? 0), 0);
+  /** Conta a versão com sessões (não a mais recente se estiver vazia). */
+  const sessoesCount = acao.cronogramas.reduce(
+    (best, c) => Math.max(best, c._count?.sessoes ?? 0),
+    0,
+  );
 
   return (
     <>
@@ -198,12 +316,24 @@ export default function AcaoDetailPage() {
         description={`${acao.titulo} · ${acao.curso.designacao}${acao.curso.codigoUfcd ? ` · UFCD ${acao.curso.codigoUfcd}` : ""}`}
         actions={
           canManage ? (
-            <Link
-              href={`/portal/dossie?acao=${acaoId}`}
-              className="inline-flex items-center h-7 px-3 text-xs font-semibold rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800"
-            >
-              Dossiê & exports
-            </Link>
+            <div className="flex items-center gap-2">
+              {acao.estado === "EM_CURSO" && conclusao?.ready ? (
+                <button
+                  type="button"
+                  disabled={busy || writeDisabled}
+                  onClick={() => void concluirAcao()}
+                  className="inline-flex items-center h-7 px-3 text-xs font-semibold rounded-lg border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50"
+                >
+                  Marcar como concluída
+                </button>
+              ) : null}
+              <Link
+                href={`/portal/dossie?acao=${acaoId}`}
+                className="inline-flex items-center h-7 px-3 text-xs font-semibold rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800"
+              >
+                Dossiê & exports
+              </Link>
+            </div>
           ) : null
         }
       />
@@ -235,9 +365,7 @@ export default function AcaoDetailPage() {
         <Card>
           <CardContent className="pt-4 pb-4">
             <p className="text-xs text-slate-500 mb-1">Sessões</p>
-            <p className="text-sm font-semibold text-slate-100">
-              {acao.cronogramas[0]?._count?.sessoes ?? 0}
-            </p>
+            <p className="text-sm font-semibold text-slate-100">{sessoesCount}</p>
           </CardContent>
         </Card>
       </div>
@@ -253,9 +381,12 @@ export default function AcaoDetailPage() {
                 Pronta para inspecção
               </Badge>
             ) : (
-              <Badge variant="red">
-                {compliance.pendencias.filter((p) => p.severidade === "obrigatorio").length} pendências
-              </Badge>
+              <button type="button" onClick={() => setTab("compliance")} className="inline-flex">
+                <Badge variant="red">
+                  {compliance.pendencias.filter((p) => p.severidade === "obrigatorio").length}{" "}
+                  pendências
+                </Badge>
+              </button>
             )}
           </CardContent>
         </Card>
@@ -264,8 +395,10 @@ export default function AcaoDetailPage() {
       {error && <Alert variant="error" className="mb-4">{error}</Alert>}
       {msg && <Alert variant="success" className="mb-4">{msg}</Alert>}
 
+      <DgertRequisitoBanner backHref={`/portal/dossie?acao=${acaoId}`} />
+
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-slate-700/40 overflow-x-auto">
+      <div className="mb-6 flex flex-wrap gap-1 border-b border-slate-700/40">
         {tabs.map((t) => {
           const Icon = t.icon;
           return (
@@ -299,6 +432,18 @@ export default function AcaoDetailPage() {
           canEdit={canManage}
           busy={busy}
           onSave={saveAcao}
+          focusRequisito={dgertRequisito}
+        />
+      ) : null}
+
+      {tab === "documentos" && canManage ? (
+        <AcaoDocumentosOverview
+          acaoId={acao.id}
+          cargaHoras={acao.curso.cargaHoras}
+          initial={acao.configuracaoMatricula}
+          onSaved={(cfg) =>
+            setAcao((a) => (a ? { ...a, configuracaoMatricula: cfg } : a))
+          }
         />
       ) : null}
 
@@ -310,17 +455,86 @@ export default function AcaoDetailPage() {
         <PortalScheduleSection
           acoes={acaoOpt}
           canManageAssiduidade={canEditSessoes}
-          canIniciarSessao={isFormador}
+          canIniciarSessao={isFormador || canManage}
           canApproveCronograma={canManage}
           canApprovePresencasFolha={canManage}
+          formadorProfileId={formadorProfileId}
           fixedAcaoId={acao.id}
           cursoId={acao.curso.id}
           embedded
         />
       ) : null}
 
-      {tab === "compliance" && compliance ? (
+      {tab === "libertar" && canEditSessoes ? (
+        <AcaoLibertarConteudos acaoId={acao.id} canManage={canManage} />
+      ) : null}
+
+      {tab === "pauta" && canEditSessoes ? <AcaoPauta acaoId={acao.id} /> : null}
+
+            {tab === "compliance" && compliance ? (
         <div className="grid gap-4 lg:grid-cols-2">
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="text-base">Pendências em aberto</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {compliance.pendencias.length === 0 ? (
+                <p className="text-sm text-emerald-300/90">Sem pendências  checklist completo.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {compliance.pendencias.map((p, idx) => {
+                    const itemId = p.id ?? compliance.checklist.items.find((i) => i.label === p.label)?.id;
+                    const href = itemId
+                      ? resolveDgertRequisitoHref(itemId, {
+                          acaoId,
+                          cursoId: acao.curso.id,
+                        })
+                      : null;
+                    return (
+                      <li
+                        key={itemId ?? `${p.label}-${idx}`}
+                        className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-slate-700/40 bg-slate-950/40 px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm text-slate-100">{p.label}</p>
+                          {p.accaoSugerida ? (
+                            <p className="text-xs text-slate-500 mt-0.5">{p.accaoSugerida}</p>
+                          ) : null}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Badge variant={p.severidade === "obrigatorio" ? "red" : "yellow"}>
+                            {p.severidade}
+                          </Badge>
+                          {href ? (
+                            <Link
+                              href={href}
+                              className="text-xs font-semibold text-blue-400 hover:text-blue-300"
+                            >
+                              Resolver →
+                            </Link>
+                          ) : null}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {conclusao && !conclusao.ready && conclusao.blockers.length > 0 ? (
+                <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-950/20 p-3">
+                  <p className="text-xs font-semibold text-amber-200 mb-2">
+                    Bloqueios para marcar como concluída
+                  </p>
+                  <ul className="space-y-1">
+                    {conclusao.blockers.slice(0, 12).map((b) => (
+                      <li key={b.id} className="text-xs text-amber-100/90">
+                        • {b.label}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
           {compliance.sessoesResumo && compliance.sessoesResumo.length > 0 ? (
             <Card className="lg:col-span-2">
               <CardHeader>
@@ -409,25 +623,59 @@ export default function AcaoDetailPage() {
             </CardHeader>
             <CardContent>
               <ul className="space-y-2">
-                {compliance.checklist.items.map((item) => (
-                  <li key={item.id} className="text-sm border-b border-slate-800 pb-2 last:border-0">
+                {compliance.checklist.items.map((item) => {
+                  const href = !item.ok
+                    ? resolveDgertRequisitoHref(item.id, {
+                        acaoId,
+                        cursoId: acao.curso.id,
+                      })
+                    : null;
+                  const body = (
                     <div className="flex items-start gap-2">
-                      <span className={item.ok ? "text-green-400" : "text-red-400"}>
+                      <span className={item.ok ? "text-green-400" : "text-amber-400"}>
                         {item.ok ? "✓" : "○"}
                       </span>
-                      <div>
+                      <div className="min-w-0 flex-1">
                         <span className="text-slate-200">{item.label}</span>
                         <Badge variant="default" className="ml-2 text-[10px]">{item.severidade}</Badge>
+                        {dgertRequisito === item.id && !item.ok ? (
+                          <Badge variant="yellow" className="ml-1 text-[10px]">
+                            Em foco
+                          </Badge>
+                        ) : null}
                         {item.detalhe ? (
                           <p className="text-xs text-slate-500 mt-0.5">{item.detalhe}</p>
                         ) : null}
                         {!item.ok && item.accaoSugerida ? (
                           <p className="text-xs text-slate-400 mt-1">→ {item.accaoSugerida}</p>
                         ) : null}
+                        {href ? (
+                          <p className="text-xs font-medium text-blue-400 mt-1">Ir resolver →</p>
+                        ) : null}
                       </div>
                     </div>
-                  </li>
-                ))}
+                  );
+                  return (
+                    <li
+                      key={item.id}
+                      data-dgert-target={item.id}
+                      className={cn(
+                        "text-sm border-b border-slate-800 pb-2 last:border-0 rounded-lg px-2 -mx-2",
+                        dgertRequisito === item.id &&
+                          "ring-2 ring-amber-400/55 bg-amber-500/10 border-transparent py-2",
+                        !item.ok && href && "hover:bg-violet-600/15 transition-colors",
+                      )}
+                    >
+                      {href ? (
+                        <Link href={href} className="block focus:outline-none">
+                          {body}
+                        </Link>
+                      ) : (
+                        body
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </CardContent>
           </Card>

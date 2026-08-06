@@ -26,20 +26,23 @@ import {
   Input,
   PageHeader,
   Select,
+  Sheet,
+  SheetContent,
   Textarea,
 } from "@/components/ui";
-import { fmtDate } from "@/lib/crm/shared";
+import { fmtCrmAutor, fmtDate } from "@/lib/crm/shared";
 
 type ClienteOpt = { id: string; nome: string; nif: string };
 type LeadOpt = { id: string; codigo: string; empresaNome: string };
 type UserOpt = { id: string; displayName: string; email: string; role: string };
 
-const AUDIENCIA_ROLES = ["COMERCIAL", "FORMADOR", "FINANCEIRO", "COORDENADOR"] as const;
+const AUDIENCIA_ROLES = ["COMERCIAL", "FORMADOR", "COORDENADOR_COMERCIAL", "COORDENADOR_PEDAGOGICO", "COORDENADOR_FINANCEIRO"] as const;
 const AUDIENCIA_LABELS: Record<(typeof AUDIENCIA_ROLES)[number], string> = {
-  COMERCIAL: "Comerciais",
+  COMERCIAL: "Comercial",
   FORMADOR: "Formadores",
-  FINANCEIRO: "Financeiro",
-  COORDENADOR: "Coordenação",
+  COORDENADOR_COMERCIAL: "Coord. Comercial",
+  COORDENADOR_PEDAGOGICO: "Coord. Pedagógico",
+  COORDENADOR_FINANCEIRO: "Coord. Financeiro",
 };
 
 type Interaccao = {
@@ -74,11 +77,12 @@ const emptyForm = {
   agendadoFim: "",
   audienciaRoles: [] as string[],
   participantesIds: [] as string[],
+  criarSalaTeams: false,
 };
 
 export default function CrmInteraccoesPage() {
   const pathname = usePathname();
-  const { canManageCrm, canManage } = useTenantRole();
+  const { canManageCrm, canManage, writeDisabled } = useTenantRole();
   const [items, setItems] = useState<Interaccao[]>([]);
   const [clientes, setClientes] = useState<ClienteOpt[]>([]);
   const [leads, setLeads] = useState<LeadOpt[]>([]);
@@ -89,6 +93,7 @@ export default function CrmInteraccoesPage() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [podeCriarSalaTeams, setPodeCriarSalaTeams] = useState(false);
   const [listFilters, setListFilters] = useState<CrmListFiltersValue>(emptyCrmListFilters);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -129,6 +134,17 @@ export default function CrmInteraccoesPage() {
   }, [listFilters]);
 
   useEffect(() => {
+    void (async () => {
+      const r = await bffFetch("/api/v1/integracoes/disponibilidade", {
+        headers: { accept: "application/json" },
+      });
+      if (!r.ok) return;
+      const data = (await r.json()) as { podeCriarSalaTeams?: boolean };
+      setPodeCriarSalaTeams(Boolean(data.podeCriarSalaTeams));
+    })();
+  }, []);
+
+  useEffect(() => {
     void load();
   }, [load]);
 
@@ -159,6 +175,8 @@ export default function CrmInteraccoesPage() {
         leadComercialId: form.leadComercialId || undefined,
         agendadoPara: form.agendadoPara ? new Date(form.agendadoPara).toISOString() : undefined,
         agendadoFim: form.agendadoFim ? new Date(form.agendadoFim).toISOString() : undefined,
+        criarSalaTeams:
+          form.tipo === "REUNIAO" && form.criarSalaTeams && podeCriarSalaTeams ? true : undefined,
         ...(form.tipo === "REUNIAO" && canManage
           ? {
               audienciaRoles: form.audienciaRoles.length ? form.audienciaRoles : undefined,
@@ -198,9 +216,9 @@ export default function CrmInteraccoesPage() {
         description="Todos os registos de reuniões e contactos comerciais do tenant."
         actions={
           canManageCrm ? (
-            <Button size="sm" onClick={() => setFormOpen((v) => !v)}>
+            <Button size="sm" onClick={() => setFormOpen(true)} disabled={writeDisabled}>
               <Sparkles className="h-3.5 w-3.5" />
-              {formOpen ? "Fechar formulário" : "Nova nota"}
+              Nova nota
             </Button>
           ) : null
         }
@@ -249,7 +267,7 @@ export default function CrmInteraccoesPage() {
                       )}
                       {item.criadoPor ? (
                         <p className="text-xs text-slate-500">
-                          Registado por {item.criadoPor.displayName}
+                          Registado por {fmtCrmAutor(item.criadoPor)}
                         </p>
                       ) : null}
                     </div>
@@ -266,7 +284,13 @@ export default function CrmInteraccoesPage() {
                         {item.processamentoEstado}
                       </Badge>
                       {canManageCrm ? (
-                        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void reprocessar(item.id)}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy || writeDisabled}
+                          aria-label="Reprocessar com IA"
+                          onClick={() => void reprocessar(item.id)}
+                        >
                           <RefreshCw className="h-3.5 w-3.5" />
                         </Button>
                       ) : null}
@@ -298,9 +322,12 @@ export default function CrmInteraccoesPage() {
         onPageChange={setPage}
       />
 
-      {canManageCrm && formOpen ? (
-        <Card>
-          <CardContent className="pt-6">
+      <Sheet open={formOpen} onOpenChange={setFormOpen}>
+        <SheetContent
+          title="Nova nota comercial"
+          description="Registe reuniões e contactos. A análise IA gera sugestões em seguida."
+        >
+          {canManageCrm ? (
             <form onSubmit={onSubmit} className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -381,6 +408,19 @@ export default function CrmInteraccoesPage() {
                   </div>
                 </div>
               ) : null}
+              {form.tipo === "REUNIAO" && podeCriarSalaTeams && form.agendadoPara ? (
+                <label className="flex items-center gap-2 rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2 text-sm text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={form.criarSalaTeams}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, criarSalaTeams: e.target.checked }))
+                    }
+                    className="rounded border-slate-600"
+                  />
+                  Criar sala Microsoft Teams
+                </label>
+              ) : null}
               {form.tipo === "REUNIAO" && canManage ? (
                 <div className="space-y-3 rounded-lg border border-slate-700/60 bg-slate-900/40 p-3">
                   <p className="text-xs font-medium text-slate-300">Convidados da reunião</p>
@@ -453,14 +493,16 @@ export default function CrmInteraccoesPage() {
                   />
                 </div>
               ))}
-              <Button type="submit" disabled={busy}>
-                <Sparkles className="h-4 w-4" />
-                Guardar e processar com IA
-              </Button>
+              <div className="flex flex-wrap gap-2 pt-2">
+                <Button type="submit" disabled={busy || writeDisabled}>
+                  <Sparkles className="h-4 w-4" />
+                  Guardar e processar com IA
+                </Button>
+              </div>
             </form>
-          </CardContent>
-        </Card>
-      ) : null}
+          ) : null}
+        </SheetContent>
+      </Sheet>
     </>
   );
 }

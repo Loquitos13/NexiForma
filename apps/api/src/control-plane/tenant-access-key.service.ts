@@ -195,7 +195,7 @@ export class TenantAccessKeyService {
       {
         targetUserId: admin.id,
         reason: `Acesso via chave partilhada (${row.label ?? row.id})`,
-        readOnly: false,
+        readOnly: true,
       },
       res,
       actorIp,

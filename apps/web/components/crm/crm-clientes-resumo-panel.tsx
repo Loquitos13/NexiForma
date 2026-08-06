@@ -6,6 +6,7 @@ import { Search } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { CrmClienteHistoricoPanel } from "@/components/crm/crm-cliente-historico-panel";
 import { CrmClienteResumoCard, type CrmClienteResumoData } from "@/components/crm/crm-cliente-resumo-card";
+import { ListPagination } from "@/components/crm/list-pagination";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { withPortalFrom } from "@/lib/ui/portal-back-nav";
 import { Alert } from "@/components/ui";
@@ -23,6 +24,8 @@ export function CrmClientesResumoPanel({ tipo, tabDestino, countLabel, emptyMess
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
   const [navigatingId, setNavigatingId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
@@ -61,6 +64,15 @@ export function CrmClientesResumoPanel({ tipo, tabDestino, countLabel, emptyMess
     );
   }, [items, search]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
+
+  const pageItems = useMemo(
+    () => filtered.slice((page - 1) * pageSize, page * pageSize),
+    [filtered, page, pageSize],
+  );
+
   function toggleExpanded(id: string) {
     setExpandedIds((prev) => {
       const next = new Set(prev);
@@ -77,6 +89,7 @@ export function CrmClientesResumoPanel({ tipo, tabDestino, countLabel, emptyMess
         <input
           type="search"
           placeholder="Pesquisar por nome, NIF ou email…"
+          aria-label="Pesquisar por nome, NIF ou email"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="h-9 w-full rounded-lg border border-slate-600/60 bg-slate-900/80 pl-9 pr-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/60"
@@ -93,7 +106,7 @@ export function CrmClientesResumoPanel({ tipo, tabDestino, countLabel, emptyMess
         <p className="text-sm text-slate-500">Nenhum cliente corresponde à pesquisa.</p>
       ) : (
         <div className="flex flex-col gap-3">
-          {filtered.map((c) => {
+          {pageItems.map((c) => {
             const isExpanded = expandedIds.has(c.id);
             const href = withPortalFrom(
               `/portal/clientes/${c.id}?tab=${tabDestino}`,
@@ -122,6 +135,15 @@ export function CrmClientesResumoPanel({ tipo, tabDestino, countLabel, emptyMess
           })}
         </div>
       )}
+
+      {!loading && filtered.length > 0 ? (
+        <ListPagination
+          page={page}
+          pageSize={pageSize}
+          total={filtered.length}
+          onPageChange={setPage}
+        />
+      ) : null}
     </div>
   );
 }

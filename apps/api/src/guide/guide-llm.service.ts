@@ -23,7 +23,7 @@ export class GuideLlmService {
 
   constructor(private readonly config: ConfigService) {
     this.enabled = this.config.get<string>("NEXIGUIA_LLM_ENABLED") === "true";
-    this.baseUrl = (this.config.get<string>("NEXIGUIA_LLM_URL") ?? "http://127.0.0.1:11434").replace(
+    this.baseUrl = (this.config.get<string>("NEXIGUIA_LLM_URL") ?? "http://127.0.0.1:11435").replace(
       /\/$/,
       "",
     );

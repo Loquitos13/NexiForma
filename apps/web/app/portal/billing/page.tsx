@@ -103,7 +103,7 @@ export default function BillingPage() {
 
       {(sub || entitlements) && (
         <Card className="mb-6 border-blue-700/30 bg-gradient-to-r from-blue-900/20 to-slate-900/40">
-          <CardContent className="flex items-center justify-between p-5">
+          <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600/20">
                 <CreditCard className="h-5 w-5 text-blue-400" />

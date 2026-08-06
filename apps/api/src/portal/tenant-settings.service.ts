@@ -1,8 +1,27 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { Prisma } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
+import { AuditService } from "../audit/audit.service";
 import { requireTenantId } from "../common/tenant-scope";
 import type { RequestUser } from "../auth/types/access-token-payload";
+import {
+  isValidNifPt,
+  normalizarNif,
+} from "../dossie-pedagogico/sigo-validation.util";
+import {
+  DEFAULT_UNIVERSAL_REQUIRED,
+  ENROLLMENT_DOC_OPTIONS,
+  mergeTenantDocumentosPolitica,
+  parseTenantDocumentosPolitica,
+  UNIVERSAL_DOC_OPTIONS,
+  type DocumentosPoliticaTenant,
+} from "../formandos/documentos-politica.util";
 
 export type TenantBrandingPayload = {
   logoUrl?: string;
@@ -28,6 +47,7 @@ export type TenantCronogramaConfig = {
 type TenantMetadata = {
   branding?: TenantBrandingPayload;
   cronograma?: TenantCronogramaConfig;
+  documentosPolitica?: DocumentosPoliticaTenant;
 };
 
 @Injectable()
@@ -35,6 +55,7 @@ export class TenantSettingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly audit: AuditService,
   ) {}
 
   async getTenantInfo(user: RequestUser): Promise<{
@@ -51,6 +72,119 @@ export class TenantSettingsService {
     });
     if (!tenant) throw new BadRequestException("Tenant não encontrado.");
     return tenant;
+  }
+
+  /**
+   * Actualiza identificação legal da entidade (nome + NIF).
+   * Escrito na tabela Tenant partilhada com o control plane / superadmin.
+   */
+  async updateEntidade(
+    user: RequestUser,
+    dto: { legalName?: string; nif?: string },
+  ): Promise<{
+    slug: string;
+    legalName: string;
+    nif: string;
+    status: string;
+    metadata: unknown;
+  }> {
+    const tenantId = requireTenantId(user);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, slug: true, legalName: true, nif: true, metadata: true },
+    });
+    if (!tenant) throw new NotFoundException("Tenant não encontrado.");
+
+    const legalName =
+      dto.legalName !== undefined ? dto.legalName.trim() : tenant.legalName;
+    const nifRaw = dto.nif !== undefined ? normalizarNif(dto.nif) : tenant.nif;
+
+    if (!legalName || legalName.length < 2) {
+      throw new BadRequestException("Indique o nome legal da entidade (mín. 2 caracteres).");
+    }
+    if (legalName.length > 200) {
+      throw new BadRequestException("Nome legal demasiado longo (máx. 200 caracteres).");
+    }
+    if (!isValidNifPt(nifRaw)) {
+      throw new BadRequestException("NIF português inválido (9 dígitos com dígito de controlo).");
+    }
+
+    if (nifRaw !== tenant.nif) {
+      const clash = await this.prisma.tenant.findFirst({
+        where: { nif: nifRaw, id: { not: tenantId } },
+        select: { id: true },
+      });
+      if (clash) {
+        throw new ConflictException("Este NIF já está registado noutra entidade.");
+      }
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.tenant.update({
+        where: { id: tenantId },
+        data: { legalName, nif: nifRaw },
+        select: { slug: true, legalName: true, nif: true, status: true, metadata: true },
+      });
+
+      // Manter faturação alinhada se o NIF emitente era o antigo NIF do tenant.
+      if (nifRaw !== tenant.nif) {
+        const cfg = await tx.configFaturacaoTenant.findUnique({
+          where: { tenantId },
+          select: { nifEmitente: true },
+        });
+        if (cfg && (cfg.nifEmitente === tenant.nif || !cfg.nifEmitente?.trim())) {
+          await tx.configFaturacaoTenant.update({
+            where: { tenantId },
+            data: {
+              nifEmitente: nifRaw,
+              ...(legalName !== tenant.legalName ? { nomeEmpresa: legalName } : {}),
+            },
+          });
+        }
+      } else if (legalName !== tenant.legalName) {
+        const cfg = await tx.configFaturacaoTenant.findUnique({
+          where: { tenantId },
+          select: { nomeEmpresa: true },
+        });
+        if (cfg && (!cfg.nomeEmpresa?.trim() || cfg.nomeEmpresa === tenant.legalName)) {
+          await tx.configFaturacaoTenant.update({
+            where: { tenantId },
+            data: { nomeEmpresa: legalName },
+          });
+        }
+      }
+
+      // Branding: companyName por omissão segue o nome legal.
+      const meta = (tenant.metadata ?? {}) as TenantMetadata;
+      if (meta.branding && (!meta.branding.companyName || meta.branding.companyName === tenant.legalName)) {
+        const next: TenantMetadata = {
+          ...meta,
+          branding: { ...meta.branding, companyName: legalName },
+        };
+        await tx.tenant.update({
+          where: { id: tenantId },
+          data: { metadata: next as Prisma.InputJsonValue },
+        });
+      }
+
+      return row;
+    });
+
+    void this.audit.log({
+      actorType: "TENANT_USER",
+      actorId: user.sub,
+      action: "tenant.entidade.update",
+      resourceType: "Tenant",
+      resourceId: tenantId,
+      targetTenantId: tenantId,
+      targetUserId: user.sub,
+      payload: {
+        from: { legalName: tenant.legalName, nif: tenant.nif },
+        to: { legalName: updated.legalName, nif: updated.nif },
+      },
+    });
+
+    return updated;
   }
 
   async getBranding(user: RequestUser) {
@@ -95,7 +229,7 @@ export class TenantSettingsService {
 
     await this.prisma.tenant.update({
       where: { id: tenantId },
-      data: { metadata: next },
+      data: { metadata: next as Prisma.InputJsonValue },
     });
 
     return { sucesso: true, branding: next.branding, cronograma: next.cronograma };
@@ -138,10 +272,52 @@ export class TenantSettingsService {
     };
     await this.prisma.tenant.update({
       where: { id: tenantId },
-      data: { metadata: next },
+      data: { metadata: next as Prisma.InputJsonValue },
     });
 
     return { sucesso: true, logoUrl: `/api/v1/portal/tenant/logo`, logoStorageKey: key };
+  }
+
+  async getDocumentosPolitica(user: RequestUser) {
+    const tenantId = requireTenantId(user);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true },
+    });
+    if (!tenant) throw new BadRequestException("Tenant não encontrado.");
+    const politica = parseTenantDocumentosPolitica(tenant.metadata);
+    return {
+      politica,
+      opcoesUniversais: UNIVERSAL_DOC_OPTIONS,
+      opcoesInscricao: ENROLLMENT_DOC_OPTIONS,
+      defaults: {
+        universaisObrigatorios: DEFAULT_UNIVERSAL_REQUIRED,
+      },
+      ajuda:
+        "Os documentos universais ficam na ficha do formando. Os de inscrição (contrato, declaração, regulamento) configuram-se por curso/acção, porque horas e valor mudam entre edições.",
+    };
+  }
+
+  async updateDocumentosPolitica(user: RequestUser, body: { universaisObrigatorios?: string[] }) {
+    const tenantId = requireTenantId(user);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true },
+    });
+    if (!tenant) throw new BadRequestException("Tenant não encontrado.");
+
+    const politica = parseTenantDocumentosPolitica({
+      documentosPolitica: {
+        version: 1,
+        universaisObrigatorios: body.universaisObrigatorios ?? [],
+      },
+    });
+    const next = mergeTenantDocumentosPolitica(tenant.metadata, politica);
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { metadata: next as Prisma.InputJsonValue },
+    });
+    return { sucesso: true, politica };
   }
 
   async streamLogo(user: RequestUser) {

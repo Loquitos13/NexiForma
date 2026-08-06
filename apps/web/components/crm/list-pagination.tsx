@@ -34,6 +34,7 @@ export function ListPagination({ page, pageSize, total, onPageChange, className 
           variant="secondary"
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
+          aria-label="Página anterior"
         >
           Anterior
         </Button>
@@ -45,6 +46,7 @@ export function ListPagination({ page, pageSize, total, onPageChange, className 
           variant="secondary"
           disabled={page >= totalPages}
           onClick={() => onPageChange(page + 1)}
+          aria-label="Página seguinte"
         >
           Seguinte
         </Button>

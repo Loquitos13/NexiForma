@@ -11,13 +11,13 @@ import {
   Logger,
   NotFoundException,
   ConflictException,
-  BadRequestException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificacoesExtendedService } from "../notificacoes/notificacoes-extended.service";
 import { resolverEmailNotificacaoFormador } from "@nexiforma/shared";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
+import { ViesService } from "../vies/vies.service";
 
 export interface FormadorDto {
   nomeCompleto: string;
@@ -56,6 +56,7 @@ export class TrainerManagementService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificacoes: NotificacoesExtendedService,
+    private readonly vies: ViesService,
   ) {}
 
   /**
@@ -67,14 +68,16 @@ export class TrainerManagementService {
     dto: FormadorDto,
   ): Promise<FormadorComStatus> {
     const tenantId = requireTenantId(user);
+    const nif = dto.nif.trim();
+    await this.vies.assertConfirmado(nif, "pessoa");
 
     // Verificar duplicado por NIF
     const existente = await this.prisma.formadorProfile.findUnique({
-      where: { tenantId_nif: { tenantId, nif: dto.nif } },
+      where: { tenantId_nif: { tenantId, nif } },
     });
 
     if (existente) {
-      throw new ConflictException(`Formador com NIF ${dto.nif} já existe.`);
+      throw new ConflictException(`Formador com NIF ${nif} já existe.`);
     }
 
     const formador = await this.prisma.formadorProfile.create({
@@ -82,7 +85,7 @@ export class TrainerManagementService {
         tenantId,
         userId,
         nomeCompleto: dto.nomeCompleto,
-        nif: dto.nif,
+        nif,
         email: dto.email,
         ccNumero: dto.ccNumero,
         ccValidade: dto.ccValidade ? new Date(dto.ccValidade) : null,

@@ -1,19 +1,17 @@
-// @ts-nocheck – modulo em desenvolvimento
 import {
   Controller,
   Get,
-  Post,
   Put,
   UseGuards,
   Req,
   Body,
-  Param,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/decorators/roles.decorator";
-import type { Request } from "express";
 import { SettingsService } from "./settings.service";
+import { requireTenantId } from "../common/tenant-scope";
+import type { RequestUser } from "../auth/types/access-token-payload";
 
 @Controller("settings")
 export class SettingsController {
@@ -21,15 +19,14 @@ export class SettingsController {
 
   @Get("tema")
   @UseGuards(JwtAuthGuard)
-  async obterTemaUtilizador(@Req() req: any) {
-    const userId = req.user?.sub;
-    return this.settingsService.obterTemaUtilizador(userId);
+  async obterTemaUtilizador(@Req() req: { user: RequestUser }) {
+    return this.settingsService.obterTemaUtilizador(req.user.sub);
   }
 
   @Put("tema")
   @UseGuards(JwtAuthGuard)
   async atualizarTemaUtilizador(
-    @Req() req: any,
+    @Req() req: { user: RequestUser },
     @Body()
     settings: {
       primaryColor?: string;
@@ -39,32 +36,29 @@ export class SettingsController {
       language?: "pt" | "en";
     },
   ) {
-    const userId = req.user?.sub;
-    return this.settingsService.atualizarTemaUtilizador(userId, settings);
+    return this.settingsService.atualizarTemaUtilizador(req.user.sub, settings);
   }
 
   @Get("paleta")
   @UseGuards(JwtAuthGuard)
-  async obterPaletaCores(@Req() req: any) {
-    const userId = req.user?.sub;
-    const tenantId = req.headers["x-tenant-id"] as string;
-    return this.settingsService.obterPaletaCores(tenantId, userId);
+  async obterPaletaCores(@Req() req: { user: RequestUser }) {
+    const tenantId = requireTenantId(req.user);
+    return this.settingsService.obterPaletaCores(tenantId, req.user.sub);
   }
 
   @Get("css")
   @UseGuards(JwtAuthGuard)
-  async exportarCssPersonalizado(@Req() req: any) {
-    const userId = req.user?.sub;
-    const tenantId = req.headers["x-tenant-id"] as string;
-    const css = await this.settingsService.exportarCssPersonalizado(tenantId, userId);
+  async exportarCssPersonalizado(@Req() req: { user: RequestUser }) {
+    const tenantId = requireTenantId(req.user);
+    const css = await this.settingsService.exportarCssPersonalizado(tenantId, req.user.sub);
     return { css };
   }
 
   @Get("tenant/branding")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("tenant_manager")
-  async obterBrandingTenant(@Req() req: any) {
-    const tenantId = req.headers["x-tenant-id"] as string;
+  async obterBrandingTenant(@Req() req: { user: RequestUser }) {
+    const tenantId = requireTenantId(req.user);
     return this.settingsService.obterBrandingTenant(tenantId);
   }
 
@@ -72,7 +66,7 @@ export class SettingsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("tenant_manager")
   async atualizarBrandingTenant(
-    @Req() req: any,
+    @Req() req: { user: RequestUser },
     @Body()
     branding: {
       logoUrl?: string;
@@ -84,16 +78,15 @@ export class SettingsController {
       footerText?: string;
     },
   ) {
-    const userId = req.user?.sub;
-    const tenantId = req.headers["x-tenant-id"] as string;
-    return this.settingsService.atualizarBrandingTenant(tenantId, userId, branding);
+    const tenantId = requireTenantId(req.user);
+    return this.settingsService.atualizarBrandingTenant(tenantId, req.user.sub, branding);
   }
 
   @Get("tenant/plano")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("tenant_manager")
-  async obterPlanoTenant(@Req() req: any) {
-    const tenantId = req.headers["x-tenant-id"] as string;
+  async obterPlanoTenant(@Req() req: { user: RequestUser }) {
+    const tenantId = requireTenantId(req.user);
     return this.settingsService.obterPlanoTenant(tenantId);
   }
 

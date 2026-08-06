@@ -347,7 +347,7 @@ export function FaturaInlineEditor({
               <div className="relative mb-3 h-10 w-32">
                 <Image
                   src={logoUrl}
-                  alt="Logo"
+                  alt="Logótipo da entidade emissora"
                   fill
                   className="object-contain object-left brightness-0 invert"
                   unoptimized
@@ -707,6 +707,7 @@ export function FaturaInlineEditor({
                           onClick={() => onLinhas(linhas.filter((_, i) => i !== idx))}
                           disabled={linhas.length <= 1}
                           title="Remover linha"
+                          aria-label="Remover linha"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>

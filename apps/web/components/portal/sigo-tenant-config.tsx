@@ -6,7 +6,7 @@ import { bffFetch } from "@/lib/client/bff-fetch";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { Alert, Button, Input } from "@/components/ui";
 
-type TenantUserRole = "ADMIN" | "COORDENADOR" | "FORMADOR" | "FORMANDO" | "FINANCEIRO" | "COMERCIAL";
+type TenantUserRole = "ADMIN" | "COORDENADOR" | "COORDENADOR_COMERCIAL" | "COORDENADOR_PEDAGOGICO" | "COORDENADOR_FINANCEIRO" | "FORMADOR" | "FORMANDO" | "FINANCEIRO" | "COMERCIAL";
 
 type SigoAcaoAcesso =
   | "configurar"
@@ -41,7 +41,7 @@ type TenantSigoConfig = {
   avisos: string[];
 };
 
-const ROLES: TenantUserRole[] = ["ADMIN", "COORDENADOR", "FORMADOR", "FORMANDO", "FINANCEIRO", "COMERCIAL"];
+const ROLES: TenantUserRole[] = ["ADMIN", "COORDENADOR_PEDAGOGICO", "COORDENADOR_COMERCIAL", "COORDENADOR_FINANCEIRO", "FORMADOR", "FORMANDO", "COMERCIAL"];
 
 const ACOES: { id: SigoAcaoAcesso; label: string }[] = [
   { id: "configurar", label: "Configurar integração" },
@@ -54,9 +54,12 @@ const ACOES: { id: SigoAcaoAcesso; label: string }[] = [
   { id: "notificarFormandos", label: "Notificar formandos" },
 ];
 
-const ROLE_LABELS: Record<TenantUserRole, string> = {
+const ROLE_LABELS: Partial<Record<TenantUserRole, string>> & Record<string, string> = {
   ADMIN: "Admin",
-  COORDENADOR: "Coordenador",
+  COORDENADOR: "Coord. Pedagógico",
+  COORDENADOR_COMERCIAL: "Coord. Comercial",
+  COORDENADOR_PEDAGOGICO: "Coord. Pedagógico",
+  COORDENADOR_FINANCEIRO: "Coord. Financeiro",
   FORMADOR: "Formador",
   FORMANDO: "Formando",
   FINANCEIRO: "Financeiro",
@@ -175,8 +178,10 @@ export function SigoTenantConfigPanel({ onSaved }: Props) {
       setError(await parseApiError(res));
       return;
     }
-    const data = (await res.json()) as { ok?: boolean; message?: string };
-    setMsg(data.ok ? `Teste OK: ${data.message ?? ""}` : `Teste falhou: ${data.message ?? ""}`);
+    const data = (await res.json()) as { ok?: boolean; message?: string; wsdlMethods?: string[] };
+    const extra =
+      data.wsdlMethods?.length ? ` Métodos WSDL: ${data.wsdlMethods.slice(0, 8).join(", ")}${data.wsdlMethods.length > 8 ? "…" : ""}` : "";
+    setMsg(data.ok ? `Teste OK: ${data.message ?? ""}${extra}` : `Teste falhou: ${data.message ?? ""}`);
     await load();
   }
 

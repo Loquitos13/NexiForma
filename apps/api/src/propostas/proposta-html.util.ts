@@ -258,7 +258,7 @@ export function buildPropostaHtmlDocument(row: PropostaHtmlInput): { html: strin
   </style>
 </head>
 <body>
-  <div class="no-print"><button type="button" onclick="window.print()">Imprimir / Guardar PDF</button></div>
+  <div class="no-print"><p style="font-size:0.9rem;color:#64748b">Use Ctrl+P / Cmd+P para imprimir ou guardar PDF.</p></div>
 
   <header class="cover">
     <h1>Proposta Comercial</h1>

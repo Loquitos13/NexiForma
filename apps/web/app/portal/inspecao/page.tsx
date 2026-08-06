@@ -4,7 +4,7 @@ type Props = {
   searchParams?: Promise<{ acao?: string }>;
 };
 
-/** Atalho legado — inspeção DGERT vive em /portal/dossie. */
+/** Atalho legado - inspeção DGERT vive em /portal/dossie. */
 export default async function PortalInspecaoRedirect({ searchParams }: Props) {
   const sp = searchParams ? await searchParams : {};
   const acao = sp.acao?.trim();

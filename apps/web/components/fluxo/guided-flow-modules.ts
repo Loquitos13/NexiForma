@@ -1,155 +1,127 @@
-import type { TenantEntitlements } from "@nexiforma/shared";
-import type { JwtRole } from "@nexiforma/shared";
+import type { JwtRole, TenantEntitlements } from "@nexiforma/shared";
+import { GUIDED_FLOW_CRM } from "./guided-flow-catalog-crm";
+import { GUIDED_FLOW_FORMACAO } from "./guided-flow-catalog-formacao";
+import {
+  audienceFromRole,
+  categoryAllowedForAudience,
+  GUIDED_FLOW_AUDIENCE_LABEL,
+  GUIDED_FLOW_CATEGORY_LABEL,
+  type GuidedFlowInteractiveView,
+  type GuidedFlowModule,
+} from "./guided-flow-types";
 
-export type GuidedFlowId =
-  | "setup-completo"
-  | "acao-existente"
-  | "sessao-existente"
-  | "conteudos"
-  | "dgert"
-  | "crm"
-  | "faturacao"
-  | "relatorios"
-  | "utilizadores"
-  | "plugins"
-  | "configuracoes";
-
-export type GuidedFlowCategory = "formacao" | "negocio" | "admin";
-
-export type GuidedFlowModule = {
-  id: GuidedFlowId;
-  title: string;
-  description: string;
-  category: GuidedFlowCategory;
-  /** Vista interna no fluxo guiado */
-  view?: "setup-completo" | "conteudos";
-  /** Link directo (módulos de navegação) */
-  href?: string;
-  minRole?: JwtRole;
-  visible: (ctx: {
-    ent: TenantEntitlements;
-    role: JwtRole | null;
-    canManage: boolean;
-  }) => boolean;
+export type {
+  GuidedFlowAudience,
+  GuidedFlowCategory,
+  GuidedFlowInteractiveView,
+  GuidedFlowModule,
+  GuidedFlowStep,
+} from "./guided-flow-types";
+export type GuidedFlowId = string;
+export {
+  GUIDED_FLOW_AUDIENCE_LABEL,
+  GUIDED_FLOW_CATEGORY_LABEL,
+  audienceFromRole,
+  categoryAllowedForAudience,
 };
 
-export const GUIDED_FLOW_MODULES: GuidedFlowModule[] = [
+const GUIDED_FLOW_ADMIN: GuidedFlowModule[] = [
   {
-    id: "setup-completo",
-    title: "Nova formação completa",
-    description: "Curso → acção → conteúdos LMS → sessão online (opcional), passo a passo.",
-    category: "formacao",
-    view: "setup-completo",
-    minRole: "tenant_manager",
-    visible: ({ ent, canManage }) => canManage && ent.canAccessCoreFormation,
+    id: "utilizadores",
+    title: "Utilizadores e convites",
+    description: "Convites, papéis, MFA e gestão de acessos.",
+    category: "admin",
+    audiences: ["gestor"],
+    visible: ({ canManage }) => canManage,
+    steps: [
+      {
+        title: "Abrir utilizadores",
+        description: "Vai a Administração → Utilizadores.",
+        href: "/portal/utilizadores",
+      },
+      {
+        title: "Convidar",
+        description:
+          "Convida por email com o cargo correcto (gestor, comercial, formador, formando).",
+        tip: "Formadores e formandos precisam de NIF no convite.",
+      },
+      {
+        title: "Confirmação de email",
+        description:
+          "Contas criadas com password pedem confirmação de email antes do primeiro login.",
+      },
+    ],
   },
   {
-    id: "acao-existente",
-    title: "Acção num curso existente",
-    description: "Cria uma nova acção formativa ligada a um curso do catálogo.",
-    category: "formacao",
-    href: "/portal/acoes",
-    minRole: "tenant_manager",
-    visible: ({ ent, canManage }) => canManage && ent.canAccessCoreFormation,
+    id: "plugins",
+    title: "Plugins e integrações",
+    description: "Teams, Moodle e salas online.",
+    category: "admin",
+    audiences: ["gestor"],
+    visible: ({ ent, canManage }) =>
+      canManage && (ent.canAccessFormacaoTeams || ent.canAccessCoreFormation),
+    href: "/portal/integracoes",
   },
   {
-    id: "sessao-existente",
-    title: "Sessão numa acção existente",
-    description: "Cronograma, sessões, folha de presenças e sala Teams.",
-    category: "formacao",
-    href: "/portal/acoes",
-    visible: ({ ent }) => ent.canAccessCoreFormation || ent.canAccessFormacaoTeams,
-  },
-  {
-    id: "conteudos",
-    title: "Conteúdos LMS",
-    description: "Editor visual de módulos (vídeo, PDF, quiz, texto) num curso.",
-    category: "formacao",
-    view: "conteudos",
-    visible: ({ ent }) => ent.canAccessCoreFormation,
-  },
-  {
-    id: "dgert",
-    title: "Qualidade & DGERT",
-    description: "Compliance, dossiê pedagógico, certificados e exportação SIGO.",
-    category: "formacao",
-    href: "/portal/compliance",
-    minRole: "tenant_manager",
-    visible: ({ ent, canManage }) => canManage && ent.canAccessCoreFormation,
-  },
-  {
-    id: "crm",
-    title: "CRM comercial",
-    description: "Leads, clientes, propostas e pipeline de vendas.",
-    category: "negocio",
-    href: "/portal/crm",
-    visible: ({ ent }) => ent.canAccessCrm,
-  },
-  {
-    id: "faturacao",
-    title: "Faturação",
-    description: "Faturas, séries AT e dados fiscais da entidade.",
-    category: "negocio",
-    href: "/portal/crm/faturas",
-    minRole: "tenant_manager",
-    visible: ({ ent, canManage }) => canManage && ent.canAccessFaturacao,
+    id: "configuracoes",
+    title: "Configurações da entidade",
+    description: "Dados da entidade, email e preferências.",
+    category: "admin",
+    audiences: ["gestor"],
+    visible: ({ canManage }) => canManage,
+    href: "/portal/configuracoes",
   },
   {
     id: "relatorios",
     title: "Relatórios",
-    description: "Indicadores e exportações conforme os módulos activos.",
-    category: "negocio",
-    href: "/portal/relatorios",
-    minRole: "tenant_manager",
+    description: "Indicadores e exportações (módulo Inteligência).",
+    category: "admin",
+    audiences: ["gestor"],
     visible: ({ ent, canManage }) => canManage && ent.canAccessInteligenciaIa,
-  },
-  {
-    id: "utilizadores",
-    title: "Utilizadores",
-    description: "Convites, papéis, MFA e gestão de acessos.",
-    category: "admin",
-    href: "/portal/utilizadores",
-    minRole: "tenant_manager",
-    visible: ({ canManage }) => canManage,
-  },
-  {
-    id: "plugins",
-    title: "Plugins",
-    description: "Integrações Teams, Moodle e salas online.",
-    category: "admin",
-    href: "/portal/integracoes",
-    minRole: "tenant_manager",
-    visible: ({ ent, canManage }) =>
-      canManage && (ent.canAccessFormacaoTeams || ent.canAccessCoreFormation),
-  },
-  {
-    id: "configuracoes",
-    title: "Configurações",
-    description: "Dados da entidade, email e preferências do tenant.",
-    category: "admin",
-    href: "/portal/configuracoes",
-    minRole: "tenant_manager",
-    visible: ({ canManage }) => canManage,
+    href: "/portal/relatorios",
   },
 ];
 
-export const GUIDED_FLOW_CATEGORY_LABEL: Record<GuidedFlowCategory, string> = {
-  formacao: "Formação",
-  negocio: "Negócio",
-  admin: "Administração",
-};
+export const GUIDED_FLOW_MODULES: GuidedFlowModule[] = [
+  ...GUIDED_FLOW_CRM,
+  ...GUIDED_FLOW_FORMACAO,
+  ...GUIDED_FLOW_ADMIN,
+];
+
+export function getGuidedFlowById(id: string): GuidedFlowModule | undefined {
+  return GUIDED_FLOW_MODULES.find((m) => m.id === id);
+}
 
 export function visibleGuidedFlowModules(ctx: {
   ent: TenantEntitlements | null;
   role: JwtRole | null;
   canManage: boolean;
+  canManageFormacao?: boolean;
+  canManageCrm?: boolean;
+  canManageFaturacao?: boolean;
 }): GuidedFlowModule[] {
   if (!ctx.ent) return [];
+  const audience = audienceFromRole(ctx.role);
+  if (!audience) return [];
+
+  const visibleCtx = {
+    ent: ctx.ent,
+    role: ctx.role,
+    canManage: ctx.canManage,
+    canManageFormacao: ctx.canManageFormacao ?? ctx.canManage,
+    canManageCrm: ctx.canManageCrm ?? ctx.canManage,
+    canManageFaturacao: ctx.canManageFaturacao ?? ctx.canManage,
+  };
+
   return GUIDED_FLOW_MODULES.filter((m) => {
-    if (m.minRole && ctx.role && ctx.role !== m.minRole && ctx.role !== "tenant_manager") {
-      if (m.minRole === "tenant_manager" && !ctx.canManage) return false;
-    }
-    if (m.minRole === "tenant_manager" && !ctx.canManage) return false;
-    return m.visible({ ent: ctx.ent!, role: ctx.role, canManage: ctx.canManage });
+    if (!m.audiences.includes(audience)) return false;
+    if (!categoryAllowedForAudience(m.category, audience)) return false;
+    return m.visible(visibleCtx);
   });
+}
+
+export function isInteractiveGuidedView(
+  v: string | null | undefined,
+): v is GuidedFlowInteractiveView {
+  return v === "setup-completo" || v === "conteudos";
 }

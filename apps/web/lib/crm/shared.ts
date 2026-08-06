@@ -78,10 +78,12 @@ export function leadEstadoVariant(
   return map[estado] ?? "default";
 }
 
-type CrmUserRef = { displayName: string } | null | undefined;
+type CrmUserRef = { displayName: string; contaEliminada?: boolean } | null | undefined;
 
 export function fmtCrmAutor(user?: CrmUserRef): string {
-  return user?.displayName?.trim() || "-";
+  const nome = user?.displayName?.trim();
+  if (!nome) return "-";
+  return user?.contaEliminada ? `${nome} (conta eliminada)` : nome;
 }
 
 /** Proposta: criador; se enviada por outra pessoa, indica também. */

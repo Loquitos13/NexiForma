@@ -4,12 +4,19 @@ import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
+import {
+  computeCertificadoTokenExpiresAt,
+  isCertificadoTokenExpired,
+  resolveCertificadoVerificacaoTtlDays,
+} from "./certificado-verificacao-ttl.util";
 
 export type VerificacaoEmitResult = {
   token: string;
   codigoPublico: string;
   verifyUrl: string;
   emitidoEm: Date;
+  expiresAt: Date | null;
   reutilizado: boolean;
 };
 
@@ -17,6 +24,7 @@ export type VerificacaoPublica = {
   valido: boolean;
   codigoPublico: string;
   emitidoEm: string;
+  expiresAt?: string | null;
   revogadoEm?: string | null;
   motivo?: string;
   formando?: { nome: string; nif: string };
@@ -35,6 +43,12 @@ export class CertificadoVerificacaoService {
     private readonly config: ConfigService,
   ) {}
 
+  private ttlDays(): number {
+    return resolveCertificadoVerificacaoTtlDays(
+      this.config.get<string>("CERTIFICADO_VERIFICACAO_TOKEN_TTL_DAYS"),
+    );
+  }
+
   async emitir(user: RequestUser, matriculaId: string): Promise<VerificacaoEmitResult> {
     const tenantId = requireTenantId(user);
     const matricula = await this.loadMatriculaContext(tenantId, matriculaId);
@@ -46,7 +60,9 @@ export class CertificadoVerificacaoService {
     });
 
     const { token, tokenHash } = this.newToken();
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const emitidoEm = new Date();
+    const tokenExpiresAt = computeCertificadoTokenExpiresAt(emitidoEm, this.ttlDays());
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     const reutilizado = existente?.hashConteudo === hashConteudo && !existente.revogadoEm;
 
     if (existente) {
@@ -57,7 +73,8 @@ export class CertificadoVerificacaoService {
           tokenHash,
           hashConteudo,
           emitidoPorUserId: user.sub,
-          emitidoEm: new Date(),
+          emitidoEm,
+          tokenExpiresAt,
           revogadoEm: null,
         },
       });
@@ -70,6 +87,8 @@ export class CertificadoVerificacaoService {
           tokenHash,
           hashConteudo,
           emitidoPorUserId: user.sub,
+          emitidoEm,
+          tokenExpiresAt,
         },
       });
     }
@@ -78,7 +97,8 @@ export class CertificadoVerificacaoService {
       token,
       codigoPublico,
       verifyUrl: `${appUrl}/verificar/${token}`,
-      emitidoEm: new Date(),
+      emitidoEm,
+      expiresAt: tokenExpiresAt,
       reutilizado,
     };
   }
@@ -94,13 +114,34 @@ export class CertificadoVerificacaoService {
       };
     }
 
+    const expiresAt =
+      row.tokenExpiresAt ??
+      computeCertificadoTokenExpiresAt(row.emitidoEm, this.ttlDays());
+
     if (row.revogadoEm) {
       return {
         valido: false,
         codigoPublico: row.codigoPublico,
         emitidoEm: row.emitidoEm.toISOString(),
+        expiresAt: expiresAt?.toISOString() ?? null,
         revogadoEm: row.revogadoEm.toISOString(),
         motivo: "Certificado revogado.",
+      };
+    }
+
+    if (
+      isCertificadoTokenExpired({
+        emitidoEm: row.emitidoEm,
+        tokenExpiresAt: row.tokenExpiresAt,
+        ttlDays: this.ttlDays(),
+      })
+    ) {
+      return {
+        valido: false,
+        codigoPublico: row.codigoPublico,
+        emitidoEm: row.emitidoEm.toISOString(),
+        expiresAt: expiresAt?.toISOString() ?? null,
+        motivo: "Link de verificação expirado. Peça à entidade a reemissão do certificado.",
       };
     }
 
@@ -126,6 +167,7 @@ export class CertificadoVerificacaoService {
         valido: false,
         codigoPublico: row.codigoPublico,
         emitidoEm: row.emitidoEm.toISOString(),
+        expiresAt: expiresAt?.toISOString() ?? null,
         motivo: "Registo de matrícula inválido.",
       };
     }
@@ -146,6 +188,7 @@ export class CertificadoVerificacaoService {
       valido: integridadeOk && elegivel,
       codigoPublico: row.codigoPublico,
       emitidoEm: row.emitidoEm.toISOString(),
+      expiresAt: expiresAt?.toISOString() ?? null,
       motivo: !integridadeOk
         ? "Conteúdo alterado desde a emissão – reemitir certificado."
         : !elegivel
@@ -183,7 +226,7 @@ export class CertificadoVerificacaoService {
     return this.prisma.certificadoVerificacao.update({
       where: { id: row.id },
       data: { revogadoEm: new Date() },
-      select: { id: true, codigoPublico: true, revogadoEm: true },
+      select: { id: true, codigoPublico: true, revogadoEm: true, tokenExpiresAt: true },
     });
   }
 

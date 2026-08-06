@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
+import { ListPagination } from "@/components/crm/list-pagination";
 import { Alert, Card, CardContent, DataTable, PageHeader, type Column } from "@/components/ui";
 
 type AuditRow = {
@@ -22,6 +23,8 @@ export default function CrmAuditPage() {
   const [rows, setRows] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
 
   const load = useCallback(async () => {
     if (!canManage) return;
@@ -39,6 +42,11 @@ export default function CrmAuditPage() {
     void load();
   }, [load]);
 
+  const pageRows = useMemo(
+    () => rows.slice((page - 1) * pageSize, page * pageSize),
+    [rows, page, pageSize],
+  );
+
   const COLS: Column<AuditRow>[] = [
     {
       key: "occurredAt",
@@ -55,8 +63,16 @@ export default function CrmAuditPage() {
     { key: "actorId", header: "Actor", cell: (r) => r.actorId.slice(0, 8) + "…" },
   ];
 
-  if (sessionExpired) {
-    return null;
+  if (sessionExpired || roleLoading) {
+    return (
+      <>
+        <PageHeader
+          title="Audit trail CRM"
+          description="Registo de acções comerciais (leads, propostas, notas) - estilo Salesforce Event Monitoring."
+        />
+        <p className="text-slate-400">A carregar…</p>
+      </>
+    );
   }
 
   if (!canManage && !roleLoading) {
@@ -74,13 +90,20 @@ export default function CrmAuditPage() {
         <CardContent className="p-0">
           <DataTable
             columns={COLS}
-            data={rows}
+            data={pageRows}
             keyField="id"
-            loading={loading || roleLoading}
+            loading={loading}
             emptyMessage="Sem eventos registados."
           />
         </CardContent>
       </Card>
+
+      <ListPagination
+        page={page}
+        pageSize={pageSize}
+        total={rows.length}
+        onPageChange={setPage}
+      />
     </>
   );
 }

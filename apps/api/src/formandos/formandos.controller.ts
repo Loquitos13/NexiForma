@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import type { FormandoProfile } from "@nexiforma/database";
@@ -25,22 +26,22 @@ export class FormandosController {
   constructor(private readonly formandos: FormandosService) {}
 
   @Get()
-  @Roles("tenant_manager")
-  list(@CurrentUser() user: RequestUser) {
-    return this.formandos.list(user);
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  list(
+    @CurrentUser() user: RequestUser,
+    @Query("entidadeClienteId") entidadeClienteId?: string,
+  ) {
+    return this.formandos.list(user, { entidadeClienteId });
   }
 
   @Get(":id")
-  @Roles("tenant_manager")
-  detail(
-    @CurrentUser() user: RequestUser,
-    @Param("id", ParseUUIDPipe) id: string,
-  ): Promise<FormandoProfile> {
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  detail(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
     return this.formandos.getOne(user, id);
   }
 
   @Post()
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   create(
     @CurrentUser() user: RequestUser,
     @Body() dto: CreateFormandoDto,
@@ -49,7 +50,7 @@ export class FormandosController {
   }
 
   @Patch(":id")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   update(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -59,7 +60,7 @@ export class FormandosController {
   }
 
   @Delete(":id")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   remove(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,

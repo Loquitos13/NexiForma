@@ -55,9 +55,57 @@ export class FormandoPortalController {
     return this.portal.inscricoes(user);
   }
 
+  @Get("inscricoes/:matriculaId/documentos")
+  listMatriculaDocumentos(
+    @CurrentUser() user: RequestUser,
+    @Param("matriculaId", ParseUUIDPipe) matriculaId: string,
+  ) {
+    return this.portal.listMatriculaDocumentos(user, matriculaId);
+  }
+
+  @Post("inscricoes/:matriculaId/documentos")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
+  uploadMatriculaDocumento(
+    @CurrentUser() user: RequestUser,
+    @Param("matriculaId", ParseUUIDPipe) matriculaId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Query("categoria") categoria?: string,
+  ) {
+    return this.portal.uploadMatriculaDocumento(user, matriculaId, file, categoria);
+  }
+
+  @Post("inscricoes/:matriculaId/documentos/:categoria/aceitar")
+  aceitarMatriculaDocumento(
+    @CurrentUser() user: RequestUser,
+    @Param("matriculaId", ParseUUIDPipe) matriculaId: string,
+    @Param("categoria") categoria: string,
+  ) {
+    return this.portal.aceitarMatriculaDocumento(user, matriculaId, categoria);
+  }
+
   @Get("documentos")
   listDocumentos(@CurrentUser() user: RequestUser) {
     return this.portal.listDocumentos(user);
+  }
+
+  @Get("documentos/obrigatorios")
+  documentosObrigatorios(@CurrentUser() user: RequestUser) {
+    return this.portal.documentosObrigatorios(user);
+  }
+
+  @Get("documentos/requisicoes")
+  listDocumentoRequisicoes(@CurrentUser() user: RequestUser) {
+    return this.portal.listDocumentoRequisicoes(user);
+  }
+
+  @Post("documentos/requisicoes/:id")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
+  uploadDocumentoRequisicao(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.portal.uploadDocumentoRequisicao(user, id, file);
   }
 
   @Post("documentos")

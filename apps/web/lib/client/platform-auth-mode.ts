@@ -1,4 +1,4 @@
-import { clearTenantSlug, getSavedTenantSlug, persistTenantSlug } from "./login-preferences";
+import { clearTenantSlug } from "./login-preferences";
 
 /** Query `?platform=1` - login/recuperação da equipa NexiForma (super-admin), sem slug de tenant. */
 export const PLATFORM_AUTH_QUERY = "platform";
@@ -11,7 +11,9 @@ export function platformAuthHref(path: "/login" | "/login/recuperar"): string {
   return `${path}?${PLATFORM_AUTH_QUERY}=1`;
 }
 
-/** Limpa slug guardado e devolve string vazia para login de plataforma. */
+/**
+ * Slug só a partir da URL (`?slug=`). Não reutiliza localStorage.
+ */
 export function resolveTenantSlugForAuth(
   params: URLSearchParams,
   options: { slugFromUrl?: string; isDev?: boolean },
@@ -20,15 +22,12 @@ export function resolveTenantSlugForAuth(
     clearTenantSlug();
     return "";
   }
-  const fromUrl = options.slugFromUrl?.trim() ?? "";
-  if (fromUrl) return fromUrl;
-  const saved = getSavedTenantSlug();
-  if (saved) return saved;
-  if (options.isDev) return "demo";
-  return "";
+  const fromUrl = options.slugFromUrl?.trim() || params.get("slug")?.trim() || "";
+  clearTenantSlug();
+  return fromUrl;
 }
 
-export function rememberTenantSlugFromAuth(slug: string, params: URLSearchParams): void {
-  if (!slug.trim() || isPlatformAuthMode(params)) return;
-  persistTenantSlug(slug);
+export function rememberTenantSlugFromAuth(_slug: string, params: URLSearchParams): void {
+  if (isPlatformAuthMode(params)) return;
+  clearTenantSlug();
 }

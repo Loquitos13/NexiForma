@@ -26,6 +26,7 @@ import {
   type ClienteFichaTab,
 } from "@/components/crm/cliente-ficha-nav";
 import { ClienteFichaDados } from "@/components/crm/cliente-ficha-dados";
+import { ClienteFichaFormandos } from "@/components/crm/cliente-ficha-formandos";
 import { ClienteFichaFaturas } from "@/components/crm/cliente-ficha-faturas";
 import { ClienteFichaPropostas } from "@/components/crm/cliente-ficha-propostas";
 import { useClienteFichaData } from "@/components/crm/use-cliente-ficha-data";
@@ -75,7 +76,7 @@ export default function ClienteDetailPage() {
   );
 
   useEffect(() => {
-    if (tab === "faturas" && !canManage) {
+    if ((tab === "faturas" || tab === "formandos") && !canManage) {
       router.replace(`/portal/clientes/${id}?tab=dados`);
     }
   }, [tab, canManage, id, router]);
@@ -226,6 +227,7 @@ export default function ClienteDetailPage() {
             onChange={setTab}
             showCrmTabs={hasCrmMod}
             showFaturacaoTabs={hasFaturacaoMod && canManage}
+            showFormacaoTabs={canManage}
             badges={{
               faturas: ficha.faturas.length,
               propostas: ficha.propostas.length,
@@ -237,6 +239,10 @@ export default function ClienteDetailPage() {
 
           {tab === "dados" ? (
             <ClienteFichaDados cliente={cliente} ficha={ficha} loading={fichaLoading} />
+          ) : null}
+
+          {tab === "formandos" && canManage ? (
+            <ClienteFichaFormandos entidadeId={cliente.id} canManage={canManage} />
           ) : null}
 
           {tab === "faturas" && hasFaturacaoMod && canManage ? (

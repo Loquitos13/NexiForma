@@ -171,7 +171,7 @@ export default function PlataformaOperacoesPage() {
 
       {/* Tenants health table */}
       {data?.tenants?.length ? (
-        <section className="rounded-2xl bg-[#0c0a14]/80 border border-purple-500/10 overflow-hidden">
+        <section className="table-scroll-shell rounded-2xl bg-[#0c0a14]/80 border border-purple-500/10">
           <div className="px-4 py-3 border-b border-purple-500/10">
             <h2 className="text-sm font-semibold text-slate-300">Estado por tenant</h2>
           </div>
@@ -234,7 +234,7 @@ export default function PlataformaOperacoesPage() {
       ) : null}
 
       {/* Alerts */}
-      <section className="rounded-2xl bg-[#0c0a14]/80 border border-purple-500/10 overflow-hidden">
+      <section className="table-scroll-shell rounded-2xl bg-[#0c0a14]/80 border border-purple-500/10">
         <div className="px-4 py-3 border-b border-purple-500/10 flex justify-between">
           <h2 className="text-sm font-semibold text-slate-300">Alertas HTTP (4xx / 5xx)</h2>
           <span className="text-xs text-slate-500">Emails enviados a platform_users activos</span>

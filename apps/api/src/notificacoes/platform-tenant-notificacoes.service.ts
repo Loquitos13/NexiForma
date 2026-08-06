@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { MailService } from "../mail/mail.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { EmailTemplates } from "./templates/email.templates";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 
 export type TenantLifecycleAcao = "criado" | "actualizado" | "arquivado" | "eliminado";
 
@@ -40,7 +41,7 @@ export class PlatformTenantNotificacoesService {
       return { enviados: 0 };
     }
 
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     const plataformaUrl = `${appUrl.replace(/\/$/, "")}/plataforma/tenantes/${input.tenant.id}`;
     const tpl = EmailTemplates.tenantLifecycleSuperadmin({
       acao: input.acao,
@@ -74,7 +75,7 @@ export class PlatformTenantNotificacoesService {
     entidadeFormadora: string;
     slug: string;
   }) {
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     const base = appUrl.replace(/\/$/, "");
     const loginUrl = `${base}/login?slug=${encodeURIComponent(input.slug)}`;
     const recuperarUrl = `${base}/login/recuperar?slug=${encodeURIComponent(input.slug)}`;
@@ -105,7 +106,7 @@ export class PlatformTenantNotificacoesService {
     slug: string;
     inviteUrl: string;
   }) {
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     const base = appUrl.replace(/\/$/, "");
     const loginUrl = `${base}/login?slug=${encodeURIComponent(input.slug)}`;
 

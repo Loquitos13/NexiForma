@@ -1,7 +1,19 @@
 /**
- * Email Templates – NexiForma Fase 8
- * Notificações para formandos, formadores e coordenadores
+ * Templates de email profissionais – NexiForma
+ * Fragmentos HTML envolvidos por MailService (wrapEmailHtml).
  */
+
+import {
+  emailButton,
+  emailButtonRow,
+  emailDataRow,
+  emailDataTable,
+  emailHeading,
+  emailInfoBox,
+  emailMuted,
+  emailParagraph,
+  escapeHtml,
+} from "../../mail/email-layout.util";
 
 export interface EmailTemplate {
   subject: string;
@@ -9,10 +21,279 @@ export interface EmailTemplate {
   html: string;
 }
 
+function cumprimento(nome: string): string {
+  return emailParagraph(`Caro(a) <strong>${escapeHtml(nome)}</strong>,`);
+}
+
+function assinatura(entidade?: string): string {
+  const quem = entidade?.trim() || "Equipa NexiForma";
+  return emailParagraph(
+    `Com os melhores cumprimentos,<br/><strong>${escapeHtml(quem)}</strong>`,
+  );
+}
+
+function listaHtml(itens: string[]): string {
+  if (!itens.length) return "";
+  return (
+    `<ul style="margin:0 0 16px;padding-left:20px;font-family:Arial,Helvetica,sans-serif;` +
+    `font-size:15px;line-height:1.55;color:#334155;">` +
+    itens.map((i) => `<li style="margin:0 0 6px;">${escapeHtml(i)}</li>`).join("") +
+    `</ul>`
+  );
+}
+
 export class EmailTemplates {
-  /**
-   * Notificação de sessão agendada
-   */
+  /** Atribuição de formador a sessões/acção – CTA «Abrir ação» (sem URL visível no HTML). */
+  static formadorAtribuicaoSessoes(params: {
+    nomeFormador: string;
+    acaoLabel: string;
+    entidadeFormadora?: string;
+    acaoUrl: string;
+  }): EmailTemplate {
+    const entidade = params.entidadeFormadora?.trim() || "NexiForma";
+    return {
+      subject: `Atribuição de acção de formação – ${params.acaoLabel}`,
+      text:
+        `Caro(a) ${params.nomeFormador},\n\n` +
+        `Foi-lhe atribuída a acção de formação «${params.acaoLabel}».\n\n` +
+        `Aceda à acção no portal:\n${params.acaoUrl}\n\n` +
+        `Com os melhores cumprimentos,\n${entidade}\n`,
+      html:
+        cumprimento(params.nomeFormador) +
+        emailParagraph(
+          `Foi-lhe atribuída a acção de formação ` +
+            `<strong>«${escapeHtml(params.acaoLabel)}»</strong>.`,
+        ) +
+        emailParagraph("Utilize o botão abaixo para abrir a acção no portal.") +
+        emailButtonRow(emailButton("Abrir ação", params.acaoUrl, "primary")) +
+        emailMuted("Se o botão não funcionar, utilize o link da versão em texto desta mensagem.") +
+        assinatura(entidade),
+    };
+  }
+
+  /** Formando inscrito numa acção – lembrete de documentos. */
+  static formandoInscritoAcao(params: {
+    nomeFormando: string;
+    acaoLabel: string;
+    turmaCodigo?: string;
+    entidadeFormadora?: string;
+    documentosInscricao?: string[];
+    documentosUniversais?: string[];
+    portalUrl: string;
+  }): EmailTemplate {
+    const entidade = params.entidadeFormadora?.trim() || "NexiForma";
+    const docsInscricao = params.documentosInscricao ?? [];
+    const docsUniv = params.documentosUniversais ?? [];
+    const temDocs = docsInscricao.length > 0 || docsUniv.length > 0;
+
+    const docsText =
+      (docsUniv.length
+        ? `\nDocumentos do perfil (obrigatórios):\n${docsUniv.map((d) => `• ${d}`).join("\n")}\n`
+        : "") +
+      (docsInscricao.length
+        ? `\nDocumentos desta inscrição:\n${docsInscricao.map((d) => `• ${d}`).join("\n")}\n`
+        : "");
+
+    return {
+      subject: `Inscrição confirmada – ${params.acaoLabel}`,
+      text:
+        `Caro(a) ${params.nomeFormando},\n\n` +
+        `A sua inscrição na formação «${params.acaoLabel}»` +
+        (params.turmaCodigo ? ` (turma ${params.turmaCodigo})` : "") +
+        ` foi registada.\n\n` +
+        (temDocs
+          ? `Antes do início da formação, deve carregar na plataforma os documentos necessários:\n` +
+            docsText +
+            `\n`
+          : `Antes do início da formação, confirme no portal se tem documentos pendentes.\n\n`) +
+        `Aceda ao portal:\n${params.portalUrl}\n\n` +
+        `Com os melhores cumprimentos,\n${entidade}\n`,
+      html:
+        cumprimento(params.nomeFormando) +
+        emailParagraph(
+          `A sua inscrição na formação <strong>«${escapeHtml(params.acaoLabel)}»</strong>` +
+            (params.turmaCodigo
+              ? ` (turma <strong>${escapeHtml(params.turmaCodigo)}</strong>)`
+              : "") +
+            ` foi registada com sucesso.`,
+        ) +
+        emailParagraph(
+          "Para concluir o processo, deve inserir na plataforma os documentos necessários " +
+            "antes do início da formação.",
+        ) +
+        (docsUniv.length
+          ? emailInfoBox(
+              `<p style="margin:0 0 8px;"><strong>Documentos do perfil</strong></p>` +
+                listaHtml(docsUniv),
+              "#2563eb",
+            )
+          : "") +
+        (docsInscricao.length
+          ? emailInfoBox(
+              `<p style="margin:0 0 8px;"><strong>Documentos desta inscrição</strong></p>` +
+                listaHtml(docsInscricao),
+              "#0d9488",
+            )
+          : "") +
+        emailButtonRow(emailButton("Abrir portal", params.portalUrl, "primary")) +
+        emailMuted(
+          "Se já enviou os documentos, pode ignorar este aviso. Em caso de dúvida, contacte a entidade formadora.",
+        ) +
+        assinatura(entidade),
+    };
+  }
+
+  /** Cargo de formador atribuído – pedido de documentos obrigatórios. */
+  static formadorCargoAtribuido(params: {
+    nomeUtilizador: string;
+    entidadeFormadora: string;
+    documentosObrigatorios: string[];
+    portalUrl: string;
+  }): EmailTemplate {
+    const docs = params.documentosObrigatorios;
+    return {
+      subject: `Cargo de formador – ${params.entidadeFormadora}`,
+      text:
+        `Caro(a) ${params.nomeUtilizador},\n\n` +
+        `Foi-lhe atribuído o cargo de formador em «${params.entidadeFormadora}».\n\n` +
+        `Solicitamos que carregue na plataforma os documentos obrigatórios:\n` +
+        docs.map((d) => `• ${d}`).join("\n") +
+        `\n\nAceda ao portal:\n${params.portalUrl}\n\n` +
+        `Com os melhores cumprimentos,\n${params.entidadeFormadora}\n`,
+      html:
+        cumprimento(params.nomeUtilizador) +
+        emailParagraph(
+          `Foi-lhe atribuído o cargo de <strong>formador</strong> em ` +
+            `<strong>${escapeHtml(params.entidadeFormadora)}</strong>.`,
+        ) +
+        emailParagraph(
+          "Para poder operar sessões de formação, deve inserir na plataforma os documentos obrigatórios:",
+        ) +
+        emailInfoBox(
+          `<p style="margin:0 0 8px;"><strong>Documentos a carregar</strong></p>` +
+            listaHtml(docs.length ? docs : ["Curriculum Vitae", "Documento de identificação", "CCP"]),
+          "#d97706",
+        ) +
+        emailButtonRow(emailButton("Carregar documentos", params.portalUrl, "primary")) +
+        emailMuted(
+          "Sem estes documentos, o acesso às funções de formador pode ficar limitado até à validação.",
+        ) +
+        assinatura(params.entidadeFormadora),
+    };
+  }
+
+  /** Confirmação de email (utilizador registado pela administração). */
+  static confirmarEmail(params: {
+    nomeUtilizador: string;
+    entidadeFormadora: string;
+    confirmUrl: string;
+    expiresHours: number;
+  }): EmailTemplate {
+    return {
+      subject: `Confirme o seu email – ${params.entidadeFormadora}`,
+      text:
+        `Caro(a) ${params.nomeUtilizador},\n\n` +
+        `Foi registado(a) na plataforma NexiForma da entidade «${params.entidadeFormadora}».\n\n` +
+        `Por segurança, confirme o seu endereço de email antes de iniciar sessão:\n` +
+        `${params.confirmUrl}\n\n` +
+        `O link é válido durante ${params.expiresHours} horas.\n\n` +
+        `Se não esperava este registo, ignore este email e contacte a entidade formadora.\n\n` +
+        `Com os melhores cumprimentos,\n${params.entidadeFormadora}\n`,
+      html:
+        cumprimento(params.nomeUtilizador) +
+        emailParagraph(
+          `Foi registado(a) na plataforma <strong>NexiForma</strong> da entidade ` +
+            `<strong>${escapeHtml(params.entidadeFormadora)}</strong>.`,
+        ) +
+        emailParagraph(
+          "Por segurança, confirme o seu endereço de email antes de iniciar sessão.",
+        ) +
+        emailButtonRow(emailButton("Confirmar email", params.confirmUrl, "primary")) +
+        emailMuted(
+          `O link é válido durante ${params.expiresHours} horas. ` +
+            "Se não esperava este registo, ignore este email.",
+        ) +
+        assinatura(params.entidadeFormadora),
+    };
+  }
+
+  /** Convite de utilizador / registo na plataforma. */
+  static conviteUtilizador(params: {
+    nomeUtilizador: string;
+    entidadeFormadora: string;
+    papel: string;
+    linkConvite: string;
+    documentosObrigatorios?: string[];
+  }): EmailTemplate {
+    const docs = params.documentosObrigatorios ?? [];
+    const isFormador = docs.length > 0;
+    return {
+      subject: `Convite NexiForma – ${params.entidadeFormadora}`,
+      text:
+        `Caro(a) ${params.nomeUtilizador},\n\n` +
+        `Foi convidado(a) a aceder à plataforma NexiForma da entidade «${params.entidadeFormadora}».\n\n` +
+        `Cargo: ${params.papel}\n\n` +
+        `Para activar a conta, confirmar o email e definir a palavra-passe:\n${params.linkConvite}\n\n` +
+        (isFormador
+          ? `Após activar a conta, carregue os documentos obrigatórios:\n` +
+            docs.map((d) => `• ${d}`).join("\n") +
+            `\n\n`
+          : "") +
+        `O link é válido durante 7 dias.\n\n` +
+        `Com os melhores cumprimentos,\n${params.entidadeFormadora}\n`,
+      html:
+        cumprimento(params.nomeUtilizador) +
+        emailParagraph(
+          `Foi convidado(a) a aceder à plataforma <strong>NexiForma</strong> da entidade ` +
+            `<strong>${escapeHtml(params.entidadeFormadora)}</strong>.`,
+        ) +
+        emailInfoBox(
+          emailDataTable(
+            emailDataRow("Entidade", escapeHtml(params.entidadeFormadora)) +
+              emailDataRow("Cargo", escapeHtml(params.papel)),
+          ),
+          "#2563eb",
+        ) +
+        emailParagraph(
+          "Clique no botão abaixo para <strong>activar a conta</strong>, confirmar o email e definir a palavra-passe.",
+        ) +
+        emailButtonRow(emailButton("Activar conta", params.linkConvite, "primary")) +
+        (isFormador
+          ? emailParagraph(
+              "Após a activação, solicitamos que carregue os documentos obrigatórios do formador:",
+            ) +
+            emailInfoBox(listaHtml(docs), "#d97706")
+          : "") +
+        emailMuted("O link de convite expira em 7 dias.") +
+        assinatura(params.entidadeFormadora),
+    };
+  }
+
+  /** @deprecated Preferir conviteUtilizador */
+  static convitePortal(params: {
+    nomeUtilizador: string;
+    entidadeFormadora: string;
+    papel: string;
+    linkConvite: string;
+    expiraEm: string;
+  }): EmailTemplate {
+    const base = EmailTemplates.conviteUtilizador({
+      nomeUtilizador: params.nomeUtilizador,
+      entidadeFormadora: params.entidadeFormadora,
+      papel: params.papel,
+      linkConvite: params.linkConvite,
+    });
+    return {
+      ...base,
+      text: base.text.replace("7 dias.", `${params.expiraEm}.`),
+      html:
+        base.html.replace(
+          emailMuted("O link de convite expira em 7 dias."),
+          emailMuted(`O link de convite é válido até ${escapeHtml(params.expiraEm)}.`),
+        ),
+    };
+  }
+
   static sessaoAgendada(params: {
     nomeFormando: string;
     nomeSessao: string;
@@ -22,34 +303,32 @@ export class EmailTemplates {
     portalUrl: string;
   }): EmailTemplate {
     return {
-      subject: `📅 Sessão agendada: ${params.nomeSessao} – ${params.dataHora}`,
+      subject: `Sessão agendada – ${params.nomeSessao}`,
       text:
-        `Olá ${params.nomeFormando},\n\n` +
-        `Foste inscrito(a) na sessão de formação:\n\n` +
-        `🎯 ${params.nomeSessao}\n` +
-        `📍 ${params.localidade}\n` +
-        `👨‍🏫 Formador: ${params.formador}\n` +
-        `⏰ Data/Hora: ${params.dataHora}\n\n` +
-        `Consulta os detalhes no portal: ${params.portalUrl}\n\n` +
-        `–\n` +
-        `NexiForma\n`,
+        `Caro(a) ${params.nomeFormando},\n\n` +
+        `Foi inscrito(a) na seguinte sessão de formação:\n\n` +
+        `Sessão: ${params.nomeSessao}\n` +
+        `Local: ${params.localidade}\n` +
+        `Formador: ${params.formador}\n` +
+        `Data/hora: ${params.dataHora}\n\n` +
+        `Portal: ${params.portalUrl}\n\n` +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
-        `<p>Olá <strong>${params.nomeFormando}</strong>,</p>` +
-        `<p>Foste inscrito(a) na sessão de formação:</p>` +
-        `<div style="background: #f5f5f5; padding: 12px; border-left: 4px solid #0066cc; margin: 16px 0;">` +
-        `<p><strong>${params.nomeSessao}</strong></p>` +
-        `<p>📍 <strong>${params.localidade}</strong></p>` +
-        `<p>👨‍🏫 <strong>Formador:</strong> ${params.formador}</p>` +
-        `<p>⏰ <strong>Data/Hora:</strong> ${params.dataHora}</p>` +
-        `</div>` +
-        `<p><a href="${params.portalUrl}" style="background: #0066cc; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block;">Ver detalhes</a></p>` +
-        `<p>–<br>NexiForma</p>`,
+        cumprimento(params.nomeFormando) +
+        emailParagraph("Foi inscrito(a) na seguinte sessão de formação:") +
+        emailInfoBox(
+          emailDataTable(
+            emailDataRow("Sessão", escapeHtml(params.nomeSessao)) +
+              emailDataRow("Local", escapeHtml(params.localidade)) +
+              emailDataRow("Formador", escapeHtml(params.formador)) +
+              emailDataRow("Data/hora", escapeHtml(params.dataHora)),
+          ),
+        ) +
+        emailButtonRow(emailButton("Ver detalhes", params.portalUrl, "primary")) +
+        assinatura(),
     };
   }
 
-  /**
-   * Sessão de formação iniciada (formandos, formador, gestores)
-   */
   static sessaoIniciada(params: {
     nomeDestinatario: string;
     nomeSessao: string;
@@ -58,66 +337,57 @@ export class EmailTemplates {
     formador: string;
     portalUrl: string;
     salaUrl?: string | null;
-    /** Email a usar no Zoom/Teams (formandos). */
     emailReuniao?: string | null;
-    /** formando = convite a entrar; staff = aviso de início */
     audiencia: "formando" | "staff";
   }): EmailTemplate {
     const intro =
       params.audiencia === "formando"
-        ? "A sessão de formação começou. Entra agora pelo portal para a tua presença ser registada."
+        ? "A sessão de formação foi iniciada. Entre agora pelo portal para que a sua presença seja registada."
         : "A sessão de formação foi iniciada.";
 
-    const salaBlock = params.salaUrl
-      ? `\n🔗 Sala online: ${params.salaUrl}\n`
-      : "";
-
-    const emailReuniaoBlock =
-      params.audiencia === "formando" && params.emailReuniao
-        ? `\n📧 No Zoom/Teams usa obrigatoriamente: ${params.emailReuniao}\n`
-        : "";
-
-    const salaHtml = params.salaUrl
-      ? `<p><a href="${params.salaUrl}" style="background: #7c3aed; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block;">Entrar na sala</a></p>`
-      : "";
-
-    const emailReuniaoHtml =
-      params.audiencia === "formando" && params.emailReuniao
-        ? `<p style="background:#fef3c7;padding:10px;border-radius:6px;color:#92400e;">` +
-          `<strong>Email na reunião:</strong> <code>${params.emailReuniao}</code><br/>` +
-          `Usa este endereço ao entrar no Zoom ou Teams - caso contrário a assiduidade pode não contar.</p>`
-        : "";
-
     return {
-      subject: `▶ Sessão iniciada: ${params.nomeSessao}`,
+      subject: `Sessão iniciada – ${params.nomeSessao}`,
       text:
-        `Olá ${params.nomeDestinatario},\n\n` +
+        `Caro(a) ${params.nomeDestinatario},\n\n` +
         `${intro}\n\n` +
-        `🎯 ${params.nomeSessao}\n` +
-        `📚 ${params.acaoTitulo}\n` +
-        `👨‍🏫 Formador: ${params.formador}\n` +
-        `⏰ ${params.dataHora}\n` +
-        emailReuniaoBlock +
-        salaBlock +
+        `Sessão: ${params.nomeSessao}\n` +
+        `Acção: ${params.acaoTitulo}\n` +
+        `Formador: ${params.formador}\n` +
+        `Horário: ${params.dataHora}\n` +
+        (params.audiencia === "formando" && params.emailReuniao
+          ? `\nNo Zoom/Teams utilize obrigatoriamente: ${params.emailReuniao}\n`
+          : "") +
+        (params.salaUrl ? `\nSala online: ${params.salaUrl}\n` : "") +
         `\nPortal: ${params.portalUrl}\n\n` +
-        `–\nNexiForma\n`,
+        `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
-        `<p>Olá <strong>${params.nomeDestinatario}</strong>,</p>` +
-        `<p>${intro}</p>` +
-        `<div style="background: #f5f5f5; padding: 12px; border-left: 4px solid #7c3aed; margin: 16px 0;">` +
-        `<p><strong>${params.nomeSessao}</strong></p>` +
-        `<p>📚 ${params.acaoTitulo}</p>` +
-        `<p>👨‍🏫 <strong>Formador:</strong> ${params.formador}</p>` +
-        `<p>⏰ <strong>${params.dataHora}</strong></p>` +
-        `</div>` +
-        emailReuniaoHtml +
-        salaHtml +
-        `<p><a href="${params.portalUrl}" style="background: #0066cc; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block;">Abrir portal</a></p>` +
-        `<p>–<br>NexiForma</p>`,
+        cumprimento(params.nomeDestinatario) +
+        emailParagraph(intro) +
+        emailInfoBox(
+          emailDataTable(
+            emailDataRow("Sessão", escapeHtml(params.nomeSessao)) +
+              emailDataRow("Acção", escapeHtml(params.acaoTitulo)) +
+              emailDataRow("Formador", escapeHtml(params.formador)) +
+              emailDataRow("Horário", escapeHtml(params.dataHora)),
+          ),
+          "#7c3aed",
+        ) +
+        (params.audiencia === "formando" && params.emailReuniao
+          ? emailInfoBox(
+              `<strong>Email na reunião:</strong> <code>${escapeHtml(params.emailReuniao)}</code><br/>` +
+                `Utilize este endereço ao entrar no Zoom ou Teams; caso contrário, a assiduidade pode não ser contabilizada.`,
+              "#d97706",
+            )
+          : "") +
+        emailButtonRow(
+          (params.salaUrl
+            ? emailButton("Entrar na sala", params.salaUrl, "success")
+            : "") + emailButton("Abrir portal", params.portalUrl, "primary"),
+        ) +
+        assinatura(),
     };
   }
 
-  /** Alerta ao formador: formando entrou na reunião com email incorrecto. */
   static alertaEmailReuniaoIncorreto(params: {
     nomeFormador: string;
     nomeFormando: string;
@@ -127,31 +397,39 @@ export class EmailTemplates {
     portalUrl: string;
   }): EmailTemplate {
     return {
-      subject: `⚠ Presença: email incorrecto na reunião (${params.nomeFormando})`,
+      subject: `Presença – email incorrecto na reunião (${params.nomeFormando})`,
       text:
-        `Olá ${params.nomeFormador},\n\n` +
-        `O formando ${params.nomeFormando} entrou na ${params.nomeSessao} com um email que não corresponde ao registado.\n\n` +
+        `Caro(a) ${params.nomeFormador},\n\n` +
+        `O formando ${params.nomeFormando} entrou na sessão «${params.nomeSessao}» com um email que não corresponde ao registado.\n\n` +
         `Email esperado: ${params.emailEsperado}\n` +
-        `Email usado: ${params.emailParticipante}\n\n` +
-        `A assiduidade na reunião não foi contada. Pede ao formando para sair e voltar a entrar com o email correcto.\n\n` +
+        `Email utilizado: ${params.emailParticipante}\n\n` +
+        `A assiduidade na reunião não foi contabilizada. Peça ao formando para sair e voltar a entrar com o email correcto.\n\n` +
         `Painel: ${params.portalUrl}\n\n` +
-        `–\nNexiForma\n`,
+        `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
-        `<p>Olá <strong>${params.nomeFormador}</strong>,</p>` +
-        `<p>O formando <strong>${params.nomeFormando}</strong> entrou na <strong>${params.nomeSessao}</strong> com email incorrecto.</p>` +
-        `<ul>` +
-        `<li>Esperado: <code>${params.emailEsperado}</code></li>` +
-        `<li>Usado: <code>${params.emailParticipante}</code></li>` +
-        `</ul>` +
-        `<p>A assiduidade na reunião <strong>não foi contada</strong>.</p>` +
-        `<p><a href="${params.portalUrl}">Ver painel de presenças</a></p>` +
-        `<p>–<br>NexiForma</p>`,
+        cumprimento(params.nomeFormador) +
+        emailParagraph(
+          `O formando <strong>${escapeHtml(params.nomeFormando)}</strong> entrou na sessão ` +
+            `<strong>«${escapeHtml(params.nomeSessao)}»</strong> com um email incorrecto.`,
+        ) +
+        emailInfoBox(
+          emailDataTable(
+            emailDataRow("Email esperado", `<code>${escapeHtml(params.emailEsperado)}</code>`) +
+              emailDataRow(
+                "Email utilizado",
+                `<code>${escapeHtml(params.emailParticipante)}</code>`,
+              ),
+          ),
+          "#dc2626",
+        ) +
+        emailParagraph(
+          "A assiduidade na reunião <strong>não foi contabilizada</strong>. Peça ao formando para sair e voltar a entrar com o email correcto.",
+        ) +
+        emailButtonRow(emailButton("Ver painel de presenças", params.portalUrl, "primary")) +
+        assinatura(),
     };
   }
 
-  /**
-   * Notificação de certificado disponível
-   */
   static certificadoDisponivel(params: {
     nomeFormando: string;
     nomeCurso: string;
@@ -160,72 +438,34 @@ export class EmailTemplates {
     dataExpiracao?: string;
   }): EmailTemplate {
     return {
-      subject: `🎓 Certificado de formação disponível – ${params.nomeCurso}`,
+      subject: `Certificado disponível – ${params.nomeCurso}`,
       text:
-        `Olá ${params.nomeFormando},\n\n` +
-        `A tua formação foi concluída com sucesso!\n\n` +
-        `📜 ${params.nomeCurso}\n` +
+        `Caro(a) ${params.nomeFormando},\n\n` +
+        `A sua formação foi concluída com sucesso.\n\n` +
+        `Formação: ${params.nomeCurso}\n` +
         `Código: ${params.codigoFormacao}\n\n` +
-        `O teu certificado está disponível para descarregar no portal.\n\n` +
-        `🔗 ${params.portalUrl}\n\n` +
-        (params.dataExpiracao
-          ? `Validade até ${params.dataExpiracao}\n\n`
-          : "") +
-        `–\n` +
-        `NexiForma\n`,
+        `O certificado está disponível para descarregar no portal.\n` +
+        `${params.portalUrl}\n\n` +
+        (params.dataExpiracao ? `Validade até ${params.dataExpiracao}\n\n` : "") +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
-        `<p>Olá <strong>${params.nomeFormando}</strong>,</p>` +
-        `<p>A tua formação foi concluída com sucesso! 🎉</p>` +
-        `<div style="background: #f5f5f5; padding: 12px; border-left: 4px solid #28a745; margin: 16px 0;">` +
-        `<p><strong>${params.nomeCurso}</strong></p>` +
-        `<p>Código: <code>${params.codigoFormacao}</code></p>` +
-        (params.dataExpiracao
-          ? `<p>Validade até: <strong>${params.dataExpiracao}</strong></p>`
-          : "") +
-        `</div>` +
-        `<p><a href="${params.portalUrl}" style="background: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block;">Descarregar certificado</a></p>` +
-        `<p>–<br>NexiForma</p>`,
+        cumprimento(params.nomeFormando) +
+        emailParagraph("A sua formação foi concluída com sucesso. O certificado está disponível.") +
+        emailInfoBox(
+          emailDataTable(
+            emailDataRow("Formação", escapeHtml(params.nomeCurso)) +
+              emailDataRow("Código", `<code>${escapeHtml(params.codigoFormacao)}</code>`) +
+              (params.dataExpiracao
+                ? emailDataRow("Validade", escapeHtml(params.dataExpiracao))
+                : ""),
+          ),
+          "#0d9488",
+        ) +
+        emailButtonRow(emailButton("Descarregar certificado", params.portalUrl, "success")) +
+        assinatura(),
     };
   }
 
-  /**
-   * Convite de acesso ao portal
-   */
-  static convitePortal(params: {
-    nomeUtilizador: string;
-    entidadeFormadora: string;
-    papel: string;
-    linkConvite: string;
-    expiraEm: string;
-  }): EmailTemplate {
-    return {
-      subject: `Convite: Acesso ao NexiForma – ${params.entidadeFormadora}`,
-      text:
-        `Olá ${params.nomeUtilizador},\n\n` +
-        `Foste convidado(a) para aceder ao NexiForma!\n\n` +
-        `Entidade: ${params.entidadeFormadora}\n` +
-        `Papel: ${params.papel}\n\n` +
-        `Link de convite (válido até ${params.expiraEm}):\n` +
-        `${params.linkConvite}\n\n` +
-        `Se tiveres dúvidas, contacta o administrador.\n\n` +
-        `–\n` +
-        `NexiForma\n`,
-      html:
-        `<p>Olá <strong>${params.nomeUtilizador}</strong>,</p>` +
-        `<p>Foste convidado(a) para aceder ao NexiForma!</p>` +
-        `<div style="background: #f5f5f5; padding: 12px; border-left: 4px solid #0066cc; margin: 16px 0;">` +
-        `<p><strong>${params.entidadeFormadora}</strong></p>` +
-        `<p>Papel: <em>${params.papel}</em></p>` +
-        `</div>` +
-        `<p><a href="${params.linkConvite}" style="background: #0066cc; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block;">Aceitar convite</a></p>` +
-        `<p style="font-size: 12px; color: #666;">Link válido até ${params.expiraEm}</p>` +
-        `<p>–<br>NexiForma</p>`,
-    };
-  }
-
-  /**
-   * Alerta de compliance DGERT
-   */
   static alertaCompliance(params: {
     entidade: string;
     severidade: "critico" | "aviso";
@@ -234,35 +474,32 @@ export class EmailTemplates {
     portalUrl: string;
   }): EmailTemplate {
     const isCritico = params.severidade === "critico";
-    const icone = isCritico ? "🔴" : "🟡";
-    const cor = isCritico ? "#dc3545" : "#ffc107";
-
     return {
-      subject: `${icone} Alerta operacional: ${params.mensagem}`,
+      subject: `Alerta operacional (${params.severidade}) – ${params.mensagem}`,
       text:
-        `ALERTA OPERACIONAL – ${params.entidade}\n\n` +
+        `Alerta operacional – ${params.entidade}\n\n` +
         `Severidade: ${params.severidade.toUpperCase()}\n` +
         `Mensagem: ${params.mensagem}\n\n` +
         (params.detalhes ? `Detalhes: ${params.detalhes}\n\n` : "") +
-        `Consulta o portal: ${params.portalUrl}\n\n` +
-        `–\n` +
-        `NexiForma\n`,
+        `Portal: ${params.portalUrl}\n\n` +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
-        `<div style="background: ${cor}; color: white; padding: 12px; border-radius: 4px; margin: 16px 0;">` +
-        `<p style="margin: 0;"><strong>${icone} ALERTA – ${params.severidade.toUpperCase()}</strong></p>` +
-        `<p style="margin: 8px 0;"><strong>${params.mensagem}</strong></p>` +
-        (params.detalhes
-          ? `<p style="margin: 8px 0; font-size: 12px;">${params.detalhes}</p>`
-          : "") +
-        `</div>` +
-        `<p><a href="${params.portalUrl}" style="background: ${cor}; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block;">Ver detalhes</a></p>` +
-        `<p>–<br>NexiForma</p>`,
+        emailHeading(isCritico ? "Alerta crítico" : "Alerta operacional") +
+        emailParagraph(`Entidade: <strong>${escapeHtml(params.entidade)}</strong>`) +
+        emailInfoBox(
+          `<p style="margin:0 0 8px;"><strong>${escapeHtml(params.mensagem)}</strong></p>` +
+            (params.detalhes
+              ? `<p style="margin:0;font-size:13px;">${escapeHtml(params.detalhes)}</p>`
+              : ""),
+          isCritico ? "#dc2626" : "#d97706",
+        ) +
+        emailButtonRow(
+          emailButton("Ver detalhes", params.portalUrl, isCritico ? "danger" : "primary"),
+        ) +
+        assinatura(),
     };
   }
 
-  /**
-   * Resumo de inspeção DGERT
-   */
   static resumoInspecao(params: {
     entidade: string;
     totalAcoes: number;
@@ -270,40 +507,37 @@ export class EmailTemplates {
     alerta: string[];
     portalUrl: string;
   }): EmailTemplate {
-    const percentual = Math.round(
-      (params.acoesProntas / params.totalAcoes) * 100,
-    );
+    const percentual =
+      params.totalAcoes > 0
+        ? Math.round((params.acoesProntas / params.totalAcoes) * 100)
+        : 0;
 
     return {
-      subject: `📋 Resumo de inspeção DGERT – ${params.entidade}`,
+      subject: `Resumo de inspeção DGERT – ${params.entidade}`,
       text:
-        `Resumo de Inspeção DGERT\n\n` +
+        `Resumo de inspeção DGERT\n\n` +
         `Entidade: ${params.entidade}\n` +
         `Acções prontas: ${params.acoesProntas}/${params.totalAcoes} (${percentual}%)\n\n` +
-        (params.alerta.length > 0
+        (params.alerta.length
           ? `Alertas:\n${params.alerta.map((a) => `• ${a}`).join("\n")}\n\n`
           : "") +
-        `Consulta o portal para mais detalhes: ${params.portalUrl}\n\n` +
-        `–\n` +
-        `NexiForma\n`,
+        `Portal: ${params.portalUrl}\n\n` +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
-        `<h2>📋 Resumo de Inspeção DGERT</h2>` +
-        `<p><strong>Entidade:</strong> ${params.entidade}</p>` +
-        `<div style="background: #f5f5f5; padding: 12px; border-left: 4px solid #0066cc; margin: 16px 0;">` +
-        `<p><strong>Acções prontas:</strong> ${params.acoesProntas}/${params.totalAcoes} (${percentual}%)</p>` +
-        `<div style="background: white; height: 20px; border-radius: 4px; overflow: hidden;">` +
-        `<div style="background: #0066cc; height: 100%; width: ${percentual}%; transition: width 0.3s;"></div>` +
-        `</div>` +
-        `</div>` +
-        (params.alerta.length > 0
-          ? `<p><strong>Alertas:</strong></p><ul>${params.alerta.map((a) => `<li>${a}</li>`).join("")}</ul>`
+        emailHeading("Resumo de inspeção DGERT") +
+        emailParagraph(`Entidade: <strong>${escapeHtml(params.entidade)}</strong>`) +
+        emailInfoBox(
+          `<p style="margin:0;"><strong>Acções prontas:</strong> ` +
+            `${params.acoesProntas}/${params.totalAcoes} (${percentual}%)</p>`,
+        ) +
+        (params.alerta.length
+          ? emailParagraph("<strong>Alertas:</strong>") + listaHtml(params.alerta)
           : "") +
-        `<p><a href="${params.portalUrl}" style="background: #0066cc; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block;">Ver detalhes</a></p>` +
-        `<p>–<br>NexiForma</p>`,
+        emailButtonRow(emailButton("Abrir portal", params.portalUrl, "primary")) +
+        assinatura(),
     };
   }
 
-  /** Pedido de anulação de fatura (comercial → gestor) */
   static pedidoAnulacaoFatura(params: {
     gestorNome: string;
     comercialNome: string;
@@ -314,25 +548,27 @@ export class EmailTemplates {
     return {
       subject: `Pedido de anulação – fatura ${params.faturaRef}`,
       text:
-        `Olá ${params.gestorNome},\n\n` +
+        `Caro(a) ${params.gestorNome},\n\n` +
         `${params.comercialNome} solicitou a anulação da fatura ${params.faturaRef}.\n\n` +
         `Motivo:\n${params.motivo}\n\n` +
-        `Rever no portal: ${params.portalUrl}\n\n` +
-        `–\nNexiForma\n`,
+        `Rever no portal:\n${params.portalUrl}\n\n` +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
-        `<p>Olá <strong>${params.gestorNome}</strong>,</p>` +
-        `<p><strong>${params.comercialNome}</strong> solicitou a <strong>anulação</strong> da fatura ` +
-        `<strong>${params.faturaRef}</strong>.</p>` +
-        `<div style="background:#fef3c7;padding:12px;border-left:4px solid #d97706;margin:16px 0;">` +
-        `<p style="margin:0;"><strong>Motivo:</strong></p>` +
-        `<p style="margin:8px 0 0;white-space:pre-wrap;">${params.motivo}</p>` +
-        `</div>` +
-        `<p><a href="${params.portalUrl}" style="background:#2563eb;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;">Rever fatura</a></p>` +
-        `<p>–<br>NexiForma</p>`,
+        cumprimento(params.gestorNome) +
+        emailParagraph(
+          `<strong>${escapeHtml(params.comercialNome)}</strong> solicitou a ` +
+            `<strong>anulação</strong> da fatura <strong>${escapeHtml(params.faturaRef)}</strong>.`,
+        ) +
+        emailInfoBox(
+          `<p style="margin:0 0 8px;"><strong>Motivo</strong></p>` +
+            `<p style="margin:0;white-space:pre-wrap;">${escapeHtml(params.motivo)}</p>`,
+          "#d97706",
+        ) +
+        emailButtonRow(emailButton("Rever fatura", params.portalUrl, "primary")) +
+        assinatura(),
     };
   }
 
-  /** Resposta do gestor ao pedido de anulação (gestor → comercial). */
   static pedidoAnulacaoRejeitado(params: {
     comercialNome: string;
     faturaRef: string;
@@ -342,26 +578,29 @@ export class EmailTemplates {
     return {
       subject: `Pedido de anulação rejeitado – ${params.faturaRef}`,
       text:
-        `Olá ${params.comercialNome},\n\n` +
+        `Caro(a) ${params.comercialNome},\n\n` +
         `O pedido de anulação da fatura ${params.faturaRef} foi rejeitado.\n\n` +
         (params.respostaMotivo ? `Motivo:\n${params.respostaMotivo}\n\n` : "") +
-        `Consultar no portal: ${params.portalUrl}\n\n` +
-        `–\nNexiForma\n`,
+        `Portal: ${params.portalUrl}\n\n` +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
-        `<p>Olá <strong>${params.comercialNome}</strong>,</p>` +
-        `<p>O pedido de anulação da fatura <strong>${params.faturaRef}</strong> foi <strong>rejeitado</strong>.</p>` +
+        cumprimento(params.comercialNome) +
+        emailParagraph(
+          `O pedido de anulação da fatura <strong>${escapeHtml(params.faturaRef)}</strong> foi ` +
+            `<strong>rejeitado</strong>.`,
+        ) +
         (params.respostaMotivo
-          ? `<div style="background:#fee2e2;padding:12px;border-left:4px solid #dc2626;margin:16px 0;">` +
-            `<p style="margin:0;"><strong>Motivo:</strong></p>` +
-            `<p style="margin:8px 0 0;white-space:pre-wrap;">${params.respostaMotivo}</p>` +
-            `</div>`
+          ? emailInfoBox(
+              `<p style="margin:0 0 8px;"><strong>Motivo</strong></p>` +
+                `<p style="margin:0;white-space:pre-wrap;">${escapeHtml(params.respostaMotivo)}</p>`,
+              "#dc2626",
+            )
           : "") +
-        `<p><a href="${params.portalUrl}" style="background:#2563eb;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;">Ver fatura</a></p>` +
-        `<p>–<br>NexiForma</p>`,
+        emailButtonRow(emailButton("Ver fatura", params.portalUrl, "primary")) +
+        assinatura(),
     };
   }
 
-  /** Falha ao sincronizar catálogo com website do tenant. */
   static websiteSyncFalhou(params: {
     nomeDestinatario: string;
     entidade: string;
@@ -370,23 +609,27 @@ export class EmailTemplates {
     portalUrl: string;
   }): EmailTemplate {
     return {
-      subject: `Sync website falhou – ${params.entidade}`,
+      subject: `Sincronização do website falhou – ${params.entidade}`,
       text:
-        `Olá ${params.nomeDestinatario},\n\n` +
+        `Caro(a) ${params.nomeDestinatario},\n\n` +
         `A sincronização do catálogo de formações com o website falhou (${params.evento}).\n\n` +
         `Erro: ${params.erro}\n\n` +
-        `Verifique a URL do webhook e o endpoint no portal:\n${params.portalUrl}\n\n` +
-        `–\nNexiForma\n`,
+        `Verifique a configuração no portal:\n${params.portalUrl}\n\n` +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
-        `<p>Olá <strong>${params.nomeDestinatario}</strong>,</p>` +
-        `<p>A sincronização do catálogo com o <strong>website</strong> falhou ` +
-        `(evento <code>${params.evento}</code>).</p>` +
-        `<div style="background:#fee2e2;padding:12px;border-left:4px solid #dc2626;margin:16px 0;">` +
-        `<p style="margin:0;"><strong>Erro:</strong></p>` +
-        `<p style="margin:8px 0 0;font-family:monospace;font-size:13px;">${params.erro}</p>` +
-        `</div>` +
-        `<p><a href="${params.portalUrl}" style="background:#2563eb;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;">Formações website</a></p>` +
-        `<p>–<br>NexiForma</p>`,
+        cumprimento(params.nomeDestinatario) +
+        emailParagraph(
+          `A sincronização do catálogo com o website de ` +
+            `<strong>${escapeHtml(params.entidade)}</strong> falhou ` +
+            `(evento <code>${escapeHtml(params.evento)}</code>).`,
+        ) +
+        emailInfoBox(
+          `<p style="margin:0 0 8px;"><strong>Erro</strong></p>` +
+            `<p style="margin:0;font-family:monospace;font-size:13px;">${escapeHtml(params.erro)}</p>`,
+          "#dc2626",
+        ) +
+        emailButtonRow(emailButton("Abrir formações website", params.portalUrl, "primary")) +
+        assinatura(),
     };
   }
 
@@ -403,19 +646,29 @@ export class EmailTemplates {
     return {
       subject: `Proposta ${params.codigo} ${label}`,
       text:
-        `Olá ${params.gestorNome},\n\n` +
+        `Caro(a) ${params.gestorNome},\n\n` +
         `A proposta ${params.codigo} («${params.titulo}») foi ${label}.\n` +
         `Cliente: ${params.cliente}\n` +
         (params.motivo ? `Motivo: ${params.motivo}\n` : "") +
-        `\nVer no portal: ${params.portalUrl}\n\n–\nNexiForma\n`,
+        `\nPortal: ${params.portalUrl}\n\n` +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
-        `<p>Olá <strong>${params.gestorNome}</strong>,</p>` +
-        `<p>A proposta <strong>${params.codigo}</strong> («${params.titulo}») foi <strong>${label}</strong>.</p>` +
-        `<p>Cliente: ${params.cliente}</p>` +
-        (params.motivo
-          ? `<p><strong>Motivo:</strong> ${params.motivo.replace(/\n/g, "<br>")}</p>`
-          : "") +
-        `<p><a href="${params.portalUrl}">Abrir CRM</a></p><p>–<br>NexiForma</p>`,
+        cumprimento(params.gestorNome) +
+        emailParagraph(
+          `A proposta <strong>${escapeHtml(params.codigo)}</strong> ` +
+            `(«${escapeHtml(params.titulo)}») foi <strong>${label}</strong>.`,
+        ) +
+        emailInfoBox(
+          emailDataTable(
+            emailDataRow("Cliente", escapeHtml(params.cliente)) +
+              (params.motivo
+                ? emailDataRow("Motivo", escapeHtml(params.motivo).replace(/\n/g, "<br>"))
+                : ""),
+          ),
+          params.estado === "ACEITE" ? "#0d9488" : "#dc2626",
+        ) +
+        emailButtonRow(emailButton("Abrir CRM", params.portalUrl, "primary")) +
+        assinatura(),
     };
   }
 
@@ -432,17 +685,76 @@ export class EmailTemplates {
     return {
       subject: `A sua proposta ${params.codigo} foi ${label}`,
       text:
-        `Olá ${params.comercialNome},\n\n` +
+        `Caro(a) ${params.comercialNome},\n\n` +
         `A proposta ${params.codigo} («${params.titulo}») que enviou foi ${label}.\n` +
         `Cliente: ${params.cliente}\n` +
         (params.motivo ? `Nota: ${params.motivo}\n` : "") +
-        `\nConsultar: ${params.portalUrl}\n\n–\nNexiForma\n`,
+        `\nPortal: ${params.portalUrl}\n\n` +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
-        `<p>Olá <strong>${params.comercialNome}</strong>,</p>` +
-        `<p>A proposta <strong>${params.codigo}</strong> que enviou foi <strong>${label}</strong>.</p>` +
-        `<p>Cliente: ${params.cliente}</p>` +
-        (params.motivo ? `<p>${params.motivo.replace(/\n/g, "<br>")}</p>` : "") +
-        `<p><a href="${params.portalUrl}">Ver propostas</a></p><p>–<br>NexiForma</p>`,
+        cumprimento(params.comercialNome) +
+        emailParagraph(
+          `A proposta <strong>${escapeHtml(params.codigo)}</strong> que enviou foi ` +
+            `<strong>${label}</strong>.`,
+        ) +
+        emailInfoBox(
+          emailDataTable(
+            emailDataRow("Cliente", escapeHtml(params.cliente)) +
+              (params.motivo
+                ? emailDataRow("Nota", escapeHtml(params.motivo).replace(/\n/g, "<br>"))
+                : ""),
+          ),
+        ) +
+        emailButtonRow(emailButton("Abrir CRM", params.portalUrl, "primary")) +
+        assinatura(),
+    };
+  }
+
+  static propostaEstadoCliente(params: {
+    clienteNome: string;
+    codigo: string;
+    titulo: string;
+    entidadeFormadora: string;
+    estado: "ACEITE" | "REJEITADA";
+    motivo?: string;
+  }): EmailTemplate {
+    const aceite = params.estado === "ACEITE";
+    const label = aceite ? "aceite" : "rejeitada";
+    return {
+      subject: `Proposta ${params.codigo} ${label} – ${params.entidadeFormadora}`,
+      text:
+        `Exmo(a). Sr(a). ${params.clienteNome},\n\n` +
+        (aceite
+          ? `Confirmamos o registo da sua aceitação da proposta ${params.codigo} («${params.titulo}»).\n` +
+            `A equipa comercial de ${params.entidadeFormadora} foi notificada e entrará em contacto se necessário.\n\n`
+          : `Registámos a sua resposta à proposta ${params.codigo} («${params.titulo}») como rejeitada.\n` +
+            (params.motivo ? `Nota: ${params.motivo}\n` : "") +
+            `A equipa comercial de ${params.entidadeFormadora} foi notificada.\n\n`) +
+        `Com os melhores cumprimentos,\n${params.entidadeFormadora}\n`,
+      html:
+        emailParagraph(
+          `Exmo(a). Sr(a). <strong>${escapeHtml(params.clienteNome)}</strong>,`,
+        ) +
+        (aceite
+          ? emailParagraph(
+              `Confirmamos o registo da sua <strong>aceitação</strong> da proposta ` +
+                `<strong>${escapeHtml(params.codigo)}</strong> («${escapeHtml(params.titulo)}»).`,
+            ) +
+            emailParagraph(
+              `A equipa comercial de <strong>${escapeHtml(params.entidadeFormadora)}</strong> ` +
+                `foi notificada e entrará em contacto se necessário.`,
+            )
+          : emailParagraph(
+              `Registámos a sua resposta à proposta <strong>${escapeHtml(params.codigo)}</strong> ` +
+                `(«${escapeHtml(params.titulo)}») como <strong>rejeitada</strong>.`,
+            ) +
+            (params.motivo
+              ? emailParagraph(escapeHtml(params.motivo).replace(/\n/g, "<br>"))
+              : "") +
+            emailParagraph(
+              `A equipa comercial de <strong>${escapeHtml(params.entidadeFormadora)}</strong> foi notificada.`,
+            )) +
+        assinatura(params.entidadeFormadora),
     };
   }
 
@@ -453,21 +765,25 @@ export class EmailTemplates {
     codigoPublico: number | null;
     portalUrl: string;
   }): EmailTemplate {
-    const ref = params.codigoPublico != null ? `#${params.codigoPublico}` : "-";
+    const ref = params.codigoPublico != null ? `#${params.codigoPublico}` : "";
     return {
       subject: `Formação ${ref} ${params.acao} no catálogo`,
       text:
-        `Olá ${params.gestorNome},\n\n` +
-        `A formação «${params.titulo}» (${ref}) foi ${params.acao} no catálogo website.\n\n` +
-        `${params.portalUrl}\n\n–\nNexiForma\n`,
+        `Caro(a) ${params.gestorNome},\n\n` +
+        `A formação «${params.titulo}» (${ref}) foi ${params.acao} no catálogo do website.\n\n` +
+        `${params.portalUrl}\n\n` +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
-        `<p>Olá <strong>${params.gestorNome}</strong>,</p>` +
-        `<p>A formação <strong>${params.titulo}</strong> (${ref}) foi <strong>${params.acao}</strong> no catálogo.</p>` +
-        `<p><a href="${params.portalUrl}">Formações website</a></p><p>–<br>NexiForma</p>`,
+        cumprimento(params.gestorNome) +
+        emailParagraph(
+          `A formação <strong>${escapeHtml(params.titulo)}</strong> (${escapeHtml(ref)}) foi ` +
+            `<strong>${params.acao}</strong> no catálogo do website.`,
+        ) +
+        emailButtonRow(emailButton("Abrir formações website", params.portalUrl, "primary")) +
+        assinatura(),
     };
   }
 
-  /** Control Plane: tenant criado/actualizado/eliminado → superadmin. */
   static tenantLifecycleSuperadmin(params: {
     acao: "criado" | "actualizado" | "arquivado" | "eliminado";
     legalName: string;
@@ -494,25 +810,30 @@ export class EmailTemplates {
         `Estado: ${params.status}\n` +
         `Operação por: ${params.actorEmail}\n` +
         (params.detalhe ? `\n${params.detalhe}\n` : "") +
-        `\nPlataforma: ${params.plataformaUrl}\n\n–\nNexiForma Control Plane\n`,
+        `\nPlataforma: ${params.plataformaUrl}\n\n` +
+        `NexiForma Control Plane\n`,
       html:
-        `<p><strong>${titulos[params.acao]}</strong></p>` +
-        `<ul>` +
-        `<li><strong>Entidade:</strong> ${params.legalName}</li>` +
-        `<li><strong>Slug:</strong> <code>${params.slug}</code></li>` +
-        `<li><strong>NIF:</strong> ${params.nif}</li>` +
-        `<li><strong>Estado:</strong> ${params.status}</li>` +
-        `<li><strong>Operação por:</strong> ${params.actorEmail}</li>` +
-        `</ul>` +
+        emailHeading(titulos[params.acao] ?? "Operação de tenant") +
+        emailInfoBox(
+          emailDataTable(
+            emailDataRow("Entidade", escapeHtml(params.legalName)) +
+              emailDataRow("Slug", `<code>${escapeHtml(params.slug)}</code>`) +
+              emailDataRow("NIF", escapeHtml(params.nif)) +
+              emailDataRow("Estado", escapeHtml(params.status)) +
+              emailDataRow("Operação por", escapeHtml(params.actorEmail)),
+          ),
+        ) +
         (params.detalhe
-          ? `<pre style="background:#f1f5f9;padding:12px;border-radius:6px;font-size:12px;white-space:pre-wrap;">${params.detalhe}</pre>`
+          ? emailInfoBox(
+              `<pre style="margin:0;white-space:pre-wrap;font-size:12px;">${escapeHtml(params.detalhe)}</pre>`,
+              "#64748b",
+            )
           : "") +
-        `<p><a href="${params.plataformaUrl}">Abrir Control Plane</a></p>` +
-        `<p>–<br>NexiForma Control Plane</p>`,
+        emailButtonRow(emailButton("Abrir Control Plane", params.plataformaUrl, "primary")) +
+        assinatura("NexiForma Control Plane"),
     };
   }
 
-  /** Gestor inicial quando superadmin cria tenant (conta já com password). */
   static tenantGestorBemVindo(params: {
     nomeGestor: string;
     entidadeFormadora: string;
@@ -521,27 +842,36 @@ export class EmailTemplates {
     recuperarUrl: string;
   }): EmailTemplate {
     return {
-      subject: `Acesso NexiForma – ${params.entidadeFormadora}`,
+      subject: `Acesso de gestor – ${params.entidadeFormadora}`,
       text:
-        `Olá ${params.nomeGestor},\n\n` +
+        `Caro(a) ${params.nomeGestor},\n\n` +
         `A entidade formadora «${params.entidadeFormadora}» foi registada no NexiForma.\n\n` +
-        `Foi criada uma conta de gestor com este email.\n\n` +
+        `Foi criada uma conta de gestor associada a este email.\n` +
+        `Identificador (slug): ${params.slug}\n\n` +
         `Iniciar sessão:\n${params.loginUrl}\n\n` +
-        `Slug do tenant: ${params.slug}\n\n` +
-        `Se não souberes a palavra-passe, redefine em:\n${params.recuperarUrl}\n\n` +
-        `–\nNexiForma\n`,
+        `Se não souber a palavra-passe, redefina-a em:\n${params.recuperarUrl}\n\n` +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
-        `<p>Olá <strong>${params.nomeGestor}</strong>,</p>` +
-        `<p>A entidade formadora <strong>${params.entidadeFormadora}</strong> foi registada no NexiForma.</p>` +
-        `<p>Foi criada uma conta de <strong>gestor</strong> com este email.</p>` +
-        `<p>Slug do tenant: <code>${params.slug}</code></p>` +
-        `<p><a href="${params.loginUrl}" style="background:#2563eb;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;">Iniciar sessão</a></p>` +
-        `<p style="font-size:13px;color:#64748b;">Se não souberes a palavra-passe, <a href="${params.recuperarUrl}">redefine-a aqui</a>.</p>` +
-        `<p>–<br>NexiForma</p>`,
+        cumprimento(params.nomeGestor) +
+        emailParagraph(
+          `A entidade formadora <strong>${escapeHtml(params.entidadeFormadora)}</strong> ` +
+            `foi registada no NexiForma.`,
+        ) +
+        emailParagraph(
+          "Foi criada uma conta de <strong>gestor</strong> associada a este email. " +
+            "Como gestor, pode configurar utilizadores, acções de formação, documentos e integrações.",
+        ) +
+        emailInfoBox(
+          emailDataTable(emailDataRow("Identificador (slug)", `<code>${escapeHtml(params.slug)}</code>`)),
+        ) +
+        emailButtonRow(emailButton("Iniciar sessão", params.loginUrl, "primary")) +
+        emailMuted(
+          `Se não souber a palavra-passe, <a href="${params.recuperarUrl.replace(/"/g, "%22")}">redefina-a aqui</a>.`,
+        ) +
+        assinatura(),
     };
   }
 
-  /** Convite por email quando superadmin cria tenant sem password (activar conta). */
   static tenantGestorConvite(params: {
     nomeGestor: string;
     entidadeFormadora: string;
@@ -550,25 +880,36 @@ export class EmailTemplates {
     loginUrl: string;
   }): EmailTemplate {
     return {
-      subject: `Convite NexiForma – ${params.entidadeFormadora}`,
+      subject: `Convite de gestor – ${params.entidadeFormadora}`,
       text:
-        `Olá ${params.nomeGestor},\n\n` +
-        `Foste convidado(a) a gerir a entidade formadora «${params.entidadeFormadora}» no NexiForma.\n\n` +
-        `Identificador da entidade (slug): ${params.slug}\n` +
-        `Guarda este identificador - precisas dele para iniciar sessão.\n\n` +
+        `Caro(a) ${params.nomeGestor},\n\n` +
+        `Foi convidado(a) a gerir a entidade formadora «${params.entidadeFormadora}» no NexiForma.\n\n` +
+        `Identificador (slug): ${params.slug}\n` +
+        `Guarde este identificador – será necessário no ecrã de login.\n\n` +
         `Activar conta e definir palavra-passe:\n${params.inviteUrl}\n\n` +
-        `Depois de activar, entra em:\n${params.loginUrl}\n\n` +
+        `Após activar, inicie sessão em:\n${params.loginUrl}\n\n` +
         `O link expira em 7 dias.\n\n` +
-        `–\nNexiForma\n`,
+        `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
-        `<p>Olá <strong>${params.nomeGestor}</strong>,</p>` +
-        `<p>Foste convidado(a) a gerir <strong>${params.entidadeFormadora}</strong> no NexiForma.</p>` +
-        `<p>Identificador da entidade: <code style="background:#f1f5f9;padding:2px 8px;border-radius:4px;">${params.slug}</code></p>` +
-        `<p style="font-size:13px;color:#64748b;">Guarda este identificador - precisas dele no ecrã de login.</p>` +
-        `<p><a href="${params.inviteUrl}" style="background:#2563eb;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;">Activar conta</a></p>` +
-        `<p style="font-size:13px;color:#64748b;">Após activar: <a href="${params.loginUrl}">iniciar sessão</a> (slug pré-preenchido).</p>` +
-        `<p style="font-size:12px;color:#94a3b8;">O link expira em 7 dias.</p>` +
-        `<p>–<br>NexiForma</p>`,
+        cumprimento(params.nomeGestor) +
+        emailParagraph(
+          `Foi convidado(a) a gerir a entidade <strong>${escapeHtml(params.entidadeFormadora)}</strong> ` +
+            `no NexiForma, com o cargo de <strong>gestor</strong>.`,
+        ) +
+        emailInfoBox(
+          emailDataTable(
+            emailDataRow("Identificador (slug)", `<code>${escapeHtml(params.slug)}</code>`),
+          ),
+        ) +
+        emailParagraph(
+          "Guarde o identificador da entidade – será necessário no ecrã de login. " +
+            "Active a conta para definir a palavra-passe.",
+        ) +
+        emailButtonRow(emailButton("Activar conta", params.inviteUrl, "primary")) +
+        emailMuted(
+          `Após activar, <a href="${params.loginUrl.replace(/"/g, "%22")}">inicie sessão</a>. O link de convite expira em 7 dias.`,
+        ) +
+        assinatura(),
     };
   }
 
@@ -589,18 +930,24 @@ export class EmailTemplates {
         `Tenant: ${params.tenantLabel}\n` +
         `Resumo: ${params.resumo}\n\n` +
         (params.detalhe ? `${params.detalhe}\n\n` : "") +
-        `–\nNexiForma Control Plane\n`,
+        `NexiForma Control Plane\n`,
       html:
         params.htmlDetalhe ??
-        (`<p><strong>Erro na plataforma</strong></p>` +
-          `<ul>` +
-          `<li><strong>Módulo:</strong> ${params.modulo}</li>` +
-          `<li><strong>Tenant:</strong> ${params.tenantLabel}</li>` +
-          `<li><strong>Resumo:</strong> ${params.resumo}</li>` +
+        emailHeading("Erro na plataforma") +
+          emailInfoBox(
+            emailDataTable(
+              emailDataRow("Módulo", escapeHtml(params.modulo)) +
+                emailDataRow("Tenant", escapeHtml(params.tenantLabel)) +
+                emailDataRow("Resumo", escapeHtml(params.resumo)),
+            ),
+            "#dc2626",
+          ) +
           (params.detalhe
-            ? `<li><pre style="white-space:pre-wrap;font-size:12px;">${params.detalhe}</pre></li>`
+            ? emailInfoBox(
+                `<pre style="margin:0;white-space:pre-wrap;font-size:12px;">${escapeHtml(params.detalhe)}</pre>`,
+              )
             : "") +
-          `</ul>`),
+          assinatura("NexiForma Control Plane"),
     };
   }
 
@@ -610,32 +957,211 @@ export class EmailTemplates {
     corpo: string;
     tipo: string;
     link: string;
+    teamsJoinUrl?: string;
   }): EmailTemplate {
     const labels: Record<string, string> = {
       CRIACAO: "Novo evento no calendário",
       SEMANA_ANTES: "Lembrete – evento em 1 semana",
       DIA_ANTES: "Lembrete – evento amanhã",
       HORA_EVENTO: "Lembrete – evento em 1 hora",
+      TEAMS_SALA: "Sala Microsoft Teams disponível",
     };
     const label = labels[params.tipo] ?? "Lembrete de calendário";
     return {
-      subject: `📅 ${label}: ${params.titulo}`,
+      subject: `${label}: ${params.titulo}`,
       text:
-        `Olá ${params.nome},\n\n` +
+        `Caro(a) ${params.nome},\n\n` +
         `${label}\n\n` +
         `${params.titulo}\n` +
-        `${params.corpo}\n\n` +
-        `Ver calendário: ${params.link}\n\n` +
-        `–\nNexiForma\n`,
+        `${params.corpo}\n` +
+        (params.teamsJoinUrl ? `\nSala Teams: ${params.teamsJoinUrl}\n` : "") +
+        `\nCalendário: ${params.link}\n\n` +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
-        `<p>Olá <strong>${params.nome}</strong>,</p>` +
-        `<p><strong>${label}</strong></p>` +
-        `<div style="background:#f1f5f9;padding:12px;border-left:4px solid #2563eb;margin:16px 0;">` +
-        `<p style="margin:0 0 8px;"><strong>${params.titulo}</strong></p>` +
-        `<p style="margin:0;">${params.corpo}</p>` +
-        `</div>` +
-        `<p><a href="${params.link}" style="background:#2563eb;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;">Abrir calendário</a></p>` +
-        `<p>–<br>NexiForma</p>`,
+        cumprimento(params.nome) +
+        emailParagraph(`<strong>${escapeHtml(label)}</strong>`) +
+        emailInfoBox(
+          `<p style="margin:0 0 8px;"><strong>${escapeHtml(params.titulo)}</strong></p>` +
+            `<p style="margin:0;">${escapeHtml(params.corpo)}</p>`,
+        ) +
+        emailButtonRow(
+          (params.teamsJoinUrl
+            ? emailButton("Entrar na sala Teams", params.teamsJoinUrl, "secondary")
+            : "") + emailButton("Abrir calendário", params.link, "primary"),
+        ) +
+        assinatura(),
+    };
+  }
+
+  static propostaComercialCliente(params: {
+    titulo: string;
+    codigo: string;
+    entidadeFormadora: string;
+    clienteNome: string;
+    valorLabel: string;
+    validadeLabel: string | null;
+    descricao: string | null;
+    pdfFilename: string;
+    aceitarUrl: string;
+    rejeitarUrl: string;
+  }): EmailTemplate {
+    const descricaoHtml = params.descricao
+      ? emailParagraph(escapeHtml(params.descricao).replace(/\n/g, "<br>"))
+      : "";
+    const validadeTexto = params.validadeLabel ? `\nValidade: ${params.validadeLabel}` : "";
+
+    return {
+      subject: `Proposta comercial ${params.codigo} – ${params.entidadeFormadora}`,
+      text:
+        `Exmo(a). Sr(a). ${params.clienteNome},\n\n` +
+        `${params.entidadeFormadora} envia-lhe uma proposta comercial.\n\n` +
+        `Proposta: ${params.titulo}\n` +
+        `Código: ${params.codigo}\n` +
+        `Valor: ${params.valorLabel}${validadeTexto}\n\n` +
+        (params.descricao ? `${params.descricao}\n\n` : "") +
+        `Em anexo: documento em PDF (${params.pdfFilename}).\n\n` +
+        `Para aceitar:\n${params.aceitarUrl}\n\n` +
+        `Para recusar:\n${params.rejeitarUrl}\n\n` +
+        `Com os melhores cumprimentos,\n${params.entidadeFormadora}\n`,
+      html:
+        emailParagraph(
+          `Exmo(a). Sr(a). <strong>${escapeHtml(params.clienteNome)}</strong>,`,
+        ) +
+        emailParagraph(
+          `<strong>${escapeHtml(params.entidadeFormadora)}</strong> envia-lhe uma proposta comercial. ` +
+            `Consulte o resumo abaixo e o documento em PDF em anexo.`,
+        ) +
+        emailInfoBox(
+          emailDataTable(
+            emailDataRow("Proposta", escapeHtml(params.titulo)) +
+              emailDataRow("Código", escapeHtml(params.codigo)) +
+              emailDataRow("Valor", escapeHtml(params.valorLabel)) +
+              (params.validadeLabel
+                ? emailDataRow("Validade", escapeHtml(params.validadeLabel))
+                : "") +
+              emailDataRow("Entidade", escapeHtml(params.entidadeFormadora)),
+          ),
+          "#0d9488",
+        ) +
+        descricaoHtml +
+        emailParagraph(
+          `O documento completo segue em anexo (<strong>${escapeHtml(params.pdfFilename)}</strong>).`,
+        ) +
+        emailParagraph("Pode responder a este email ou utilizar os botões abaixo:") +
+        emailButtonRow(
+          emailButton("Aceitar proposta", params.aceitarUrl, "success") +
+            emailButton("Recusar proposta", params.rejeitarUrl, "secondary"),
+        ) +
+        emailMuted(
+          "Se os botões não funcionarem no seu cliente de email, copie os links da versão em texto desta mensagem.",
+        ) +
+        assinatura(params.entidadeFormadora),
+    };
+  }
+
+  /**
+   * Formador terminou sessão sem validar folha e/ou assinar sumário -
+   * aviso ao departamento pedagógico.
+   */
+  static sessaoTerminadaComPendencias(params: {
+    nomeDestinatario: string;
+    entidade: string;
+    formadorNome: string;
+    acaoLabel: string;
+    sessaoLabel: string;
+    pendencias: string[];
+    portalUrl: string;
+  }): EmailTemplate {
+    const listaTxt = params.pendencias.map((p) => `• ${p}`).join("\n");
+    return {
+      subject: `Pendências após sessão – ${params.acaoLabel}`,
+      text:
+        `Caro(a) ${params.nomeDestinatario},\n\n` +
+        `O formador ${params.formadorNome} terminou a sessão «${params.sessaoLabel}» ` +
+        `da acção «${params.acaoLabel}» com documentação pedagógica por concluir:\n\n` +
+        `${listaTxt}\n\n` +
+        `É necessária validação/aprovação no portal:\n${params.portalUrl}\n\n` +
+        `Com os melhores cumprimentos,\n${params.entidade}\n`,
+      html:
+        cumprimento(params.nomeDestinatario) +
+        emailParagraph(
+          `O formador <strong>${escapeHtml(params.formadorNome)}</strong> terminou a sessão ` +
+            `<strong>«${escapeHtml(params.sessaoLabel)}»</strong> da acção ` +
+            `<strong>«${escapeHtml(params.acaoLabel)}»</strong> com documentação pedagógica por concluir:`,
+        ) +
+        listaHtml(params.pendencias) +
+        emailInfoBox(
+          "Enquanto a folha e/ou o sumário não estiverem validados e aprovados, " +
+            "a acção pode ficar incompleta para efeitos de dossiê pedagógico / DGERT.",
+          "#d97706",
+        ) +
+        emailButtonRow(emailButton("Abrir acção no portal", params.portalUrl, "primary")) +
+        assinatura(params.entidade),
+    };
+  }
+
+  /**
+   * Formador saiu do portal (logout) com folha/sumário por validar -
+   * aviso ao departamento pedagógico.
+   */
+  static formadorLogoutComPendencias(params: {
+    nomeDestinatario: string;
+    entidade: string;
+    formadorNome: string;
+    linhas: string[];
+    portalUrl: string;
+  }): EmailTemplate {
+    const n = params.linhas.length;
+    return {
+      subject: `Pendências pedagógicas – ${params.formadorNome} saiu do portal`,
+      text:
+        `Caro(a) ${params.nomeDestinatario},\n\n` +
+        `O formador ${params.formadorNome} saiu do portal com ${n} sessão(ões) ` +
+        `com documentação pedagógica por concluir:\n\n` +
+        params.linhas.map((l) => `• ${l}`).join("\n") +
+        `\n\nPortal:\n${params.portalUrl}\n\n` +
+        `Com os melhores cumprimentos,\n${params.entidade}\n`,
+      html:
+        cumprimento(params.nomeDestinatario) +
+        emailParagraph(
+          `O formador <strong>${escapeHtml(params.formadorNome)}</strong> saiu do portal ` +
+            `com <strong>${n}</strong> sessão(ões) com documentação pedagógica por concluir:`,
+        ) +
+        listaHtml(params.linhas) +
+        emailInfoBox(
+          "É necessária validação da folha de presenças e/ou assinatura do sumário " +
+            "para o dossiê pedagógico ficar completo.",
+          "#d97706",
+        ) +
+        emailButtonRow(emailButton("Abrir portal", params.portalUrl, "primary")) +
+        assinatura(params.entidade),
+    };
+  }
+
+  /** Digest de alertas para gestores / formadores. */
+  static digestAlertas(params: {
+    entidade: string;
+    linhas: string[];
+    portalUrl: string;
+  }): EmailTemplate {
+    const n = params.linhas.length;
+    return {
+      subject: `NexiForma – ${n} alerta(s) operacional(is)`,
+      text:
+        `Resumo de alertas – ${params.entidade}\n\n` +
+        (n === 0
+          ? "Sem alertas activos neste momento.\n"
+          : params.linhas.map((l) => `• ${l}`).join("\n") + "\n") +
+        `\nPortal: ${params.portalUrl}\n\n` +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
+      html:
+        emailHeading("Resumo de alertas operacionais") +
+        emailParagraph(`Entidade: <strong>${escapeHtml(params.entidade)}</strong>`) +
+        (n === 0
+          ? emailParagraph("Sem alertas activos neste momento.")
+          : listaHtml(params.linhas)) +
+        emailButtonRow(emailButton("Abrir portal", params.portalUrl, "primary")) +
+        assinatura(),
     };
   }
 }

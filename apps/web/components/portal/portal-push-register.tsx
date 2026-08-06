@@ -39,15 +39,17 @@ export function PortalPushRegister() {
 
         const reg = await navigator.serviceWorker.ready;
         const existing = await reg.pushManager.getSubscription();
-        if (existing) return;
 
-        const permission = await Notification.requestPermission();
-        if (permission !== "granted") return;
+        let sub = existing;
+        if (!sub) {
+          const permission = await Notification.requestPermission();
+          if (permission !== "granted") return;
 
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey),
-        });
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(publicKey),
+          });
+        }
 
         const json = sub.toJSON();
         if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return;

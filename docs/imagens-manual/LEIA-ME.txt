@@ -1,0 +1,26 @@
+﻿Coloque aqui as capturas de ecrã do manual comercial.
+
+Nomes sugeridos (iguais aos do MANUAL_COMERCIAL.md):
+01-login.png
+02-login-social.png
+03-escolher-entidade.png
+04-menu-comercial.png
+05-leads-lista.png
+06-leads-criar.png
+07-leads-converter.png
+08-clientes-lista.png
+09-clientes-criar.png
+10-clientes-ficha.png
+11-parceiros-adicionar.png
+12-parceiros-lista.png
+13-propostas-criar.png
+14-propostas-editar.png
+15-propostas-enviar.png
+16-propostas-lista.png
+17-notas-criar.png
+18-notas-lista.png
+19-calendario.png
+20-calendario-reuniao.png
+21-sugestoes-ia.png
+22-notificacoes.png
+23-pesquisa.png

@@ -37,36 +37,48 @@ export const SIGO_TIPOS_DOC_IDENTIFICACAO = ["C", "P", "BI", "OUTRO"] as const;
 export type SigoTipoDocIdentificacao = (typeof SIGO_TIPOS_DOC_IDENTIFICACAO)[number];
 
 /**
- * Códigos de habilitações literárias CNQ/SIGO (anos de escolaridade concluídos).
- * Expandir conforme tabela oficial DGEEC.
+ * Níveis do Quadro Nacional de Qualificações (QNQ / DGES), usados em SIGO.
+ * @see https://www.dges.gov.pt/pt/quadro_qualificacoes
+ * Nível 5 (CTeSP) omitido até ser pedido na UI.
  */
-export const SIGO_HABILITACOES_CNQ = [
-  "1",
-  "2",
-  "3",
-  "4",
-  "5",
-  "6",
-  "7",
-  "8",
-  "9",
-  "10",
-  "11",
-  "12",
-  "13",
-  "14",
-  "15",
-  "16",
-  "17",
-  "18",
-  "19",
-  "20",
-  "21",
-  "22",
-  "23",
+export const SIGO_HABILITACOES_QNQ = [
+  { codigo: "1", label: "2.º ciclo (5.º-6.º ano) - Nível 1" },
+  { codigo: "2", label: "3.º ciclo (7.º-9.º ano) - Nível 2" },
+  { codigo: "3", label: "Ensino secundário (10.º-12.º ano) - Nível 3" },
+  { codigo: "4", label: "Curso profissional / dupla certificação - Nível 4" },
+  { codigo: "6", label: "Licenciatura - Nível 6" },
+  { codigo: "7", label: "Mestrado - Nível 7" },
+  { codigo: "8", label: "Doutoramento - Nível 8" },
 ] as const;
 
+/** Códigos QNQ válidos (compatível com validação SIGO / DTO). */
+export const SIGO_HABILITACOES_CNQ = ["1", "2", "3", "4", "6", "7", "8"] as const;
+
 export type SigoHabilitacaoLiteraria = (typeof SIGO_HABILITACOES_CNQ)[number];
+
+/**
+ * Converte códigos antigos (anos de escolaridade 1–12) para nível QNQ.
+ * Códigos já QNQ passam intactos; desconhecidos devolvem null.
+ */
+export function normalizarHabilitacaoQnq(code?: string | null): SigoHabilitacaoLiteraria | null {
+  const c = (code ?? "").trim();
+  if (!c) return null;
+  if ((SIGO_HABILITACOES_CNQ as readonly string[]).includes(c)) {
+    return c as SigoHabilitacaoLiteraria;
+  }
+  const n = Number.parseInt(c, 10);
+  if (!Number.isFinite(n)) return null;
+  if (n >= 5 && n <= 6) return "1";
+  if (n >= 7 && n <= 9) return "2";
+  if (n >= 10 && n <= 12) return "3";
+  return null;
+}
+
+export function labelHabilitacaoQnq(code?: string | null): string {
+  const norm = normalizarHabilitacaoQnq(code) ?? (code ?? "").trim();
+  const hit = SIGO_HABILITACOES_QNQ.find((h) => h.codigo === norm);
+  return hit?.label ?? (norm ? `Nível ${norm}` : "-");
+}
 
 /** Metadados SIGO guardados em `FormandoProfile.metadata.sigo`. */
 export type SigoFormandoMetadata = {

@@ -1,4 +1,4 @@
-const CACHE_NAME = "nexiforma-v2";
+const CACHE_NAME = "nexiforma-v3";
 
 /** Rotas estáticas seguras (nunca incluir `/_next/` - quebra hot reload e rebuilds). */
 const STATIC_ASSETS = ["/manifest.json"];
@@ -61,10 +61,18 @@ self.addEventListener("push", (event) => {
     /* ignore */
   }
   event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      data: { url: data.url ?? "/portal" },
-    }),
+    Promise.all([
+      self.registration.showNotification(data.title, {
+        body: data.body,
+        icon: "/manifest.json",
+        data: { url: data.url ?? "/portal" },
+      }),
+      self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+        for (const client of clients) {
+          client.postMessage({ type: "NEXIFORMA_NOTIFICATIONS_REFRESH" });
+        }
+      }),
+    ]),
   );
 });
 

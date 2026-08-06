@@ -46,6 +46,7 @@ export type SigoCertificarResult = {
 
 const SUBMISSAO_INCLUDE = {
   acaoFormacao: { select: { id: true, codigoInterno: true, titulo: true } },
+  _count: { select: { sincronizacoesFormando: true } },
 } satisfies Prisma.SigoSubmissaoInclude;
 
 @Injectable()
@@ -97,6 +98,56 @@ export class SigoIntegrationService {
 
   listSubmissoesAcao(user: RequestUser, acaoId: string) {
     return this.listSubmissoes(user, acaoId);
+  }
+
+  async listSincronizacoesFormando(user: RequestUser, submissaoId: string) {
+    const tenantId = requireTenantId(user);
+    await this.access.assertAcao(user, tenantId, "reconciliar");
+
+    const submissao = await this.prisma.sigoSubmissao.findFirst({
+      where: { id: submissaoId, tenantId },
+      select: { id: true },
+    });
+    if (!submissao) throw new NotFoundException("Submissão SIGO não encontrada.");
+
+    const rows = await this.prisma.sigoSincronizacaoFormando.findMany({
+      where: { tenantId, submissaoId },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      include: {
+        matricula: {
+          select: {
+            id: true,
+            formando: { select: { nome: true, nif: true } },
+          },
+        },
+      },
+    });
+
+    const resumo = {
+      total: rows.length,
+      sucesso: rows.filter((r) => r.estado === "SUCESSO").length,
+      erro: rows.filter((r) => r.estado === "ERRO").length,
+      duplicado: rows.filter((r) => r.estado === "DUPLICADO").length,
+      pendente: rows.filter((r) => r.estado === "PENDENTE").length,
+    };
+
+    return {
+      submissaoId,
+      resumo,
+      formandos: rows.map((r) => ({
+        id: r.id,
+        matriculaId: r.matriculaId,
+        formandoNome: r.matricula.formando.nome,
+        nif: r.matricula.formando.nif,
+        operacao: r.operacao,
+        transacaoId: r.transacaoId,
+        estado: r.estado,
+        soapFaultCode: r.soapFaultCode,
+        soapFaultString: r.soapFaultString,
+        responseResumo: r.responseResumo,
+        updatedAt: r.updatedAt.toISOString(),
+      })),
+    };
   }
 
   async reconcile(user: RequestUser, submissaoId: string): Promise<SigoSubmissao> {

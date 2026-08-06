@@ -1,11 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
-import Link from "next/link";
+import {
+  Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle, PageHeader, Select, TableScroll,
+} from "@/components/ui";
 
 type AcaoOpt = { id: string; codigoInterno: string; titulo: string };
 type TurmaOpt = { id: string; codigo: string; nome: string };
@@ -18,16 +21,14 @@ type MatriculaRow = {
   turma: { id: string; codigo: string; nome: string; acaoFormacao: { codigoInterno: string; titulo: string } };
 };
 
-const estadoBadge: Record<string, string> = {
-  ATIVA: "bg-green-500/10 text-green-400 border-green-500/20",
-  DESISTENCIA: "bg-red-500/10 text-red-400 border-red-500/20",
-  CONCLUSAO: "bg-teal-500/10 text-teal-400 border-teal-500/20",
+const ESTADO_VARIANT: Record<string, "green" | "red" | "teal"> = {
+  ATIVA: "green",
+  DESISTENCIA: "red",
+  CONCLUSAO: "teal",
 };
 
-const selectClass = "w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-sm text-slate-200 outline-none focus:border-blue-500/40 transition-colors";
-
 export default function MatriculasPage() {
-  const { canManage } = useTenantRole();
+  const { canManageFormacao: canManage } = useTenantRole();
   const [acoes, setAcoes] = useState<AcaoOpt[]>([]);
   const [turmas, setTurmas] = useState<TurmaOpt[]>([]);
   const [formandos, setFormandos] = useState<FormandoOpt[]>([]);
@@ -59,7 +60,7 @@ export default function MatriculasPage() {
     if (!turmaId) { setMatriculas([]); return; }
     const r = await bffFetch(`/api/v1/matriculas?turmaId=${encodeURIComponent(turmaId)}`, { headers: { accept: "application/json" } });
     if (r.ok) setMatriculas((await r.json()) as MatriculaRow[]);
-    else setError("Erro ao carregar matriculas.");
+    else setError("Erro ao carregar matrículas.");
   }, [turmaId]);
 
   useEffect(() => { void load(); }, [load]);
@@ -94,40 +95,38 @@ export default function MatriculasPage() {
   }
 
   return (
-    <div className="max-w-5xl space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-50">Inscricoes / Matriculas</h1>
-        <p className="text-sm text-slate-500 mt-1">Gestao de inscricoes de formandos nas turmas das accoes de formacao.</p>
-      </div>
+    <>
+      <PageHeader
+        title="Inscrições / Matrículas"
+        description="Gestão de inscrições de formandos nas turmas das acções de formação."
+      />
 
-      {error ? <div className="flex items-start gap-2.5 rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3"><p className="text-sm text-red-300">{error}</p></div> : null}
-      {msg ? <div className="flex items-start gap-2.5 rounded-xl bg-green-950/30 border border-green-500/25 px-4 py-3"><p className="text-sm text-green-300">{msg}</p></div> : null}
+      {error ? <Alert variant="error" className="mb-4">{error}</Alert> : null}
+      {msg ? <Alert variant="success" className="mb-4">{msg}</Alert> : null}
 
-      {/* Filters */}
-      <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5 space-y-4">
-        <div className="grid sm:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1.5">Accao</label>
-            <select value={acaoId} onChange={(e) => setAcaoId(e.target.value)} className={selectClass}>
+      <Card className="mb-6">
+        <CardContent className="pt-5">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Select label="Acção" value={acaoId} onChange={(e) => setAcaoId(e.target.value)}>
               {acoes.map((a) => <option key={a.id} value={a.id}>{a.codigoInterno} – {a.titulo}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1.5">Turma</label>
-            <select value={turmaId} onChange={(e) => setTurmaId(e.target.value)} className={selectClass}>
+            </Select>
+            <Select label="Turma" value={turmaId} onChange={(e) => setTurmaId(e.target.value)}>
               {turmas.map((t) => <option key={t.id} value={t.id}>{t.codigo} – {t.nome}</option>)}
-            </select>
-          </div>
-          {canManage ? (
-            <div>
-              <label className="block text-sm font-medium text-slate-400 mb-1.5">Inscrever formando</label>
-              <div className="flex gap-2">
-                <select value={formandoId} onChange={(e) => setFormandoId(e.target.value)} className={selectClass}>
-                  <option value="">Seleccionar...</option>
-                  {formandos.map((f) => <option key={f.id} value={f.id}>{f.nome} (NIF {f.nif})</option>)}
-                </select>
+            </Select>
+            {canManage ? (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-300">Inscrever formando</label>
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                  <Select value={formandoId} onChange={(e) => setFormandoId(e.target.value)} className="min-w-0 flex-1">
+                    <option value="">Seleccionar...</option>
+                    {formandos.map((f) => <option key={f.id} value={f.id}>{f.nome} (NIF {f.nif})</option>)}
+                  </Select>
+                  <Button onClick={() => void inscrever()} disabled={busy || !formandoId} className="w-full sm:w-auto sm:shrink-0">
+                    Inscrever
+                  </Button>
+                </div>
                 {formandos.length === 0 ? (
-                  <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+                  <p className="mt-1.5 text-[11px] leading-snug text-slate-500">
                     Sem formandos na lista. Convida em{" "}
                     <Link href="/portal/utilizadores" className="text-blue-400 hover:text-blue-300">
                       Utilizadores
@@ -139,71 +138,63 @@ export default function MatriculasPage() {
                     .
                   </p>
                 ) : null}
-                <button onClick={() => void inscrever()} disabled={busy || !formandoId}
-                  className="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium transition-colors flex-shrink-0">
-                  Inscrever
-                </button>
               </div>
-            </div>
-          ) : null}
-        </div>
-      </div>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
 
-      {/* Table */}
-      <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-700/30">
-          <h2 className="text-sm font-semibold text-slate-200">Matriculas ({matriculas.length})</h2>
-        </div>
+      <Card>
+        <CardHeader className="border-b border-slate-700/40">
+          <CardTitle>Matrículas ({matriculas.length})</CardTitle>
+        </CardHeader>
         {matriculas.length === 0 ? (
-          <div className="p-5 text-sm text-slate-500">Sem matriculas nesta turma.</div>
+          <div className="p-5 text-sm text-slate-500">Sem matrículas nesta turma.</div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-700/30">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Formando</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Turma</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Estado</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Data</th>
-                {canManage ? <th className="px-4 py-3" /> : null}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-700/20">
-              {matriculas.map((m) => (
-                <tr key={m.id} className="hover:bg-slate-800/30 transition-colors">
-                  <td className="px-4 py-3">
-                    <p className="text-slate-200 font-medium">{m.formando.nome}</p>
-                    <p className="text-xs text-slate-500">NIF {m.formando.nif}</p>
-                  </td>
-                  <td className="px-4 py-3 text-slate-400 hidden sm:table-cell">{m.turma.codigo}</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${estadoBadge[m.estado] ?? "bg-slate-500/10 text-slate-400 border-slate-500/20"}`}>
-                      {m.estado}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-500 hidden sm:table-cell">{formatDatePt(m.createdAt)}</td>
-                  {canManage ? (
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {m.estado === "ATIVA" ? (
-                          <>
-                            <button onClick={() => void mudarEstado(m.id, "CONCLUSAO")}
-                              className="px-2.5 py-1 rounded-md bg-teal-600 hover:bg-teal-500 text-[11px] font-medium text-white transition-colors">Concluir</button>
-                            <button onClick={() => void mudarEstado(m.id, "DESISTENCIA")}
-                              className="px-2.5 py-1 rounded-md bg-red-600 hover:bg-red-500 text-[11px] font-medium text-white transition-colors">Desistencia</button>
-                          </>
-                        ) : m.estado !== "ATIVA" ? (
-                          <button onClick={() => void mudarEstado(m.id, "ATIVA")}
-                            className="px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-[11px] font-medium text-white transition-colors">Reactivar</button>
-                        ) : null}
-                      </div>
-                    </td>
-                  ) : null}
+          <TableScroll>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-700/30">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Formando</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Turma</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Estado</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Data</th>
+                  {canManage ? <th className="px-4 py-3" /> : null}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-700/20">
+                {matriculas.map((m) => (
+                  <tr key={m.id} className="hover:bg-slate-800/30 transition-colors">
+                    <td className="px-4 py-3">
+                      <p className="text-slate-200 font-medium">{m.formando.nome}</p>
+                      <p className="text-xs text-slate-500">NIF {m.formando.nif}</p>
+                    </td>
+                    <td className="px-4 py-3 text-slate-400 hidden sm:table-cell">{m.turma.codigo}</td>
+                    <td className="px-4 py-3">
+                      <Badge variant={ESTADO_VARIANT[m.estado] ?? "default"}>{m.estado}</Badge>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-500 hidden sm:table-cell">{formatDatePt(m.createdAt)}</td>
+                    {canManage ? (
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {m.estado === "ATIVA" ? (
+                            <>
+                              <Button size="sm" variant="teal" onClick={() => void mudarEstado(m.id, "CONCLUSAO")}>Concluir</Button>
+                              <Button size="sm" variant="danger" onClick={() => void mudarEstado(m.id, "DESISTENCIA")}>Desistência</Button>
+                            </>
+                          ) : (
+                            <Button size="sm" onClick={() => void mudarEstado(m.id, "ATIVA")}>Reactivar</Button>
+                          )}
+                        </div>
+                      </td>
+                    ) : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
         )}
-      </div>
-    </div>
+      </Card>
+    </>
   );
 }

@@ -136,9 +136,12 @@ export class SettingsService {
       },
     });
 
-    if (user.tenantId !== tenantId || user.role !== 'tenant_admin') {
+    if (
+      user.tenantId !== tenantId ||
+      !["ADMIN", "COORDENADOR"].includes(user.role)
+    ) {
       throw new ForbiddenException(
-        'Apenas gestor do tenant pode atualizar branding',
+        "Apenas gestor do tenant pode atualizar branding",
       );
     }
 
@@ -347,7 +350,7 @@ export class SettingsService {
         features: [
           'Tudo do Professional',
           'SIGO API integrado',
-          'Assinatura qualificada CMD',
+          'Upload de sumários PDF assinados',
           'PWA customizado',
           'Integração RGPD',
           'Suporte customizado',

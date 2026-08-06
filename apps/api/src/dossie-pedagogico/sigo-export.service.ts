@@ -139,7 +139,7 @@ export class SigoExportService {
         : null,
       sumarioAssinado: s.sumarios.some((sum) => sum.imutavel),
       folhaPresencaFechada: s.folhasPresenca.some(
-        (f) => Boolean(f.fechadaEm || f.validadaFormadorEm),
+        (f) => Boolean(f.fechadaEm),
       ),
     }));
 

@@ -33,7 +33,7 @@ export class DossiePedagogicoController {
   ) {}
 
   @Post("acoes-formacao/:acaoId/gerar-dossie")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   gerarDossieTecnicoPedagogico(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
@@ -42,7 +42,7 @@ export class DossiePedagogicoController {
   }
 
   @Get("acoes-formacao/:acaoId/documentos-dgert")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   documentosDgert(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
@@ -51,7 +51,7 @@ export class DossiePedagogicoController {
   }
 
   @Get("acoes-formacao/:acaoId/export/pacote-inspecao.zip")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   async exportPacoteInspecao(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
@@ -64,7 +64,7 @@ export class DossiePedagogicoController {
   }
 
   @Post("acoes-formacao/:acaoId/pacote-inspecao")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   arquivarPacoteInspecao(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
@@ -73,7 +73,7 @@ export class DossiePedagogicoController {
   }
 
   @Get("acoes-formacao/:acaoId/validacao-sigo")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   validacaoSigo(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
@@ -82,7 +82,7 @@ export class DossiePedagogicoController {
   }
 
   @Get("acoes-formacao/:acaoId/export/dossie.html")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   async exportDossieHtml(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
@@ -95,7 +95,7 @@ export class DossiePedagogicoController {
   }
 
   @Get("acoes-formacao/:acaoId/export/sigo/formandos.csv")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   async exportSigoFormandosCsv(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
@@ -108,7 +108,7 @@ export class DossiePedagogicoController {
   }
 
   @Get("acoes-formacao/:acaoId/export/sigo")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   async exportSigoJson(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
@@ -121,7 +121,7 @@ export class DossiePedagogicoController {
   }
 
   @Get("acoes-formacao/:acaoId/export")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   async exportJson(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
@@ -134,7 +134,7 @@ export class DossiePedagogicoController {
   }
 
   @Get("acoes-formacao/:acaoId")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   getByAcao(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
@@ -143,7 +143,7 @@ export class DossiePedagogicoController {
   }
 
   @Get("acoes-formacao/:acaoId/arquivos")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   listArquivos(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
@@ -152,7 +152,7 @@ export class DossiePedagogicoController {
   }
 
   @Post("acoes-formacao/:acaoId/arquivos")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   storeArquivo(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
@@ -162,7 +162,7 @@ export class DossiePedagogicoController {
   }
 
   @Get("arquivos/:arquivoId/url")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   arquivoUrl(
     @CurrentUser() user: RequestUser,
     @Param("arquivoId", ParseUUIDPipe) arquivoId: string,

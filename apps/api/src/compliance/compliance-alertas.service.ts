@@ -6,7 +6,7 @@ import { ComplianceService } from "./compliance.service";
 
 export type ComplianceAlerta = {
   id: string;
-  tipo: "inspecao" | "pendencia" | "sessao" | "cronograma";
+  tipo: "inspecao" | "pendencia" | "sessao" | "cronograma" | "formador";
   severidade: "critico" | "aviso";
   acaoId: string;
   codigoInterno: string;
@@ -14,6 +14,16 @@ export type ComplianceAlerta = {
   mensagem: string;
   accaoUrl: string;
 };
+
+/** DGERT/inspecção primeiro; depois sessões sem formador; restantes por severidade. */
+function alertaPrioridade(a: ComplianceAlerta): number {
+  if (a.tipo === "inspecao" && a.severidade === "critico") return 0;
+  if (a.tipo === "inspecao") return 1;
+  if (a.tipo === "formador") return 2;
+  if (a.severidade === "critico") return 3;
+  if (a.tipo === "cronograma") return 4;
+  return 5;
+}
 
 @Injectable()
 export class ComplianceAlertasService {
@@ -57,6 +67,7 @@ export class ComplianceAlertasService {
                 data: true,
                 estado: true,
                 terminadaEm: true,
+                formadorId: true,
                 folhasPresenca: {
                   select: {
                     fechadaEm: true,
@@ -107,8 +118,24 @@ export class ComplianceAlertasService {
         });
       }
 
+      const sessoesSemFormador = (cron?.sessoes ?? []).filter(
+        (s) => !s.formadorId && s.estado !== "CANCELADA",
+      );
+      if (sessoesSemFormador.length > 0) {
+        alertas.push({
+          id: `formador-${acao.id}`,
+          tipo: "formador",
+          severidade: "critico",
+          acaoId: acao.id,
+          codigoInterno: acao.codigoInterno,
+          titulo: acao.titulo,
+          mensagem: `${sessoesSemFormador.length} sessão(ões) sem formador atribuído – só o gestor ou o formador da sessão podem iniciar e operar a sessão.`,
+          accaoUrl: `/portal/acoes/${acao.id}?tab=cronograma&requisito=formadores`,
+        });
+      }
+
       const folhaOk = (f: { fechadaEm: Date | null; validadaFormadorEm: Date | null }) =>
-        Boolean(f.fechadaEm || f.validadaFormadorEm);
+        Boolean(f.fechadaEm);
 
       for (const s of cron?.sessoes ?? []) {
         const realizada = s.estado === "REALIZADA" || s.terminadaEm != null;
@@ -143,6 +170,8 @@ export class ComplianceAlertasService {
         }
       }
     }
+
+    alertas.sort((a, b) => alertaPrioridade(a) - alertaPrioridade(b));
 
     return {
       geradoEm: now.toISOString(),

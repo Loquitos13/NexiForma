@@ -1,4 +1,6 @@
 import { getAccessToken, setAccessToken } from "./access-token";
+import { clearClientRateLimitBlock } from "./rate-limit-client";
+import { purgeStaleAuthSession } from "./logout";
 
 export const SESSION_EXPIRED_EVENT = "nexiforma:session-expired";
 
@@ -29,13 +31,11 @@ export function sessionGoodbyePath(returnTo: string, reason: "expired" | "logout
 /** Limpa credenciais e notifica a app; opcionalmente redirecciona para Adeus. */
 export function markSessionExpired(options?: { redirect?: boolean; returnTo?: string }) {
   setAccessToken(null);
+  clearClientRateLimitBlock();
   if (typeof window !== "undefined") {
+    sessionStorage.removeItem("nexiforma_login_next");
     window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
-    void fetch("/api/auth/logout", {
-      method: "POST",
-      credentials: "include",
-      cache: "no-store",
-    }).catch(() => {});
+    void purgeStaleAuthSession();
   }
 
   if (options?.redirect === false || typeof window === "undefined" || redirecting) {

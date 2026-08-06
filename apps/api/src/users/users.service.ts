@@ -7,22 +7,51 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import * as argon2 from "argon2";
-import type { User } from "@nexiforma/database";
+import type { Prisma, User } from "@nexiforma/database";
+import { labelSigoRole, resolverEmailNotificacaoFormando } from "@nexiforma/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
+import { AuthService } from "../auth/auth.service";
+import { syncPasswordHashByEmail } from "../auth/shared-password.util";
 import { MailService } from "../mail/mail.service";
+import { EmailConfirmationService } from "../auth/email-confirmation.service";
 import type { AcceptInviteDto, InviteUserDto, UpdateUserDto } from "./dto/users.dto";
+import {
+  mapUserPublic,
+  userSelectPublic,
+} from "./users-guards.util";
+import {
+  assertManagerSafety,
+  assertUserLimit,
+  forbiddenSelfDeactivate,
+  forbiddenSelfRemove,
+} from "./users-policy.util";
 import {
   hashInviteToken,
   invitePepperFromConfig,
   newInviteOpaqueToken,
 } from "../common/invite-token.util";
-import { resolveAppPublicUrl } from "../common/app-public-url.util";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 import {
   emailPresencaEfectivoDeFormando,
   turmaExigeEmailPresenca,
 } from "../common/formando-presenca.util";
+import { ViesService } from "../vies/vies.service";
+import {
+  labelMatriculaDoc,
+  matriculaDocumentosSeedRows,
+} from "../formandos/matricula-documentos.util";
+import {
+  parseTenantDocumentosPolitica,
+  resolveDocumentosPolitica,
+  UNIVERSAL_DOC_OPTIONS,
+} from "../formandos/documentos-politica.util";
+import {
+  FORMADOR_DOC_LABELS,
+  resolveFormadorObrigatorios,
+} from "../formadores/formador-documentos.util";
+import { EmailTemplates } from "../notificacoes/templates/email.templates";
 import {
   linkFormandoProfileToUserByEmail,
   upsertFormandoProfileForInvite,
@@ -34,6 +63,9 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
     private readonly config: ConfigService,
+    private readonly auth: AuthService,
+    private readonly vies: ViesService,
+    private readonly emailConfirmation: EmailConfirmationService,
   ) {}
 
   private invitePepper(): string {
@@ -45,28 +77,25 @@ export class UsersService {
 
   list(user: RequestUser) {
     const tenantId = requireTenantId(user);
-    return this.prisma.user.findMany({
-      where: { tenantId },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        email: true,
-        displayName: true,
-        role: true,
-        active: true,
-        mfaEnabled: true,
-        mfaRequired: true,
-        mfaApp: true,
-        mfaSecret: true,
-        emailVerifiedAt: true,
-        createdAt: true,
-      },
-    }).then((rows) =>
-      rows.map(({ mfaSecret, ...u }) => ({
-        ...u,
-        mfaSetupPending: Boolean(mfaSecret && !u.mfaEnabled),
-      })),
-    );
+    return this.prisma.user
+      .findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+        select: userSelectPublic(),
+      })
+      .then((rows) => rows.map(mapUserPublic));
+  }
+
+  async getOne(user: RequestUser, id: string) {
+    const tenantId = requireTenantId(user);
+    const row = await this.prisma.user.findFirst({
+      where: { id, tenantId },
+      select: userSelectPublic(),
+    });
+    if (!row) {
+      throw new NotFoundException("Utilizador não encontrado.");
+    }
+    return mapUserPublic(row);
   }
 
   listInvites(user: RequestUser) {
@@ -95,11 +124,28 @@ export class UsersService {
     const existing = await this.prisma.user.findFirst({
       where: { tenantId, email },
     });
-    if (existing) {
-      throw new ConflictException("Já existe utilizador com este email no tenant.");
+    if (existing?.active) {
+      throw new ConflictException("Já existe utilizador activo com este email no tenant.");
+    }
+    // Conta inactiva: formador continua no fluxo de convite (perfil já na lista).
+    // Outros cargos reactivam com reset de password.
+    if (existing && !existing.active && dto.role !== "FORMADOR") {
+      return this.reactivateInactiveUser(user, existing, dto, req);
     }
 
-    await this.assertUserLimit(tenantId);
+    await assertUserLimit(this.prisma, tenantId);
+
+    if (dto.role === "FORMANDO" || dto.role === "FORMADOR") {
+      const nif = dto.nif?.trim();
+      if (!nif || !/^\d{9}$/.test(nif)) {
+        throw new BadRequestException(
+          dto.role === "FORMADOR"
+            ? "NIF obrigatório (9 dígitos) para convites de formador."
+            : "NIF obrigatório (9 dígitos) para convites de formando.",
+        );
+      }
+      await this.vies.assertConfirmado(nif, "pessoa");
+    }
 
     const rawToken = newInviteOpaqueToken();
     const tokenHash = hashInviteToken(this.invitePepper(), rawToken);
@@ -112,7 +158,8 @@ export class UsersService {
         email,
         displayName: dto.displayName.trim(),
         role: dto.role,
-        formandoNif: dto.role === "FORMANDO" ? dto.nif?.trim() : null,
+        formandoNif:
+          dto.role === "FORMANDO" || dto.role === "FORMADOR" ? dto.nif?.trim() : null,
         formandoTelefone: dto.role === "FORMANDO" ? dto.telefone?.trim() || null : null,
         tokenHash,
         expiresAt,
@@ -121,7 +168,8 @@ export class UsersService {
       update: {
         displayName: dto.displayName.trim(),
         role: dto.role,
-        formandoNif: dto.role === "FORMANDO" ? dto.nif?.trim() : null,
+        formandoNif:
+          dto.role === "FORMANDO" || dto.role === "FORMADOR" ? dto.nif?.trim() : null,
         formandoTelefone: dto.role === "FORMANDO" ? dto.telefone?.trim() || null : null,
         tokenHash,
         expiresAt,
@@ -132,11 +180,9 @@ export class UsersService {
 
     let formandoProfileId: string | undefined;
     let matriculaId: string | undefined;
+    let formadorProfileId: string | undefined;
     if (dto.role === "FORMANDO") {
-      const nif = dto.nif?.trim();
-      if (!nif || !/^\d{9}$/.test(nif)) {
-        throw new BadRequestException("NIF obrigatório (9 dígitos) para convites de formando.");
-      }
+      const nif = dto.nif!.trim();
       const profile = await upsertFormandoProfileForInvite(this.prisma, tenantId, {
         email,
         displayName: dto.displayName.trim(),
@@ -148,22 +194,53 @@ export class UsersService {
         matriculaId = await this.matricularFormandoInvite(tenantId, profile.id, dto.turmaId);
       }
     }
+    if (dto.role === "FORMADOR") {
+      const nif = dto.nif!.trim();
+      const stub =
+        existing ??
+        (await this.prisma.user.create({
+          data: {
+            tenantId,
+            email,
+            displayName: dto.displayName.trim(),
+            role: "FORMADOR",
+            active: false,
+            mustChangePassword: true,
+          },
+        }));
+      if (existing) {
+        await this.prisma.user.update({
+          where: { id: existing.id },
+          data: {
+            displayName: dto.displayName.trim(),
+            role: "FORMADOR",
+            active: false,
+            mustChangePassword: true,
+          },
+        });
+      }
+      const formador = await this.ensureFormadorProfile(tenantId, stub.id, {
+        email,
+        displayName: dto.displayName.trim(),
+        nif,
+      });
+      formadorProfileId = formador.id;
+    }
 
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { legalName: true, slug: true },
     });
 
-    const appUrl = resolveAppPublicUrl(this.config, req);
-    const inviteUrl = `${appUrl.replace(/\/$/, "")}/convite/${rawToken}`;
-
-    await this.mail.sendInvite(
+    const inviteUrl = await this.deliverInviteEmail({
+      rawToken,
       email,
-      tenant?.legalName ?? tenant?.slug ?? "tenant",
-      inviteUrl,
-      dto.role,
-      dto.displayName.trim(),
-    );
+      displayName: dto.displayName.trim(),
+      role: dto.role,
+      tenantId,
+      tenantLabel: tenant?.legalName ?? tenant?.slug ?? "tenant",
+      req,
+    });
 
     return {
       id: invite.id,
@@ -172,8 +249,265 @@ export class UsersService {
       expiresAt: invite.expiresAt,
       inviteUrl: this.config.get<string>("NODE_ENV") === "production" ? undefined : inviteUrl,
       formandoProfileId,
+      formadorProfileId,
       matriculaId,
     };
+  }
+
+  private async reactivateInactiveUser(
+    user: RequestUser,
+    existing: User,
+    dto: InviteUserDto,
+    req?: { headers: Record<string, string | string[] | undefined> },
+  ) {
+    const tenantId = requireTenantId(user);
+    const email = dto.email.toLowerCase().trim();
+
+    await assertUserLimit(this.prisma, tenantId);
+
+    await this.prisma.tenantInvite.deleteMany({
+      where: { tenantId, email, acceptedAt: null },
+    });
+
+    await this.prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        active: true,
+        displayName: dto.displayName.trim(),
+        role: dto.role,
+        mustChangePassword: true,
+        emailVerifiedAt: null,
+      },
+    });
+    await this.emailConfirmation.clearVerification(existing.id).catch(() => undefined);
+
+    let formandoProfileId: string | undefined;
+    let matriculaId: string | undefined;
+    if (dto.role === "FORMANDO" || dto.role === "FORMADOR") {
+      const nif = dto.nif?.trim();
+      if (!nif || !/^\d{9}$/.test(nif)) {
+        throw new BadRequestException(
+          dto.role === "FORMADOR"
+            ? "NIF obrigatório (9 dígitos) para convites de formador."
+            : "NIF obrigatório (9 dígitos) para convites de formando.",
+        );
+      }
+      await this.vies.assertConfirmado(nif, "pessoa");
+    }
+    if (dto.role === "FORMANDO") {
+      const nif = dto.nif!.trim();
+      const profile = await upsertFormandoProfileForInvite(this.prisma, tenantId, {
+        email,
+        displayName: dto.displayName.trim(),
+        nif,
+        telefone: dto.telefone?.trim(),
+        userId: existing.id,
+      });
+      formandoProfileId = profile.id;
+      if (dto.turmaId) {
+        matriculaId = await this.matricularFormandoInvite(tenantId, profile.id, dto.turmaId);
+      }
+    }
+    if (dto.role === "FORMADOR") {
+      await this.ensureFormadorProfile(tenantId, existing.id, {
+        email,
+        displayName: dto.displayName.trim(),
+        nif: dto.nif!.trim(),
+      });
+    }
+
+    // Reset por email prova posse; até lá a conta fica por confirmar.
+    const resetUrl = await this.auth.sendTenantUserPasswordReset(existing.id, req);
+    void this.emailConfirmation.issueForUser(existing.id, req).catch(() => undefined);
+
+    return {
+      reactivated: true as const,
+      id: existing.id,
+      email,
+      role: dto.role,
+      resetUrl: this.config.get<string>("NODE_ENV") === "production" ? undefined : resetUrl,
+      formandoProfileId,
+      matriculaId,
+    };
+  }
+
+  private async ensureFormadorProfile(
+    tenantId: string,
+    userId: string,
+    data: { email: string; displayName: string; nif: string },
+  ) {
+    return this.ensureFormadorProfileTx(this.prisma, tenantId, userId, data);
+  }
+
+  private async ensureFormadorProfileTx(
+    db: Prisma.TransactionClient | PrismaService,
+    tenantId: string,
+    userId: string,
+    data: { email: string; displayName: string; nif: string },
+  ) {
+    const nif = data.nif.trim();
+    const existingByUser = await db.formadorProfile.findFirst({
+      where: { tenantId, userId },
+    });
+    if (existingByUser) {
+      if (existingByUser.nif !== nif) {
+        const dup = await db.formadorProfile.findFirst({
+          where: { tenantId, nif, NOT: { id: existingByUser.id } },
+        });
+        if (dup) {
+          throw new ConflictException("Já existe formador com este NIF no tenant.");
+        }
+      }
+      return db.formadorProfile.update({
+        where: { id: existingByUser.id },
+        data: {
+          nif,
+          email: data.email,
+          nomeCompleto: data.displayName,
+        },
+      });
+    }
+    const dup = await db.formadorProfile.findFirst({ where: { tenantId, nif } });
+    if (dup) {
+      throw new ConflictException("Já existe formador com este NIF no tenant.");
+    }
+    return db.formadorProfile.create({
+      data: {
+        tenantId,
+        userId,
+        nif,
+        email: data.email,
+        nomeCompleto: data.displayName,
+      },
+    });
+  }
+
+  async cancelInvite(user: RequestUser, inviteId: string) {
+    const tenantId = requireTenantId(user);
+    const invite = await this.prisma.tenantInvite.findFirst({
+      where: { id: inviteId, tenantId, acceptedAt: null },
+    });
+    if (!invite) {
+      throw new NotFoundException("Convite não encontrado ou já aceite.");
+    }
+    await this.prisma.tenantInvite.delete({ where: { id: invite.id } });
+    return { ok: true };
+  }
+
+  async resendInvite(
+    user: RequestUser,
+    inviteId: string,
+    req?: { headers: Record<string, string | string[] | undefined> },
+  ) {
+    const tenantId = requireTenantId(user);
+    const invite = await this.prisma.tenantInvite.findFirst({
+      where: { id: inviteId, tenantId, acceptedAt: null },
+    });
+    if (!invite) {
+      throw new NotFoundException("Convite não encontrado ou já aceite.");
+    }
+
+    const existingUser = await this.prisma.user.findFirst({
+      where: { tenantId, email: invite.email },
+    });
+    if (existingUser?.active) {
+      throw new ConflictException("Já existe utilizador activo com este email no tenant.");
+    }
+
+    const rawToken = newInviteOpaqueToken();
+    const tokenHash = hashInviteToken(this.invitePepper(), rawToken);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    const updated = await this.prisma.tenantInvite.update({
+      where: { id: invite.id },
+      data: {
+        tokenHash,
+        expiresAt,
+        invitedById: user.sub,
+      },
+    });
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { legalName: true, slug: true },
+    });
+
+    const inviteUrl = await this.deliverInviteEmail({
+      rawToken,
+      email: invite.email,
+      displayName: invite.displayName?.trim() || invite.email.split("@")[0]!,
+      role: invite.role as InviteUserDto["role"],
+      tenantId,
+      tenantLabel: tenant?.legalName ?? tenant?.slug ?? "tenant",
+      req,
+    });
+
+    return {
+      id: updated.id,
+      email: updated.email,
+      role: updated.role,
+      expiresAt: updated.expiresAt,
+      inviteUrl: this.config.get<string>("NODE_ENV") === "production" ? undefined : inviteUrl,
+    };
+  }
+
+  private async formadorDocsObrigatoriosLabels(tenantId: string): Promise<string[]> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true },
+    });
+    const politica = parseTenantDocumentosPolitica(tenant?.metadata);
+    return resolveFormadorObrigatorios(politica.universaisObrigatorios).map(
+      (id) => FORMADOR_DOC_LABELS[id] ?? id,
+    );
+  }
+
+  private async deliverInviteEmail(params: {
+    rawToken: string;
+    email: string;
+    displayName: string;
+    role: InviteUserDto["role"];
+    tenantId: string;
+    tenantLabel: string;
+    req?: { headers: Record<string, string | string[] | undefined> };
+  }): Promise<string> {
+    const appUrl = resolveAppPublicUrlForLinks(this.config, params.req);
+    const inviteUrl = `${appUrl.replace(/\/$/, "")}/convite/${params.rawToken}`;
+    const documentosObrigatorios =
+      params.role === "FORMADOR"
+        ? await this.formadorDocsObrigatoriosLabels(params.tenantId)
+        : undefined;
+    await this.mail.sendInvite(
+      params.email,
+      params.tenantLabel,
+      inviteUrl,
+      labelSigoRole(params.role),
+      params.displayName,
+      { documentosObrigatorios },
+    );
+    return inviteUrl;
+  }
+
+  private async notifyFormadorCargoAtribuido(params: {
+    tenantId: string;
+    email: string;
+    displayName: string;
+    entidadeFormadora: string;
+  }) {
+    const appUrl = resolveAppPublicUrlForLinks(this.config).replace(/\/$/, "");
+    const docs = await this.formadorDocsObrigatoriosLabels(params.tenantId);
+    const tpl = EmailTemplates.formadorCargoAtribuido({
+      nomeUtilizador: params.displayName,
+      entidadeFormadora: params.entidadeFormadora,
+      documentosObrigatorios: docs,
+      portalUrl: `${appUrl}/portal/formador/perfil?tab=documentos`,
+    });
+    await this.mail.send({
+      to: params.email,
+      subject: tpl.subject,
+      text: tpl.text,
+      html: tpl.html,
+    });
   }
 
   private async matricularFormandoInvite(
@@ -200,7 +534,7 @@ export class UsersService {
     const emailEfectivo = emailPresencaEfectivoDeFormando(formando);
     if (exigeEmail && !emailEfectivo) {
       throw new BadRequestException(
-        "Turma online — o formando precisa de email de contacto ou conta NexiForma antes de matricular.",
+        "Turma online - o formando precisa de email de contacto ou conta NexiForma antes de matricular.",
       );
     }
 
@@ -217,9 +551,69 @@ export class UsersService {
       return exists.id;
     }
 
-    const matricula = await this.prisma.matricula.create({
-      data: { tenantId, turmaId, formandoId },
+    const turmaCtx = await this.prisma.turma.findFirst({
+      where: { id: turmaId, tenantId },
+      select: {
+        codigo: true,
+        acaoFormacao: {
+          select: {
+            codigoInterno: true,
+            titulo: true,
+            configuracaoMatricula: true,
+            curso: { select: { configuracaoMatricula: true } },
+          },
+        },
+      },
     });
+    const tenantRow = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true, legalName: true },
+    });
+    const politica = resolveDocumentosPolitica({
+      tenantMetadata: tenantRow?.metadata,
+      cursoConfig: turmaCtx?.acaoFormacao.curso.configuracaoMatricula,
+      acaoConfig: turmaCtx?.acaoFormacao.configuracaoMatricula,
+    });
+
+    const matricula = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.matricula.create({
+        data: { tenantId, turmaId, formandoId },
+      });
+      await tx.matriculaDocumento.createMany({
+        data: matriculaDocumentosSeedRows(
+          tenantId,
+          created.id,
+          politica.inscricaoObrigatorios,
+        ),
+      });
+      return created;
+    });
+
+    if (turmaCtx?.acaoFormacao) {
+      const to = resolverEmailNotificacaoFormando({
+        emailContacto: formando.email,
+        emailConta: formando.user?.email,
+      });
+      if (to) {
+        const appUrl = resolveAppPublicUrlForLinks(this.config).replace(/\/$/, "");
+        const acao = turmaCtx.acaoFormacao;
+        const tpl = EmailTemplates.formandoInscritoAcao({
+          nomeFormando: formando.nome,
+          acaoLabel: `${acao.codigoInterno} – ${acao.titulo}`,
+          turmaCodigo: turmaCtx.codigo,
+          entidadeFormadora: tenantRow?.legalName ?? "entidade formadora",
+          documentosInscricao: politica.inscricaoObrigatorios.map(labelMatriculaDoc),
+          documentosUniversais: politica.universaisObrigatorios.map(
+            (id) => UNIVERSAL_DOC_OPTIONS.find((o) => o.id === id)?.label ?? id,
+          ),
+          portalUrl: `${appUrl}/portal/formando`,
+        });
+        void this.mail
+          .send({ to, subject: tpl.subject, text: tpl.text, html: tpl.html })
+          .catch(() => undefined);
+      }
+    }
+
     return matricula.id;
   }
 
@@ -237,24 +631,39 @@ export class UsersService {
     const dup = await this.prisma.user.findFirst({
       where: { tenantId: invite.tenantId, email: invite.email },
     });
-    if (dup) {
+    if (dup?.active) {
       throw new ConflictException("Utilizador já registado.");
     }
 
-    await this.assertUserLimit(invite.tenantId);
+    await assertUserLimit(this.prisma, invite.tenantId);
 
     const passwordHash = await argon2.hash(dto.password, { type: argon2.argon2id });
     const now = new Date();
     const created = await this.prisma.$transaction(async (tx) => {
-      const u = await tx.user.create({
-        data: {
-          tenantId: invite.tenantId,
-          email: invite.email,
-          displayName: invite.displayName?.trim() || invite.email.split("@")[0]!,
-          role: invite.role,
-          passwordHash,
-          emailVerifiedAt: now,
-        },
+      const u = dup
+        ? await tx.user.update({
+            where: { id: dup.id },
+            data: {
+              active: true,
+              displayName: invite.displayName?.trim() || invite.email.split("@")[0]!,
+              role: invite.role,
+              passwordHash,
+              emailVerifiedAt: now,
+              mustChangePassword: false,
+            },
+          })
+        : await tx.user.create({
+            data: {
+              tenantId: invite.tenantId,
+              email: invite.email,
+              displayName: invite.displayName?.trim() || invite.email.split("@")[0]!,
+              role: invite.role,
+              passwordHash,
+              emailVerifiedAt: now,
+            },
+          });
+      await syncPasswordHashByEmail(tx, invite.email, passwordHash, {
+        mustChangePassword: false,
       });
       await tx.tenantInvite.update({
         where: { id: invite.id },
@@ -273,8 +682,17 @@ export class UsersService {
           linked = profile.id;
         }
       }
+      if (invite.role === "FORMADOR" && invite.formandoNif?.trim()) {
+        await this.ensureFormadorProfileTx(tx, invite.tenantId, u.id, {
+          email: invite.email,
+          displayName: invite.displayName?.trim() || u.displayName,
+          nif: invite.formandoNif.trim(),
+        });
+      }
       return u;
     });
+
+    await this.emailConfirmation.markVerified(created.id).catch(() => undefined);
 
     return {
       id: created.id,
@@ -283,10 +701,36 @@ export class UsersService {
     };
   }
 
+  async resendEmailConfirmation(
+    user: RequestUser,
+    userId: string,
+    req?: { headers: Record<string, string | string[] | undefined> },
+  ) {
+    const tenantId = requireTenantId(user);
+    const target = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      select: { id: true, email: true, emailVerifiedAt: true, active: true },
+    });
+    if (!target) {
+      throw new NotFoundException("Utilizador não encontrado.");
+    }
+    if (!target.active) {
+      throw new BadRequestException("Utilizador inactivo - reenvie o convite de activação.");
+    }
+    if (target.emailVerifiedAt) {
+      return { ok: true, alreadyVerified: true, sent: false };
+    }
+    const result = await this.emailConfirmation.issueForUser(target.id, req);
+    return { ok: true, ...result };
+  }
+
   async update(user: RequestUser, id: string, dto: UpdateUserDto): Promise<User> {
     const tenantId = requireTenantId(user);
     if (id === user.sub && dto.active === false) {
       throw forbiddenSelfDeactivate();
+    }
+    if (id === user.sub && dto.role !== undefined) {
+      throw new ForbiddenException("Não podes alterar o teu próprio cargo.");
     }
 
     const existing = await this.prisma.user.findFirst({ where: { id, tenantId } });
@@ -294,7 +738,33 @@ export class UsersService {
       throw new NotFoundException("Utilizador não encontrado.");
     }
 
-    return this.prisma.user.update({
+    if (dto.active === true && !existing.active) {
+      await assertUserLimit(this.prisma, tenantId);
+    }
+
+    await assertManagerSafety(this.prisma, tenantId, existing, dto);
+
+    const nextRole = dto.role ?? existing.role;
+    if (nextRole === "FORMADOR") {
+      const hasProfile = await this.prisma.formadorProfile.findFirst({
+        where: { tenantId, userId: id },
+        select: { id: true },
+      });
+      if (!hasProfile) {
+        const nif = dto.nif?.trim();
+        if (!nif || !/^\d{9}$/.test(nif)) {
+          throw new BadRequestException(
+            "NIF obrigatório (9 dígitos) para atribuir o cargo de formador.",
+          );
+        }
+        await this.vies.assertConfirmado(nif, "pessoa");
+      }
+    }
+
+    const roleChangedToFormador =
+      dto.role === "FORMADOR" && existing.role !== "FORMADOR";
+
+    const updated = await this.prisma.user.update({
       where: { id },
       data: {
         ...(dto.role !== undefined ? { role: dto.role } : {}),
@@ -303,6 +773,76 @@ export class UsersService {
         ...(dto.displayName !== undefined ? { displayName: dto.displayName.trim() } : {}),
       },
     });
+
+    if (updated.role === "FORMADOR") {
+      const hasProfile = await this.prisma.formadorProfile.findFirst({
+        where: { tenantId, userId: id },
+        select: { id: true },
+      });
+      if (!hasProfile) {
+        await this.ensureFormadorProfile(tenantId, id, {
+          email: updated.email,
+          displayName: updated.displayName,
+          nif: dto.nif!.trim(),
+        });
+      } else if (dto.displayName !== undefined) {
+        await this.prisma.formadorProfile.updateMany({
+          where: { tenantId, userId: id },
+          data: { nomeCompleto: updated.displayName, email: updated.email },
+        });
+      }
+    }
+
+    if (roleChangedToFormador && updated.active) {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { legalName: true, slug: true },
+      });
+      void this.notifyFormadorCargoAtribuido({
+        tenantId,
+        email: updated.email,
+        displayName: updated.displayName,
+        entidadeFormadora: tenant?.legalName ?? tenant?.slug ?? "entidade formadora",
+      }).catch(() => undefined);
+    }
+
+    return updated;
+  }
+
+  async removePermanent(user: RequestUser, id: string) {
+    const tenantId = requireTenantId(user);
+    if (id === user.sub) {
+      throw forbiddenSelfRemove();
+    }
+
+    const existing = await this.prisma.user.findFirst({ where: { id, tenantId } });
+    if (!existing) {
+      throw new NotFoundException("Utilizador não encontrado.");
+    }
+
+    await assertManagerSafety(this.prisma, tenantId, existing, { active: false });
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.passwordResetToken.deleteMany({
+        where: { subjectKind: "tenant", subjectId: id },
+      });
+
+      await tx.emailConfirmationToken.deleteMany({
+        where: { userId: id },
+      });
+
+      await tx.authRefreshSession.deleteMany({
+        where: { subjectKind: "tenant", subjectId: id },
+      });
+
+      await tx.tenantInvite.deleteMany({
+        where: { tenantId, email: existing.email },
+      });
+
+      await tx.user.delete({ where: { id } });
+    });
+
+    return { ok: true };
   }
 
   async enforceMfa(user: RequestUser, userIds: string[]) {
@@ -355,27 +895,4 @@ export class UsersService {
 
     return { updated: found.length };
   }
-
-  private async assertUserLimit(tenantId: string) {
-    const sub = await this.prisma.tenantSubscription.findFirst({
-      where: { tenantId, status: { in: ["ACTIVE", "TRIALING"] } },
-      include: { plan: true },
-      orderBy: { createdAt: "desc" },
-    });
-    const max = sub?.plan.maxActiveUsers;
-    if (max == null) return;
-
-    const activeCount = await this.prisma.user.count({
-      where: { tenantId, active: true },
-    });
-    if (activeCount >= max) {
-      throw new ForbiddenException(
-        `Limite de ${max} utilizadores activos do plano atingido. Actualiza a subscrição.`,
-      );
-    }
-  }
-}
-
-function forbiddenSelfDeactivate(): ForbiddenException {
-  return new ForbiddenException("Não podes desactivar a tua própria conta.");
 }

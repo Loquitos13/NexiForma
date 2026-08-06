@@ -24,12 +24,26 @@ export function AuthShell({
   const isPlatform = variant === "platform";
 
   return (
-    <div className="relative isolate flex min-h-screen items-center justify-center overflow-hidden p-6">
+    <div className="relative isolate flex min-h-[100dvh] items-center justify-center overflow-x-hidden p-4 sm:p-6">
       <InteractiveBackground variant={isPlatform ? "platform" : "login"} fixed={false} />
 
-      <div className="relative z-10 flex w-full max-w-[440px] flex-col items-center">
-        <Link href="/" className="mb-8 flex flex-col items-center gap-4 group w-full">
-          <NexiFormaLogoAnimated size={128} variant="reveal" loop className="drop-shadow-[0_0_28px_rgba(255,71,171,0.35)]" />
+      <main
+        id="main-content"
+        className="relative z-10 flex w-full max-w-[440px] flex-col items-center"
+      >
+        <Link href="/" className="mb-6 flex flex-col items-center gap-3 group w-full sm:mb-8 sm:gap-4">
+          <NexiFormaLogoAnimated
+            size={96}
+            variant="reveal"
+            loop
+            className="drop-shadow-[0_0_28px_rgba(255,71,171,0.35)] sm:hidden"
+          />
+          <NexiFormaLogoAnimated
+            size={128}
+            variant="reveal"
+            loop
+            className="hidden drop-shadow-[0_0_28px_rgba(255,71,171,0.35)] sm:block"
+          />
           <NexiFormaBrandTitle subtitle={isPlatform ? "Plataforma" : undefined} />
         </Link>
 
@@ -49,9 +63,9 @@ export function AuthShell({
             )}
           />
 
-          <div className="px-7 py-7 backdrop-blur-sm">
+          <div className="px-5 py-6 backdrop-blur-sm sm:px-7 sm:py-7">
             <div className="mb-6">
-              <h2 className="text-xl font-bold text-slate-50 tracking-tight">{title}</h2>
+              <h1 className="text-xl font-bold text-slate-50 tracking-tight">{title}</h1>
               {subtitle ? (
                 <p className="mt-1.5 text-sm text-slate-400 leading-relaxed">{subtitle}</p>
               ) : null}
@@ -70,7 +84,7 @@ export function AuthShell({
             </Link>
           </p>
         )}
-      </div>
+      </main>
     </div>
   );
 }

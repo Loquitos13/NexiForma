@@ -41,7 +41,16 @@ import {
 import { hashRefreshToken, newRefreshOpaqueToken } from "./refresh-token.util";
 import type { AccessTokenPayload } from "./types/access-token-payload";
 import { LoginAttemptLimiterService } from "./login-attempt-limiter.service";
-import { resolvePasswordResetAppUrl } from "../common/app-public-url.util";
+import { resolveTenantLoginLockoutPolicy } from "./login-lockout-policy.util";
+import {
+  buildTenantAmbiguousPayload,
+  buildTenantAuthPick,
+  isTenantOperational,
+  normalizeAuthEmail,
+  tenantLoginLockoutKey,
+} from "./tenant-auth-resolve.util";
+import { matchPasswordHash, syncPasswordHashByEmail } from "./shared-password.util";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 
 const PASSWORD_RESET_GENERIC =
   "Se existir uma conta com esse email, enviámos instruções para redefinir a palavra-passe.";
@@ -49,9 +58,15 @@ const PASSWORD_RESET_GENERIC =
 function mapPrismaRoleToJwt(role: TenantUserRole): JwtRole {
   switch (role) {
     case "ADMIN":
-    case "COORDENADOR":
-    case "FINANCEIRO":
       return "tenant_manager";
+    case "COORDENADOR_PEDAGOGICO":
+    case "COORDENADOR": // legado
+      return "coordenador_pedagogico";
+    case "COORDENADOR_COMERCIAL":
+      return "coordenador_comercial";
+    case "COORDENADOR_FINANCEIRO":
+    case "FINANCEIRO": // legado
+      return "coordenador_financeiro";
     case "FORMADOR":
       return "formador";
     case "COMERCIAL":
@@ -101,7 +116,7 @@ export class AuthService {
     private readonly loginAttempts: LoginAttemptLimiterService,
   ) {
     this.accessExpiresSeconds = parseJwtExpirySeconds(
-      this.config.get<string>("JWT_EXPIRES") ?? "15m",
+      this.config.get<string>("JWT_EXPIRES") ?? "60m",
     );
     this.refreshExpiresSeconds = parseJwtExpirySeconds(
       this.config.get<string>("JWT_REFRESH_EXPIRES") ?? "7d",
@@ -123,42 +138,126 @@ export class AuthService {
     return this.config.get<string>("NODE_ENV") !== "production";
   }
 
-  private tenantLoginKey(dto: TenantLoginDto): string {
-    return `${dto.tenantSlug.trim().toLowerCase()}:${dto.email.trim().toLowerCase()}`;
+  private tenantLoginKey(dto: TenantLoginDto, resolvedSlug?: string): string {
+    return tenantLoginLockoutKey(dto.email, resolvedSlug ?? dto.tenantSlug);
+  }
+
+  private async resolveTenantLoginUser(dto: TenantLoginDto) {
+    const email = normalizeAuthEmail(dto.email);
+    const hintSlug = dto.tenantSlug?.trim() ?? "";
+
+    const allByEmail = await this.prisma.user.findMany({
+      where: {
+        email,
+        active: true,
+        tenant: { status: { notIn: ["SUSPENDED", "ARCHIVED"] } },
+      },
+      include: { tenant: true },
+    });
+
+    if (allByEmail.length === 0) {
+      throw new UnauthorizedException("Tenant ou credenciais inválidas.");
+    }
+
+    const matchedHash = await matchPasswordHash(
+      allByEmail.map((u) => u.passwordHash),
+      dto.password,
+    );
+    if (!matchedHash) {
+      const anyLocalPassword = allByEmail.some((u) => Boolean(u.passwordHash));
+      if (!anyLocalPassword) {
+        throw new UnauthorizedException(
+          "Esta conta usa login social (Google/Microsoft). Utilize o botão correspondente.",
+        );
+      }
+      throw new UnauthorizedException("Tenant ou credenciais inválidas.");
+    }
+
+    // Mantém a mesma password em todas as entidades deste email.
+    await syncPasswordHashByEmail(this.prisma, email, matchedHash);
+
+    // Password partilhada por email. Slug guardado/errado não deve bloquear o login.
+    if (hintSlug) {
+      const hintedUser = allByEmail.find(
+        (user) => user.tenant.slug.toLowerCase() === hintSlug.toLowerCase(),
+      );
+      if (hintedUser) return hintedUser;
+      // Slug residual de outra sessão/email - ignora e resolve pelo email.
+    }
+
+    if (allByEmail.length > 1) {
+      throw new UnauthorizedException(
+        buildTenantAmbiguousPayload(
+          allByEmail.map((user) =>
+            buildTenantAuthPick({
+              slug: user.tenant.slug,
+              legalName: user.tenant.legalName,
+              role: user.role,
+              metadata: user.tenant.metadata,
+            }),
+          ),
+        ),
+      );
+    }
+
+    return allByEmail[0];
   }
 
   async loginTenant(
     dto: TenantLoginDto,
     res?: Response,
   ): Promise<LoginResponse> {
-    const loginKey = this.tenantLoginKey(dto);
-    await this.loginAttempts.assertNotLocked("tenant", loginKey);
+    const email = normalizeAuthEmail(dto.email);
+    const preLockoutKey = tenantLoginLockoutKey(email, dto.tenantSlug);
+    const hintedTenant = dto.tenantSlug?.trim()
+      ? await this.prisma.tenant.findUnique({ where: { slug: dto.tenantSlug.trim() } })
+      : null;
+    const lockoutPolicy = hintedTenant
+      ? resolveTenantLoginLockoutPolicy(hintedTenant.metadata)
+      : resolveTenantLoginLockoutPolicy(null);
 
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { slug: dto.tenantSlug },
-    });
-    if (!tenant) {
-      await this.loginAttempts.recordFailure("tenant", loginKey);
-      throw new UnauthorizedException("Tenant ou credenciais inválidas.");
+    await this.loginAttempts.assertNotLocked("tenant", preLockoutKey, lockoutPolicy);
+
+    let user;
+    try {
+      user = await this.resolveTenantLoginUser(dto);
+    } catch (err) {
+      if (err instanceof UnauthorizedException) {
+        const response = err.getResponse();
+        if (
+          typeof response === "object" &&
+          response !== null &&
+          "code" in response &&
+          (response as { code?: string }).code === "TENANT_AMBIGUOUS"
+        ) {
+          throw err;
+        }
+      }
+      await this.loginAttempts.recordFailure("tenant", preLockoutKey, lockoutPolicy);
+      throw err;
     }
-    if (tenant.status === "SUSPENDED" || tenant.status === "ARCHIVED") {
-      await this.loginAttempts.recordFailure("tenant", loginKey);
+
+    const loginKey = this.tenantLoginKey(dto, user.tenant.slug);
+    if (loginKey !== preLockoutKey) {
+      await this.loginAttempts.assertNotLocked("tenant", loginKey, lockoutPolicy);
+    }
+
+    if (!isTenantOperational(user.tenant.status)) {
+      await this.loginAttempts.recordFailure("tenant", loginKey, lockoutPolicy);
       throw new UnauthorizedException("Conta da entidade formadora suspensa ou arquivada.");
     }
 
-    const user = await this.prisma.user.findFirst({
-      where: { tenantId: tenant.id, email: dto.email.toLowerCase(), active: true },
-      include: { tenant: true },
-    });
-    if (!user?.passwordHash) {
-      await this.loginAttempts.recordFailure("tenant", loginKey);
-      throw new UnauthorizedException("Tenant ou credenciais inválidas.");
-    }
-
-    const ok = await argon2.verify(user.passwordHash, dto.password);
-    if (!ok) {
-      await this.loginAttempts.recordFailure("tenant", loginKey);
-      throw new UnauthorizedException("Tenant ou credenciais inválidas.");
+    if (!user.emailVerifiedAt) {
+      await this.loginAttempts.clear("tenant", loginKey);
+      throw new UnauthorizedException({
+        statusCode: 401,
+        error: "Unauthorized",
+        code: "EMAIL_NOT_VERIFIED",
+        message:
+          "Confirme o seu email antes de iniciar sessão. Verifique a caixa de entrada ou peça um novo link de confirmação.",
+        tenantSlug: user.tenant.slug,
+        email: user.email,
+      });
     }
 
     await this.loginAttempts.clear("tenant", loginKey);
@@ -227,10 +326,14 @@ export class AuthService {
     const userId = await this.mfa.verifyPendingToken(mfaToken).catch(() => {
       throw new UnauthorizedException("Sessão MFA expirada.");
     });
+    const mfaKey = `mfa:${userId}`;
+    await this.loginAttempts.assertNotLocked("platform", mfaKey);
     const ok = await this.mfa.verifyCode(userId, code);
     if (!ok) {
+      await this.loginAttempts.recordFailure("platform", mfaKey);
       throw new UnauthorizedException("Código MFA inválido.");
     }
+    await this.loginAttempts.clear("platform", mfaKey);
     const user = await this.prisma.user.findFirst({
       where: { id: userId, active: true },
       include: { tenant: true },
@@ -292,6 +395,7 @@ export class AuthService {
     },
     res?: Response,
     rememberMe?: boolean,
+    opts?: { includeRefreshOpaque?: boolean },
   ): Promise<LoginResponse> {
     const payload: AccessTokenPayload = {
       sub: user.id,
@@ -302,7 +406,15 @@ export class AuthService {
       tenantSlug: user.tenant.slug,
       ...(user.mustChangePassword ? { mustChangePassword: true } : {}),
     };
-    const login = this.completeLogin(payload, user.id, user.email, "tenant", res, rememberMe === true);
+    const login = this.completeLogin(
+      payload,
+      user.id,
+      user.email,
+      "tenant",
+      res,
+      rememberMe === true,
+      opts,
+    );
     return login.then((body) => ({
       ...body,
       ...(user.mustChangePassword ? { passwordChangeRequired: true } : {}),
@@ -378,13 +490,14 @@ export class AuthService {
     let mfaRequired = false;
     let mfaAppLabel: string | undefined;
     if (expectedKind === "tenant") {
-      const user = await this.prisma.user.findFirst({
-        where: { id: row.subjectId, active: true },
+      const siblings = await this.prisma.user.findMany({
+        where: { email: normalizeAuthEmail(row.email), active: true },
         select: { mfaEnabled: true, mfaApp: true },
       });
-      mfaRequired = Boolean(user?.mfaEnabled);
+      const mfaUser = siblings.find((u) => u.mfaEnabled);
+      mfaRequired = Boolean(mfaUser);
       if (mfaRequired) {
-        mfaAppLabel = mfaAppDisplayLabel(user?.mfaApp);
+        mfaAppLabel = mfaAppDisplayLabel(mfaUser?.mfaApp);
       }
     }
 
@@ -401,28 +514,39 @@ export class AuthService {
     dto: TenantForgotPasswordDto,
     req?: Request,
   ): Promise<{ message: string }> {
-    const slug = dto.tenantSlug.trim();
-    const email = dto.email.toLowerCase();
-    const tenant = await this.prisma.tenant.findUnique({ where: { slug } });
-    if (!tenant) {
+    const email = normalizeAuthEmail(dto.email);
+    const slug = dto.tenantSlug?.trim() ?? "";
+    const appUrl = resolveAppPublicUrlForLinks(this.config, req);
+
+    const candidates = await this.prisma.user.findMany({
+      where: {
+        email,
+        active: true,
+        tenant: slug
+          ? { slug, status: { notIn: ["SUSPENDED", "ARCHIVED"] } }
+          : { status: { notIn: ["SUSPENDED", "ARCHIVED"] } },
+      },
+      include: { tenant: true },
+      orderBy: { createdAt: "asc" },
+    });
+
+    if (candidates.length === 0) {
       return { message: PASSWORD_RESET_GENERIC };
     }
 
-    const user = await this.prisma.user.findFirst({
-      where: { tenantId: tenant.id, email, active: true },
-    });
-    if (!user) {
-      return { message: PASSWORD_RESET_GENERIC };
-    }
+    // Um único link por email: a password é partilhada entre entidades.
+    const subject =
+      candidates.find((u) => Boolean(u.passwordHash)) ??
+      candidates.find((u) => u.mfaEnabled) ??
+      candidates[0];
 
     await this.issuePasswordReset({
       subjectKind: "tenant",
-      subjectId: user.id,
+      subjectId: subject.id,
       email,
-      tenantSlug: slug,
-      appUrl: resolvePasswordResetAppUrl(this.config, req),
+      tenantSlug: subject.tenant.slug,
+      appUrl,
     });
-
     return { message: PASSWORD_RESET_GENERIC };
   }
 
@@ -441,7 +565,7 @@ export class AuthService {
       subjectId: pu.id,
       email,
       tenantSlug: null,
-      appUrl: resolvePasswordResetAppUrl(this.config, req),
+      appUrl: resolveAppPublicUrlForLinks(this.config, req),
     });
 
     return { message: PASSWORD_RESET_GENERIC };
@@ -454,40 +578,59 @@ export class AuthService {
     }
     this.assertPasswordResetUserRef(row, dto.userRef, dto.tenantSlug);
 
-    const user = await this.prisma.user.findFirst({
-      where: { id: row.subjectId, active: true },
+    const siblings = await this.prisma.user.findMany({
+      where: {
+        email: normalizeAuthEmail(row.email),
+        active: true,
+      },
       select: { id: true, mfaEnabled: true, mfaApp: true },
     });
-    if (!user) {
+    if (!siblings.some((u) => u.id === row.subjectId)) {
       throw new UnauthorizedException("Link inválido ou expirado.");
     }
 
-    if (user.mfaEnabled) {
+    const mfaUser = siblings.find((u) => u.mfaEnabled);
+    if (mfaUser) {
       const code = dto.mfaCode?.trim();
       if (!code || code.length !== 6) {
         throw new BadRequestException(
-          `Código de 6 dígitos obrigatório (${mfaAppDisplayLabel(user.mfaApp)}).`,
+          `Código de 6 dígitos obrigatório (${mfaAppDisplayLabel(mfaUser.mfaApp)}).`,
         );
       }
-      const ok = await this.mfa.verifyCode(user.id, code);
+      const ok = await this.mfa.verifyCode(mfaUser.id, code);
       if (!ok) {
         throw new UnauthorizedException(
-          `Código inválido. Verifica ${mfaAppDisplayLabel(user.mfaApp)}.`,
+          `Código inválido. Verifica ${mfaAppDisplayLabel(mfaUser.mfaApp)}.`,
         );
       }
     }
 
     const passwordHash = await argon2.hash(dto.newPassword, { type: argon2.argon2id });
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: row.subjectId },
-        data: { passwordHash },
-      }),
-      this.prisma.passwordResetToken.update({
+    await this.prisma.$transaction(async (tx) => {
+      await syncPasswordHashByEmail(tx, row.email, passwordHash, {
+        mustChangePassword: false,
+      });
+      await tx.passwordResetToken.update({
         where: { id: row.id },
         data: { usedAt: new Date() },
-      }),
-    ]);
+      });
+      // Link de reset prova posse do email → confirma verificação.
+      await tx.user.updateMany({
+        where: {
+          email: normalizeAuthEmail(row.email),
+          active: true,
+          emailVerifiedAt: null,
+        },
+        data: { emailVerifiedAt: new Date() },
+      });
+      await tx.emailConfirmationToken.deleteMany({
+        where: { userId: { in: siblings.map((s) => s.id) }, usedAt: null },
+      });
+    });
+
+    for (const sibling of siblings) {
+      await this.revokeAllRefreshSessionsForSubject("tenant", sibling.id);
+    }
 
     return { message: "Palavra-passe actualizada. Podes iniciar sessão." };
   }
@@ -511,7 +654,30 @@ export class AuthService {
       }),
     ]);
 
+    await this.revokeAllRefreshSessionsForSubject(row.subjectKind, row.subjectId);
+
     return { message: "Palavra-passe actualizada. Podes iniciar sessão." };
+  }
+
+  async sendTenantUserPasswordReset(
+    userId: string,
+    req?: { headers: Record<string, string | string[] | undefined> },
+  ): Promise<string> {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, active: true },
+      include: { tenant: { select: { slug: true } } },
+    });
+    if (!user) {
+      throw new BadRequestException("Utilizador não encontrado ou inactivo.");
+    }
+
+    return this.issuePasswordReset({
+      subjectKind: "tenant",
+      subjectId: user.id,
+      email: user.email,
+      tenantSlug: user.tenant.slug,
+      appUrl: resolveAppPublicUrlForLinks(this.config, req),
+    });
   }
 
   private async issuePasswordReset(input: {
@@ -520,11 +686,19 @@ export class AuthService {
     email: string;
     tenantSlug: string | null;
     appUrl: string;
-  }) {
+  }): Promise<string> {
     const pepper = this.passwordResetPepper();
     const { raw, hash } = newPasswordResetOpaque(pepper);
     const ttlMin = this.passwordResetTtlMinutes();
     const expiresAt = new Date(Date.now() + ttlMin * 60_000);
+
+    await this.prisma.passwordResetToken.deleteMany({
+      where: {
+        subjectKind: input.subjectKind,
+        subjectId: input.subjectId,
+        usedAt: null,
+      },
+    });
 
     await this.prisma.passwordResetToken.create({
       data: {
@@ -554,19 +728,18 @@ export class AuthService {
 
     const resetUrl = `${appUrl}/login/recuperar?${qs.toString()}`;
 
-    const tenantUser =
+    const tenantUsers =
       input.subjectKind === "tenant"
-        ? await this.prisma.user.findFirst({
-            where: { id: input.subjectId },
+        ? await this.prisma.user.findMany({
+            where: { email: normalizeAuthEmail(input.email), active: true },
             select: { mfaEnabled: true, mfaApp: true },
           })
-        : null;
+        : [];
+    const mfaUser = tenantUsers.find((u) => u.mfaEnabled);
 
     await this.mail.sendPasswordReset(input.email, resetUrl, ttlMin, {
-      mfaRequired: Boolean(tenantUser?.mfaEnabled),
-      mfaAppLabel: tenantUser?.mfaEnabled
-        ? mfaAppDisplayLabel(tenantUser.mfaApp)
-        : undefined,
+      mfaRequired: Boolean(mfaUser),
+      mfaAppLabel: mfaUser ? mfaAppDisplayLabel(mfaUser.mfaApp) : undefined,
     }).catch((err: unknown) => {
       this.logger.error(
         `Falha ao enviar email de reset para ${input.email}: ${err instanceof Error ? err.message : String(err)}`,
@@ -579,6 +752,8 @@ export class AuthService {
     if (this.config.get<string>("NODE_ENV") !== "production") {
       this.logger.log(`[dev] password reset link: ${resetUrl}`);
     }
+
+    return resetUrl;
   }
 
   private async findValidPasswordResetToken(rawToken: string) {
@@ -605,7 +780,7 @@ export class AuthService {
       throw new UnauthorizedException("Link inválido ou expirado.");
     }
     if (!userRef?.trim()) {
-      return;
+      throw new UnauthorizedException("Link inválido ou expirado.");
     }
     try {
       const payload = decryptPasswordResetUser(userRef.trim(), this.passwordResetEncryptionKey());
@@ -811,6 +986,7 @@ export class AuthService {
     subjectKind: "tenant" | "platform",
     res?: Response,
     rememberMe?: boolean,
+    opts?: { includeRefreshOpaque?: boolean },
   ): Promise<LoginResponse> {
     const accessToken = this.signAccessToken(payload);
     const opaque = newRefreshOpaqueToken();
@@ -848,10 +1024,71 @@ export class AuthService {
       },
     };
 
-    if (this.exposeRefreshInBody()) {
+    if (this.exposeRefreshInBody() || opts?.includeRefreshOpaque) {
       body.refreshToken = opaque;
     }
     return body;
+  }
+
+  /** Conclui sessão OAuth no domínio web (cookie refresh via BFF). */
+  async completeOAuthExchange(
+    refreshOpaque: string,
+    tenantSlug: string,
+    res?: Response,
+  ): Promise<LoginResponse> {
+    const tokenHash = hashRefreshToken(this.refreshPepper(), refreshOpaque);
+    const session = await this.prisma.authRefreshSession.findFirst({
+      where: {
+        tokenHash,
+        subjectKind: "tenant",
+        expiresAt: { gt: new Date() },
+      },
+    });
+    if (!session) {
+      throw new UnauthorizedException("Sessão OAuth expirada ou inválida.");
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: { id: session.subjectId, active: true },
+      include: { tenant: true },
+    });
+    if (!user || user.tenant.slug !== tenantSlug) {
+      throw new UnauthorizedException("Sessão OAuth inválida para esta entidade.");
+    }
+
+    const refreshSec = Math.max(
+      1,
+      Math.floor((session.expiresAt.getTime() - Date.now()) / 1000),
+    );
+    if (res) {
+      attachRefreshCookie(res, this.config, refreshOpaque, refreshSec);
+    }
+
+    const payload: AccessTokenPayload = {
+      sub: user.id,
+      email: user.email,
+      kind: "tenant",
+      role: mapPrismaRoleToJwt(user.role),
+      tenantId: user.tenantId,
+      tenantSlug: user.tenant.slug,
+      ...(user.mustChangePassword ? { mustChangePassword: true } : {}),
+    };
+
+    return {
+      accessToken: this.signAccessToken(payload),
+      tokenType: "Bearer",
+      expiresIn: this.accessExpiresSeconds,
+      refreshExpiresIn: refreshSec,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: payload.role,
+        kind: "tenant",
+        tenantId: user.tenantId,
+        tenantSlug: user.tenant.slug,
+      },
+      ...(user.mustChangePassword ? { passwordChangeRequired: true } : {}),
+    };
   }
 
   async changeRequiredPassword(
@@ -874,9 +1111,8 @@ export class AuthService {
       throw new UnauthorizedException("Password actual incorrecta.");
     }
     const passwordHash = await argon2.hash(dto.newPassword, { type: argon2.argon2id });
-    await this.prisma.user.update({
-      where: { id: row.id },
-      data: { passwordHash, mustChangePassword: false },
+    await syncPasswordHashByEmail(this.prisma, row.email, passwordHash, {
+      mustChangePassword: false,
     });
     return this.completeLoginForUser(
       { ...row, mustChangePassword: false },

@@ -4,11 +4,17 @@ import { CronogramasController } from "./cronogramas.controller";
 import { CronogramasService } from "./cronogramas.service";
 import { CronogramaHtmlExportService } from "./cronograma-html-export.service";
 import { CronogramaArquivoService } from "./cronograma-arquivo.service";
+import { CronogramaImportIaService } from "./cronograma-import-ia.service";
 
 @Module({
   imports: [StorageModule],
   controllers: [CronogramasController],
-  providers: [CronogramasService, CronogramaHtmlExportService, CronogramaArquivoService],
+  providers: [
+    CronogramasService,
+    CronogramaHtmlExportService,
+    CronogramaArquivoService,
+    CronogramaImportIaService,
+  ],
   exports: [CronogramasService, CronogramaHtmlExportService, CronogramaArquivoService],
 })
 export class CronogramasModule {}

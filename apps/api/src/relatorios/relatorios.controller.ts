@@ -26,7 +26,7 @@ export class RelatoriosController {
   ) {}
 
   @Get("dashboard")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   async dashboardReport(@CurrentUser() user: RequestUser) {
     await this.entitlements.assertRelatoriosDashboard(requireTenantId(user));
     return this.dashboard.dashboard(user);
@@ -34,7 +34,7 @@ export class RelatoriosController {
 
   @Post("insights")
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   async insightsReport(@Body() dto: RelatorioInsightsRequest, @CurrentUser() user: RequestUser) {
     await this.entitlements.assertRelatoriosInsights(requireTenantId(user));
     const data = await this.dashboard.dashboard(user);
@@ -43,7 +43,7 @@ export class RelatoriosController {
 
   @Post("insights/pdf")
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   async insightsPdf(
     @Body() dto: RelatorioInsightsRequest,
     @CurrentUser() user: RequestUser,
@@ -57,14 +57,14 @@ export class RelatoriosController {
   }
 
   @Get("executivo")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   async executivo(@CurrentUser() user: RequestUser) {
     await this.entitlements.assertRelatoriosDashboard(requireTenantId(user));
     return this.relatorios.executivo(user);
   }
 
   @Get("inspecao")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   async inspecao(@CurrentUser() user: RequestUser) {
     await this.entitlements.assertRelatoriosDashboard(requireTenantId(user));
     return this.relatorios.inspecao(user);

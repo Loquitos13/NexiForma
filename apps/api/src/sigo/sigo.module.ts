@@ -9,6 +9,7 @@ import { SigoTenantConfigService } from "./sigo-tenant-config.service";
 import { SigoAccessService } from "./sigo-access.service";
 
 import { SigoSoapService } from "./sigo-soap.service";
+import { SigoNifValidationService } from "./sigo-nif-validation.service";
 
 @Module({
   imports: [DossiePedagogicoModule, forwardRef(() => NotificacoesModule)],
@@ -20,7 +21,14 @@ import { SigoSoapService } from "./sigo-soap.service";
     SigoTenantConfigService,
     SigoAccessService,
     SigoSoapService,
+    SigoNifValidationService,
   ],
-  exports: [SigoCertificatesService, SigoIntegrationService, SigoTenantConfigService, SigoAccessService],
+  exports: [
+    SigoCertificatesService,
+    SigoIntegrationService,
+    SigoTenantConfigService,
+    SigoAccessService,
+    SigoNifValidationService,
+  ],
 })
 export class SigoModule {}

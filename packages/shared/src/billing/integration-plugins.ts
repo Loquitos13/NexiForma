@@ -29,7 +29,7 @@ export function isIntegrationPluginAllowed(
   ent: TenantEntitlements,
 ): boolean {
   if (pluginId === "moodle") return ent.canAccessCoreFormation;
-  return ent.canAccessFormacaoTeams;
+  return ent.canAccessFormacaoTeams || ent.canAccessCrm;
 }
 
 export function hasAnyIntegrationPlugin(ent: TenantEntitlements): boolean {
@@ -41,6 +41,8 @@ export function isIntegracaoProviderAllowed(
   ent: TenantEntitlements,
 ): boolean {
   if (provider === "MOODLE") return ent.canAccessCoreFormation;
-  if (provider === "ZOOM" || provider === "TEAMS") return ent.canAccessFormacaoTeams;
+  if (provider === "ZOOM" || provider === "TEAMS") {
+    return ent.canAccessFormacaoTeams || ent.canAccessCrm;
+  }
   return false;
 }

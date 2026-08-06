@@ -47,12 +47,13 @@ type Props = {
 };
 
 export function ClienteFichaSugestoes({ entidadeId }: Props) {
-  const { canManageCrm } = useTenantRole();
+  const { canManageCrm, writeDisabled } = useTenantRole();
   const [items, setItems] = useState<Sugestao[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
+  const [acceptId, setAcceptId] = useState<string | null>(null);
   const [rejectMotivo, setRejectMotivo] = useState<CrmSugestaoRejeicaoMotivo>(CRM_SUGESTAO_REJEICAO_MOTIVOS[0]);
   const [rejectComentario, setRejectComentario] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
@@ -86,7 +87,9 @@ export function ClienteFichaSugestoes({ entidadeId }: Props) {
     void load();
   }, [load]);
 
-  async function aceitar(id: string) {
+  async function aceitar() {
+    if (!acceptId) return;
+    const id = acceptId;
     setBusy(true);
     setMsg(null);
     const res = await bffFetch(`/api/v1/crm/sugestoes-ia/${id}/aceitar`, {
@@ -94,6 +97,7 @@ export function ClienteFichaSugestoes({ entidadeId }: Props) {
       headers: { accept: "application/json" },
     });
     setBusy(false);
+    setAcceptId(null);
     if (!res.ok) setError(await parseApiError(res));
     else {
       const data = (await res.json()) as {
@@ -106,6 +110,8 @@ export function ClienteFichaSugestoes({ entidadeId }: Props) {
       void fetchList();
     }
   }
+
+  const acceptSugestao = acceptId ? items.find((s) => s.id === acceptId) : null;
 
   async function rejeitar() {
     if (!rejectId) return;
@@ -142,8 +148,9 @@ export function ClienteFichaSugestoes({ entidadeId }: Props) {
               key={s.id}
               s={s}
               canManage={canManageCrm}
+              writeDisabled={writeDisabled}
               busy={busy}
-              onAceitar={() => void aceitar(s.id)}
+              onAceitar={() => setAcceptId(s.id)}
               onRejeitar={() => {
                 setRejectId(s.id);
                 setRejectMotivo(CRM_SUGESTAO_REJEICAO_MOTIVOS[0]);
@@ -169,6 +176,30 @@ export function ClienteFichaSugestoes({ entidadeId }: Props) {
           ))
         )}
       </section>
+
+      <Dialog open={!!acceptId} onOpenChange={(o) => !o && setAcceptId(null)}>
+        <DialogContent title="Aceitar sugestão">
+          <div className="space-y-3">
+            {acceptSugestao && inferirAcaoPlaneada(acceptSugestao.metadata, acceptSugestao.titulo, acceptSugestao.tipo) ? (
+              <p className="text-sm text-violet-300">
+                Será executado: {inferirAcaoPlaneada(acceptSugestao.metadata, acceptSugestao.titulo, acceptSugestao.tipo)}
+              </p>
+            ) : (
+              <p className="text-sm text-slate-400">
+                Confirma que deseja aceitar e executar esta sugestão comercial?
+              </p>
+            )}
+            <div className="flex gap-2">
+              <Button disabled={busy} onClick={() => void aceitar()}>
+                Aceitar e executar
+              </Button>
+              <Button variant="secondary" onClick={() => setAcceptId(null)}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!rejectId} onOpenChange={(o) => !o && setRejectId(null)}>
         <DialogContent title="Rejeitar sugestão">
@@ -199,12 +230,14 @@ export function ClienteFichaSugestoes({ entidadeId }: Props) {
 function SugestaoCard({
   s,
   canManage,
+  writeDisabled,
   busy,
   onAceitar,
   onRejeitar,
 }: {
   s: Sugestao;
   canManage?: boolean;
+  writeDisabled?: boolean;
   busy?: boolean;
   onAceitar?: () => void;
   onRejeitar?: () => void;
@@ -250,11 +283,11 @@ function SugestaoCard({
           </div>
           {canManage && s.estado === "PENDENTE" ? (
             <div className="flex shrink-0 gap-2">
-              <Button size="sm" disabled={busy} onClick={onAceitar}>
+              <Button size="sm" disabled={busy || writeDisabled} onClick={onAceitar}>
                 <Check className="h-3.5 w-3.5" />
                 Aceitar e executar
               </Button>
-              <Button size="sm" variant="secondary" disabled={busy} onClick={onRejeitar}>
+              <Button size="sm" variant="secondary" disabled={busy || writeDisabled} onClick={onRejeitar}>
                 <X className="h-3.5 w-3.5" />
                 Rejeitar
               </Button>

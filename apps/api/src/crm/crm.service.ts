@@ -16,6 +16,9 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
+import { interaccaoScopeWhere, propostaScopeWhere } from "../common/comercial-scope.util";
+import { FATURACAO_HISTORICO_IMUTAVEL_MSG } from "../faturas/faturacao-historico.util";
+import { ViesService } from "../vies/vies.service";
 
 export interface EntidadeClienteDto {
   nif: string;
@@ -48,7 +51,10 @@ export interface EntidadeClienteComHistorico {
 export class CrmService {
   private readonly logger = new Logger(CrmService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly vies: ViesService,
+  ) {}
 
   /**
    * Criar nova entidade cliente
@@ -59,29 +65,35 @@ export class CrmService {
   ): Promise<any> {
     const tenantId = requireTenantId(user);
 
-    // Validar NIF
-    if (!this.validarNif(dto.nif)) {
-      throw new BadRequestException("NIF inválido.");
+    const nif = dto.nif.trim();
+    const confirmado = await this.vies.assertConfirmado(nif, "empresa");
+    const nome = dto.nome.trim() || confirmado.nome?.trim() || "";
+    if (!nome) {
+      throw new BadRequestException("Nome da entidade obrigatório.");
     }
 
     // Verificar duplicado
     const existente = await this.prisma.entidadeCliente.findUnique({
-      where: { tenantId_nif: { tenantId, nif: dto.nif } },
+      where: { tenantId_nif: { tenantId, nif } },
     });
 
     if (existente) {
       throw new ConflictException(
-        `Entidade com NIF ${dto.nif} já existe neste tenant.`,
+        `Entidade com NIF ${nif} já existe neste tenant.`,
       );
     }
 
     const entidade = await this.prisma.entidadeCliente.create({
       data: {
         tenantId,
-        nif: dto.nif,
-        nome: dto.nome,
+        nif,
+        nome,
         email: dto.email,
         telefone: dto.telefone,
+        moradaFiscal:
+          dto.morada?.trim() ||
+          confirmado.morada?.split("\n").join(", ").trim() ||
+          null,
       },
     });
 
@@ -110,6 +122,7 @@ export class CrmService {
     const tenantId = requireTenantId(user);
     const limit = filtros?.limit ?? 20;
     const offset = filtros?.offset ?? 0;
+    const propostaScope = propostaScopeWhere(user);
 
     const where: any = { tenantId };
     if (filtros?.nome) {
@@ -123,7 +136,7 @@ export class CrmService {
       this.prisma.entidadeCliente.findMany({
         where,
         include: {
-          propostas: true,
+          propostas: propostaScope ? { where: propostaScope } : true,
         },
         orderBy: { createdAt: "desc" },
         take: limit,
@@ -159,6 +172,7 @@ export class CrmService {
       where: { id: entidadeId, tenantId },
       include: {
         propostas: {
+          where: propostaScopeWhere(user) ?? undefined,
           orderBy: { createdAt: "desc" },
           take: 10,
         },
@@ -226,6 +240,15 @@ export class CrmService {
       throw new NotFoundException("Entidade não encontrada.");
     }
 
+    const faturas = await this.prisma.faturaComercial.count({
+      where: { tenantId, entidadeClienteId: entidadeId },
+    });
+    if (faturas > 0) {
+      throw new BadRequestException(
+        `${FATURACAO_HISTORICO_IMUTAVEL_MSG} Esta entidade tem ${faturas} documento(s) de faturação.`,
+      );
+    }
+
     await this.prisma.entidadeCliente.delete({ where: { id: entidadeId } });
 
     this.logger.log(`✓ Entidade eliminada: ${entidade.nome}`);
@@ -273,6 +296,10 @@ export class CrmService {
     interaccoesComerciais: number;
   }> {
     const tenantId = requireTenantId(user);
+    const propostaScope = propostaScopeWhere(user);
+    const propostaTenantWhere = propostaScope
+      ? { tenantId, AND: [propostaScope] }
+      : { tenantId };
 
     const [
       totalEntidades,
@@ -290,16 +317,21 @@ export class CrmService {
       this.prisma.entidadeCliente.count({
         where: {
           tenantId,
-          propostas: { some: { estado: { in: ["ENVIADA", "ACEITE"] } } },
+          propostas: {
+            some: {
+              estado: { in: ["ENVIADA", "ACEITE"] },
+              ...(propostaScope ?? {}),
+            },
+          },
         },
       }),
       this.prisma.propostaComercial.groupBy({
         by: ["estado"],
-        where: { tenantId },
+        where: propostaTenantWhere,
         _count: { id: true },
       }),
       this.prisma.propostaComercial.aggregate({
-        where: { tenantId, estado: "ACEITE" },
+        where: { ...propostaTenantWhere, estado: "ACEITE" },
         _sum: { valorCentavos: true },
       }),
       this.prisma.faturaComercial.groupBy({
@@ -383,6 +415,8 @@ export class CrmService {
     }>
   > {
     const tenantId = requireTenantId(user);
+    const propostaScope = propostaScopeWhere(user);
+    const interaccaoScope = interaccaoScopeWhere(user);
 
     const entidades = await this.prisma.entidadeCliente.findMany({
       where: { tenantId },
@@ -409,7 +443,9 @@ export class CrmService {
     if (tipo === "notas") {
       const grupos = await this.prisma.interaccaoComercial.groupBy({
         by: ["entidadeClienteId"],
-        where: { tenantId, entidadeClienteId: { not: null } },
+        where: interaccaoScope
+          ? { tenantId, entidadeClienteId: { not: null }, AND: [interaccaoScope] }
+          : { tenantId, entidadeClienteId: { not: null } },
         _count: { id: true },
       });
       const map = new Map(
@@ -425,7 +461,9 @@ export class CrmService {
     if (tipo === "propostas") {
       const grupos = await this.prisma.propostaComercial.groupBy({
         by: ["entidadeClienteId"],
-        where: { tenantId },
+        where: propostaScope
+          ? { tenantId, AND: [propostaScope] }
+          : { tenantId },
         _count: { id: true },
       });
       const map = new Map(grupos.map((g) => [g.entidadeClienteId, g._count.id]));

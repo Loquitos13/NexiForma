@@ -51,7 +51,7 @@ const PLUGIN_BADGE: Record<IntegrationPluginId, string> = {
 };
 
 export default function IntegracoesPage() {
-  const { canManage } = useTenantRole();
+  const { canManageFormacao: canManage } = useTenantRole();
   const { entitlements, loading: entLoading } = useTenantEntitlements();
 
   const hasSalasOnline = Boolean(

@@ -1,9 +1,11 @@
 import { IsEmail, IsOptional, IsString, Length, MinLength } from "class-validator";
 
 export class TenantForgotPasswordDto {
+  /** Opcional: se em falta, resolve pelo email (1 tenant) ou pede escolha (2+). */
+  @IsOptional()
   @IsString()
   @MinLength(1)
-  tenantSlug!: string;
+  tenantSlug?: string;
 
   @IsEmail()
   email!: string;

@@ -66,11 +66,14 @@ export function useClienteFichaData(
     }
     setLoading(true);
     const [pRes, fRes, iRes, sPendRes, sAllRes, lRes] = await Promise.all([
-      bffFetch(`/api/v1/crm/entidades/${entidadeId}/propostas?limit=100`, { headers: { accept: "application/json" } }),
+      bffFetch(`/api/v1/crm/entidades/${entidadeId}/propostas?limit=50`, { headers: { accept: "application/json" } }),
       includeFaturacao
-        ? bffFetch(`/api/v1/crm/faturas?entidadeClienteId=${entidadeId}`, { headers: { accept: "application/json" } })
+        ? bffFetch(
+            `/api/v1/crm/faturas?entidadeClienteId=${entidadeId}&pageSize=50`,
+            { headers: { accept: "application/json" } },
+          )
         : Promise.resolve(null),
-      bffFetch(`/api/v1/crm/interaccoes?entidadeClienteId=${entidadeId}&pageSize=100`, {
+      bffFetch(`/api/v1/crm/interaccoes?entidadeClienteId=${entidadeId}&pageSize=50`, {
         headers: { accept: "application/json" },
       }),
       bffFetch(
@@ -78,7 +81,7 @@ export function useClienteFichaData(
         { headers: { accept: "application/json" } },
       ),
       bffFetch(
-        `/api/v1/crm/sugestoes-ia?entidadeClienteId=${entidadeId}&limit=100`,
+        `/api/v1/crm/sugestoes-ia?entidadeClienteId=${entidadeId}&limit=50`,
         { headers: { accept: "application/json" } },
       ),
       bffFetch(
@@ -93,8 +96,9 @@ export function useClienteFichaData(
     const propostas = Array.isArray(propostasPayload)
       ? propostasPayload
       : (propostasPayload?.propostas ?? []);
-    const faturasRaw = fRes?.ok ? await fRes.json() : [];
-    const faturas = Array.isArray(faturasRaw) ? (faturasRaw as ClienteFichaFatura[]) : [];
+    const faturas = fRes?.ok
+      ? parsePaginatedList<ClienteFichaFatura>(await fRes.json()).items
+      : [];
     const interaccoesRaw = iRes.ok ? await iRes.json() : null;
     const interParsed = parsePaginatedList<ClienteFichaInteraccao>(interaccoesRaw);
     const interaccoes = interParsed.items;

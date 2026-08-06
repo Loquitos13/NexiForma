@@ -19,6 +19,9 @@ import {
   usePresencaRelogio,
   type PresencaEstadoApi,
 } from "@/lib/lms/use-presenca-sessao";
+import { PresencaConsentModal } from "@/components/formando/presenca-consent-modal";
+import { PresencaQrScanModal } from "@/components/formando/presenca-qr-scan-modal";
+import { useMobileDevice } from "@/lib/formando/use-mobile-device";
 
 type SessaoInfo = {
   id: string;
@@ -73,6 +76,10 @@ function ReuniaoContent() {
   const [encerrada, setEncerrada] = useState(false);
   const [aguardaSala, setAguardaSala] = useState(false);
   const [popupBloqueado, setPopupBloqueado] = useState(false);
+  const [folhaPresente, setFolhaPresente] = useState(false);
+  const [folhaMsg, setFolhaMsg] = useState<string | null>(null);
+  const [scanOpen, setScanOpen] = useState(false);
+  const isMobile = useMobileDevice();
   const leaveSent = useRef(false);
   const meetingOpened = useRef(false);
 
@@ -309,6 +316,19 @@ function ReuniaoContent() {
   }, [matriculaId, sessaoId, encerrada]);
 
   useEffect(() => {
+    if (!sessaoId || encerrada) return;
+    void (async () => {
+      const r = await bffFetch(
+        `/api/v1/presenca-checkin/sessao/${encodeURIComponent(sessaoId)}`,
+        { headers: { accept: "application/json" } },
+      );
+      if (!r.ok) return;
+      const data = (await r.json()) as { alreadyPresent?: boolean };
+      setFolhaPresente(Boolean(data.alreadyPresent));
+    })();
+  }, [sessaoId, encerrada]);
+
+  useEffect(() => {
     if (!matriculaId || !sessaoId) return;
 
     const onLeave = () => {
@@ -400,6 +420,33 @@ function ReuniaoContent() {
                 O browser bloqueou a abertura automática - usa o botão abaixo para entrar na sala.
               </p>
             ) : null}
+            {sessao.iniciadaEm && !sessao.terminadaEm ? (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled={folhaPresente}
+                  onClick={() => {
+                    if (!folhaPresente) setScanOpen(true);
+                  }}
+                  className={
+                    folhaPresente
+                      ? "w-full rounded-xl border border-teal-500/40 bg-teal-950/40 py-3.5 text-sm font-semibold text-teal-200"
+                      : "w-full rounded-xl bg-amber-500 hover:bg-amber-400 py-3.5 text-sm font-semibold text-slate-950 shadow-md shadow-amber-900/30 transition-colors disabled:opacity-60"
+                  }
+                >
+                  {folhaPresente ? "✓ Presença registada" : "Marcar presença"}
+                </button>
+                {folhaMsg ? (
+                  <p className="text-center text-xs text-slate-400">{folhaMsg}</p>
+                ) : (
+                  <p className="text-center text-xs text-slate-500">
+                    {isMobile
+                      ? "Lê o QR do formador com a câmara para confirmar a presença."
+                      : "No computador, confirma a presença com um clique - sem ler o QR."}
+                  </p>
+                )}
+              </div>
+            ) : null}
             {sessao.salaOnline ? (
               <button
                 type="button"
@@ -428,6 +475,35 @@ function ReuniaoContent() {
           Voltar ao portal
         </Link>
       </main>
+
+      {isMobile ? (
+        <PresencaQrScanModal
+          open={scanOpen}
+          onClose={() => setScanOpen(false)}
+          onSuccess={(r) => {
+            setFolhaPresente(true);
+            setFolhaMsg(
+              r.alreadyPresent
+                ? "A tua presença já estava registada."
+                : "Presença registada com sucesso.",
+            );
+          }}
+        />
+      ) : sessaoId ? (
+        <PresencaConsentModal
+          open={scanOpen}
+          sessaoId={sessaoId}
+          onClose={() => setScanOpen(false)}
+          onSuccess={(r) => {
+            setFolhaPresente(true);
+            setFolhaMsg(
+              r.alreadyPresent
+                ? "A tua presença já estava registada."
+                : "Presença registada com sucesso.",
+            );
+          }}
+        />
+      ) : null}
     </div>
   );
 }

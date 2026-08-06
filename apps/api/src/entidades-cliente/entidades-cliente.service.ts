@@ -6,10 +6,14 @@ import { parseListPagination, type PaginatedList } from "../common/paginated-lis
 import type { CreateEntidadeClienteDto, UpdateEntidadeClienteDto } from "./dto/entidade-cliente.dto";
 import type { EntidadeClienteResposta } from "./entidade-cliente.types";
 import { assertDadosClienteCompletos } from "../faturas/faturacao-dados-legais.util";
+import { ViesService } from "../vies/vies.service";
 
 @Injectable()
 export class EntidadesClienteService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly vies: ViesService,
+  ) {}
 
   async list(
     user: RequestUser,
@@ -79,6 +83,11 @@ export class EntidadesClienteService {
   async create(user: RequestUser, dto: CreateEntidadeClienteDto): Promise<EntidadeClienteResposta> {
     const tenantId = requireTenantId(user);
     const nif = dto.nif.trim();
+    const vies = await this.vies.assertConfirmado(nif, "empresa");
+    const nome = dto.nome.trim() || vies.nome?.trim() || "";
+    const moradaFiscal =
+      dto.moradaFiscal.trim() || vies.morada?.split("\n").join(", ").trim() || "";
+    assertDadosClienteCompletos({ nome, nif, moradaFiscal });
     const dup = await this.prisma.entidadeCliente.findFirst({ where: { tenantId, nif } });
     if (dup) {
       throw new ConflictException("Já existe entidade cliente com este NIF.");
@@ -87,12 +96,13 @@ export class EntidadesClienteService {
       data: {
         tenantId,
         nif,
-        nome: dto.nome.trim(),
-        moradaFiscal: dto.moradaFiscal.trim(),
+        nome,
+        moradaFiscal,
         email: dto.email?.trim() || null,
         telefone: dto.telefone?.trim() || null,
-        isParceiro: dto.isParceiro ?? false,
-        descontoPercent: dto.descontoPercent ?? null,
+        // Parceiros só se adicionam a partir de clientes existentes (PATCH isParceiro).
+        isParceiro: false,
+        descontoPercent: null,
       },
     }) as Promise<EntidadeClienteResposta>;
   }

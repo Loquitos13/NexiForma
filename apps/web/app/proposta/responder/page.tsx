@@ -1,10 +1,10 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { AuthShell } from "@/components/site/auth-shell";
-import { Alert, Button, Textarea } from "@/components/ui";
+import { Button, Textarea } from "@/components/ui";
 import { bffQuery } from "@/lib/client/bff-query";
 import { consumeSensitiveUrlParams } from "@/lib/client/sensitive-url";
 import { fmtEuro } from "@/lib/crm/shared";
@@ -21,15 +21,25 @@ type Preview = {
   jaRespondida: boolean;
 };
 
+function readTokenFromUrl(): string {
+  if (typeof window === "undefined") return "";
+  return consumeSensitiveUrlParams(["token"]).token ?? "";
+}
+
+function InlineError({ message }: { message: string }) {
+  return (
+    <div
+      role="alert"
+      className="rounded-lg border border-red-700/40 bg-red-900/20 px-4 py-3 text-sm text-red-300"
+    >
+      {message}
+    </div>
+  );
+}
+
 function PropostaResponderContent() {
   const searchParams = useSearchParams();
-  const [urlSecrets, setUrlSecrets] = useState({ token: "" });
-  useEffect(() => {
-    const consumed = consumeSensitiveUrlParams(["token"]);
-    setUrlSecrets((prev) => ({ token: consumed.token ?? prev.token }));
-  }, []);
-
-  const token = urlSecrets.token;
+  const [token] = useState(readTokenFromUrl);
   const acaoParam = searchParams.get("acao")?.trim() ?? "";
 
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -39,6 +49,7 @@ function PropostaResponderContent() {
   const [resultado, setResultado] = useState<"aceite" | "rejeitada" | null>(null);
   const [motivo, setMotivo] = useState("");
   const [confirmarRejeicao, setConfirmarRejeicao] = useState(acaoParam === "rejeitar");
+  const autoAceitarRef = useRef(acaoParam === "aceitar");
 
   const load = useCallback(async () => {
     if (!token) {
@@ -61,32 +72,42 @@ function PropostaResponderContent() {
     setPreview((await res.json()) as Preview);
   }, [token]);
 
+  const responder = useCallback(
+    async (acao: "aceitar" | "rejeitar") => {
+      if (!token) return;
+      setBusy(true);
+      setError(null);
+      const res = await fetch("/api/v1/propostas/resposta", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", accept: "application/json" },
+        body: JSON.stringify({
+          token,
+          acao,
+          motivo: acao === "rejeitar" ? motivo.trim() || undefined : undefined,
+        }),
+      });
+      setBusy(false);
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { message?: string } | null;
+        setError(body?.message ?? "Não foi possível registar a resposta.");
+        return;
+      }
+      setResultado(acao === "aceitar" ? "aceite" : "rejeitada");
+      await load();
+    },
+    [token, motivo, load],
+  );
+
   useEffect(() => {
     void load();
   }, [load]);
 
-  async function responder(acao: "aceitar" | "rejeitar") {
-    if (!token) return;
-    setBusy(true);
-    setError(null);
-    const res = await fetch("/api/v1/propostas/resposta", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({
-        token,
-        acao,
-        motivo: acao === "rejeitar" ? motivo.trim() || undefined : undefined,
-      }),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      const body = (await res.json().catch(() => null)) as { message?: string } | null;
-      setError(body?.message ?? "Não foi possível registar a resposta.");
-      return;
-    }
-    setResultado(acao === "aceitar" ? "aceite" : "rejeitada");
-    await load();
-  }
+  useEffect(() => {
+    if (!preview || preview.jaRespondida || busy || resultado) return;
+    if (!autoAceitarRef.current) return;
+    autoAceitarRef.current = false;
+    void responder("aceitar");
+  }, [preview, busy, resultado, responder]);
 
   if (loading) {
     return (
@@ -98,16 +119,16 @@ function PropostaResponderContent() {
 
   if (error && !preview) {
     return (
-      <AuthShell title="Proposta comercial" subtitle="Link inválido">
-        <Alert variant="error">{error}</Alert>
+      <AuthShell title="Proposta comercial" subtitle="Não foi possível validar o link">
+        <InlineError message={error} />
       </AuthShell>
     );
   }
 
   if (!preview) {
     return (
-      <AuthShell title="Proposta comercial">
-        <Alert variant="error">Proposta não encontrada.</Alert>
+      <AuthShell title="Proposta comercial" subtitle="Proposta não encontrada">
+        <InlineError message="Proposta não encontrada." />
       </AuthShell>
     );
   }
@@ -117,7 +138,9 @@ function PropostaResponderContent() {
       ? "Proposta aceite"
       : resultado === "rejeitada"
         ? "Proposta recusada"
-        : "Responder à proposta";
+        : busy && acaoParam === "aceitar"
+          ? "A registar aceitação…"
+          : "Responder à proposta";
 
   return (
     <AuthShell
@@ -125,7 +148,7 @@ function PropostaResponderContent() {
       subtitle={`${preview.formador} · ${preview.codigo}`}
     >
       <div className="space-y-4 text-sm">
-        {error ? <Alert variant="error">{error}</Alert> : null}
+        {error ? <InlineError message={error} /> : null}
 
         <div className="rounded-xl border border-slate-700/60 bg-slate-900/50 p-4 space-y-2">
           <p className="font-medium text-slate-100">{preview.titulo}</p>
@@ -145,7 +168,7 @@ function PropostaResponderContent() {
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <CheckCircle2 className="h-12 w-12 text-teal-400" />
             <p className="text-slate-200">
-              Obrigado. A sua aceitação foi registada. A entidade formadora será
+              Obrigado. A sua aceitação foi registada. A equipa comercial será
               notificada.
             </p>
           </div>
@@ -155,7 +178,12 @@ function PropostaResponderContent() {
             <p className="text-slate-200">A recusa da proposta foi registada.</p>
           </div>
         ) : preview.jaRespondida ? (
-          <Alert variant="info">Esta proposta já foi respondida.</Alert>
+          <div
+            role="status"
+            className="rounded-lg border border-blue-700/40 bg-blue-900/20 px-4 py-3 text-sm text-blue-300"
+          >
+            Esta proposta já foi respondida.
+          </div>
         ) : confirmarRejeicao ? (
           <div className="space-y-3">
             <Textarea

@@ -5,6 +5,12 @@ import {
   isAuthenticatedAppPath,
 } from "./session-lifecycle";
 import { tokenKindMismatchForPath } from "./jwt-role";
+import {
+  clientRateLimitRemainingSec,
+  isClientRateLimitBlocked,
+  syncRateLimitFromResponse,
+  syntheticRateLimitResponse,
+} from "./rate-limit-client";
 
 export type BffFetchInit = RequestInit & {
   /**
@@ -81,6 +87,10 @@ export async function bffFetch(
   input: RequestInfo | URL,
   init: BffFetchInit = {},
 ): Promise<Response> {
+  if (isClientRateLimitBlocked()) {
+    return syntheticRateLimitResponse();
+  }
+
   const authRetry401 = init.authRetry401 !== false;
   const { authRetry401: _omit, ...restInit } = init;
   let attempt = 0;
@@ -108,6 +118,7 @@ export async function bffFetch(
     });
 
     if (!authRetry401 || res.status !== 401 || attempt >= 1) {
+      if (res.status === 429) syncRateLimitFromResponse(res);
       return res;
     }
 

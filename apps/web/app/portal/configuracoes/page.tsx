@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { SocialLoginSettings } from "@/components/settings/social-login-settings";
+import { DocumentosPoliticaSettings } from "@/components/settings/documentos-politica-settings";
+import { DgertRequisitoBanner, DgertTarget } from "@/components/portal/dgert-requisito-banner";
 
 type TenantInfo = {
   slug: string;
@@ -66,6 +69,7 @@ export default function ConfiguracoesPage() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [entidadeForm, setEntidadeForm] = useState({ legalName: "", nif: "" });
 
   const load = useCallback(async () => {
     const [tRes, bRes, pRes] = await Promise.all([
@@ -73,7 +77,11 @@ export default function ConfiguracoesPage() {
       bffFetch("/api/v1/portal/tenant/branding", { headers: { accept: "application/json" } }),
       bffFetch("/api/v1/billing/subscription", { headers: { accept: "application/json" } }),
     ]);
-    if (tRes.ok) setTenant((await tRes.json()) as TenantInfo);
+    if (tRes.ok) {
+      const t = (await tRes.json()) as TenantInfo;
+      setTenant(t);
+      setEntidadeForm({ legalName: t.legalName ?? "", nif: t.nif ?? "" });
+    }
     if (bRes.ok) setBranding((await bRes.json()) as Branding);
     if (pRes.ok) setPlan((await pRes.json()) as PlanInfo);
   }, []);
@@ -81,6 +89,34 @@ export default function ConfiguracoesPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function saveEntidade() {
+    if (!canManage) return;
+    setBusy(true);
+    setError(null);
+    setMsg(null);
+    const r = await bffFetch("/api/v1/portal/tenant/entidade", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        legalName: entidadeForm.legalName.trim(),
+        nif: entidadeForm.nif.replace(/\s/g, "").trim(),
+      }),
+    });
+    setBusy(false);
+    if (!r.ok) {
+      const d = (await r.json().catch(() => null)) as { message?: string | string[] } | null;
+      const message = Array.isArray(d?.message)
+        ? d.message.join(", ")
+        : typeof d?.message === "string"
+          ? d.message
+          : `Erro ao guardar entidade (HTTP ${r.status}).`;
+      setError(message);
+      return;
+    }
+    setMsg("Dados da entidade actualizados.");
+    await load();
+  }
 
   async function saveBranding() {
     if (!canManage || !branding) return;
@@ -174,36 +210,92 @@ export default function ConfiguracoesPage() {
         </div>
       ) : null}
 
+      <DgertRequisitoBanner backHref="/portal/dossie" />
+
       {tenant ? (
-        <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
-          <h2 className="text-sm font-semibold text-slate-200 mb-3">Entidade formadora</h2>
-          <div className="grid sm:grid-cols-2 gap-3 text-sm">
-            <div>
-              <span className="text-slate-500">Nome:</span>{" "}
-              <span className="text-slate-200">{tenant.legalName}</span>
+        <DgertTarget id="entidade_nif" className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
+          <h2 className="text-sm font-semibold text-slate-200 mb-1">Entidade formadora</h2>
+          <p className="text-xs text-slate-500 mb-4">
+            Nome legal e NIF usados em DGERT, dossiê e faturação. Alterações ficam na base de dados
+            partilhada com o painel do superadmin.
+          </p>
+          {canManage ? (
+            <div className="grid sm:grid-cols-2 gap-3 mb-4">
+              <label className="block text-sm">
+                <span className="text-slate-500 text-xs">Nome legal</span>
+                <input
+                  className={`${inputClass} mt-1`}
+                  value={entidadeForm.legalName}
+                  onChange={(e) =>
+                    setEntidadeForm((f) => ({ ...f, legalName: e.target.value }))
+                  }
+                  maxLength={200}
+                  required
+                />
+              </label>
+              <label className="block text-sm" data-dgert-target="entidade_nif">
+                <span className="text-slate-500 text-xs">NIF</span>
+                <input
+                  className={`${inputClass} mt-1 font-mono tracking-wide`}
+                  value={entidadeForm.nif}
+                  onChange={(e) =>
+                    setEntidadeForm((f) => ({
+                      ...f,
+                      nif: e.target.value.replace(/[^\d]/g, "").slice(0, 9),
+                    }))
+                  }
+                  inputMode="numeric"
+                  pattern="\d{9}"
+                  maxLength={9}
+                  placeholder="9 dígitos"
+                  required
+                />
+              </label>
+              <div className="sm:col-span-2 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void saveEntidade()}
+                  className="h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-sm font-semibold text-white"
+                >
+                  {busy ? "A guardar…" : "Guardar entidade"}
+                </button>
+                <span className="text-xs text-slate-600">
+                  Slug <code className="text-purple-300">{tenant.slug}</code>
+                  {" · "}
+                  {tenant.status}
+                </span>
+              </div>
             </div>
-            <div>
-              <span className="text-slate-500">NIF:</span>{" "}
-              <span className="text-slate-200">{tenant.nif}</span>
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-3 text-sm mb-4">
+              <div>
+                <span className="text-slate-500">Nome:</span>{" "}
+                <span className="text-slate-200">{tenant.legalName}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">NIF:</span>{" "}
+                <span className="text-slate-200 font-semibold">{tenant.nif || "- em falta -"}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">Slug:</span>{" "}
+                <code className="text-purple-300">{tenant.slug}</code>
+              </div>
+              <div>
+                <span className="text-slate-500">Estado:</span>{" "}
+                <span className="text-slate-200">{tenant.status}</span>
+              </div>
             </div>
-            <div>
-              <span className="text-slate-500">Slug:</span>{" "}
-              <code className="text-purple-300">{tenant.slug}</code>
-            </div>
-            <div>
-              <span className="text-slate-500">Estado:</span>{" "}
-              <span className="text-slate-200">{tenant.status}</span>
-            </div>
-          </div>
+          )}
           {plan ? (
-            <div className="mt-3 pt-3 border-t border-slate-700/30 text-xs text-slate-500">
+            <div className="pt-3 border-t border-slate-700/30 text-xs text-slate-500">
               Plano: {plan.plan.name} ({plan.status})
               {plan.currentPeriodEnd
                 ? ` · até ${formatDatePt(plan.currentPeriodEnd)}`
                 : ""}
             </div>
           ) : null}
-        </div>
+        </DgertTarget>
       ) : null}
 
       {canManage ? (
@@ -217,7 +309,7 @@ export default function ConfiguracoesPage() {
             {logoPreview ? (
               <img
                 src={logoPreview}
-                alt="Logo da entidade"
+                alt="Logótipo da entidade formadora"
                 className="h-14 max-w-[180px] object-contain rounded-lg bg-white/95 px-2 py-1"
               />
             ) : (
@@ -512,6 +604,9 @@ export default function ConfiguracoesPage() {
           </div>
         </div>
       ) : null}
+
+      {canManage ? <DocumentosPoliticaSettings /> : null}
+      {canManage ? <SocialLoginSettings /> : null}
     </div>
   );
 }

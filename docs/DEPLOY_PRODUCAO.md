@@ -53,8 +53,7 @@ A API **recusa arrancar** em `NODE_ENV=production` se detectar `mock`, `sandbox`
 | Integração | Variável modo | Valores permitidos | Credenciais |
 |------------|---------------|------------------|-------------|
 | **AT Faturas** | `AT_FATURAS_MODE` | `production` \| `disabled` | Ver [CREDENCIAIS_AT.md](./CREDENCIAIS_AT.md) |
-| **SIGO DGEEC** | `SIGO_API_MODE` | `http` \| `disabled` | `SIGO_API_BASE_URL`, `SIGO_API_KEY` |
-| **CMD** | `CMD_SIGNATURE_MODE` | `oauth` \| `disabled` | `CMD_OAUTH_URL` |
+| **SIGO DGEEC** | `SIGO_API_MODE` | `disabled` \| `http` \| `soap` | Go-live: `disabled` (export manual). `http`/`soap` só com contrato DGEEC |
 | **Zoom/Teams** | Por tenant | `OAUTH` | Control Plane / portal integrações |
 
 ### AT Faturas (produção)
@@ -71,35 +70,42 @@ AT_FATURAS_TIMEOUT_MS=30000
 
 Por tenant (portal → CRM → Faturação): subutilizador WFA, password, códigos de série, certificação software.
 
-### SIGO (quando API DGEEC disponível)
+### SIGO (go-live recomendado)
+
+```env
+# Produção até existir contrato oficial DGEEC:
+SIGO_API_MODE=disabled
+```
+
+Export manual JSON/CSV + validação UFCD/NIF/metadados formando continua em `/portal/sigo` e dossiê.
+
+Quando a DGEEC publicar o contrato (Fase 12.5):
 
 ```env
 SIGO_API_MODE=http
+# ou SIGO_API_MODE=soap + SIGO_SOAP_WSDL_URL / SIGO_SOAP_ENDPOINT
 SIGO_API_BASE_URL=https://...
 SIGO_API_KEY=
 SIGO_API_SUBMIT_PATH=/acoes
 SIGO_API_STATUS_PATH=/acoes/{referenceId}
 ```
 
-Export manual JSON/CSV continua disponível com `SIGO_API_MODE=disabled`.
+Credenciais SOAP por entidade: Portal → SIGO. Ver [FASE_12_SIGO_API.md](./FASE_12_SIGO_API.md).
 
-### CMD (Chave Móvel Digital)
+### Sumários (assinatura)
 
-```env
-CMD_SIGNATURE_MODE=oauth
-CMD_OAUTH_URL=https://autenticacao.gov.pt/...
-```
+Assinatura interna (`POST /sumarios/:id/assinar`) ou upload do PDF já assinado (`POST /sumarios/:id/upload-pdf-assinado`, apenas `.pdf`). Sem Chave Móvel Digital / AMA.
 
 ---
 
 ## 3. O que foi removido
 
-- Modos `mock` e `sandbox` (AT, SIGO, CMD)
+- Modos `mock` e `sandbox` (AT, SIGO)
+- Integração Chave Móvel Digital (CMD/AMA)- substituída por upload de PDF assinado
 - Checkout billing demo sem Stripe
 - Endpoints `POST .../testar-at` e `POST .../sigo/config/testar`
 - Simulação de reconciliação SIGO aleatória
-- Página CMD de simulação manual com token
-- Controller CMD legado em certificados (PIN mock `999999`)
+- Página e controller CMD legados
 
 **Mantido (produção real):** `POST .../integracoes/testar` - verifica OAuth Zoom/Teams contra APIs reais (não é simulação).
 
@@ -135,9 +141,47 @@ node apps/api/dist/main.js
 - [ ] JWT, encryption keys e Stripe em secret manager
 - [ ] SES + Twilio + S3 + SQS operacionais
 - [ ] AT: certificação software + credenciais WFA por tenant
+- [ ] `SIGO_API_MODE=disabled` (ou `http`/`soap` só com contrato DGEEC)
+- [ ] Sumários: assinatura interna ou upload PDF assinado no dossiê
+- [ ] Catálogo UFCD carregado; cursos com códigos válidos
+- [ ] Formandos com dados SIGO completos (coluna «SIGO» verde)
 - [ ] RLS PostgreSQL activo (`RLS_ENABLED=true`)
-- [ ] Backups BD configurados
+- [ ] Backups BD configurados (ver secção 6.1)
 - [ ] Monitorização (CloudWatch / observability)
+- [ ] Runbook formação / inspeção DGERT (secção 6.2) executado num tenant piloto
+
+### 6.1 Backup de segurança da base de dados (12/12 h)
+
+A API corre um job Nest (`BackupModule`) a cada **12 horas** (`@Cron("0 0 */12 * * *")`):
+
+```env
+# Produção: activo por omissão quando NODE_ENV=production
+DB_BACKUP_ENABLED=true
+DB_BACKUP_PREFIX=backups/db
+DB_BACKUP_KEEP=28
+# PG_DUMP_PATH=pg_dump
+# DB_BACKUP_DOCKER_CONTAINER=nexiforma-postgres
+```
+
+- Gera `pg_dump` → gzip → `STORAGE` (local ou S3 em `backups/db/nexiforma-*.sql.gz`).
+- Manual: `npm run db:backup` (usa `DATABASE_URL` do `.env`).
+- Em AWS RDS: manter também automated backups / snapshots RDS; o dump da app é cópia adicional para S3/storage.
+- Requisito: `pg_dump` no PATH do contentor API (ou `PG_DUMP_PATH` / fallback docker exec).
+
+### 6.2 Runbook E2E – formação / inspeção DGERT
+
+Validar num tenant piloto (com módulo formação activo):
+
+1. **Catálogo** – confirmar UFCDs activas em `/portal/catalogo-ufcd`.
+2. **Curso** – criar curso com `codigoUfcd` válido (código inválido deve ser rejeitado).
+3. **Acção + turma** – criar acção de formação e turma; matricular formandos com NIF real e dados SIGO completos (documento, nascimento, nacionalidade, habilitações).
+4. **Cronograma / sessões** – planear sessões; formador inicia sessão (contador próprio); formandos entram em `/portal/formando/reuniao` (contador + assiduidade ao abrir); folhas de presença; sumários com assinatura interna ou upload PDF assinado.
+5. **Compliance / dossiê** – em `/portal/compliance` e `/portal/dossie`, checklist DGERT a 100% / pronto para inspeção.
+6. **Pacote inspeção** – gerar e descarregar ZIP/HTML do dossiê.
+7. **Certificado** – emitir certificado NexiForma e verificar QR público (`/verificar/...`).
+8. **SIGO** – com `SIGO_API_MODE=disabled`, validar e exportar JSON/CSV sem erros bloqueantes; não activar submit API sem contrato DGEEC (pedido sandbox/WSDL enviado à AGSE).
+9. **LMS (opcional)** – publicar conteúdo SCORM/quiz e confirmar progresso no portal formando.
+10. **Calendário** – formador/formando: entrar na sessão a partir do evento no calendário com o mesmo contador.
 
 ---
 

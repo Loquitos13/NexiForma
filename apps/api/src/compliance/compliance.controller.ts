@@ -16,19 +16,19 @@ export class ComplianceController {
   ) {}
 
   @Get("alertas")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   listAlertas(@CurrentUser() user: RequestUser) {
     return this.alertasService.listAlertas(user);
   }
 
   @Get("resumo")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   resumo(@CurrentUser() user: RequestUser) {
     return this.compliance.resumo(user);
   }
 
   @Get("acoes-formacao/:acaoId")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   byAcao(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,

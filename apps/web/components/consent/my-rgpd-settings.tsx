@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Shield } from "lucide-react";
+import { Download, Shield } from "lucide-react";
+import { buildRgpdConsentText, RGPD_TERMS_VERSION } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
-import { decodeJwtRole } from "@/lib/client/jwt-role";
-import { getAccessToken } from "@/lib/client/access-token";
 import { useConsentSettings } from "@/components/consent/consent-gate";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { formatDatePt } from "@/lib/calendar-date";
 
 type ConsentMe = {
@@ -19,11 +19,20 @@ type ConsentMe = {
   userDecidedAt?: string | null;
 };
 
+type ExportFormat = "json" | "csv" | "txt";
+
+const FORMAT_OPTIONS: Array<{ id: ExportFormat; label: string; hint: string }> = [
+  { id: "json", label: "JSON", hint: "Estrutura completa, ideal para arquivo técnico" },
+  { id: "csv", label: "CSV", hint: "Tabela chave/valor, abre no Excel" },
+  { id: "txt", label: "TXT", hint: "Texto legível (JSON formatado)" },
+];
+
 export function MyRgpdSettings() {
   const consent = useConsentSettings();
-  const role = decodeJwtRole(getAccessToken());
   const [data, setData] = useState<ConsentMe | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [format, setFormat] = useState<ExportFormat>("json");
   const [exportBusy, setExportBusy] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
@@ -48,14 +57,34 @@ export function MyRgpdSettings() {
   async function exportData() {
     setExportBusy(true);
     setExportError(null);
-    const res = await bffFetch("/api/v1/rgpd/me/export", { method: "POST" });
-    setExportBusy(false);
-    if (!res.ok) {
-      setExportError("Não foi possível gerar a exportação dos seus dados.");
-      return;
+    try {
+      const res = await bffFetch("/api/v1/rgpd/me/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", accept: "*/*" },
+        body: JSON.stringify({ format }),
+      });
+      if (!res.ok) {
+        setExportError("Não foi possível gerar a exportação dos seus dados.");
+        return;
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="([^"]+)"/i);
+      const filename = match?.[1] ?? `rgpd-export-${Date.now()}.${format}`;
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+      setPickerOpen(false);
+    } catch {
+      setExportError("Não foi possível descarregar o ficheiro.");
+    } finally {
+      setExportBusy(false);
     }
-    const payload = (await res.json()) as { downloadUrl?: string };
-    if (payload.downloadUrl) window.open(payload.downloadUrl, "_blank", "noopener,noreferrer");
   }
 
   if (loading) {
@@ -92,6 +121,9 @@ export function MyRgpdSettings() {
         ? "text-amber-400"
         : "text-slate-400";
 
+  const policyText = buildRgpdConsentText(data.tenantLegalName ?? "a entidade formadora");
+  const termsVersion = data.termsVersion ?? RGPD_TERMS_VERSION;
+
   return (
     <div className="space-y-4">
       {consent.modal}
@@ -102,7 +134,7 @@ export function MyRgpdSettings() {
             <Shield className="h-5 w-5" />
           </span>
           <div>
-            <h2 className="text-base font-semibold text-slate-100">O meu consentimento</h2>
+            <h2 className="text-base font-semibold text-slate-100">Privacidade e consentimento</h2>
             {data.tenantLegalName ? (
               <p className="text-xs text-slate-500 mt-0.5">
                 Entidade formadora: <span className="text-slate-300">{data.tenantLegalName}</span>
@@ -128,36 +160,91 @@ export function MyRgpdSettings() {
             {data.userDecidedAt ? formatDatePt(data.userDecidedAt) : "-"}
           </dd>
         </div>
-        {data.termsVersion ? (
-          <div className="rounded-xl border border-slate-700/40 bg-slate-900/50 px-3 py-2.5 sm:col-span-2">
-            <dt className="text-[11px] uppercase tracking-wide text-slate-500">Versão do aviso</dt>
-            <dd className="mt-1 text-slate-300 font-mono text-xs">{data.termsVersion}</dd>
-          </div>
-        ) : null}
+        <div className="rounded-xl border border-slate-700/40 bg-slate-900/50 px-3 py-2.5 sm:col-span-2">
+          <dt className="text-[11px] uppercase tracking-wide text-slate-500">Versão do aviso</dt>
+          <dd className="mt-1 text-slate-300 font-mono text-xs">{termsVersion}</dd>
+        </div>
       </dl>
 
-      {data.consentText ? (
-        <div className="rounded-xl border border-slate-700/40 bg-slate-900/60 p-4 text-sm text-slate-300 leading-relaxed whitespace-pre-line max-h-72 overflow-y-auto">
-          {data.consentText}
+      <div>
+        <h3 className="text-sm font-medium text-slate-200 mb-2">Política de privacidade (RGPD)</h3>
+        <div className="rounded-xl border border-slate-700/40 bg-slate-900/60 p-4 text-sm text-slate-300 leading-relaxed whitespace-pre-line max-h-[min(60vh,36rem)] overflow-y-auto">
+          {policyText}
         </div>
-      ) : null}
+      </div>
 
       <p className="text-xs text-slate-500 leading-relaxed">
         Apenas tu decides se aceitas ou recusas o tratamento de dados. A decisão fica registada para
         efeitos de conformidade e podes alterá-la a qualquer momento.
       </p>
 
-      {role === "formando" ? (
-        <div className="pt-2 border-t border-slate-700/30 space-y-2">
-          <p className="text-xs text-slate-500">
-            Podes solicitar uma cópia dos dados pessoais associados ao teu perfil de formando.
-          </p>
-          {exportError ? <p className="text-sm text-red-400">{exportError}</p> : null}
-          <Button type="button" variant="secondary" size="sm" disabled={exportBusy} onClick={() => void exportData()}>
-            {exportBusy ? "A gerar exportação…" : "Exportar os meus dados"}
-          </Button>
-        </div>
-      ) : null}
+      <div className="pt-2 border-t border-slate-700/30 space-y-2">
+        <p className="text-xs text-slate-500">
+          Descarrega os teus dados pessoais (identificação, contactos e consentimento). Não inclui
+          histórico operacional, pedagógico, comercial nem faturação.
+        </p>
+        {exportError ? <p className="text-sm text-red-400">{exportError}</p> : null}
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            setExportError(null);
+            setPickerOpen(true);
+          }}
+        >
+          <Download className="h-3.5 w-3.5 mr-1.5" aria-hidden />
+          Download dos meus dados
+        </Button>
+      </div>
+
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent
+          title="Formato do ficheiro"
+          description="Escolhe o formato do ficheiro com os teus dados pessoais."
+          className="max-w-sm"
+          onPointerDownOutside={() => undefined}
+          onInteractOutside={() => undefined}
+          onEscapeKeyDown={() => undefined}
+        >
+          <div className="space-y-3" role="radiogroup" aria-label="Formato de exportação">
+            {FORMAT_OPTIONS.map((opt) => {
+              const selected = format === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => setFormat(opt.id)}
+                  className={
+                    selected
+                      ? "w-full rounded-xl border border-blue-500/50 bg-blue-600/15 px-3 py-2.5 text-left"
+                      : "w-full rounded-xl border border-slate-700/50 bg-slate-950/40 px-3 py-2.5 text-left hover:border-slate-600"
+                  }
+                >
+                  <span className="block text-sm font-medium text-slate-100">{opt.label}</span>
+                  <span className="mt-0.5 block text-xs text-slate-500">{opt.hint}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={exportBusy}
+              onClick={() => setPickerOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button type="button" size="sm" disabled={exportBusy} onClick={() => void exportData()}>
+              {exportBusy ? "A preparar…" : `Descarregar ${format.toUpperCase()}`}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,4 +1,3 @@
-import { HTTP_QUERY_METHOD } from "@nexiforma/shared";
 import { bffFetch } from "./bff-fetch";
 
 export type BffQueryInit = {
@@ -8,7 +7,8 @@ export type BffQueryInit = {
 };
 
 /**
- * Pedido QUERY (RFC 10008) ao BFF - leitura segura com corpo JSON (sem dados na URL).
+ * Pedido de leitura segura ao BFF - corpo JSON, sem dados na URL.
+ * Usa POST porque o App Router do Next.js não suporta o método QUERY (RFC 10008).
  */
 export async function bffQuery(
   path: string,
@@ -23,7 +23,7 @@ export async function bffQuery(
   }
 
   return bffFetch(path, {
-    method: HTTP_QUERY_METHOD,
+    method: "POST",
     headers,
     body: JSON.stringify(init.body ?? {}),
     authRetry401: init.authRetry401,

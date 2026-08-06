@@ -11,7 +11,12 @@ import {
   DashboardFormacaoResumoPanel,
   type DashboardPortalContext,
 } from "@/components/dashboard/dashboard-panels";
-import { getBlockEntry, type DashboardBlockId } from "@/lib/dashboard/dashboard-blocks";
+import {
+  CORE_FORMATION_PRIORITY_BLOCKS,
+  getBlockEntry,
+  type DashboardBlockId,
+} from "@/lib/dashboard/dashboard-blocks";
+import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
 import {
   DEFAULT_DASHBOARD_LAYOUT_V3,
   loadDashboardLayoutV3,
@@ -60,6 +65,7 @@ export function GestorExecutiveDashboard({
   portalContext?: DashboardPortalContext;
   storageKey?: string;
 }) {
+  const { entitlements } = useTenantEntitlements();
   const [layout, setLayout] = useState<DashboardLayoutV3>(DEFAULT_DASHBOARD_LAYOUT_V3);
   const [editMode, setEditMode] = useState(false);
   const [hydrated, setHydrated] = useState(false);
@@ -81,7 +87,18 @@ export function GestorExecutiveDashboard({
     return <p className="text-sm text-slate-500">A preparar dashboard…</p>;
   }
 
-  const blocks = visibleBlocks(layout);
+  const blocksRaw = visibleBlocks(layout);
+  /** Core formação: blocos DGERT/formação sempre primeiro (prioridade sobre CRM/financeiro). */
+  const blocks = entitlements?.canAccessCoreFormation
+    ? [
+        ...blocksRaw.filter((b) =>
+          (CORE_FORMATION_PRIORITY_BLOCKS as readonly string[]).includes(b.id),
+        ),
+        ...blocksRaw.filter(
+          (b) => !(CORE_FORMATION_PRIORITY_BLOCKS as readonly string[]).includes(b.id),
+        ),
+      ]
+    : blocksRaw;
 
   function renderBlock(blockId: DashboardBlockId) {
     const block = getBlockLayout(layout, blockId);

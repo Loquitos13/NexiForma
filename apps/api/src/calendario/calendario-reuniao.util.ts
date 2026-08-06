@@ -26,20 +26,24 @@ export function userPodeVerReuniao(
   user: { sub?: string | null; role: JwtRole },
   userPrismaRole: TenantUserRole | null,
   row: {
-    criadoPorUserId: string;
+    criadoPorAutorId: string;
+    criadoPorUserId?: string | null;
     participantesIds: unknown;
     audienciaRoles: unknown;
   },
 ): boolean {
   if (user.role === "super_admin") return true;
+  if (user.role === "tenant_manager") return true;
   if (userPrismaRole && GESTOR_PRISMA_ROLES.has(userPrismaRole)) return true;
-  if (user.sub && row.criadoPorUserId === user.sub) return true;
+  if (
+    user.sub &&
+    (row.criadoPorAutorId === user.sub || row.criadoPorUserId === user.sub)
+  ) {
+    return true;
+  }
 
   const participantes = parseParticipantes(row.participantesIds);
   if (user.sub && participantes.includes(user.sub)) return true;
-
-  const audiencia = parseAudienciaRoles(row.audienciaRoles);
-  if (userPrismaRole && audiencia.includes(userPrismaRole)) return true;
 
   return false;
 }

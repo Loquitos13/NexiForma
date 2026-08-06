@@ -7,6 +7,7 @@ import { FormandoShellSkeleton } from "@/components/portal/formando-shell-skelet
 import { BackofficeShell } from "@/components/portal/backoffice-shell";
 import { FormandoShell } from "@/components/portal/formando-shell";
 import { ConsentGate } from "@/components/consent/consent-gate";
+import { DocumentosObrigatoriosGate } from "@/components/portal/documentos-obrigatorios-gate";
 import { getAccessToken } from "@/lib/client/access-token";
 import { isAccessTokenExpired } from "@/lib/client/session-lifecycle";
 import {
@@ -15,11 +16,17 @@ import {
 } from "@/lib/client/use-tenant-entitlements";
 import { decodeJwtPayload, decodeJwtRole, isFormandoRole } from "@/lib/client/jwt-role";
 import { isPortalPathAllowed } from "@/lib/ui/nav-items";
-import { defaultPortalHome, isFormandoPortalPath, roleLandingPath } from "@nexiforma/shared";
+import {
+  defaultPortalHome,
+  isFormandoPortalPath,
+  isFormandoSharedPortalPath,
+  roleLandingPath,
+} from "@nexiforma/shared";
 import type { JwtRole } from "@nexiforma/shared";
 import { PageContentSkeleton } from "@/components/ui/page-skeleton";
 import { markSessionExpired } from "@/lib/client/session-lifecycle";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { PortalPriorityCompanion } from "@/components/portal/portal-priority-companion";
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -44,7 +51,10 @@ function PortalLayoutInner({ children }: { children: React.ReactNode }) {
 
   const isFormando = isFormandoRole(role);
   const isFormandoRoute = isFormandoPortalPath(pathname);
+  const isFormandoSharedRoute = isFormandoSharedPortalPath(pathname);
   const isDemoRoute = pathname.startsWith("/portal/demo/");
+  /** QR de presença em ecrã cheio (novo separador / projector). */
+  const isPresencaQrRoute = pathname.startsWith("/portal/formador/presenca-qr/");
 
   useEffect(() => {
     if (authRole) setRole(authRole);
@@ -75,7 +85,7 @@ function PortalLayoutInner({ children }: { children: React.ReactNode }) {
     if (!ready || entitlementsLoading || !entitlements || !role) return;
 
     if (isFormando) {
-      if (!isFormandoRoute && !isDemoRoute) {
+      if (!isFormandoRoute && !isFormandoSharedRoute && !isDemoRoute) {
         router.replace(defaultPortalHome(entitlements, role));
       }
       return;
@@ -86,11 +96,25 @@ function PortalLayoutInner({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // QR de presença (projector): não redireccionar por RBAC de navegação.
+    if (isPresencaQrRoute) return;
+
     if (!isPortalPathAllowed(role, pathname, entitlements)) {
-      const payload = decodeJwtPayload(getAccessToken());
-      router.replace(roleLandingPath(role, payload?.kind ?? null));
+      router.replace(defaultPortalHome(entitlements, role));
     }
-  }, [ready, entitlementsLoading, entitlements, role, pathname, router, isFormando, isFormandoRoute, isDemoRoute]);
+  }, [
+    ready,
+    entitlementsLoading,
+    entitlements,
+    role,
+    pathname,
+    router,
+    isFormando,
+    isFormandoRoute,
+    isFormandoSharedRoute,
+    isDemoRoute,
+    isPresencaQrRoute,
+  ]);
 
   useEffect(() => {
     if (!ready || entitlementsLoading || !entitlements || !role) return;
@@ -116,7 +140,7 @@ function PortalLayoutInner({ children }: { children: React.ReactNode }) {
   }
 
   if (isFormando) {
-    if (!isFormandoRoute && !isDemoRoute) {
+    if (!isFormandoRoute && !isFormandoSharedRoute && !isDemoRoute) {
       return (
         <FormandoShell>
           <main className="mx-auto max-w-[720px] flex-1 px-5 py-6">
@@ -128,12 +152,14 @@ function PortalLayoutInner({ children }: { children: React.ReactNode }) {
     if (isDemoRoute) return children;
     return (
       <FormandoShell>
-        <ConsentGate>{children}</ConsentGate>
+        <ConsentGate>
+          <DocumentosObrigatoriosGate>{children}</DocumentosObrigatoriosGate>
+        </ConsentGate>
       </FormandoShell>
     );
   }
 
-  if (isDemoRoute) return children;
+  if (isDemoRoute || isPresencaQrRoute) return children;
 
   if (role && entitlements && !isPortalPathAllowed(role, pathname, entitlements)) {
     return <BackofficeShellSkeleton />;
@@ -141,7 +167,10 @@ function PortalLayoutInner({ children }: { children: React.ReactNode }) {
 
   return (
     <BackofficeShell pathname={pathname} role={role}>
-      <ConsentGate>{children}</ConsentGate>
+      <ConsentGate>
+        <DocumentosObrigatoriosGate>{children}</DocumentosObrigatoriosGate>
+      </ConsentGate>
+      <PortalPriorityCompanion />
     </BackofficeShell>
   );
 }

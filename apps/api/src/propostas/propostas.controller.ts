@@ -36,7 +36,7 @@ export class PropostasController {
   }
 
   @Patch("config/template")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_comercial")
   updateConfig(@CurrentUser() user: RequestUser, @Body() dto: UpdateConfigPropostaDto) {
     return this.propostas.updateConfig(user, dto);
   }
@@ -123,14 +123,14 @@ export class PropostasController {
   }
 
   @Post(":id/aceitar")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_comercial")
   async aceitar(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
     await this.proposal.aceitarProposta(user, id);
     return { sucesso: true };
   }
 
   @Post(":id/rejeitar")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_comercial")
   async rejeitar(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,

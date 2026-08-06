@@ -22,6 +22,7 @@ import { parseApiError } from "@/lib/ui/backoffice";
 import { isModuloStorageRef, validarModuloConteudoCompleto } from "@nexiforma/shared";
 import { ModuloStoredMedia } from "@/components/lms/ModuloStoredMedia";
 import { Alert, Button } from "@/components/ui";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { QuizPerguntaEditor } from "@/components/portal/QuizPerguntaEditor";
 import { FormandoPortalMockup } from "@/components/portal/FormandoPortalMockup";
 import { UNIDADE_FLAT_ID } from "@/components/formando/formando-percurso-types";
@@ -36,6 +37,7 @@ export type UnidadeNode = {
   formador?: { id: string; nomeCompleto: string } | null;
   ordem: number;
   notaMinima: number | null;
+  lockManual?: boolean;
   _count?: { conteudos: number };
 };
 
@@ -75,6 +77,8 @@ type Props = {
   cursoTitulo?: string;
   acaoTitulo?: string;
   canEdit: boolean;
+  /** Abre este módulo (unidade) em modo edição ao carregar. */
+  initialUnidadeId?: string | null;
 };
 
 type RightPanel = "edit" | "preview";
@@ -118,9 +122,14 @@ function pickInitialUnidadeId(
 const UPLOAD_ACCEPT =
   "video/*,.mp4,.webm,.mov,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.odt,.odp,.csv,.rtf,image/*";
 
-export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit }: Props) {
+export function ActionContentBuilder({
+  cursoId,
+  cursoTitulo,
+  acaoTitulo,
+  canEdit,
+  initialUnidadeId = null,
+}: Props) {
   const [unidades, setUnidades] = useState<UnidadeNode[]>([]);
-  const [formadores, setFormadores] = useState<Array<{ id: string; nomeCompleto: string }>>([]);
   const [modulos, setModulos] = useState<ModuloNode[]>([]);
   const [selectedUnidadeId, setSelectedUnidadeId] = useState<string | null>(null);
   const [selectedConteudoId, setSelectedConteudoId] = useState<string | null>(null);
@@ -133,8 +142,12 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dragOverUpload, setDragOverUpload] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<
+    null | { kind: "unidade" | "conteudo"; id: string; titulo: string }
+  >(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const bulkUploadRef = useRef<HTMLInputElement>(null);
+  const appliedInitialUnidade = useRef<string | null>(null);
 
   const flatModulos = useMemo(
     () => modulos.filter((m) => !m.moduloUnidadeId).sort((a, b) => a.ordem - b.ordem),
@@ -183,18 +196,24 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
     const mRows = mRes.ok ? ((await mRes.json()) as ModuloNode[]) : [];
     setUnidades(uRows);
     setModulos(mRows);
-    setSelectedUnidadeId((prev) => pickInitialUnidadeId(uRows, mRows, prev));
-  }, [cursoId]);
+    const prefer =
+      initialUnidadeId && uRows.some((u) => u.id === initialUnidadeId)
+        ? initialUnidadeId
+        : null;
+    if (prefer && appliedInitialUnidade.current !== prefer) {
+      appliedInitialUnidade.current = prefer;
+      setSelectedUnidadeId(prefer);
+      setSelectedConteudoId(null);
+      setEditTarget("unidade");
+      setRightPanel("edit");
+    } else {
+      setSelectedUnidadeId((prev) => pickInitialUnidadeId(uRows, mRows, prev));
+    }
+  }, [cursoId, initialUnidadeId]);
 
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
-
-  useEffect(() => {
-    void bffFetch("/api/v1/formadores", { headers: { accept: "application/json" } }).then(async (r) => {
-      if (r.ok) setFormadores((await r.json()) as Array<{ id: string; nomeCompleto: string }>);
-    });
-  }, []);
 
   async function criarUnidade() {
     if (!canEdit || !cursoId) return;
@@ -237,20 +256,40 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
 
   async function deleteUnidade(id: string) {
     const u = unidades.find((x) => x.id === id);
-    if (!u || !canEdit || !confirm(`Eliminar módulo "${u.titulo}"? Os conteúdos ficam sem módulo.`)) return;
-    setUnidades((p) => p.filter((x) => x.id !== id));
-    setModulos((p) => p.map((m) => (m.moduloUnidadeId === id ? { ...m, moduloUnidadeId: null } : m)));
-    if (selectedUnidadeId === id) {
-      setSelectedUnidadeId(null);
-      setSelectedConteudoId(null);
+    if (!u || !canEdit) return;
+    setDeleteConfirm({ kind: "unidade", id, titulo: u.titulo });
+  }
+
+  async function confirmDelete() {
+    if (!deleteConfirm || !canEdit) return;
+    const { kind, id } = deleteConfirm;
+    setDeleteConfirm(null);
+    if (kind === "unidade") {
+      setUnidades((p) => p.filter((x) => x.id !== id));
+      setModulos((p) => p.map((m) => (m.moduloUnidadeId === id ? { ...m, moduloUnidadeId: null } : m)));
+      if (selectedUnidadeId === id) {
+        setSelectedUnidadeId(null);
+        setSelectedConteudoId(null);
+      }
+      const r = await bffFetch(`/api/v1/conteudos-lms/unidades/${id}`, { method: "DELETE" });
+      if (!r.ok) {
+        setError(await parseApiError(r));
+        void loadAll();
+        return;
+      }
+      setMsg("Módulo eliminado.");
+      return;
     }
-    const r = await bffFetch(`/api/v1/conteudos-lms/unidades/${id}`, { method: "DELETE" });
+    setModulos((p) => p.filter((x) => x.id !== id));
+    if (selectedConteudoId === id) setSelectedConteudoId(null);
+    if (previewViewerId === id) setPreviewViewerId(null);
+    const r = await bffFetch(`/api/v1/conteudos-lms/modulos/${id}`, { method: "DELETE" });
     if (!r.ok) {
       setError(await parseApiError(r));
       void loadAll();
       return;
     }
-    setMsg("Módulo eliminado.");
+    setMsg("Conteúdo eliminado.");
   }
 
   async function reorderUnidades(reordered: UnidadeNode[]) {
@@ -336,17 +375,8 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
 
   async function deleteConteudo(id: string) {
     const m = modulos.find((x) => x.id === id);
-    if (!m || !canEdit || !confirm(`Eliminar "${m.titulo}"?`)) return;
-    setModulos((p) => p.filter((x) => x.id !== id));
-    if (selectedConteudoId === id) setSelectedConteudoId(null);
-    if (previewViewerId === id) setPreviewViewerId(null);
-    const r = await bffFetch(`/api/v1/conteudos-lms/modulos/${id}`, { method: "DELETE" });
-    if (!r.ok) {
-      setError(await parseApiError(r));
-      void loadAll();
-      return;
-    }
-    setMsg("Conteúdo eliminado.");
+    if (!m || !canEdit) return;
+    setDeleteConfirm({ kind: "conteudo", id, titulo: m.titulo });
   }
 
   async function reorderConteudos(reordered: ModuloNode[]) {
@@ -807,7 +837,7 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
             </div>
           </div>
 
-          {/* Editor (centro) + mockup (direita) — desktop */}
+          {/* Editor (centro) + mockup (direita) - desktop */}
           <div className="hidden lg:flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-r border-slate-700/30 bg-slate-950/30">
               {canEdit ? (
@@ -830,31 +860,15 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
                       onChange={(e) => setUnidades((p) => p.map((u) => u.id === selectedUnidade.id ? { ...u, titulo: e.target.value } : u))}
                       onBlur={() => void updateUnidade(selectedUnidade.id, { titulo: selectedUnidade.titulo })} />
                   </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
-                    <label className="block">
-                      <span className="text-xs text-slate-400 mb-1 block">Horas do módulo</span>
-                      <input type="number" min={0} className={inputClass} value={selectedUnidade.cargaHoras ?? ""}
-                        onChange={(e) => {
-                          const v = e.target.value === "" ? null : Number(e.target.value);
-                          setUnidades((p) => p.map((u) => u.id === selectedUnidade.id ? { ...u, cargaHoras: v } : u));
-                        }}
-                        onBlur={() => void updateUnidade(selectedUnidade.id, { cargaHoras: selectedUnidade.cargaHoras })} />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs text-slate-400 mb-1 block">Formador</span>
-                      <select className={inputClass} value={selectedUnidade.formadorId ?? ""}
-                        onChange={(e) => {
-                          const v = e.target.value || null;
-                          setUnidades((p) => p.map((u) => u.id === selectedUnidade.id ? { ...u, formadorId: v } : u));
-                          void updateUnidade(selectedUnidade.id, { formadorId: v });
-                        }}>
-                        <option value="">-</option>
-                        {formadores.map((f) => (
-                          <option key={f.id} value={f.id}>{f.nomeCompleto}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
+                  <label className="block max-w-xs">
+                    <span className="text-xs text-slate-400 mb-1 block">Horas do módulo</span>
+                    <input type="number" min={0} className={inputClass} value={selectedUnidade.cargaHoras ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value === "" ? null : Number(e.target.value);
+                        setUnidades((p) => p.map((u) => u.id === selectedUnidade.id ? { ...u, cargaHoras: v } : u));
+                      }}
+                      onBlur={() => void updateUnidade(selectedUnidade.id, { cargaHoras: selectedUnidade.cargaHoras })} />
+                  </label>
                   <label className="block max-w-2xl">
                     <span className="text-xs text-slate-400 mb-1 block">Descrição (opcional)</span>
                     <textarea rows={4} className={`${inputClass} resize-y min-h-[96px]`}
@@ -879,6 +893,27 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
                     <p className="text-[10px] text-slate-600 mt-1">
                       O formando precisa desta média no módulo para aceder ao seguinte.
                     </p>
+                  </label>
+                  <label className="flex items-start gap-2 max-w-xl cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={!!selectedUnidade.lockManual}
+                      onChange={(e) => {
+                        const lockManual = e.target.checked;
+                        setUnidades((p) =>
+                          p.map((u) => (u.id === selectedUnidade.id ? { ...u, lockManual } : u)),
+                        );
+                        void updateUnidade(selectedUnidade.id, { lockManual });
+                      }}
+                    />
+                    <span>
+                      <span className="text-xs text-slate-300 block">Lock manual do módulo</span>
+                      <span className="text-[10px] text-slate-600 block mt-0.5">
+                        Quando activo, só o gestor ou o formador da sessão desse módulo podem
+                        libertar o conteúdo para os formandos (além da sequência por nota).
+                      </span>
+                    </span>
                   </label>
                 </div>
               ) : selectedConteudo ? (
@@ -1036,6 +1071,39 @@ export function ActionContentBuilder({ cursoId, cursoTitulo, acaoTitulo, canEdit
           )}
         </div>
       </div>
+
+      <Dialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
+        <DialogContent
+          title={deleteConfirm?.kind === "unidade" ? "Eliminar módulo" : "Eliminar conteúdo LMS"}
+          description={
+            deleteConfirm?.kind === "unidade"
+              ? "Os conteúdos deste módulo ficam sem módulo associado."
+              : "Esta acção não pode ser anulada."
+          }
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-slate-300">
+              Eliminar{" "}
+              <span className="font-semibold text-slate-100">
+                «{deleteConfirm?.titulo ?? ""}»
+              </span>
+              ?
+            </p>
+            <div className="flex flex-wrap gap-2 justify-end">
+              <Button type="button" variant="secondary" onClick={() => setDeleteConfirm(null)}>
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                className="bg-red-600 hover:bg-red-500"
+                onClick={() => void confirmDelete()}
+              >
+                Eliminar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

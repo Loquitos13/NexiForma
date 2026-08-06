@@ -8,6 +8,14 @@ type Props = {
   propostaId: string;
 };
 
+/** Remove scripts e handlers de evento, preservando estilos do documento. */
+function stripScriptsAndHandlers(html: string): string {
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/\son\w+\s*=\s*(["'])[\s\S]*?\1/gi, "")
+    .replace(/\son\w+\s*=\s*[^\s>]+/gi, "");
+}
+
 export function PropostaDocumentoPreview({ propostaId }: Props) {
   const [html, setHtml] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -25,7 +33,7 @@ export function PropostaDocumentoPreview({ propostaId }: Props) {
         setError("Não foi possível carregar o documento da proposta.");
         return;
       }
-      setHtml(await res.text());
+      setHtml(stripScriptsAndHandlers(await res.text()));
     })();
   }, [propostaId]);
 
@@ -56,7 +64,8 @@ export function PropostaDocumentoPreview({ propostaId }: Props) {
         title="Pré-visualização da proposta"
         srcDoc={html}
         className="block w-full min-h-[720px] border-0 bg-white"
-        sandbox="allow-same-origin allow-scripts"
+        sandbox=""
+        referrerPolicy="no-referrer"
       />
     </section>
   );

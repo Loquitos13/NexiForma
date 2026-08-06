@@ -18,6 +18,13 @@ export type ModuloPercurso = {
   id: string;
   ordem: number;
   notaMinima?: number | null;
+  /** Se true, exige desbloqueio explícito por matrícula além da sequência. */
+  lockManual?: boolean | null;
+};
+
+export type PercursoDesbloqueioOpts = {
+  /** IDs de ModuloUnidade já desbloqueados manualmente para a matrícula. */
+  desbloqueiosManuais?: ReadonlySet<string>;
 };
 
 const DEFAULT_NOTA_MINIMA_MODULO = 60;
@@ -64,25 +71,31 @@ export function tarefasOrdenadas<T extends TarefaPercurso>(tarefas: T[], unidade
     .sort((a, b) => a.ordem - b.ordem || a.id.localeCompare(b.id));
 }
 
-/** O módulo (secção) está desbloqueado se o anterior atingiu a nota mínima exigida. */
+/**
+ * Controlo de acesso ao módulo (secção):
+ * - `lockManual` sem libertação em Tarefas → bloqueado
+ * - libertação explícita (MatriculaUnidadeDesbloqueio) → aberto de imediato
+ * - sem `lockManual` → aberto (Tarefas é a fonte de verdade do bloqueio;
+ *   a sequência por nota não pode prender módulos que o gestor não bloqueou)
+ */
 export function moduloDesbloqueado(
   unidades: ModuloPercurso[],
-  tarefas: TarefaPercurso[],
-  progressos: ProgressoPercurso[],
+  _tarefas: TarefaPercurso[],
+  _progressos: ProgressoPercurso[],
   unidadeId: string,
+  opts?: PercursoDesbloqueioOpts,
 ): boolean {
-  const sorted = unidadesOrdenadas(unidades);
-  const idx = sorted.findIndex((u) => u.id === unidadeId);
-  if (idx <= 0) return true;
+  const actual = unidades.find((u) => u.id === unidadeId);
+  if (!actual) return false;
 
-  const anterior = sorted[idx - 1];
-  const tarefasAnterior = tarefasOrdenadas(tarefas, anterior.id);
-  if (tarefasAnterior.length === 0) return true;
+  const libertadoExplicitamente = opts?.desbloqueiosManuais?.has(unidadeId) === true;
 
-  const scoreAnterior = pontuacaoModulo(tarefas, progressos, anterior.id);
-  const minima = anterior.notaMinima ?? DEFAULT_NOTA_MINIMA_MODULO;
-  if (scoreAnterior === null) return false;
-  return scoreAnterior >= minima;
+  // Bloqueado só quando Tarefas tem lock activo e ainda não foi libertado.
+  if (actual.lockManual && !libertadoExplicitamente) {
+    return false;
+  }
+
+  return true;
 }
 
 /** Pré-requisito concluído (progresso + nota mínima quando aplicável). */
@@ -111,12 +124,13 @@ export function tarefaDesbloqueada(
   tarefas: TarefaPercurso[],
   progressos: ProgressoPercurso[],
   tarefaId: string,
+  opts?: PercursoDesbloqueioOpts,
 ): boolean {
   const tarefa = tarefas.find((t) => t.id === tarefaId);
   if (!tarefa || tarefa.publicado === false) return false;
 
   if (tarefa.moduloUnidadeId) {
-    if (!moduloDesbloqueado(unidades, tarefas, progressos, tarefa.moduloUnidadeId)) {
+    if (!moduloDesbloqueado(unidades, tarefas, progressos, tarefa.moduloUnidadeId, opts)) {
       return false;
     }
   }

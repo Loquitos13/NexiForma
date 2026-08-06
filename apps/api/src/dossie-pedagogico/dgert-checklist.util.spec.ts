@@ -45,4 +45,39 @@ describe("buildDgertChecklist", () => {
     expect(item?.ok).toBe(false);
     expect(r.prontoInspecao).toBe(false);
   });
+
+  it("marca evidências de auditoria como recomendadas", () => {
+    const r = buildDgertChecklist({
+      ...base,
+      totalAvaliacoes: 0,
+      totalCertificados: 0,
+      totalDocumentosMatricula: 0,
+    });
+    expect(r.items.find((i) => i.id === "avaliacoes_formandos")?.ok).toBe(false);
+    expect(r.items.find((i) => i.id === "certificados_emitidos")?.ok).toBe(false);
+    expect(r.items.find((i) => i.id === "documentos_matricula")?.ok).toBe(false);
+    expect(r.prontoInspecao).toBe(true);
+  });
+
+  it("exige formador em todas as sessões", () => {
+    const r = buildDgertChecklist({
+      ...base,
+      sessoes: [
+        ...base.sessoes,
+        {
+          numeroSessao: 2,
+          horaInicio: "14:00",
+          horaFim: "17:00",
+          modalidade: "presencial",
+          estado: "AGENDADA",
+          formador: null,
+          sumarios: [],
+          folhasPresenca: [],
+        },
+      ],
+    });
+    const item = r.items.find((i) => i.id === "formadores");
+    expect(item?.ok).toBe(false);
+    expect(r.prontoInspecao).toBe(false);
+  });
 });

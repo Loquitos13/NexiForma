@@ -1,4 +1,5 @@
 import { listarCamposEmitenteEmFalta } from "./faturacao-dados-legais.util";
+import { isAtLicencaAnexoIiAceite } from "./at-licenca-anexo-ii.util";
 
 export type CertificacaoAtItem = {
   id: string;
@@ -33,12 +34,14 @@ type AvaliarInput = {
     emailGestor?: string | null;
     capitalSocial?: string | null;
     consRegCom?: string | null;
+    atLicencaAceiteEm?: Date | string | null;
+    atLicencaVersao?: string | null;
   };
   series: Array<{ codigo: string; tipo: string; codigoValidacaoAt: string | null }>;
   softwarePlataforma: string | null;
   modoServidor: "disabled" | "sandbox" | "production";
+  licencaAceite?: boolean;
 };
-
 export function resolverSoftwareCertificado(
   configSoftware: string | null | undefined,
   plataformaSoftware: string | null | undefined,
@@ -54,8 +57,23 @@ export function avaliarCertificacaoAt(input: AvaliarInput): CertificacaoAtAvalia
   const { config, series, softwarePlataforma, modoServidor } = input;
   const sw = resolverSoftwareCertificado(config.softwareCertificado, softwarePlataforma);
   const emSandbox = modoServidor === "sandbox";
+  const licencaOk =
+    input.licencaAceite ??
+    isAtLicencaAnexoIiAceite({
+      atLicencaAceiteEm: config.atLicencaAceiteEm,
+      atLicencaVersao: config.atLicencaVersao,
+    });
 
   const items: CertificacaoAtItem[] = [
+    {
+      id: "licenca_anexo_ii",
+      label: "Aceite da Licença Anexo II (serviços web AT)",
+      ok: licencaOk,
+      detalhe: licencaOk
+        ? "Contribuinte aceitou os termos de utilização dos serviços web da AT."
+        : "Obrigatório antes de activar comunicação ou invocar os webservices (Contrato de adesão).",
+      bloqueante: true,
+    },
     {
       id: "software_certificado",
       label: "Número de certificação do software AT",
@@ -148,7 +166,7 @@ export function avaliarCertificacaoAt(input: AvaliarInput): CertificacaoAtAvalia
     modoServidor,
     items,
     avisoLegal: emSandbox
-      ? "Modo sandbox mock: simulação local. Com AT_FATURAS_MODE=sandbox (sem _SANDBOX_MOCK) usa webservice real AT (:700/:722)."
-      : "A comunicação AT só deve ser activada após certificação do software e credenciais WFA válidas.",
+      ? "Modo sandbox: aceite a Licença Anexo II antes de testar/comunicar. Com AT_FATURAS_MODE=sandbox (sem _SANDBOX_MOCK) usa webservice real AT (:700/:722)."
+      : "A comunicação AT só deve ser activada após aceite da Licença Anexo II, certificação do software e credenciais WFA válidas.",
   };
 }

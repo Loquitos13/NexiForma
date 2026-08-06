@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, GraduationCap } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
-import { parseApiError } from "@/lib/ui/backoffice";
+import { useMinhasSessoesPoll } from "@/lib/lms/use-minhas-sessoes-poll";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert } from "@/components/ui";
 import { SessaoLiveHero } from "@/components/formando/sessao-live-hero";
@@ -50,17 +50,7 @@ export default function FormandoPortalPage() {
   const [progresso, setProgresso] = useState<Record<string, PercursoResumo>>({});
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    const r = await bffFetch("/api/v1/lms/minhas-sessoes", { headers: { accept: "application/json" } });
-    if (!r.ok) {
-      setError(await parseApiError(r));
-      setBlocks([]);
-      return;
-    }
-    const data = (await r.json()) as MinhasSessoes[];
-    setBlocks(data);
-
+  const loadProgresso = useCallback(async (data: MinhasSessoes[]) => {
     const next: Record<string, PercursoResumo> = {};
     await Promise.all(
       data.map(async (b) => {
@@ -85,19 +75,48 @@ export default function FormandoPortalPage() {
     setProgresso(next);
   }, []);
 
+  const blocksRef = useRef(blocks);
+  blocksRef.current = blocks;
+  const inscricoesKey = useMemo(
+    () => (blocks ?? []).map((b) => b.matriculaId).sort().join("|"),
+    [blocks],
+  );
+
+  // Sessões: poll frequente para o banner «ao vivo» / presença actualizarem sem refresh.
+  useMinhasSessoesPoll((raw) => {
+    const data = raw as MinhasSessoes[];
+    setError(null);
+    setBlocks(data);
+  });
+
+  // Progresso LMS: ao mudar de inscrições e a cada 60s (não a cada poll de sessão).
   useEffect(() => {
-    void load();
-    const id = setInterval(() => void load(), 20_000);
+    if (!inscricoesKey) return;
+    const tick = () => {
+      const data = blocksRef.current;
+      if (data?.length) void loadProgresso(data);
+    };
+    tick();
+    const id = setInterval(tick, 60_000);
     return () => clearInterval(id);
-  }, [load]);
+  }, [inscricoesKey, loadProgresso]);
 
   return (
     <div className="max-w-4xl mx-auto px-5 py-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-50">Aprendizagem</h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Escolhe a inscrição em que queres continuar sessões e conteúdos.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-50">Aprendizagem</h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Escolhe a inscrição em que queres continuar sessões e conteúdos.
+          </p>
+        </div>
+        <Link
+          href="/portal/fluxo"
+          className="inline-flex items-center gap-1 text-sm text-blue-400 hover:text-blue-300 shrink-0"
+        >
+          Fluxo guiado
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
       </div>
 
       {blocks && blocks.length > 0 ? <SessaoLiveHero blocks={blocks} /> : null}

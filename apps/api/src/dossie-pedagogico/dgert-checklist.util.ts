@@ -52,6 +52,10 @@ export type DgertChecklistInput = {
   totalMatriculas: number;
   presencasPresentes: number;
   presencasTotal: number;
+  /** Evidências de auditoria (avaliações / certificados / docs matrícula). */
+  totalAvaliacoes?: number;
+  totalCertificados?: number;
+  totalDocumentosMatricula?: number;
 };
 
 const GRUPO_LABELS: Record<DgertChecklistItem["grupo"], string> = {
@@ -95,8 +99,9 @@ export function buildDgertChecklist(input: DgertChecklistInput): {
     s.sumarios.some((sum) => sum.imutavel && sum.assinadoEm),
   );
   const sessoesComFolha = sessoes.filter((s) => s.folhasPresenca.length > 0);
+  /** Folha concluída = fechada após aprovação do gestor/coordenador. */
   const folhaConcluida = (f: { fechadaEm: Date | null; validadaFormadorEm?: Date | null }) =>
-    Boolean(f.fechadaEm || f.validadaFormadorEm);
+    Boolean(f.fechadaEm);
   const folhasFechadas = sessoes
     .flatMap((s) => s.folhasPresenca.filter(folhaConcluida))
     .length;
@@ -215,9 +220,20 @@ export function buildDgertChecklist(input: DgertChecklistInput): {
       id: "formadores",
       grupo: "equipa",
       severidade: "obrigatorio",
-      label: "Formador(es) atribuído(s) às sessões",
-      ok: formadoresMap.size > 0,
-      detalhe: `${formadoresMap.size} formador(es)`,
+      label: "Formador atribuído a todas as sessões",
+      ok:
+        sessoes.length > 0 &&
+        sessoes.every((s) => Boolean(s.formador)),
+      detalhe:
+        sessoes.length === 0
+          ? "Sem sessões"
+          : (() => {
+              const sem = sessoes.filter((s) => !s.formador).length;
+              return sem > 0
+                ? `${sem}/${sessoes.length} sessão(ões) sem formador`
+                : `${formadoresMap.size} formador(es) · todas as sessões`;
+            })(),
+      accaoSugerida: "Atribuir formador a cada sessão do cronograma (ou a toda a acção).",
     },
     {
       id: "formador_qualificacao",
@@ -299,6 +315,38 @@ export function buildDgertChecklist(input: DgertChecklistInput): {
       ok: taxaPresenca == null || taxaPresenca >= 75,
       detalhe: taxaPresenca != null ? `${taxaPresenca}%` : undefined,
       accaoSugerida: "Acompanhar assiduidade e aplicar medidas de recuperação.",
+    },
+    {
+      id: "avaliacoes_formandos",
+      grupo: "execucao",
+      severidade: "recomendado",
+      label: "Avaliações registadas para formandos activos",
+      ok:
+        input.totalMatriculas === 0 ||
+        (input.totalAvaliacoes ?? 0) >= input.totalMatriculas,
+      detalhe: `${input.totalAvaliacoes ?? 0}/${input.totalMatriculas} avaliação(ões)`,
+      accaoSugerida: "Registar avaliação final de cada formando antes da auditoria.",
+    },
+    {
+      id: "certificados_emitidos",
+      grupo: "execucao",
+      severidade: "recomendado",
+      label: "Certificados emitidos (verificação pública)",
+      ok:
+        input.totalMatriculas === 0 ||
+        (input.totalCertificados ?? 0) >= input.totalMatriculas,
+      detalhe: `${input.totalCertificados ?? 0}/${input.totalMatriculas} certificado(s)`,
+      accaoSugerida: "Emitir certificados após conclusão e avaliação positiva.",
+    },
+    {
+      id: "documentos_matricula",
+      grupo: "participantes",
+      severidade: "recomendado",
+      label: "Documentos de matrícula / contratos arquivados",
+      ok:
+        input.totalMatriculas === 0 || (input.totalDocumentosMatricula ?? 0) > 0,
+      detalhe: `${input.totalDocumentosMatricula ?? 0} documento(s)`,
+      accaoSugerida: "Arquivar contratos e documentos de inscrição por matrícula.",
     },
   ];
 

@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, MessageSquare, Sparkles } from "lucide-react";
-import { CRM_SUGESTAO_REJEICAO_MOTIVOS, mensagemAceiteSugestao, type CrmSugestaoExecucao, type CrmSugestaoRejeicaoMotivo } from "@nexiforma/shared";
+import { CRM_SUGESTAO_REJEICAO_MOTIVOS, inferirAcaoPlaneada, mensagemAceiteSugestao, type CrmSugestaoExecucao, type CrmSugestaoRejeicaoMotivo } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { notifyCrmSugestoesUpdated } from "@/lib/crm/sugestoes-events";
 import { parsePaginatedList } from "@/lib/crm/paginated-list";
@@ -19,6 +19,8 @@ import {
   DialogContent,
   Input,
   Select,
+  Sheet,
+  SheetContent,
   Textarea,
 } from "@/components/ui";
 import { NotaRegistoCard, type NotaRegisto, type NotaSugestao } from "@/components/crm/nota-registo-card";
@@ -31,6 +33,7 @@ type SugestaoApi = {
   descricao: string;
   score: number | string;
   estado: string;
+  metadata?: unknown;
   interaccao: { id: string } | null;
   leadComercial?: { id: string; codigo: string; empresaNome: string } | null;
 };
@@ -161,8 +164,10 @@ export function CrmContextInsights({
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
+  const [acceptId, setAcceptId] = useState<string | null>(null);
   const [rejectMotivo, setRejectMotivo] = useState<CrmSugestaoRejeicaoMotivo>(CRM_SUGESTAO_REJEICAO_MOTIVOS[0]);
   const [rejectComentario, setRejectComentario] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const enabled = !!(entidadeClienteId || leadComercialId);
@@ -264,19 +269,22 @@ export function CrmContextInsights({
       return;
     }
     setForm(emptyNota);
-    setMsg("Nota guardada - a IA analisa em background. O registo aparece abaixo.");
+    setFormOpen(false);
+    setMsg("Nota guardada - a IA analisa em background. O registo aparece no histórico.");
     void load();
     onMutate?.();
   }
 
-  async function aceitar(id: string) {
+  async function aceitar() {
+    if (!acceptId) return;
     setBusy(true);
     setMsg(null);
-    const res = await bffFetch(`/api/v1/crm/sugestoes-ia/${id}/aceitar`, {
+    const res = await bffFetch(`/api/v1/crm/sugestoes-ia/${acceptId}/aceitar`, {
       method: "POST",
       headers: { accept: "application/json" },
     });
     setBusy(false);
+    setAcceptId(null);
     if (!res.ok) setError(await parseApiError(res));
     else {
       const data = (await res.json()) as {
@@ -289,6 +297,10 @@ export function CrmContextInsights({
       onMutate?.();
     }
   }
+
+  const acceptSugestao = acceptId
+    ? sugestoesRaw.find((s) => s.id === acceptId)
+    : null;
 
   async function rejeitar() {
     if (!rejectId) return;
@@ -343,12 +355,16 @@ export function CrmContextInsights({
                 {pendentes.length} sugestão(ões) por validar
               </Badge>
             ) : null}
+            <Button size="sm" onClick={() => setFormOpen(true)} disabled={busy}>
+              <Sparkles className="h-3.5 w-3.5" />
+              Nova nota
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
           {notas.length === 0 ? (
             <p className="text-sm text-slate-500">
-              Ainda não há notas registadas para este cliente. Usa o formulário abaixo para a primeira reunião.
+              Ainda não há notas registadas para este cliente. Usa o botão Nova nota para a primeira reunião.
             </p>
           ) : (
             notas.map((nota, idx) => (
@@ -357,7 +373,7 @@ export function CrmContextInsights({
                 nota={nota}
                 busy={busy}
                 defaultExpanded={idx === 0}
-                onAceitar={(id) => void aceitar(id)}
+                onAceitar={(id) => setAcceptId(id)}
                 onRejeitar={(id) => setRejectId(id)}
               />
             ))
@@ -365,17 +381,11 @@ export function CrmContextInsights({
         </CardContent>
       </Card>
 
-      <Card className="border-slate-700/50">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <MessageSquare className="h-4 w-4 text-slate-400" />
-            Nova nota comercial
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="mb-4 text-xs text-slate-500">
-            O que escreveres fica guardado e visível no histórico acima. A IA sugere acções comerciais em seguida.
-          </p>
+      <Sheet open={formOpen} onOpenChange={setFormOpen}>
+        <SheetContent
+          title="Nova nota comercial"
+          description={`Registo para ${contextoNome}. A IA sugere acções comerciais em seguida.`}
+        >
           <form onSubmit={(e) => void onSubmitNota(e)} className="grid gap-3 sm:grid-cols-2">
             <Select
               label="Tipo"
@@ -441,12 +451,31 @@ export function CrmContextInsights({
             />
             <div className="sm:col-span-2">
               <Button type="submit" disabled={busy}>
-                {busy ? "A guardar…" : "Guardar nota"}
+                {busy ? "A guardar…" : "Guardar e processar com IA"}
               </Button>
             </div>
           </form>
-        </CardContent>
-      </Card>
+        </SheetContent>
+      </Sheet>
+
+      <Dialog open={acceptId != null} onOpenChange={(open) => !open && setAcceptId(null)}>
+        <DialogContent title="Aceitar sugestão">
+          <div className="grid gap-3">
+            {acceptSugestao ? (
+              <p className="text-sm text-violet-300">
+                {inferirAcaoPlaneada(acceptSugestao.metadata, acceptSugestao.titulo, acceptSugestao.tipo)
+                  ? `Será executado: ${inferirAcaoPlaneada(acceptSugestao.metadata, acceptSugestao.titulo, acceptSugestao.tipo)}`
+                  : "Confirma que deseja aceitar e executar esta sugestão comercial?"}
+              </p>
+            ) : null}
+            <div className="flex gap-2">
+              <Button disabled={busy} onClick={() => void aceitar()}>
+                Aceitar e executar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={rejectId != null} onOpenChange={(open) => !open && setRejectId(null)}>
         <DialogContent title="Rejeitar sugestão" description="Ajuda a IA a melhorar futuras sugestões.">
@@ -471,9 +500,6 @@ export function CrmContextInsights({
             <div className="flex gap-2">
               <Button disabled={busy} onClick={() => void rejeitar()}>
                 Confirmar rejeição
-              </Button>
-              <Button variant="secondary" onClick={() => setRejectId(null)}>
-                Cancelar
               </Button>
             </div>
           </div>

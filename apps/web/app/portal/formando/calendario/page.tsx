@@ -1,5 +1,11 @@
-import { FormandoCalendarioView } from "@/components/formando/formando-calendario-view";
+import { PortalCalendarioView } from "@/components/portal/portal-calendario-view";
 
 export default function FormandoCalendarioPage() {
-  return <FormandoCalendarioView />;
+  return (
+    <PortalCalendarioView
+      formandoMode
+      title="Calendário"
+      description="Sessões das suas formações, prazos LMS e lembretes pessoais - clique num dia para agendar."
+    />
+  );
 }

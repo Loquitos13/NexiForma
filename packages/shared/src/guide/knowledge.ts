@@ -79,8 +79,8 @@ export const GUIDE_KNOWLEDGE: GuideKnowledgeEntry[] = [
       "online",
     ],
     answer:
-      "LMS & Assiduidade regista presenças (incluindo sessões Zoom/Teams), painel em tempo real e alertas. Os Conteúdos LMS gerem módulos SCORM e materiais para formandos.",
-    related: ["/portal/lms", "/portal/conteudos"],
+      "A assiduidade e as sessões online (Zoom/Teams) gerem-se nas Acções e no calendário da sessão. Os Conteúdos LMS e o Progresso LMS cobrem módulos SCORM e progresso dos formandos.",
+    related: ["/portal/acoes", "/portal/conteudos", "/portal/progresso-lms"],
   },
   {
     id: "leads",
@@ -129,14 +129,14 @@ export const GUIDE_KNOWLEDGE: GuideKnowledgeEntry[] = [
     ],
     answer:
       "Cada ação formativa agrupa turmas, sessões e sumários. É o núcleo operacional: matrículas, presenças LMS e dossiê derivam da ação.",
-    related: ["/portal/acoes", "/portal/matriculas", "/portal/lms"],
+    related: ["/portal/acoes", "/portal/matriculas", "/portal/progresso-lms"],
   },
   {
     id: "certificados",
-    keywords: ["certificado", "certificados", "cmd", "assinatura qualificada"],
+    keywords: ["certificado", "certificados", "assinatura", "sumario pdf"],
     answer:
-      "Certificados emite documentos de conclusão. A assinatura qualificada CMD pode ser activada via integração - o formando recebe link para assinar.",
-    related: ["/portal/certificados", "/portal/integracoes", "/cmd/assinar"],
+      "Certificados emite documentos de conclusão com QR verificável. Sumários podem ser assinados internamente ou com upload de PDF assinado no dossiê pedagógico.",
+    related: ["/portal/certificados", "/portal/dossie"],
   },
   {
     id: "formador",
@@ -151,8 +151,8 @@ export const GUIDE_KNOWLEDGE: GuideKnowledgeEntry[] = [
       "ver perfil",
     ],
     answer:
-      "O formador trabalha em cursos, ações formativas, LMS, conteúdos, calendário (quando atribuído) e RGPD em consulta. O portal do formador não inclui perfil nem Configurações da entidade - a conta é gerida pelo gestor em Utilizadores.",
-    related: ["/portal/cursos", "/portal/acoes", "/portal/lms", "/portal/conteudos"],
+      "O formador gere o seu perfil em «O meu perfil» (dados pessoais, palavra-passe e documentos obrigatórios como CV, identificação e CCP). Também trabalha em cursos, ações formativas, LMS, conteúdos, calendário (quando atribuído) e RGPD em consulta. As Configurações da entidade ficam com o gestor.",
+    related: ["/portal/formador/perfil", "/portal/cursos", "/portal/acoes", "/portal/conteudos"],
   },
   {
     id: "formando",
@@ -180,12 +180,11 @@ export const GUIDE_KNOWLEDGE: GuideKnowledgeEntry[] = [
       "integracao",
       "integracoes",
       "stripe",
-      "cmd",
       "webservice",
       "api key",
     ],
     answer:
-      "Integrações liga serviços reais (AT, SIGO, CMD, mail, SMS, Stripe). Em produção cada integração activa com credenciais válidas ou fica explicitamente desactivada.",
+      "Integrações liga serviços reais (AT, SIGO, mail, SMS, Stripe, Zoom/Teams). Em produção cada integração activa com credenciais válidas ou fica explicitamente desactivada.",
     related: ["/portal/integracoes", "/portal/enterprise"],
   },
   {

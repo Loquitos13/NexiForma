@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { Suspense } from "react";
 import { GuidedFlowBackBar, GuidedFlowHub, useGuidedFlowView } from "@/components/fluxo/GuidedFlowHub";
+import { GuidedFlowGuide } from "@/components/fluxo/GuidedFlowGuide";
 import { FormationSetupWizard } from "@/components/fluxo/FormationSetupWizard";
 
 const CourseFlowBuilder = dynamic(
@@ -13,7 +14,7 @@ const CourseFlowBuilder = dynamic(
 function FluxoContent() {
   const [view, setView] = useGuidedFlowView();
 
-  if (view === "setup-completo") {
+  if (view.kind === "interactive" && view.view === "setup-completo") {
     return (
       <>
         <GuidedFlowBackBar label="Nova formação completa" onBack={() => setView("hub")} />
@@ -22,7 +23,7 @@ function FluxoContent() {
     );
   }
 
-  if (view === "conteudos") {
+  if (view.kind === "interactive" && view.view === "conteudos") {
     return (
       <>
         <GuidedFlowBackBar label="Editor de conteúdos LMS" onBack={() => setView("hub")} />
@@ -31,7 +32,16 @@ function FluxoContent() {
     );
   }
 
-  return <GuidedFlowHub onOpenView={(v) => setView(v)} />;
+  if (view.kind === "guide") {
+    return (
+      <>
+        <GuidedFlowBackBar label={view.module.title} onBack={() => setView("hub")} />
+        <GuidedFlowGuide module={view.module} />
+      </>
+    );
+  }
+
+  return <GuidedFlowHub onOpen={(target) => setView(target)} />;
 }
 
 export default function FluxoPage() {

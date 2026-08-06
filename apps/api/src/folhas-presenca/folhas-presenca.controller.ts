@@ -17,6 +17,8 @@ import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/decorators/roles.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import type { RequestUser } from "../auth/types/access-token-payload";
+import { AprovarFolhaDto } from "./dto/aprovar-folha.dto";
+import { ValidarFolhaDto } from "./dto/validar-folha.dto";
 import { CreateFolhaPresencaDto } from "./dto/create-folha-presenca.dto";
 import { UpdatePresencaDto } from "./dto/update-presenca.dto";
 import { FolhasPresencaService } from "./folhas-presenca.service";
@@ -31,7 +33,7 @@ export class FolhasPresencaController {
   ) {}
 
   @Get()
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   list(
     @CurrentUser() user: RequestUser,
     @Query("sessaoId", ParseUUIDPipe) sessaoId: string,
@@ -41,7 +43,7 @@ export class FolhasPresencaController {
   }
 
   @Get(":id/presencas.html")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   async presencasHtml(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -59,25 +61,27 @@ export class FolhasPresencaController {
   }
 
   @Patch(":id/validar")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   validar(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: ValidarFolhaDto,
   ): Promise<FolhaPresenca> {
-    return this.folhas.validarFormador(user, id);
+    return this.folhas.validarFormador(user, id, dto.nomeAssinatura);
   }
 
   @Patch(":id/aprovar")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   aprovar(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: AprovarFolhaDto,
   ): Promise<FolhaPresenca> {
-    return this.folhas.aprovarGestor(user, id);
+    return this.folhas.aprovarGestor(user, id, dto.nomeAssinatura);
   }
 
   @Get(":id")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   detail(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
@@ -86,7 +90,7 @@ export class FolhasPresencaController {
   }
 
   @Post()
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   create(
     @CurrentUser() user: RequestUser,
     @Body() dto: CreateFolhaPresencaDto,
@@ -95,12 +99,13 @@ export class FolhasPresencaController {
   }
 
   @Patch(":id/fechar")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   fechar(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: AprovarFolhaDto,
   ): Promise<FolhaPresenca> {
-    return this.folhas.fechar(user, id);
+    return this.folhas.fechar(user, id, dto.nomeAssinatura);
   }
 }
 
@@ -110,12 +115,49 @@ export class PresencasController {
   constructor(private readonly folhas: FolhasPresencaService) {}
 
   @Patch(":id")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   update(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() dto: UpdatePresencaDto,
   ): Promise<Presenca> {
     return this.folhas.updatePresenca(user, id, dto);
+  }
+}
+
+@Controller("presenca-checkin")
+@UseGuards(JwtAuthGuard, RolesGuard)
+export class PresencaCheckinController {
+  constructor(private readonly folhas: FolhasPresencaService) {}
+
+  /** Rotas estáticas antes de :token para não capturar "sessao" como token. */
+  @Get("sessao/:sessaoId")
+  @Roles("formando")
+  statusSessao(
+    @CurrentUser() user: RequestUser,
+    @Param("sessaoId", ParseUUIDPipe) sessaoId: string,
+  ) {
+    return this.folhas.getCheckinStatusBySessao(user, sessaoId);
+  }
+
+  @Post("sessao/:sessaoId")
+  @Roles("formando")
+  checkinSessao(
+    @CurrentUser() user: RequestUser,
+    @Param("sessaoId", ParseUUIDPipe) sessaoId: string,
+  ) {
+    return this.folhas.checkinBySessao(user, sessaoId);
+  }
+
+  @Get(":token")
+  @Roles("formando")
+  info(@CurrentUser() user: RequestUser, @Param("token") token: string) {
+    return this.folhas.getCheckinInfo(user, token);
+  }
+
+  @Post(":token")
+  @Roles("formando")
+  checkin(@CurrentUser() user: RequestUser, @Param("token") token: string) {
+    return this.folhas.checkinByQrToken(user, token);
   }
 }

@@ -9,6 +9,7 @@ import { MailService } from "../mail/mail.service";
 import { SmsService } from "./sms.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 import { EmailTemplates } from "./templates/email.templates";
 import { SmsTemplates } from "./templates/sms.templates";
 import {
@@ -48,7 +49,7 @@ export class NotificacoesExtendedService {
     },
   ) {
     const portalUrl =
-      this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+      resolveAppPublicUrlForLinks(this.config);
 
     // Email
     const emailTemplate = EmailTemplates.sessaoAgendada({
@@ -114,7 +115,7 @@ export class NotificacoesExtendedService {
 
     const acao = sessao.cronograma.acaoFormacao;
     const portalBase =
-      this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+      resolveAppPublicUrlForLinks(this.config);
     const dataPt = sessao.data.toLocaleDateString("pt-PT", {
       weekday: "long",
       day: "numeric",
@@ -206,7 +207,7 @@ export class NotificacoesExtendedService {
         acaoTitulo: acao.titulo,
         dataHora,
         formador: formadorNome,
-        portalUrl: `${portalBase}/portal/lms`,
+        portalUrl: `${portalBase}/portal/acoes`,
         salaUrl,
         audiencia: "staff",
       });
@@ -258,7 +259,7 @@ export class NotificacoesExtendedService {
     if (!matricula) return { enviados: 0 };
 
     const portalBase =
-      this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+      resolveAppPublicUrlForLinks(this.config);
     const nomeSessao = `Sessão ${sessao.numeroSessao}`;
     const portalUrl = `${portalBase}/portal/acoes`;
 
@@ -324,7 +325,7 @@ export class NotificacoesExtendedService {
     },
   ) {
     const portalUrl =
-      this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+      resolveAppPublicUrlForLinks(this.config);
 
     // Email
     const emailTemplate = EmailTemplates.certificadoDisponivel({
@@ -392,7 +393,7 @@ export class NotificacoesExtendedService {
     });
 
     const portalUrl =
-      this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+      resolveAppPublicUrlForLinks(this.config);
 
     const emailTemplate = EmailTemplates.alertaCompliance({
       entidade: tenant?.legalName ?? "Entidade",
@@ -497,7 +498,7 @@ export class NotificacoesExtendedService {
     });
 
     const portalUrl =
-      this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+      resolveAppPublicUrlForLinks(this.config);
 
     const emailTemplate = EmailTemplates.resumoInspecao({
       entidade: tenant?.legalName ?? "Entidade",
@@ -536,7 +537,7 @@ export class NotificacoesExtendedService {
     severidade: "critico" | "aviso",
   ) {
     const portalUrl =
-      this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+      resolveAppPublicUrlForLinks(this.config);
     const emailTemplate = EmailTemplates.alertaCompliance({
       entidade: "A sua qualificação",
       severidade,
@@ -552,5 +553,233 @@ export class NotificacoesExtendedService {
     });
 
     this.logger.log(`✓ Alerta qualificação enviado a ${nomeFormador} (${email})`);
+  }
+
+  /**
+   * Avisa departamento pedagógico (gestor + coord. pedagógico) quando o formador
+   * termina uma sessão com folha e/ou sumário por validar.
+   */
+  async notificarPendenciasAposTerminarSessao(
+    tenantId: string,
+    input: {
+      acaoId: string;
+      sessaoId?: string;
+      acaoLabel: string;
+      sessaoLabel: string;
+      formadorNome: string;
+      pendencias: string[];
+      folhaPendente?: boolean;
+      sumarioPendente?: boolean;
+    },
+  ) {
+    if (!input.pendencias.length) return { destinatarios: 0 };
+
+    const mailFallback =
+      this.config.get<string>("MAIL_REPLY_TO")?.trim() ||
+      this.config.get<string>("MAIL_PEDAGOGICO")?.trim() ||
+      null;
+
+    const [tenant, destinatarios] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { legalName: true },
+      }),
+      this.prisma.user.findMany({
+        where: { tenantId, active: true, role: { in: GESTOR_COORDENADOR_ROLES } },
+        select: { id: true, email: true, displayName: true, role: true },
+      }),
+    ]);
+
+    const focus =
+      input.folhaPendente && input.sumarioPendente
+        ? "pendencias"
+        : input.folhaPendente
+          ? "folha"
+          : "sumario";
+    const portalPath =
+      `/portal/acoes/${encodeURIComponent(input.acaoId)}?tab=cronograma` +
+      (input.sessaoId
+        ? `&sessaoId=${encodeURIComponent(input.sessaoId)}&focus=${focus}`
+        : "");
+
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
+    const portalUrl = `${appUrl}${portalPath}`;
+    const entidade = tenant?.legalName?.trim() || "Entidade formadora";
+    const titulo = `Pendências após sessão – ${input.acaoLabel}`;
+    const mensagem =
+      `${input.formadorNome} terminou «${input.sessaoLabel}» sem concluir: ` +
+      input.pendencias.join("; ") +
+      ".";
+
+    const emailsEnviados = new Set<string>();
+    let enviados = 0;
+    for (const dest of destinatarios) {
+      const to = resolverEmailNotificacaoUtilizador(
+        dest.role,
+        dest.email,
+        undefined,
+        mailFallback,
+      );
+      const tpl = EmailTemplates.sessaoTerminadaComPendencias({
+        nomeDestinatario: dest.displayName?.trim() || dest.email,
+        entidade,
+        formadorNome: input.formadorNome,
+        acaoLabel: input.acaoLabel,
+        sessaoLabel: input.sessaoLabel,
+        pendencias: input.pendencias,
+        portalUrl,
+      });
+
+      try {
+        await this.prisma.notificacaoPortal.create({
+          data: {
+            tenantId,
+            userId: dest.id,
+            tipo: "sessao_pendencias_fecho",
+            titulo,
+            mensagem,
+            link: portalPath,
+          },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Falha notificação portal pendências sessão (${dest.id}): ${
+            err instanceof Error ? err.message : err
+          }`,
+        );
+      }
+
+      const toKey = to?.trim().toLowerCase();
+      if (to && toKey && !emailsEnviados.has(toKey)) {
+        try {
+          await this.mail.send({
+            to,
+            subject: tpl.subject,
+            text: tpl.text,
+            html: tpl.html,
+          });
+          emailsEnviados.add(toKey);
+          enviados += 1;
+        } catch (err) {
+          this.logger.warn(
+            `Falha email pendências sessão (${to}): ${
+              err instanceof Error ? err.message : err
+            }`,
+          );
+        }
+      }
+    }
+
+    this.logger.log(
+      `Pendências pós-fecho sessão: ${destinatarios.length} destinatário(s), ${enviados} email(s)`,
+    );
+    return { destinatarios: destinatarios.length, emails: enviados };
+  }
+
+  /**
+   * Avisa departamento pedagógico quando o formador faz logout
+   * com folhas/sumários por validar nas sessões atribuídas.
+   */
+  async notificarPendenciasLogoutFormador(
+    tenantId: string,
+    input: {
+      formadorNome: string;
+      linhas: string[];
+      /** Link principal (ex. primeira acção ou /portal/acoes). */
+      portalPath?: string;
+    },
+  ) {
+    if (!input.linhas.length) return { destinatarios: 0, emails: 0 };
+
+    const mailFallback =
+      this.config.get<string>("MAIL_REPLY_TO")?.trim() ||
+      this.config.get<string>("MAIL_PEDAGOGICO")?.trim() ||
+      null;
+
+    const [tenant, destinatarios] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { legalName: true },
+      }),
+      this.prisma.user.findMany({
+        where: { tenantId, active: true, role: { in: GESTOR_COORDENADOR_ROLES } },
+        select: { id: true, email: true, displayName: true, role: true },
+      }),
+    ]);
+
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
+    const path = input.portalPath?.startsWith("/")
+      ? input.portalPath
+      : "/portal/acoes";
+    const portalUrl = `${appUrl}${path}`;
+    const entidade = tenant?.legalName?.trim() || "Entidade formadora";
+    const titulo = `Pendências – ${input.formadorNome} saiu do portal`;
+    const mensagem =
+      `${input.formadorNome} saiu com documentação por concluir: ` +
+      input.linhas.slice(0, 3).join(" | ") +
+      (input.linhas.length > 3 ? "…" : "");
+
+    const emailsEnviados = new Set<string>();
+    let enviados = 0;
+    for (const dest of destinatarios) {
+      const to = resolverEmailNotificacaoUtilizador(
+        dest.role,
+        dest.email,
+        undefined,
+        mailFallback,
+      );
+      const tpl = EmailTemplates.formadorLogoutComPendencias({
+        nomeDestinatario: dest.displayName?.trim() || dest.email,
+        entidade,
+        formadorNome: input.formadorNome,
+        linhas: input.linhas,
+        portalUrl,
+      });
+
+      try {
+        await this.prisma.notificacaoPortal.create({
+          data: {
+            tenantId,
+            userId: dest.id,
+            tipo: "logout_pendencias_doc",
+            titulo,
+            mensagem,
+            link: path,
+          },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Falha notificação portal logout pendências (${dest.id}): ${
+            err instanceof Error ? err.message : err
+          }`,
+        );
+      }
+
+      const toKey = to?.trim().toLowerCase();
+      if (to && toKey && !emailsEnviados.has(toKey)) {
+        try {
+          await this.mail.send({
+            to,
+            subject: tpl.subject,
+            text: tpl.text,
+            html: tpl.html,
+          });
+          emailsEnviados.add(toKey);
+          enviados += 1;
+          this.logger.log(`Email logout pendências enviado a ${to}`);
+        } catch (err) {
+          this.logger.warn(
+            `Falha email logout pendências (${to}): ${
+              err instanceof Error ? err.message : err
+            }`,
+          );
+        }
+      }
+    }
+
+    this.logger.log(
+      `Pendências logout formador: ${destinatarios.length} destinatário(s), ${enviados} email(s)`,
+    );
+    return { destinatarios: destinatarios.length, emails: enviados };
   }
 }

@@ -12,11 +12,21 @@ import * as argon2 from "argon2";
 import type { ControlTenantStatus } from "@nexiforma/database";
 import {
   assertValidTenantSubscription,
+  mergeTenantLoginLockoutMetadata,
+  parseTenantLoginLockoutConfig,
+  resolvedPolicyToMinutes,
   TenantSubscriptionValidationError,
   type BillingPlanCode,
+  type TenantLoginLockoutConfig,
 } from "@nexiforma/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
+import { LoginAttemptLimiterService } from "../auth/login-attempt-limiter.service";
+import { EmailConfirmationService } from "../auth/email-confirmation.service";
+import {
+  globalLoginLockoutDefaults,
+  resolveTenantLoginLockoutPolicy,
+} from "../auth/login-lockout-policy.util";
 import { AuditService } from "../audit/audit.service";
 import { PlatformTenantNotificacoesService } from "../notificacoes/platform-tenant-notificacoes.service";
 import {
@@ -24,7 +34,8 @@ import {
   invitePepperFromConfig,
   newInviteOpaqueToken,
 } from "../common/invite-token.util";
-import { resolveAppPublicUrl } from "../common/app-public-url.util";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
+import { FATURACAO_HISTORICO_IMUTAVEL_MSG } from "../faturas/faturacao-historico.util";
 import type {
   CreateSubscriptionKeyDto,
   CreateTenantDto,
@@ -32,6 +43,7 @@ import type {
   UpdateTenantDto,
   UpdateTenantSubscriptionDto,
   UpdatePlatformMeDto,
+  UpdateTenantLoginLockoutDto,
 } from "./dto/control-plane.dto";
 
 @Injectable()
@@ -41,6 +53,8 @@ export class ControlPlaneService {
     private readonly audit: AuditService,
     private readonly config: ConfigService,
     private readonly tenantNotificacoes: PlatformTenantNotificacoesService,
+    private readonly loginAttempts: LoginAttemptLimiterService,
+    private readonly emailConfirmation: EmailConfirmationService,
   ) {}
 
   private invitePepper(): string {
@@ -186,6 +200,102 @@ export class ControlPlaneService {
     return tenant;
   }
 
+  async getTenantLoginLockout(id: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id },
+      select: { id: true, metadata: true },
+    });
+    if (!tenant) {
+      throw new NotFoundException("Tenant não encontrado.");
+    }
+
+    const platformDefaults = globalLoginLockoutDefaults();
+    const config = parseTenantLoginLockoutConfig(tenant.metadata);
+    const effective = resolvedPolicyToMinutes(resolveTenantLoginLockoutPolicy(tenant.metadata));
+
+    return {
+      config,
+      effective,
+      platformDefaults,
+    };
+  }
+
+  async updateTenantLoginLockout(
+    actor: RequestUser,
+    id: string,
+    dto: UpdateTenantLoginLockoutDto,
+    actorIp?: string,
+  ) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id } });
+    if (!tenant) {
+      throw new NotFoundException("Tenant não encontrado.");
+    }
+
+    const patch: TenantLoginLockoutConfig = {};
+    if (dto.enabled !== undefined) patch.enabled = dto.enabled;
+    if (dto.maxAttempts !== undefined) patch.maxAttempts = dto.maxAttempts;
+    if (dto.windowMinutes !== undefined) patch.windowMinutes = dto.windowMinutes;
+    if (dto.lockoutMinutes !== undefined) patch.lockoutMinutes = dto.lockoutMinutes;
+
+    if (Object.keys(patch).length === 0) {
+      throw new BadRequestException("Indique pelo menos um campo de lockout.");
+    }
+
+    const metadata = mergeTenantLoginLockoutMetadata(tenant.metadata, patch);
+    await this.prisma.tenant.update({
+      where: { id },
+      data: { metadata: metadata as object },
+    });
+
+    await this.audit.log({
+      actorType: "SUPERADMIN_USER",
+      actorId: actor.sub,
+      actorIp,
+      action: "tenant.login_lockout_update",
+      resourceType: "tenant",
+      resourceId: id,
+      targetTenantId: id,
+      payload: {
+        from: parseTenantLoginLockoutConfig(tenant.metadata),
+        to: parseTenantLoginLockoutConfig(metadata),
+      },
+    });
+
+    return this.getTenantLoginLockout(id);
+  }
+
+  async clearTenantLoginLockout(
+    actor: RequestUser,
+    id: string,
+    email: string,
+    actorIp?: string,
+  ) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id },
+      select: { id: true, slug: true },
+    });
+    if (!tenant) {
+      throw new NotFoundException("Tenant não encontrado.");
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const loginKey = `${tenant.slug}:${normalizedEmail}`;
+    await this.loginAttempts.clear("tenant", loginKey);
+
+    await this.audit.log({
+      actorType: "SUPERADMIN_USER",
+      actorId: actor.sub,
+      actorIp,
+      action: "tenant.login_lockout_clear",
+      resourceType: "tenant",
+      resourceId: id,
+      targetTenantId: id,
+      payload: { email: normalizedEmail },
+    });
+
+    return { ok: true as const };
+  }
+
   async listTenantUsers(tenantId: string) {
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
     if (!tenant) {
@@ -289,6 +399,7 @@ export class ControlPlaneService {
             displayName: managerDisplayName,
             role: "ADMIN",
             active: true,
+            emailVerifiedAt: null,
           },
         });
       }
@@ -358,8 +469,15 @@ export class ControlPlaneService {
           slug: tenantRow.slug,
         })
         .catch(() => undefined);
+      void this.prisma.user
+        .findFirst({
+          where: { tenantId: tenantRow.id, email: managerEmail },
+          select: { id: true },
+        })
+        .then((u) => (u ? this.emailConfirmation.issueForUser(u.id, req) : null))
+        .catch(() => undefined);
     } else if (managerEmail && managerInviteToken) {
-      const appUrl = resolveAppPublicUrl(this.config, req);
+      const appUrl = resolveAppPublicUrlForLinks(this.config, req);
       const inviteUrl = `${appUrl.replace(/\/$/, "")}/convite/${managerInviteToken}`;
       void this.tenantNotificacoes
         .enviarConviteGestor({
@@ -389,7 +507,7 @@ export class ControlPlaneService {
 
     const email = dto.email.trim().toLowerCase();
     const displayName = dto.displayName?.trim() || "Gestor";
-    const appUrl = resolveAppPublicUrl(this.config, req);
+    const appUrl = resolveAppPublicUrlForLinks(this.config, req);
     const { inviteUrl } = await this.createManagerInvite(
       tenantId,
       email,
@@ -616,6 +734,15 @@ export class ControlPlaneService {
       if (hasData) {
         throw new BadRequestException(
           "Tenant com dados operacionais - arquive primeiro ou remova dados antes de eliminar permanentemente.",
+        );
+      }
+      const [faturasHist, seriesHist] = await Promise.all([
+        this.prisma.faturaComercial.count({ where: { tenantId: id } }),
+        this.prisma.serieFaturacao.count({ where: { tenantId: id } }),
+      ]);
+      if (faturasHist > 0 || seriesHist > 0) {
+        throw new BadRequestException(
+          `${FATURACAO_HISTORICO_IMUTAVEL_MSG} Este tenant tem histórico de faturação (${faturasHist} documento(s), ${seriesHist} série(s)) e não pode ser eliminado.`,
         );
       }
       await this.prisma.tenant.delete({ where: { id } });
@@ -894,8 +1021,33 @@ export class ControlPlaneService {
     }));
   }
 
-  listAuditLogs(tenantId?: string, limit?: number): Promise<Record<string, unknown>[]> {
-    return this.audit.list({ tenantId, limit });
+  listAuditLogs(opts?: {
+    tenantId?: string;
+    limit?: number;
+    action?: string;
+    actorType?: string;
+    since?: string;
+    q?: string;
+    cursor?: string;
+  }): Promise<Record<string, unknown>[]> {
+    const actorTypeRaw = opts?.actorType?.trim().toUpperCase();
+    const allowed = new Set(["SUPERADMIN_USER", "SYSTEM", "TENANT_USER", "PUBLIC_LINK"]);
+    const actorType =
+      actorTypeRaw && allowed.has(actorTypeRaw)
+        ? (actorTypeRaw as "SUPERADMIN_USER" | "SYSTEM" | "TENANT_USER" | "PUBLIC_LINK")
+        : undefined;
+    const since = opts?.since ? new Date(opts.since) : undefined;
+    const cursor =
+      opts?.cursor && /^\d+$/.test(opts.cursor) ? BigInt(opts.cursor) : undefined;
+    return this.audit.list({
+      tenantId: opts?.tenantId,
+      limit: opts?.limit,
+      action: opts?.action?.trim() || undefined,
+      actorType,
+      since: since && !Number.isNaN(since.getTime()) ? since : undefined,
+      q: opts?.q?.trim() || undefined,
+      cursor,
+    });
   }
 
   async createSubscriptionKey(

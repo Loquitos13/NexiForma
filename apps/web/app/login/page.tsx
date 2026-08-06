@@ -1,92 +1,50 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import { CheckCircle2, Shield } from "lucide-react";
 import { mfaAppOpenHint, mfaVerificationSubtitle, MFA_APP_CODES, MFA_APP_LABELS, type MfaAppCode } from "@nexiforma/shared";
 import { AuthShell } from "@/components/site/auth-shell";
+import { TotpInput } from "@/components/auth/totp-input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { setAccessToken } from "@/lib/client/access-token";
-import { refreshViaBffCookies } from "@/lib/client/bff-fetch";
-import { resolvePostLoginPath } from "@/lib/client/jwt-role";
+import { refreshViaBffCookies, bffFetch } from "@/lib/client/bff-fetch";
+import { resolvePostLoginPath, decodeJwtPayload } from "@/lib/client/jwt-role";
+import type { TenantEntitlements } from "@nexiforma/shared";
 import {
   getRememberLogin,
   getSavedEmail,
   persistLoginPreferences,
-  persistTenantSlug,
+  clearPersistedTenantContext,
+  setRememberLogin,
 } from "@/lib/client/login-preferences";
+import { purgeStaleAuthSession } from "@/lib/client/logout";
 import {
   isPlatformAuthMode,
   platformAuthHref,
-  resolveTenantSlugForAuth,
 } from "@/lib/client/platform-auth-mode";
+import { SocialLoginButtons } from "@/components/auth/social-login-buttons";
+import {
+  TenantAuthPickModal,
+  type TenantAuthPickOption,
+} from "@/components/auth/tenant-auth-pick-modal";
+import type { OAuthProviders } from "@/lib/client/oauth-login-url";
+import {
+  parseTenantAmbiguousResponse,
+  normalizeTenantPickList,
+  tenantAmbiguousInfoMessage,
+} from "@/lib/client/tenant-auth-ambiguous";
 import { isDevEnvironment } from "@/lib/ui/site";
 
 const inputClass =
   "w-full px-3.5 py-2.5 rounded-xl bg-slate-900/80 border border-slate-700/60 text-slate-100 text-sm placeholder:text-slate-500 outline-none transition-all duration-200 focus:border-blue-500/70 focus:ring-2 focus:ring-blue-500/15";
 const labelClass = "block text-sm font-medium text-slate-300 mb-1.5";
 
-function TotpInput({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  disabled?: boolean;
-}) {
-  const refs = useRef<(HTMLInputElement | null)[]>([]);
-  const digits = value.padEnd(6, " ").slice(0, 6).split("");
-
-  function setDigit(index: number, char: string) {
-    const clean = char.replace(/\D/g, "").slice(-1);
-    const next = digits.map((d, i) => (i === index ? clean : d.trim())).join("").slice(0, 6);
-    onChange(next);
-    if (clean && index < 5) refs.current[index + 1]?.focus();
-  }
-
-  function onKeyDown(index: number, key: string) {
-    if (key === "Backspace" && !digits[index]?.trim() && index > 0) {
-      refs.current[index - 1]?.focus();
-    }
-  }
-
-  function onPaste(text: string) {
-    const clean = text.replace(/\D/g, "").slice(0, 6);
-    onChange(clean);
-    refs.current[Math.min(clean.length, 5)]?.focus();
-  }
-
-  return (
-    <div className="flex justify-center gap-2 sm:gap-2.5">
-      {digits.map((d, i) => (
-        <input
-          key={i}
-          ref={(el) => {
-            refs.current[i] = el;
-          }}
-          type="text"
-          inputMode="numeric"
-          autoComplete={i === 0 ? "one-time-code" : "off"}
-          maxLength={1}
-          disabled={disabled}
-          value={d.trim()}
-          onChange={(e) => setDigit(i, e.target.value)}
-          onKeyDown={(e) => onKeyDown(i, e.key)}
-          onPaste={(e) => {
-            e.preventDefault();
-            onPaste(e.clipboardData.getData("text"));
-          }}
-          className="h-12 w-10 sm:h-14 sm:w-12 rounded-xl border border-slate-600/60 bg-slate-900/90 text-center text-xl font-mono font-semibold text-slate-100 outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
-        />
-      ))}
-    </div>
-  );
-}
-
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const platformMode = isPlatformAuthMode(searchParams);
   const [tenantSlug, setTenantSlug] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -99,23 +57,35 @@ export default function LoginPage() {
   const [credSuccess, setCredSuccess] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [emailNotVerified, setEmailNotVerified] = useState<{
+    email: string;
+    tenantSlug: string;
+  } | null>(null);
+  const [resendConfirmMsg, setResendConfirmMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
-  const [platformMode, setPlatformMode] = useState(false);
+  const [oauthProviders, setOauthProviders] = useState<OAuthProviders | null>(null);
+  const [oauthLoading, setOauthLoading] = useState(false);
+  const [ambiguousTenants, setAmbiguousTenants] = useState<TenantAuthPickOption[]>([]);
+  const [oauthPickToken, setOauthPickToken] = useState<string | null>(null);
+  const [oauthPickOptions, setOauthPickOptions] = useState<TenantAuthPickOption[]>([]);
+  const [oauthPickEmail, setOauthPickEmail] = useState("");
+  const [slugFromUrl, setSlugFromUrl] = useState("");
+  const [pickedTenantSlug, setPickedTenantSlug] = useState("");
+  const [tenantPickModalOpen, setTenantPickModalOpen] = useState(false);
+  const [tenantPickMode, setTenantPickMode] = useState<"password" | "oauth" | null>(null);
   const isDev = isDevEnvironment();
 
   useEffect(() => {
+    clearPersistedTenantContext();
     setRememberMe(getRememberLogin());
-    const params = new URLSearchParams(window.location.search);
-    const platform = isPlatformAuthMode(params);
-    setPlatformMode(platform);
-    const slug = params.get("slug");
-    const next = params.get("next");
-    const emailParam = params.get("email");
-    setTenantSlug(
-      resolveTenantSlugForAuth(params, { slugFromUrl: slug ?? undefined, isDev }),
-    );
+    const slug = searchParams.get("slug")?.trim() ?? "";
+    const next = searchParams.get("next");
+    const emailParam = searchParams.get("email");
+    setSlugFromUrl(slug);
+    setTenantSlug(slug);
+    setPickedTenantSlug("");
     if (emailParam) setEmail(emailParam);
     else {
       const savedEmail = getSavedEmail();
@@ -123,7 +93,7 @@ export default function LoginPage() {
     }
     if (next) sessionStorage.setItem("nexiforma_login_next", next);
     else sessionStorage.removeItem("nexiforma_login_next");
-  }, [isDev]);
+  }, [searchParams, isDev]);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,8 +104,15 @@ export default function LoginPage() {
           await finishLogin(token);
           return;
         }
+        if (!cancelled) {
+          await purgeStaleAuthSession();
+          clearPersistedTenantContext();
+        }
       } catch {
-        /* sem sessão activa */
+        if (!cancelled) {
+          await purgeStaleAuthSession();
+          clearPersistedTenantContext();
+        }
       } finally {
         if (!cancelled) setCheckingSession(false);
       }
@@ -146,31 +123,189 @@ export default function LoginPage() {
   }, []);
 
   async function finishLogin(accessToken?: string) {
-    if (accessToken) setAccessToken(accessToken);
+    if (accessToken) {
+      setAccessToken(accessToken);
+    }
+    clearPersistedTenantContext();
+    const nextRaw = sessionStorage.getItem("nexiforma_login_next");
     sessionStorage.removeItem("nexiforma_login_next");
-    router.push(resolvePostLoginPath(accessToken, null));
+
+    let entitlements: TenantEntitlements | null = null;
+    const payload = decodeJwtPayload(accessToken);
+    if (
+      payload?.role &&
+      payload.role !== "super_admin" &&
+      !(payload.kind === "platform" && !payload.impersonating)
+    ) {
+      const res = await bffFetch("/api/v1/billing/entitlements", {
+        headers: { accept: "application/json" },
+      });
+      if (res.ok) {
+        entitlements = (await res.json()) as TenantEntitlements;
+      }
+    }
+
+    router.push(resolvePostLoginPath(accessToken, nextRaw, entitlements));
     router.refresh();
   }
 
-  function saveLoginPreferences() {
-    const slug = tenantSlug.trim();
-    if (slug) persistTenantSlug(slug);
+  function saveLoginPreferences(overrideEmail?: string) {
+    const nextEmail = (overrideEmail ?? email).trim();
     persistLoginPreferences({
       remember: rememberMe,
-      tenantSlug: slug,
-      email: email.trim(),
+      email: nextEmail,
     });
+    if (rememberMe && nextEmail) setEmail(nextEmail);
+  }
+
+  /** Após OAuth: grava o email da conta social (não o último digitado no form). */
+  function saveOAuthLoginPreferences(accessToken?: string, fallbackEmail?: string) {
+    const fromJwt = decodeJwtPayload(accessToken)?.email?.trim() ?? "";
+    const nextEmail = fromJwt || fallbackEmail?.trim() || "";
+    if (!nextEmail) return;
+    // Lê do storage: o estado React perde-se no redirect OAuth.
+    const remember = getRememberLogin();
+    persistLoginPreferences({ remember, email: nextEmail });
+    if (remember) setEmail(nextEmail);
   }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sso = params.get("sso");
     const token = params.get("token");
+    const exchange = params.get("x");
+    const ssoError = params.get("message");
+    if (sso === "error" && ssoError) {
+      setError(decodeURIComponent(ssoError));
+      const slugParam = params.get("slug");
+      if (slugParam) setTenantSlug(slugParam);
+      window.history.replaceState({}, "", window.location.pathname);
+      return;
+    }
+    if (sso === "pick") {
+      const pick = params.get("pick");
+      if (!pick) {
+        setError("Seleção de entidade OAuth inválida.");
+        window.history.replaceState({}, "", window.location.pathname);
+        return;
+      }
+      void (async () => {
+        setBusy(true);
+        setError(null);
+        try {
+          const res = await fetch(
+            `/api/v1/auth/oauth/pick-options?pick=${encodeURIComponent(pick)}`,
+            { headers: { accept: "application/json" } },
+          );
+          const data = (await res.json().catch(() => ({}))) as {
+            message?: string | string[];
+            email?: string;
+            tenants?: TenantAuthPickOption[];
+          };
+          if (!res.ok) {
+            const msg = Array.isArray(data.message)
+              ? data.message.join(", ")
+              : typeof data.message === "string"
+                ? data.message
+                : "Seleção OAuth expirada. Tente entrar novamente.";
+            setError(msg);
+            return;
+          }
+          const tenants = normalizeTenantPickList(Array.isArray(data.tenants) ? data.tenants : []);
+          if (!tenants.length) {
+            setError("Não há entidades disponíveis para este email.");
+            return;
+          }
+          setOauthPickToken(pick);
+          const pickEmail = typeof data.email === "string" ? data.email.trim() : "";
+          setOauthPickEmail(pickEmail);
+          if (pickEmail) setEmail(pickEmail);
+          setOauthPickOptions(tenants);
+          const defaultSlug = tenants[0]?.slug ?? "";
+          setTenantSlug(defaultSlug);
+          setPickedTenantSlug(defaultSlug);
+          setTenantPickMode("oauth");
+          setTenantPickModalOpen(true);
+          window.history.replaceState({}, "", window.location.pathname);
+        } catch {
+          setError("Não foi possível carregar as entidades disponíveis.");
+        } finally {
+          setBusy(false);
+        }
+      })();
+      return;
+    }
+    if (sso === "exchange" && exchange) {
+      void (async () => {
+        setBusy(true);
+        setError(null);
+        try {
+          const res = await fetch("/api/auth/oauth/complete", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ exchange }),
+          });
+          const data = (await res.json().catch(() => ({}))) as {
+            message?: string | string[];
+            accessToken?: string;
+          };
+          if (!res.ok) {
+            const msg = Array.isArray(data.message)
+              ? data.message.join(", ")
+              : typeof data.message === "string"
+                ? data.message
+                : "Não foi possível concluir o login social.";
+            setError(msg);
+            return;
+          }
+          window.history.replaceState({}, "", window.location.pathname);
+          saveOAuthLoginPreferences(data.accessToken);
+          await finishLogin(data.accessToken);
+        } catch {
+          setError("Não foi possível concluir o login social.");
+        } finally {
+          setBusy(false);
+        }
+      })();
+      return;
+    }
     if (sso === "ok" && token) {
+      saveOAuthLoginPreferences(token);
       void finishLogin(token);
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, [router]);
+
+  useEffect(() => {
+    if (platformMode) {
+      setOauthProviders(null);
+      return;
+    }
+    const oauthHintSlug =
+      slugFromUrl || (ambiguousTenants.length > 0 ? tenantSlug.trim() : "");
+    let cancelled = false;
+    setOauthLoading(true);
+    void (async () => {
+      try {
+        const url = oauthHintSlug
+          ? `/api/v1/auth/oauth/providers?slug=${encodeURIComponent(oauthHintSlug)}`
+          : "/api/v1/auth/oauth/providers";
+        const res = await fetch(url, {
+          headers: { accept: "application/json" },
+        });
+        if (!res.ok || cancelled) return;
+        setOauthProviders((await res.json()) as OAuthProviders);
+      } catch {
+        if (!cancelled) setOauthProviders(null);
+      } finally {
+        if (!cancelled) setOauthLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [platformMode, slugFromUrl, ambiguousTenants.length, tenantSlug]);
 
   useEffect(() => {
     if (!mfaEnrollmentMode || !mfaToken || mfaEnrollSetup) return;
@@ -208,17 +343,53 @@ export default function LoginPage() {
     setError(null);
   }
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
+  function onTenantPickChange(slug: string) {
+    setTenantSlug(slug);
+    setPickedTenantSlug(slug);
+  }
+
+  function openPasswordTenantPickModal(tenants: TenantAuthPickOption[]) {
+    const defaultSlug = pickedTenantSlug.trim() || tenantSlug.trim() || tenants[0]?.slug || "";
+    if (defaultSlug) {
+      setTenantSlug(defaultSlug);
+      setPickedTenantSlug(defaultSlug);
+    }
+    setTenantPickMode("password");
+    setTenantPickModalOpen(true);
+  }
+
+  function cancelTenantPickModal() {
+    setTenantPickModalOpen(false);
+    if (tenantPickMode === "oauth") {
+      setOauthPickToken(null);
+      setOauthPickOptions([]);
+      setOauthPickEmail("");
+    }
+    setTenantPickMode(null);
+  }
+
+  async function submitPasswordLogin(forcedSlug?: string) {
     setError(null);
+    setEmailNotVerified(null);
+    setResendConfirmMsg(null);
     setCredSuccess(false);
     setLoginSuccess(false);
     setBusy(true);
-    const slug = tenantSlug.trim();
-    const endpoint = slug ? "/api/auth/tenant/login" : "/api/auth/platform/login";
-    const body = slug
-      ? { tenantSlug: slug, email: email.trim(), password, rememberMe }
-      : { email: email.trim(), password, rememberMe };
+    const slugForLogin = platformMode
+      ? ""
+      : slugFromUrl || forcedSlug?.trim() || "";
+    if (slugForLogin || ambiguousTenants.length > 0) {
+      await purgeStaleAuthSession();
+    }
+    const endpoint = platformMode ? "/api/auth/platform/login" : "/api/auth/tenant/login";
+    const body = platformMode
+      ? { email: email.trim(), password, rememberMe }
+      : {
+          email: email.trim(),
+          password,
+          rememberMe,
+          ...(slugForLogin ? { tenantSlug: slugForLogin } : {}),
+        };
 
     try {
       const res = await fetch(endpoint, {
@@ -228,19 +399,42 @@ export default function LoginPage() {
         body: JSON.stringify(body),
       });
       const data = (await res.json().catch(() => ({}))) as {
-        message?: string | string[];
+        message?: string | string[] | { message?: string; code?: string; tenants?: TenantAuthPickOption[] };
+        code?: string;
+        email?: string;
+        tenantSlug?: string;
         accessToken?: string;
         mfaRequired?: boolean;
         mfaEnrollmentRequired?: boolean;
         mfaToken?: string;
-        user?: { mfaAppLabel?: string | null };
+        user?: { mfaAppLabel?: string | null; tenantSlug?: string | null };
       };
 
       if (!res.ok) {
-        const msg = Array.isArray(data.message)
-          ? data.message.join(", ")
-          : typeof data.message === "string"
-            ? data.message
+        const ambiguous = parseTenantAmbiguousResponse(data);
+        if (ambiguous?.length) {
+          setAmbiguousTenants(ambiguous);
+          await purgeStaleAuthSession();
+          setError(null);
+          openPasswordTenantPickModal(ambiguous);
+          return;
+        }
+        if (data.code === "EMAIL_NOT_VERIFIED") {
+          const slug =
+            (typeof data.tenantSlug === "string" && data.tenantSlug) ||
+            slugForLogin ||
+            pickedTenantSlug ||
+            tenantSlug;
+          setEmailNotVerified({
+            email: (typeof data.email === "string" && data.email) || email.trim(),
+            tenantSlug: slug,
+          });
+        }
+        const rawMessage = data.message;
+        const msg = Array.isArray(rawMessage)
+          ? rawMessage.join(", ")
+          : typeof rawMessage === "string"
+            ? rawMessage
             : "Credenciais inválidas.";
         setError(msg);
         return;
@@ -260,7 +454,13 @@ export default function LoginPage() {
         return;
       }
 
+      setTenantPickModalOpen(false);
+      setTenantPickMode(null);
       setLoginSuccess(true);
+      if (data.user?.tenantSlug) {
+        setTenantSlug(data.user.tenantSlug);
+        setPickedTenantSlug(data.user.tenantSlug);
+      }
       saveLoginPreferences();
       await new Promise((r) => setTimeout(r, 700));
       await finishLogin(data.accessToken);
@@ -269,6 +469,70 @@ export default function LoginPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    await submitPasswordLogin();
+  }
+
+  async function executeOAuthPick(slug: string) {
+    if (!oauthPickToken || !slug.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/auth/oauth/pick-tenant", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pick: oauthPickToken, tenantSlug: slug.trim() }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        message?: string | string[];
+        accessToken?: string;
+      };
+      if (!res.ok) {
+        const msg = Array.isArray(data.message)
+          ? data.message.join(", ")
+          : typeof data.message === "string"
+            ? data.message
+            : "Não foi possível concluir o login social.";
+        setError(msg);
+        setTenantPickModalOpen(true);
+        return;
+      }
+      setTenantPickModalOpen(false);
+      setTenantPickMode(null);
+      setLoginSuccess(true);
+      clearPersistedTenantContext();
+      saveOAuthLoginPreferences(data.accessToken, oauthPickEmail);
+      await new Promise((r) => setTimeout(r, 700));
+      await finishLogin(data.accessToken);
+    } catch {
+      setError("Não foi possível concluir o login social.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmTenantPickModal() {
+    const slug = pickedTenantSlug.trim() || tenantSlug.trim();
+    if (!slug) return;
+    setTenantPickModalOpen(false);
+    if (tenantPickMode === "oauth") {
+      await executeOAuthPick(slug);
+    } else {
+      await submitPasswordLogin(slug);
+    }
+  }
+
+  function resetOAuthPickFlow() {
+    setOauthPickToken(null);
+    setOauthPickOptions([]);
+    setOauthPickEmail("");
+    setTenantPickModalOpen(false);
+    setTenantPickMode(null);
+    setError(null);
   }
 
   async function onMfaSubmit(e: FormEvent) {
@@ -351,7 +615,17 @@ export default function LoginPage() {
     );
   }
 
+  const tenantPickOptions =
+    tenantPickMode === "oauth" ? oauthPickOptions : ambiguousTenants;
+  const tenantPickSubtitle =
+    tenantPickMode === "oauth" && oauthPickEmail
+      ? `Conta ${oauthPickEmail} - escolha onde entrar.`
+      : email.trim()
+        ? `Conta ${email.trim()} - escolha onde entrar.`
+        : tenantAmbiguousInfoMessage();
+
   return (
+    <>
     <AuthShell
       title={mfaEnrollmentMode ? "Configurar verificação" : mfaToken ? "Verificação em dois passos" : "Entrar"}
       subtitle={
@@ -371,8 +645,9 @@ export default function LoginPage() {
             </div>
           ) : null}
 
-          <label className={labelClass}>App no telemóvel</label>
+          <label htmlFor="login-mfa-app" className={labelClass}>App no telemóvel</label>
           <select
+            id="login-mfa-app"
             value={mfaApp}
             onChange={(e) => setMfaApp(e.target.value as MfaAppCode)}
             className={inputClass}
@@ -401,7 +676,7 @@ export default function LoginPage() {
           </div>
 
           {error ? (
-            <div className="rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3">
+            <div role="alert" className="rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3">
               <p className="text-sm text-red-300">{error}</p>
             </div>
           ) : null}
@@ -441,7 +716,7 @@ export default function LoginPage() {
           </div>
 
           {error ? (
-            <div className="rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3">
+            <div role="alert" className="rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3">
               <p className="text-sm text-red-300">{error}</p>
             </div>
           ) : null}
@@ -464,50 +739,29 @@ export default function LoginPage() {
         </form>
       ) : (
         <>
-          {isDev ? (
-            <div className="mb-5 rounded-xl bg-slate-800/40 border border-dashed border-slate-600/40 overflow-hidden">
-              <details>
-                <summary className="px-4 py-2.5 text-xs text-slate-400 cursor-pointer select-none">
-                  Credenciais de desenvolvimento
-                </summary>
-                <div className="px-4 pb-3 space-y-1 text-xs text-slate-400">
-                  <p>
-                    Tenant: slug <code className="text-blue-300">demo</code>
-                  </p>
-                  <p>Equipa NexiForma: deixa o slug vazio</p>
-                  <p className="pt-1 text-slate-500">Ver README para credenciais demo por role.</p>
-                </div>
-              </details>
-            </div>
-          ) : null}
-
           <form onSubmit={onSubmit} className="space-y-4">
-            <div>
-              <label className={labelClass}>Identificador da entidade</label>
-              <input
-                value={tenantSlug}
-                onChange={(x) => {
-                  setTenantSlug(x.target.value);
-                  if (!platformMode) persistTenantSlug(x.target.value);
-                }}
-                autoComplete="organization"
-                placeholder="ex.: minha-entidade (vazio = equipa NexiForma)"
-                className={inputClass}
-                readOnly={platformMode}
-              />
-              <p className="mt-1.5 text-xs text-slate-500">
-                {platformMode
-                  ? "Login da equipa NexiForma (Control Plane) - sem identificador de entidade."
-                  : "Utilizadores da entidade formadora preenchem o slug. A equipa NexiForma deixa este campo vazio."}
+            {platformMode ? (
+              <p className="rounded-xl border border-purple-500/25 bg-purple-950/20 px-3 py-2 text-xs text-purple-200/90">
+                Login da equipa NexiForma (Control Plane).
               </p>
-            </div>
+            ) : null}
 
             <div>
-              <label className={labelClass}>Email</label>
+              <label htmlFor="login-email" className={labelClass}>Email</label>
               <input
+                id="login-email"
                 type="email"
                 value={email}
-                onChange={(x) => setEmail(x.target.value)}
+                onChange={(x) => {
+                  setEmail(x.target.value);
+                  setAmbiguousTenants([]);
+                  setPickedTenantSlug("");
+                  if (!slugFromUrl) setTenantSlug("");
+                  setTenantPickModalOpen(false);
+                  setTenantPickMode(null);
+                  setError(null);
+                  clearPersistedTenantContext();
+                }}
                 required
                 autoComplete="username"
                 placeholder="nome@entidade.pt"
@@ -516,8 +770,8 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className={labelClass}>Palavra-passe</label>
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                <label htmlFor="login-password" className={labelClass}>Palavra-passe</label>
                 <Link
                   href={platformMode ? platformAuthHref("/login/recuperar") : "/login/recuperar"}
                   className="text-xs text-blue-400 hover:text-blue-300"
@@ -526,11 +780,12 @@ export default function LoginPage() {
                 </Link>
               </div>
               <PasswordInput
+                id="login-password"
                 value={password}
                 onChange={(x) => setPassword(x.target.value)}
                 required
                 autoComplete="current-password"
-                placeholder="••••••••"
+                placeholder="Palavra-passe"
                 className={inputClass}
               />
             </div>
@@ -545,14 +800,55 @@ export default function LoginPage() {
               <span className="text-sm text-slate-300">
                 Memorizar sessão
                 <span className="block text-xs text-slate-500 mt-0.5">
-                  Mantém o identificador da entidade e o email; sessão prolongada até 30 dias (cookie seguro).
+                  Guarda só o email neste dispositivo; a sessão pode durar até 30 dias (cookie
+                  seguro). A entidade não fica memorizada.
                 </span>
               </span>
             </label>
 
             {error ? (
-              <div className="rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3">
+              <div role="alert" className="rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3">
                 <p className="text-sm text-red-300">{error}</p>
+                {emailNotVerified && !platformMode ? (
+                  <button
+                    type="button"
+                    disabled={busy || !emailNotVerified.tenantSlug}
+                    className="mt-3 text-xs font-medium text-blue-300 hover:text-blue-200 underline disabled:opacity-50"
+                    onClick={() => {
+                      void (async () => {
+                        setBusy(true);
+                        setResendConfirmMsg(null);
+                        try {
+                          const res = await fetch("/api/v1/auth/tenant/resend-email-confirmation", {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/json",
+                              accept: "application/json",
+                            },
+                            body: JSON.stringify({
+                              email: emailNotVerified.email,
+                              tenantSlug: emailNotVerified.tenantSlug,
+                            }),
+                          });
+                          const data = (await res.json().catch(() => ({}))) as { message?: string };
+                          setResendConfirmMsg(
+                            data.message ??
+                              "Se a conta existir e estiver por confirmar, enviámos um novo email.",
+                          );
+                        } catch {
+                          setResendConfirmMsg("Não foi possível pedir o reenvio. Tente mais tarde.");
+                        } finally {
+                          setBusy(false);
+                        }
+                      })();
+                    }}
+                  >
+                    Reenviar email de confirmação
+                  </button>
+                ) : null}
+                {resendConfirmMsg ? (
+                  <p className="mt-2 text-xs text-slate-400">{resendConfirmMsg}</p>
+                ) : null}
               </div>
             ) : null}
 
@@ -563,9 +859,56 @@ export default function LoginPage() {
             >
               {busy ? "A verificar credenciais…" : "Entrar"}
             </button>
+
+            {!platformMode ? (
+              <SocialLoginButtons
+                slug={slugFromUrl || (ambiguousTenants.length > 0 ? tenantSlug : "")}
+                providers={oauthProviders}
+                loading={oauthLoading}
+                disabled={busy}
+                onError={setError}
+                onBeforeStart={() => {
+                  // Sobrevive ao redirect OAuth (estado React perde-se).
+                  setRememberLogin(rememberMe);
+                }}
+              />
+            ) : null}
+
+            <p className="text-center text-xs text-slate-500">
+              {platformMode ? (
+                <Link href="/login" className="text-blue-400 hover:text-blue-300">
+                  Login de entidade formadora
+                </Link>
+              ) : (
+                <Link href={platformAuthHref("/login")} className="text-blue-400 hover:text-blue-300">
+                  Equipa NexiForma
+                </Link>
+              )}
+            </p>
           </form>
         </>
       )}
     </AuthShell>
+
+    <TenantAuthPickModal
+      open={tenantPickModalOpen && tenantPickOptions.length > 0}
+      options={tenantPickOptions}
+      value={pickedTenantSlug || tenantSlug}
+      onChange={onTenantPickChange}
+      onConfirm={() => void confirmTenantPickModal()}
+      onCancel={cancelTenantPickModal}
+      busy={busy}
+      subtitle={tenantPickSubtitle}
+      confirmLabel={tenantPickMode === "oauth" ? "Continuar" : "Entrar"}
+    />
+    </>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }

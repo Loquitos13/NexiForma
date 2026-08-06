@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Check, ChevronDown, ChevronUp, Sparkles, X } from "lucide-react";
 import { useState } from "react";
 import { Badge, Button } from "@/components/ui";
-import { fmtDate } from "@/lib/crm/shared";
+import { fmtCrmAutor, fmtDate } from "@/lib/crm/shared";
 
 export type NotaSugestao = {
   id: string;
@@ -33,7 +33,7 @@ export type NotaRegisto = {
   processamentoEngine: string | null;
   processamentoErro: string | null;
   createdAt: string;
-  criadoPor?: { displayName: string } | null;
+  criadoPor?: { displayName: string; contaEliminada?: boolean } | null;
   sugestoes: NotaSugestao[];
 };
 
@@ -87,6 +87,8 @@ export function NotaRegistoCard({
         type="button"
         className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-slate-800/40 transition-colors"
         onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        aria-label={expanded ? "Fechar nota" : "Expandir nota"}
       >
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2 mb-0.5">
@@ -113,7 +115,7 @@ export function NotaRegistoCard({
           </div>
           <p className="text-xs text-slate-500">
             {fmtDate(nota.createdAt)}
-            {nota.criadoPor?.displayName ? ` · ${nota.criadoPor.displayName}` : ""}
+            {nota.criadoPor ? ` · ${fmtCrmAutor(nota.criadoPor)}` : ""}
           </p>
           {!expanded && camposPreenchidos[0] ? (
             <p className="mt-1 text-xs text-slate-400 line-clamp-2">

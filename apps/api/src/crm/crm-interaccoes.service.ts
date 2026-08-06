@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -15,13 +16,16 @@ import {
   type PaginatedList,
 } from "../common/paginated-list.util";
 import { requireTenantId } from "../common/tenant-scope";
+import { resolveInteraccaoListFilters, assertInteraccaoAcessivel } from "../common/comercial-scope.util";
 import { CrmNotasInsightsService } from "./crm-notas-insights.service";
 import { CrmSugestoesIaService } from "./crm-sugestoes-ia.service";
-import type { CreateInteraccaoDto } from "./dto/interaccoes.dto";
+import type { CreateInteraccaoDto, UpdateInteraccaoDto } from "./dto/interaccoes.dto";
 import { mapInteraccaoRow, type InteraccaoComercialResposta } from "./crm-ia.types";
 import { CrmAuditService } from "./crm-audit.service";
 import { CrmWebhooksService } from "./crm-webhooks.service";
+import { interaccaoAutorFromUserId } from "./interaccao-autor.util";
 import { CalendarioNotificacoesService } from "../calendario/calendario-notificacoes.service";
+import { IntegracoesService } from "../integracoes/integracoes.service";
 
 const INTERACCAO_LIST_INCLUDE = {
   entidadeCliente: { select: { id: true, nome: true, nif: true } },
@@ -61,7 +65,7 @@ function buildInteraccaoWhere(
   const where: Prisma.InteraccaoComercialWhereInput = { tenantId };
   if (filters?.entidadeClienteId) where.entidadeClienteId = filters.entidadeClienteId;
   if (filters?.leadComercialId) where.leadComercialId = filters.leadComercialId;
-  if (filters?.comercialUserId) where.criadoPorUserId = filters.comercialUserId;
+  if (filters?.comercialUserId) where.criadoPorAutorId = filters.comercialUserId;
 
   const createdRange = parseDateRangeFilter(filters?.dataInicio, filters?.dataFim);
   if (createdRange) where.createdAt = createdRange;
@@ -95,6 +99,7 @@ export class CrmInteraccoesService {
     private readonly audit: CrmAuditService,
     private readonly webhooks: CrmWebhooksService,
     private readonly calendarioNotificacoes: CalendarioNotificacoesService,
+    private readonly integracoes: IntegracoesService,
   ) {}
 
   async list(
@@ -103,7 +108,10 @@ export class CrmInteraccoesService {
   ): Promise<PaginatedList<InteraccaoComercialResposta>> {
     const tenantId = requireTenantId(user);
     const pagination = parseListPagination(filters?.page, filters?.pageSize);
-    const where = buildInteraccaoWhere(tenantId, filters);
+    const where = buildInteraccaoWhere(
+      tenantId,
+      resolveInteraccaoListFilters(user, filters),
+    );
 
     const [total, rows] = await Promise.all([
       this.prisma.interaccaoComercial.count({ where }),
@@ -131,6 +139,7 @@ export class CrmInteraccoesService {
       include: INTERACCAO_DETAIL_INCLUDE,
     });
     if (!row) throw new NotFoundException("Interacção não encontrada.");
+    assertInteraccaoAcessivel(user, row);
     return mapInteraccaoRow(row as unknown as Record<string, unknown>);
   }
 
@@ -138,13 +147,18 @@ export class CrmInteraccoesService {
     const tenantId = requireTenantId(user);
     if (!user.sub) throw new BadRequestException("Utilizador inválido.");
     if (!dto.entidadeClienteId && !dto.leadComercialId) {
-      throw new BadRequestException("Indique um cliente ou um lead.");
+      const agendamentoCalendario = dto.tipo === "REUNIAO" && !!dto.agendadoPara;
+      if (!agendamentoCalendario) {
+        throw new BadRequestException("Indique um cliente ou um lead.");
+      }
     }
     if (!this.temConteudo(dto)) {
       throw new BadRequestException("Preencha pelo menos um campo de notas.");
     }
 
     await this.validarFks(tenantId, dto.entidadeClienteId, dto.leadComercialId);
+
+    const autor = await interaccaoAutorFromUserId(this.prisma, user.sub);
 
     const row = await this.prisma.interaccaoComercial.create({
       data: {
@@ -160,23 +174,49 @@ export class CrmInteraccoesService {
         notasLivres: dto.notasLivres?.trim() || null,
         entidadeClienteId: dto.entidadeClienteId ?? null,
         leadComercialId: dto.leadComercialId ?? null,
-        criadoPorUserId: user.sub,
+        ...autor,
         agendadoPara: dto.agendadoPara ? new Date(dto.agendadoPara) : null,
         agendadoFim: dto.agendadoFim ? new Date(dto.agendadoFim) : null,
         participantesIds: dto.participantesIds ?? [],
         audienciaRoles: dto.audienciaRoles ?? [],
+        reuniaoOrigemId: dto.reuniaoOrigemId ?? null,
+        reuniaoEstado: dto.tipo === "REUNIAO" || dto.agendadoPara ? "AGENDADA" : null,
       },
       include: INTERACCAO_DETAIL_INCLUDE,
     });
 
-    if (row.agendadoPara && row.tipo === "REUNIAO") {
-      void this.calendarioNotificacoes.onReuniaoAgendada(row.id, tenantId).catch((err) =>
+    let result = row;
+    if (dto.criarSalaTeams && row.tipo === "REUNIAO") {
+      try {
+        const meeting = await this.integracoes.criarTeamsMeetingComercial(tenantId, {
+          subject: row.titulo?.trim() || "Reunião comercial NexiForma",
+          start: row.agendadoPara ?? undefined,
+          end: row.agendadoFim ?? undefined,
+        });
+        result = await this.prisma.interaccaoComercial.update({
+          where: { id: row.id },
+          data: {
+            teamsMeetingId: meeting.meetingId,
+            salaJoinUrl: meeting.joinUrl,
+            reuniaoEstado: "AGENDADA",
+          },
+          include: INTERACCAO_DETAIL_INCLUDE,
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Teams sala reunião ${row.id}: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+
+    if (result.agendadoPara && result.tipo === "REUNIAO") {
+      void this.calendarioNotificacoes.onReuniaoAgendada(result.id, tenantId).catch((err) =>
         this.logger.warn(`Calendário reunião: ${String(err)}`),
       );
     }
 
-    void this.processarAsync(row.id).catch((err) =>
-      this.logger.warn(`Processamento IA falhou (${row.id}): ${err instanceof Error ? err.message : err}`),
+    void this.processarAsync(result.id).catch((err) =>
+      this.logger.warn(`Processamento IA falhou (${result.id}): ${err instanceof Error ? err.message : err}`),
     );
 
     void this.audit.log({
@@ -184,17 +224,93 @@ export class CrmInteraccoesService {
       tenantId,
       action: "crm.interaccao.created",
       resourceType: "InteraccaoComercial",
-      resourceId: row.id,
+      resourceId: result.id,
     });
-    void this.webhooks.emit(tenantId, "interaccao.created", { id: row.id });
+    void this.webhooks.emit(tenantId, "interaccao.created", { id: result.id });
 
-    return mapInteraccaoRow(row as unknown as Record<string, unknown>);
+    return mapInteraccaoRow(result as unknown as Record<string, unknown>);
+  }
+
+  async update(user: RequestUser, id: string, dto: UpdateInteraccaoDto): Promise<InteraccaoComercialResposta> {
+    const tenantId = requireTenantId(user);
+    const row = await this.prisma.interaccaoComercial.findFirst({
+      where: { id, tenantId },
+    });
+    if (!row) throw new NotFoundException("Interacção não encontrada.");
+    this.assertPodeGerirReuniao(user, row);
+
+    if (row.tipo !== "REUNIAO" || !row.agendadoPara) {
+      throw new BadRequestException("Só pode editar reuniões agendadas no calendário.");
+    }
+    if (row.reuniaoEstado === "EM_CURSO" || row.reuniaoEstado === "CONCLUIDA") {
+      throw new BadRequestException("Não pode editar uma reunião em curso ou concluída.");
+    }
+
+    const entidadeClienteId =
+      dto.entidadeClienteId !== undefined ? dto.entidadeClienteId || null : row.entidadeClienteId;
+    await this.validarFks(tenantId, entidadeClienteId ?? undefined, undefined);
+
+    const updated = await this.prisma.interaccaoComercial.update({
+      where: { id },
+      data: {
+        titulo: dto.titulo !== undefined ? dto.titulo?.trim() || null : undefined,
+        notasLivres: dto.notasLivres !== undefined ? dto.notasLivres?.trim() || null : undefined,
+        agendadoPara: dto.agendadoPara ? new Date(dto.agendadoPara) : undefined,
+        agendadoFim:
+          dto.agendadoFim !== undefined
+            ? dto.agendadoFim
+              ? new Date(dto.agendadoFim)
+              : null
+            : undefined,
+        entidadeClienteId: dto.entidadeClienteId !== undefined ? entidadeClienteId : undefined,
+      },
+      include: INTERACCAO_DETAIL_INCLUDE,
+    });
+
+    void this.audit.log({
+      user,
+      tenantId,
+      action: "crm.interaccao.updated",
+      resourceType: "InteraccaoComercial",
+      resourceId: id,
+    });
+
+    return mapInteraccaoRow(updated as unknown as Record<string, unknown>);
+  }
+
+  async remove(user: RequestUser, id: string): Promise<{ ok: true }> {
+    const tenantId = requireTenantId(user);
+    const row = await this.prisma.interaccaoComercial.findFirst({
+      where: { id, tenantId },
+    });
+    if (!row) throw new NotFoundException("Interacção não encontrada.");
+    this.assertPodeGerirReuniao(user, row);
+
+    if (row.tipo !== "REUNIAO" || !row.agendadoPara) {
+      throw new BadRequestException("Só pode remover reuniões agendadas no calendário.");
+    }
+    if (row.reuniaoEstado === "EM_CURSO" || row.reuniaoEstado === "CONCLUIDA") {
+      throw new BadRequestException("Só pode cancelar reuniões ainda agendadas.");
+    }
+
+    await this.prisma.interaccaoComercial.delete({ where: { id } });
+
+    void this.audit.log({
+      user,
+      tenantId,
+      action: "crm.interaccao.deleted",
+      resourceType: "InteraccaoComercial",
+      resourceId: id,
+    });
+
+    return { ok: true };
   }
 
   async reprocessar(user: RequestUser, id: string): Promise<InteraccaoComercialResposta> {
     const tenantId = requireTenantId(user);
     const row = await this.prisma.interaccaoComercial.findFirst({ where: { id, tenantId } });
     if (!row) throw new NotFoundException("Interacção não encontrada.");
+    assertInteraccaoAcessivel(user, row);
 
     await this.prisma.interaccaoComercial.update({
       where: { id },
@@ -288,6 +404,17 @@ export class CrmInteraccoesService {
         },
       });
     }
+  }
+
+  private assertPodeGerirReuniao(
+    user: RequestUser,
+    row: { criadoPorAutorId: string; criadoPorUserId: string | null },
+  ) {
+    if (user.role === "tenant_manager" || user.role === "super_admin") return;
+    if (user.sub && (row.criadoPorAutorId === user.sub || row.criadoPorUserId === user.sub)) {
+      return;
+    }
+    throw new ForbiddenException("Sem permissão para gerir esta reunião.");
   }
 
   private temConteudo(dto: CreateInteraccaoDto): boolean {

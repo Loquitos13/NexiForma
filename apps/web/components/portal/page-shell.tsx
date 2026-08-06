@@ -11,7 +11,7 @@ type PageShellProps = {
 
 export function PageShell({ title, subtitle, children, actions }: PageShellProps) {
   return (
-    <main style={bo.main}>
+    <section className="portal-card-shell" style={bo.main}>
       <div
         style={{
           display: "flex",
@@ -29,7 +29,7 @@ export function PageShell({ title, subtitle, children, actions }: PageShellProps
         {actions ? <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>{actions}</div> : null}
       </div>
       {children}
-    </main>
+    </section>
   );
 }
 

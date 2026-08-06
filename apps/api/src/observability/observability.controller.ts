@@ -20,11 +20,17 @@ export class ObservabilityController {
     @Query("tenantId") tenantId?: string,
     @Query("limit") limit?: string,
     @Query("since") since?: string,
+    @Query("action") action?: string,
+    @Query("actorType") actorType?: string,
+    @Query("q") q?: string,
   ) {
     return this.obs.exportAuditForCloudWatch({
       tenantId,
       limit: limit ? Number(limit) : undefined,
       since,
+      action,
+      actorType,
+      q,
     });
   }
 }

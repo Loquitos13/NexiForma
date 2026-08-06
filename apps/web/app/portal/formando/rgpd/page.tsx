@@ -9,13 +9,14 @@ export default function FormandoRgpdPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-50">Privacidade e RGPD</h1>
         <p className="text-sm text-slate-400 mt-1">
-          Consulta e gere o teu consentimento sobre tratamento de dados pessoais.
+          Política de privacidade da NexiForma by FormaFuturo, consentimento e exportação dos teus
+          dados.
         </p>
       </div>
 
       <Card className="border-slate-700/30 bg-slate-900/40">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Definições RGPD</CardTitle>
+          <CardTitle className="text-base">Política e consentimento</CardTitle>
         </CardHeader>
         <CardContent>
           <MyRgpdSettings />

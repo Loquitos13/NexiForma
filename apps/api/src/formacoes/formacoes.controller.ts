@@ -38,19 +38,19 @@ export class FormacoesController {
   constructor(private readonly formacoes: FormacoesService) {}
 
   @Get()
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   list(@CurrentUser() user: RequestUser) {
     return this.formacoes.list(user);
   }
 
   @Post()
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   create(@CurrentUser() user: RequestUser, @Body() dto: CreateFormacaoDto) {
     return this.formacoes.create(user, dto);
   }
 
   @Get(":cursoId")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   detail(
     @CurrentUser() user: RequestUser,
     @Param("cursoId", ParseUUIDPipe) cursoId: string,
@@ -59,7 +59,7 @@ export class FormacoesController {
   }
 
   @Patch(":cursoId")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   update(
     @CurrentUser() user: RequestUser,
     @Param("cursoId", ParseUUIDPipe) cursoId: string,
@@ -69,13 +69,13 @@ export class FormacoesController {
   }
 
   @Delete(":cursoId")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   remove(@CurrentUser() user: RequestUser, @Param("cursoId", ParseUUIDPipe) cursoId: string) {
     return this.formacoes.remove(user, cursoId);
   }
 
   @Post(":cursoId/publicar")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   publicar(
     @CurrentUser() user: RequestUser,
     @Param("cursoId", ParseUUIDPipe) cursoId: string,
@@ -85,7 +85,7 @@ export class FormacoesController {
   }
 
   @Post(":cursoId/capa")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 5 * 1024 * 1024 } }))
   uploadCapa(
     @CurrentUser() user: RequestUser,
@@ -96,7 +96,7 @@ export class FormacoesController {
   }
 
   @Get(":cursoId/capa")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   async streamCapa(
     @CurrentUser() user: RequestUser,
     @Param("cursoId", ParseUUIDPipe) cursoId: string,
@@ -109,7 +109,7 @@ export class FormacoesController {
   }
 
   @Get(":cursoId/acoes")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   listAcoes(
     @CurrentUser() user: RequestUser,
     @Param("cursoId", ParseUUIDPipe) cursoId: string,
@@ -118,7 +118,7 @@ export class FormacoesController {
   }
 
   @Post(":cursoId/acoes")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   createAcao(
     @CurrentUser() user: RequestUser,
     @Param("cursoId", ParseUUIDPipe) cursoId: string,
@@ -128,7 +128,7 @@ export class FormacoesController {
   }
 
   @Get(":cursoId/acoes/:acaoId")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   getAcao(
     @CurrentUser() user: RequestUser,
     @Param("cursoId", ParseUUIDPipe) cursoId: string,
@@ -138,7 +138,7 @@ export class FormacoesController {
   }
 
   @Patch(":cursoId/acoes/:acaoId")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   updateAcao(
     @CurrentUser() user: RequestUser,
     @Param("cursoId", ParseUUIDPipe) cursoId: string,

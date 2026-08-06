@@ -6,6 +6,8 @@ import { Ban, FileText, Mail, RefreshCw, Save, Send, Upload } from "lucide-react
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { downloadResponseAsFile } from "@/lib/client/download-response";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
+import { canAccessFaturacaoPortal } from "@nexiforma/shared";
 import { parseApiError } from "@/lib/ui/backoffice";
 import {
   calcularTotaisLinhas,
@@ -13,7 +15,7 @@ import {
   parseEurosInput,
   parsePercentInput,
 } from "@/lib/crm/fatura-calculos";
-import { fmtFaturaRef, type FaturaEstado } from "@/lib/crm/shared";
+import { fmtFaturaRef, fmtEuro, type FaturaEstado } from "@/lib/crm/shared";
 import { FaturaEstadoBadge } from "@/components/crm/fatura-estado-badge";
 import {
   FaturaInlineEditor,
@@ -21,7 +23,7 @@ import {
   type FaturaLinhaEdit,
 } from "@/components/crm/fatura-inline-editor";
 import { AT_MOTIVO_ISENCAO_DEFAULT } from "@nexiforma/shared";
-import { Alert, Button, PageHeader, Textarea } from "@/components/ui";
+import { Alert, Button, Dialog, DialogContent, PageHeader, Textarea } from "@/components/ui";
 import { PortalBackButton } from "@/components/ui/portal-back-button";
 
 type FaturaDetalhe = {
@@ -86,7 +88,9 @@ type TenantBranding = { logoUrl?: string | null };
 
 export default function FaturaEditorPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
-  const { canManageCrm, canManage, isComercial } = useTenantRole();
+  const { canManageFaturacao: canManage, role, writeDisabled } = useTenantRole();
+  const { entitlements } = useTenantEntitlements();
+  const canAccessFaturacao = canAccessFaturacaoPortal(role, entitlements);
   const [faturaId, setFaturaId] = useState<string | null>(null);
   const [fatura, setFatura] = useState<FaturaDetalhe | null>(null);
   const [config, setConfig] = useState<ConfigFaturacao["config"] | null>(null);
@@ -106,7 +110,9 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
   const [msg, setMsg] = useState<string | null>(null);
   const [motivoAnulacao, setMotivoAnulacao] = useState("");
   const [showAnularForm, setShowAnularForm] = useState(false);
-  const [showSolicitarForm, setShowSolicitarForm] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<
+    "emitir" | "comunicar" | "reenviar" | "nota-credito" | null
+  >(null);
 
   useEffect(() => {
     void params.then((p) => setFaturaId(p.id));
@@ -233,6 +239,7 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
       headers: { accept: "application/json" },
     });
     setBusy(false);
+    setConfirmAction(null);
     if (!res.ok) {
       setError(await parseApiError(res));
       return;
@@ -250,6 +257,7 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
       headers: { accept: "application/json" },
     });
     setBusy(false);
+    setConfirmAction(null);
     if (!res.ok) {
       setError(await parseApiError(res));
       return;
@@ -268,6 +276,7 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
       headers: { accept: "application/json" },
     });
     setBusy(false);
+    setConfirmAction(null);
     if (!res.ok) {
       setError(await parseApiError(res));
       return;
@@ -314,31 +323,6 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
     await downloadResponseAsFile(res, `fatura-${ref.toLowerCase()}.pdf`);
   }
 
-  async function solicitarAnulacao() {
-    if (!faturaId) return;
-    const motivo = motivoAnulacao.trim();
-    if (!motivo) {
-      setError("Indique o motivo do pedido de anulação.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    const res = await bffFetch(`/api/v1/crm/faturas/${faturaId}/solicitar-anulacao`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ motivo }),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setError(await parseApiError(res));
-      return;
-    }
-    setMsg("Pedido de anulação enviado ao gestor.");
-    setShowSolicitarForm(false);
-    setMotivoAnulacao("");
-    await load();
-  }
-
   async function anularFatura() {
     if (!faturaId) return;
     const motivo = motivoAnulacao.trim();
@@ -373,12 +357,20 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
       headers: { accept: "application/json" },
     });
     setBusy(false);
+    setConfirmAction(null);
     if (!res.ok) {
       setError(await parseApiError(res));
       return;
     }
     const nc = (await res.json()) as { id: string };
     router.push(`/portal/crm/faturas/${nc.id}`);
+  }
+
+  async function confirmarAccaoFiscal() {
+    if (confirmAction === "emitir") await emitir();
+    else if (confirmAction === "comunicar") await comunicarAt();
+    else if (confirmAction === "reenviar") await reenviarAt();
+    else if (confirmAction === "nota-credito") await criarNotaCredito();
   }
 
   async function rejeitarPedido() {
@@ -401,17 +393,25 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
     await load();
   }
 
-  if (!canManageCrm) {
+  if (!canAccessFaturacao) {
     return (
       <div className="max-w-3xl space-y-4">
         <h1 className="text-2xl font-bold text-slate-50">Fatura</h1>
-        <p className="text-sm text-slate-400">Sem permissão.</p>
+        <p className="text-sm text-slate-400">Módulo de faturação AT reservado ao gestor.</p>
       </div>
     );
   }
 
   if (loading || !fatura) {
-    return <p className="text-slate-400 text-sm">A carregar fatura…</p>;
+    return (
+      <div className="space-y-4">
+        <PortalBackButton fallbackHref="/portal/crm/faturas" fallbackLabel="Faturas" />
+        <PageHeader title="Fatura" description="A carregar documento…" />
+        <p className="text-slate-400 text-sm" role="status">
+          A carregar fatura…
+        </p>
+      </div>
+    );
   }
 
   const titulo =
@@ -431,6 +431,22 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
     0,
     totais.valorCentavos + totais.ivaCentavos - retencaoCentavos,
   );
+  const mutacaoBloqueada = busy || writeDisabled;
+
+  const confirmTitles: Record<NonNullable<typeof confirmAction>, string> = {
+    emitir: "Confirmar emissão",
+    comunicar: "Comunicar à Autoridade Tributária",
+    reenviar: "Reenviar comunicação à AT",
+    "nota-credito": "Criar nota de crédito",
+  };
+  const confirmDescriptions: Record<NonNullable<typeof confirmAction>, string> = {
+    emitir:
+      "A emissão atribui numeração definitiva e ATCUD. Esta acção é irreversível.",
+    comunicar: "Vai enviar os dados deste documento ao webservice da AT.",
+    reenviar: "Vai reenviar a comunicação deste documento à AT.",
+    "nota-credito":
+      "Será criado um rascunho de nota de crédito referenciando esta fatura.",
+  };
 
   return (
     <div className="space-y-4 pb-10">
@@ -446,11 +462,20 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
           <div className="flex flex-wrap gap-2">
             {editavel ? (
               <>
-                <Button size="sm" variant="secondary" disabled={busy} onClick={() => void guardar()}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={mutacaoBloqueada}
+                  onClick={() => void guardar()}
+                >
                   <Save className="h-3.5 w-3.5" />
                   Guardar
                 </Button>
-                <Button size="sm" disabled={busy} onClick={() => void emitir()}>
+                <Button
+                  size="sm"
+                  disabled={mutacaoBloqueada}
+                  onClick={() => setConfirmAction("emitir")}
+                >
                   <Send className="h-3.5 w-3.5" />
                   Emitir
                 </Button>
@@ -458,25 +483,45 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
             ) : (
               <>
                 {fatura.estado === "EMITIDA" ? (
-                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => void comunicarAt()}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={mutacaoBloqueada}
+                    onClick={() => setConfirmAction("comunicar")}
+                  >
                     <Upload className="h-3.5 w-3.5" />
                     Comunicar AT
                   </Button>
                 ) : null}
                 {fatura.estado === "EMITIDA" || fatura.estado === "COMUNICADA_AT" ? (
-                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => void reenviarAt()}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={mutacaoBloqueada}
+                    onClick={() => setConfirmAction("reenviar")}
+                  >
                     <RefreshCw className="h-3.5 w-3.5" />
                     Reenviar AT
                   </Button>
                 ) : null}
                 {fatura.estado === "EMITIDA" || fatura.estado === "COMUNICADA_AT" ? (
-                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => void enviarEmail()}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={mutacaoBloqueada}
+                    onClick={() => void enviarEmail()}
+                  >
                     <Mail className="h-3.5 w-3.5" />
                     Email cliente
                   </Button>
                 ) : null}
-                {podeNotaCredito && canManageCrm ? (
-                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => void criarNotaCredito()}>
+                {podeNotaCredito && canManage ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={mutacaoBloqueada}
+                    onClick={() => setConfirmAction("nota-credito")}
+                  >
                     <FileText className="h-3.5 w-3.5" />
                     Nota de crédito
                   </Button>
@@ -485,25 +530,11 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
                   <FileText className="h-3.5 w-3.5" />
                   PDF
                 </Button>
-                {isComercial && podeAnular && !pedidoPendente ? (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={busy}
-                    onClick={() => {
-                      setShowSolicitarForm(true);
-                      setMotivoAnulacao("");
-                    }}
-                  >
-                    <Ban className="h-3.5 w-3.5" />
-                    Pedir anulação
-                  </Button>
-                ) : null}
                 {canManage && podeAnular ? (
                   <Button
                     size="sm"
                     variant="secondary"
-                    disabled={busy}
+                    disabled={mutacaoBloqueada}
                     onClick={() => {
                       setShowAnularForm(true);
                       setMotivoAnulacao(pedidoPendente?.motivo ?? "");
@@ -519,6 +550,10 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
         }
       />
 
+      {writeDisabled ? (
+        <Alert variant="warning">Personificação read-only - alterações fiscais desactivadas.</Alert>
+      ) : null}
+
       {pedidoPendente ? (
         <Alert variant="warning">
           <strong>Pedido de anulação pendente</strong> por {pedidoPendente.solicitadoPor.displayName}:{" "}
@@ -531,26 +566,6 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
         </Alert>
       ) : null}
 
-      {showSolicitarForm ? (
-        <div className="rounded-xl border border-slate-700/50 bg-slate-900/50 p-4 space-y-3 max-w-lg">
-          <h3 className="text-sm font-semibold text-slate-200">Pedir anulação ao gestor</h3>
-          <Textarea
-            value={motivoAnulacao}
-            onChange={(e) => setMotivoAnulacao(e.target.value)}
-            rows={3}
-            placeholder="Motivo da anulação (obrigatório)"
-          />
-          <div className="flex gap-2">
-            <Button size="sm" disabled={busy} onClick={() => void solicitarAnulacao()}>
-              Enviar pedido
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => setShowSolicitarForm(false)}>
-              Cancelar
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
       {showAnularForm && canManage ? (
         <div className="rounded-xl border border-red-500/30 bg-red-950/20 p-4 space-y-3 max-w-lg">
           <h3 className="text-sm font-semibold text-red-200">Anular fatura (gestor)</h3>
@@ -559,13 +574,19 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
             onChange={(e) => setMotivoAnulacao(e.target.value)}
             rows={3}
             placeholder="Motivo legal da anulação"
+            disabled={writeDisabled}
           />
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" disabled={busy} onClick={() => void anularFatura()}>
+            <Button size="sm" disabled={mutacaoBloqueada} onClick={() => void anularFatura()}>
               Confirmar anulação
             </Button>
             {pedidoPendente ? (
-              <Button size="sm" variant="secondary" disabled={busy} onClick={() => void rejeitarPedido()}>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={mutacaoBloqueada}
+                onClick={() => void rejeitarPedido()}
+              >
                 Rejeitar pedido
               </Button>
             ) : null}
@@ -595,8 +616,8 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
       ) : null}
 
       <FaturaInlineEditor
-        editavel={editavel}
-        canManageConfig={canManage}
+        editavel={editavel && !writeDisabled}
+        canManageConfig={canManage && !writeDisabled}
         logoUrl={logoUrl}
         emitente={{
           nomeEmpresa: config?.nomeEmpresa ?? "",
@@ -646,6 +667,59 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
         softwareCertificado={config?.softwareCertificadoEfectivo ?? null}
         hashIntegridade={fatura.hashIntegridade}
       />
+
+      <Dialog open={!!confirmAction} onOpenChange={(o) => !o && setConfirmAction(null)}>
+        <DialogContent
+          title={confirmAction ? confirmTitles[confirmAction] : "Confirmar"}
+          description={confirmAction ? confirmDescriptions[confirmAction] : undefined}
+        >
+          <div className="space-y-3 text-sm text-slate-300">
+            <dl className="grid gap-2 rounded-lg border border-slate-700/50 bg-slate-900/50 p-3">
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Cliente</dt>
+                <dd className="text-right font-medium text-slate-100">
+                  {fatura.destinatarioNome}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Série</dt>
+                <dd className="text-right font-mono text-slate-100">
+                  {fmtFaturaRef(fatura.serie, fatura.numero)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Valor (s/ IVA)</dt>
+                <dd className="text-right tabular-nums text-slate-100">
+                  {fmtEuro(editavel ? totais.valorCentavos : fatura.valorCentavos)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Total líquido</dt>
+                <dd className="text-right tabular-nums font-semibold text-slate-50">
+                  {fmtEuro(totalLiquido)}
+                </dd>
+              </div>
+            </dl>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={busy}
+                onClick={() => setConfirmAction(null)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                disabled={mutacaoBloqueada}
+                onClick={() => void confirmarAccaoFiscal()}
+              >
+                Confirmar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

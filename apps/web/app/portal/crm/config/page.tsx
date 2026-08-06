@@ -12,6 +12,7 @@ import {
   type CrmOutboundWebhook,
   type CrmTenantConfig,
 } from "@nexiforma/shared";
+import { resolveCrmLeadWebhookUrls } from "@/lib/crm/public-api-url";
 import {
   Alert,
   Button,
@@ -19,6 +20,8 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  Dialog,
+  DialogContent,
   Input,
   PageHeader,
   Select,
@@ -30,12 +33,14 @@ function uid() {
 }
 
 export default function CrmConfigPage() {
-  const { canManage, loading: roleLoading, sessionExpired } = useTenantRole();
+  const { canManage, writeDisabled, loading: roleLoading, sessionExpired } = useTenantRole();
   const [config, setConfig] = useState<(CrmTenantConfig & { tenantSlug?: string }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [rotateOpen, setRotateOpen] = useState(false);
+  const [deleteFieldId, setDeleteFieldId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!canManage) return;
@@ -66,7 +71,9 @@ export default function CrmConfigPage() {
         customFieldDefs: config.customFieldDefs,
         outboundWebhooks: config.outboundWebhooks,
         automations: config.automations,
-        emailSync: config.emailSync,
+        emailSync: config.emailSync
+          ? { ...config.emailSync, enabled: false }
+          : undefined,
       }),
     });
     setBusy(false);
@@ -78,6 +85,7 @@ export default function CrmConfigPage() {
   }
 
   async function rotateSecret() {
+    setRotateOpen(false);
     setBusy(true);
     const res = await bffFetch("/api/v1/crm/config/webhook-secret/rotate", { method: "POST" });
     setBusy(false);
@@ -86,6 +94,15 @@ export default function CrmConfigPage() {
       setConfig((c) => (c ? { ...c, leadWebhookSecret: data.leadWebhookSecret } : c));
       setMsg("Novo secret de webhook gerado.");
     }
+  }
+
+  function confirmDeleteField() {
+    if (!deleteFieldId || !config) return;
+    setConfig({
+      ...config,
+      customFieldDefs: config.customFieldDefs.filter((x) => x.id !== deleteFieldId),
+    });
+    setDeleteFieldId(null);
   }
 
   function addCustomField() {
@@ -142,7 +159,12 @@ export default function CrmConfigPage() {
   }
 
   if (sessionExpired || roleLoading) {
-    return null;
+    return (
+      <>
+        <PageHeader title="Configuração CRM" description="Campos custom, webhooks, automações e email sync." />
+        <p className="text-slate-400">A carregar…</p>
+      </>
+    );
   }
 
   if (!canManage) {
@@ -158,7 +180,8 @@ export default function CrmConfigPage() {
     );
   }
 
-  const webhookUrl = `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"}/public/v1/webhooks/leads/${config.tenantSlug ?? "seu-tenant"}`;
+  const webhookUrls = resolveCrmLeadWebhookUrls(config.tenantSlug ?? "seu-tenant");
+  const webhookUrl = webhookUrls.directUrl ?? webhookUrls.bffUrl ?? "";
 
   return (
     <>
@@ -173,14 +196,33 @@ export default function CrmConfigPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">Webhook inbound (website)</CardTitle>
-            <Button type="button" variant="secondary" size="sm" onClick={() => void rotateSecret()} disabled={busy}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setRotateOpen(true)}
+              disabled={busy || writeDisabled}
+            >
               <RefreshCw className="h-3.5 w-3.5" /> Rotacionar secret
             </Button>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
+            {webhookUrls.missingEnv ? (
+              <Alert variant="warning">
+                Defina <code>NEXT_PUBLIC_API_URL</code> (ou use a URL via app abaixo) para integrações externas
+                correctas em produção.
+              </Alert>
+            ) : null}
             <p className="text-slate-400">
-              POST <code className="text-violet-300">{webhookUrl}</code>
+              POST directo API:{" "}
+              <code className="text-violet-300 break-all">{webhookUrl || "-"}</code>
             </p>
+            {webhookUrls.bffUrl && webhookUrls.directUrl ? (
+              <p className="text-slate-500 text-xs">
+                Alternativa via app (mesmo domínio):{" "}
+                <code className="text-violet-300/80 break-all">{webhookUrls.bffUrl}</code>
+              </p>
+            ) : null}
             <p className="text-slate-500">
               Header <code>X-NexiForma-Signature</code>: HMAC-SHA256 de{" "}
               <code>empresaNome|email|telefone</code> com o secret abaixo.
@@ -196,7 +238,7 @@ export default function CrmConfigPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">Campos personalizados</CardTitle>
-            <Button type="button" variant="secondary" size="sm" onClick={addCustomField}>
+            <Button type="button" variant="secondary" size="sm" onClick={addCustomField} disabled={busy || writeDisabled}>
               <Plus className="h-3.5 w-3.5" /> Campo
             </Button>
           </CardHeader>
@@ -206,6 +248,7 @@ export default function CrmConfigPage() {
                 <Input
                   placeholder="Chave"
                   value={f.key}
+                  disabled={busy || writeDisabled}
                   onChange={(e) => {
                     const defs = [...config.customFieldDefs];
                     defs[i] = { ...f, key: e.target.value };
@@ -215,6 +258,7 @@ export default function CrmConfigPage() {
                 <Input
                   placeholder="Etiqueta"
                   value={f.label}
+                  disabled={busy || writeDisabled}
                   onChange={(e) => {
                     const defs = [...config.customFieldDefs];
                     defs[i] = { ...f, label: e.target.value };
@@ -223,6 +267,7 @@ export default function CrmConfigPage() {
                 />
                 <Select
                   value={f.entity}
+                  disabled={busy || writeDisabled}
                   onChange={(e) => {
                     const defs = [...config.customFieldDefs];
                     defs[i] = { ...f, entity: e.target.value as CrmCustomFieldDef["entity"] };
@@ -237,12 +282,9 @@ export default function CrmConfigPage() {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={() =>
-                    setConfig({
-                      ...config,
-                      customFieldDefs: config.customFieldDefs.filter((x) => x.id !== f.id),
-                    })
-                  }
+                  aria-label="Remover campo"
+                  disabled={busy || writeDisabled}
+                  onClick={() => setDeleteFieldId(f.id)}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -250,14 +292,18 @@ export default function CrmConfigPage() {
             ))}
             {!config.customFieldDefs.length ? (
               <p className="text-sm text-slate-500">Sem campos custom - adicione para leads, clientes ou propostas.</p>
-            ) : null}
+            ) : (
+              <p className="text-xs text-slate-500">
+                Campos de entidade <strong>lead</strong> aparecem no formulário de criação de leads.
+              </p>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">Webhooks outbound (Zapier/Make)</CardTitle>
-            <Button type="button" variant="secondary" size="sm" onClick={addWebhook}>
+            <Button type="button" variant="secondary" size="sm" onClick={addWebhook} disabled={busy || writeDisabled}>
               <Plus className="h-3.5 w-3.5" /> Webhook
             </Button>
           </CardHeader>
@@ -267,6 +313,7 @@ export default function CrmConfigPage() {
                 <Input
                   placeholder="URL"
                   value={w.url}
+                  disabled={busy || writeDisabled}
                   onChange={(e) => {
                     const hooks = [...config.outboundWebhooks];
                     hooks[i] = { ...w, url: e.target.value };
@@ -276,6 +323,7 @@ export default function CrmConfigPage() {
                 <select
                   multiple
                   value={w.events}
+                  disabled={busy || writeDisabled}
                   onChange={(e) => {
                     const selected = Array.from(e.target.selectedOptions).map((o) => o.value);
                     const hooks = [...config.outboundWebhooks];
@@ -298,7 +346,7 @@ export default function CrmConfigPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">Automações (marketing sequences MVP)</CardTitle>
-            <Button type="button" variant="secondary" size="sm" onClick={addAutomation}>
+            <Button type="button" variant="secondary" size="sm" onClick={addAutomation} disabled={busy || writeDisabled}>
               <Plus className="h-3.5 w-3.5" /> Regra
             </Button>
           </CardHeader>
@@ -307,6 +355,7 @@ export default function CrmConfigPage() {
               <div key={a.id} className="grid gap-2 sm:grid-cols-4">
                 <Input
                   value={a.name}
+                  disabled={busy || writeDisabled}
                   onChange={(e) => {
                     const rules = [...config.automations];
                     rules[i] = { ...a, name: e.target.value };
@@ -315,6 +364,7 @@ export default function CrmConfigPage() {
                 />
                 <Select
                   value={a.trigger}
+                  disabled={busy || writeDisabled}
                   onChange={(e) => {
                     const rules = [...config.automations];
                     rules[i] = { ...a, trigger: e.target.value as CrmAutomationRule["trigger"] };
@@ -327,6 +377,7 @@ export default function CrmConfigPage() {
                 </Select>
                 <Select
                   value={a.action}
+                  disabled={busy || writeDisabled}
                   onChange={(e) => {
                     const rules = [...config.automations];
                     rules[i] = { ...a, action: e.target.value as CrmAutomationRule["action"] };
@@ -342,6 +393,7 @@ export default function CrmConfigPage() {
                     type="number"
                     placeholder="Dias"
                     value={a.daysAfter ?? 7}
+                    disabled={busy || writeDisabled}
                     onChange={(e) => {
                       const rules = [...config.automations];
                       rules[i] = { ...a, daysAfter: parseInt(e.target.value, 10) || 7 };
@@ -356,55 +408,59 @@ export default function CrmConfigPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Email sync (Gmail / M365)</CardTitle>
+            <CardTitle className="text-base">Email sync (Gmail / M365) - indisponível</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-4 items-center">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={config.emailSync?.enabled ?? false}
-                onChange={(e) =>
-                  setConfig({
-                    ...config,
-                    emailSync: {
-                      provider: config.emailSync?.provider ?? "GMAIL",
-                      enabled: e.target.checked,
-                      mailbox: config.emailSync?.mailbox,
-                    },
-                  })
-                }
-              />
-              Activar sincronização
-            </label>
-            <Select
-              value={config.emailSync?.provider ?? "GMAIL"}
-              onChange={(e) =>
-                setConfig({
-                  ...config,
-                  emailSync: {
-                    enabled: config.emailSync?.enabled ?? false,
-                    provider: e.target.value as "GMAIL" | "M365",
-                    mailbox: config.emailSync?.mailbox,
-                  },
-                })
-              }
-            >
-              <option value="GMAIL">Gmail</option>
-              <option value="M365">Microsoft 365</option>
-            </Select>
-            <p className="text-xs text-slate-500 w-full">
-              OAuth Gmail/M365: configure credenciais em Integrações. Última sync:{" "}
-              {config.emailSync?.lastSyncAt
-                ? new Date(config.emailSync.lastSyncAt).toLocaleString("pt-PT")
-                : "nunca"}
+          <CardContent className="space-y-3 text-sm">
+            <Alert variant="warning">
+              Sincronização OAuth Gmail/M365 ainda não está disponível. Esta secção ficará activa numa
+              actualização futura - não afecta leads, propostas nem webhooks.
+            </Alert>
+            <p className="text-xs text-slate-500">
+              Provider preferido: {config.emailSync?.provider ?? "GMAIL"}
+              {config.emailSync?.mailbox ? ` · ${config.emailSync.mailbox}` : ""}
+            </p>
+            <p className="text-xs text-slate-600 italic">
+              Os campos de configuração de email sync não são editáveis nesta versão.
             </p>
           </CardContent>
         </Card>
 
-        <Button type="submit" disabled={busy}>
+        <Button type="submit" disabled={busy || writeDisabled}>
           Guardar configuração
         </Button>
       </form>
+
+      <Dialog open={rotateOpen} onOpenChange={setRotateOpen}>
+        <DialogContent
+          title="Rotacionar secret de webhook"
+          description="Integrações externas que usam o secret actual deixarão de funcionar até actualizar a assinatura HMAC."
+        >
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setRotateOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" disabled={busy} onClick={() => void rotateSecret()}>
+              Confirmar rotação
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteFieldId} onOpenChange={(o) => !o && setDeleteFieldId(null)}>
+        <DialogContent
+          title="Remover campo personalizado"
+          description="O campo deixará de aparecer nos formulários. Dados já guardados não são apagados automaticamente."
+        >
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setDeleteFieldId(null)}>
+              Cancelar
+            </Button>
+            <Button type="button" variant="secondary" disabled={busy} onClick={confirmDeleteField}>
+              Remover
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

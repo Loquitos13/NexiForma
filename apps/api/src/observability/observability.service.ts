@@ -17,31 +17,42 @@ export class ObservabilityService {
       queueBackend: this.queue.getBackend(),
       atFaturasMode: this.config.get<string>("AT_FATURAS_MODE") ?? "disabled",
       sigoMode: this.config.get<string>("SIGO_API_MODE") ?? "disabled",
-      cmdSignatureMode: this.config.get<string>("CMD_SIGNATURE_MODE") ?? "disabled",
       awsRegion: this.config.get<string>("AWS_REGION") ?? null,
       xrayEnabled: this.config.get<string>("AWS_XRAY_ENABLED") === "true",
     };
   }
 
-  /** Formato compatível com CloudWatch Logs Insights (array de eventos). */
-  exportAuditForCloudWatch(opts: { tenantId?: string; limit?: number; since?: string }) {
+  exportAuditForCloudWatch(opts: {
+    tenantId?: string;
+    limit?: number;
+    since?: string;
+    action?: string;
+    actorType?: string;
+    q?: string;
+  }) {
     const since = opts.since ? new Date(opts.since) : undefined;
-    return this.audit.list({
-      tenantId: opts.tenantId,
-      limit: opts.limit ?? 100,
-    }).then((rows) =>
-      rows
-        .filter((row) => {
-          if (!since) return true;
-          const occurred = row["occurredAt"];
-          if (!occurred) return true;
-          return new Date(String(occurred)) >= since;
-        })
-        .map((row) => ({
+    const actorTypeRaw = opts.actorType?.trim().toUpperCase();
+    const allowed = new Set(["SUPERADMIN_USER", "SYSTEM", "TENANT_USER", "PUBLIC_LINK"]);
+    const actorType =
+      actorTypeRaw && allowed.has(actorTypeRaw)
+        ? (actorTypeRaw as "SUPERADMIN_USER" | "SYSTEM" | "TENANT_USER" | "PUBLIC_LINK")
+        : undefined;
+    return this.audit
+      .list({
+        tenantId: opts.tenantId,
+        limit: opts.limit ?? 100,
+        since: since && !Number.isNaN(since.getTime()) ? since : undefined,
+        action: opts.action?.trim() || undefined,
+        actorType,
+        q: opts.q?.trim() || undefined,
+      })
+      .then((rows) =>
+        rows.map((row) => ({
           type: "audit_event",
           timestamp: row["occurredAt"] ?? new Date().toISOString(),
           actorType: row["actorType"],
           actorId: row["actorId"],
+          actorIp: row["actorIp"] ?? null,
           action: row["action"],
           resourceType: row["resourceType"],
           resourceId: row["resourceId"],
@@ -49,6 +60,6 @@ export class ObservabilityService {
           targetUserId: row["targetUserId"] ?? null,
           payload: row["payload"] ?? null,
         })),
-    );
+      );
   }
 }

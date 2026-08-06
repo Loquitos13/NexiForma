@@ -5,6 +5,7 @@ import { cn } from "@/lib/ui/cn";
 
 export type ClienteFichaTab =
   | "dados"
+  | "formandos"
   | "faturas"
   | "propostas"
   | "leads"
@@ -17,9 +18,12 @@ type TabDef = {
   badgeKey?: keyof ClienteFichaBadges;
   crmOnly?: boolean;
   managerOnly?: boolean;
+  /** Visível para gestores de formação (não depende do módulo faturação). */
+  formacaoOnly?: boolean;
 };
 
 export type ClienteFichaBadges = {
+  formandos?: number;
   faturas?: number;
   propostas?: number;
   leads?: number;
@@ -29,6 +33,7 @@ export type ClienteFichaBadges = {
 
 const TABS: TabDef[] = [
   { id: "dados", label: "Dados" },
+  { id: "formandos", label: "Formandos", badgeKey: "formandos", formacaoOnly: true },
   { id: "faturas", label: "Faturas", badgeKey: "faturas", managerOnly: true },
   { id: "propostas", label: "Propostas", badgeKey: "propostas", crmOnly: true },
   { id: "leads", label: "Leads", badgeKey: "leads", crmOnly: true },
@@ -42,6 +47,7 @@ type Props = {
   badges?: ClienteFichaBadges;
   showCrmTabs?: boolean;
   showFaturacaoTabs?: boolean;
+  showFormacaoTabs?: boolean;
 };
 
 export function ClienteFichaNav({
@@ -50,10 +56,13 @@ export function ClienteFichaNav({
   badges,
   showCrmTabs = true,
   showFaturacaoTabs = true,
+  showFormacaoTabs = true,
 }: Props) {
   const visible = TABS.filter(
     (t) =>
-      (!t.crmOnly || showCrmTabs) && (!t.managerOnly || showFaturacaoTabs),
+      (!t.crmOnly || showCrmTabs) &&
+      (!t.managerOnly || showFaturacaoTabs) &&
+      (!t.formacaoOnly || showFormacaoTabs),
   );
 
   return (
@@ -94,6 +103,7 @@ export function ClienteFichaNav({
 
 export function parseClienteFichaTab(value: string | null): ClienteFichaTab {
   if (
+    value === "formandos" ||
     value === "faturas" ||
     value === "propostas" ||
     value === "leads" ||

@@ -196,6 +196,17 @@ export function Sidebar({ pathname, role, entitlements, mobileOpen, onMobileClos
     () => filterGroups(NAV_GROUPS, role, entitlements),
     [role, entitlements],
   );
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const sync = () => setIsDesktop(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  const drawerHidden = !isDesktop && !mobileOpen;
 
   return (
     <>
@@ -212,7 +223,8 @@ export function Sidebar({ pathname, role, entitlements, mobileOpen, onMobileClos
           "portal-fixed-drawer flex h-full min-h-0 w-[min(88vw,17rem)] flex-col border-r border-slate-700/40 bg-slate-950/95 transition-transform duration-300 lg:w-64 lg:flex-shrink-0",
           mobileOpen ? "translate-x-0" : "max-lg:-translate-x-full",
         )}
-        aria-hidden={!mobileOpen ? undefined : false}
+        aria-hidden={drawerHidden}
+        inert={drawerHidden ? true : undefined}
       >
         <div className="flex items-center gap-2.5 px-4 py-5">
           <NexiFormaLogoAnimated
@@ -227,7 +239,10 @@ export function Sidebar({ pathname, role, entitlements, mobileOpen, onMobileClos
           </div>
         </div>
 
-        <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <nav
+          aria-label="Menu principal do portal"
+          className="portal-nav-scroll min-h-0 flex-1 px-2 pb-4"
+        >
           {groups.map((group) => (
             <NavSection
               key={`${group.module ?? group.label}`}

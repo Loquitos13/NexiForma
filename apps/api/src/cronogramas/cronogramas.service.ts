@@ -83,4 +83,30 @@ export class CronogramasService {
       },
     });
   }
+
+  async remove(user: RequestUser, id: string) {
+    const tenantId = requireTenantId(user);
+    const cronograma = await this.prisma.cronograma.findFirst({
+      where: { id, tenantId },
+      select: {
+        id: true,
+        versao: true,
+        acaoFormacaoId: true,
+        _count: { select: { sessoes: true } },
+      },
+    });
+    if (!cronograma) {
+      throw new NotFoundException("Cronograma não encontrado.");
+    }
+
+    await this.prisma.cronograma.delete({ where: { id } });
+
+    return {
+      ok: true as const,
+      id: cronograma.id,
+      versao: cronograma.versao,
+      acaoFormacaoId: cronograma.acaoFormacaoId,
+      sessoesApagadas: cronograma._count.sessoes,
+    };
+  }
 }

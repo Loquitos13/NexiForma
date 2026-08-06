@@ -1,7 +1,9 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
-import { AlertTriangle, GraduationCap, Pencil, ShieldAlert } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, GraduationCap, Pencil, ShieldAlert, UserRound } from "lucide-react";
+import { DgertRequisitoBanner, DgertTarget } from "@/components/portal/dgert-requisito-banner";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
@@ -14,24 +16,25 @@ import {
   CardHeader,
   CardTitle,
   DataTable,
-  Dialog,
-  DialogContent,
-  Input,
   PageHeader,
   type Column,
 } from "@/components/ui";
 import { credencialStatus, fmtDate } from "@/lib/crm/shared";
+import { cn } from "@/lib/ui/cn";
 
 type Formador = {
   id: string;
   nomeCompleto: string;
   nif: string;
   email: string;
+  emailPresenca?: string | null;
+  telefone?: string | null;
+  morada?: string | null;
   ccNumero: string | null;
   ccpNumero: string | null;
   ccValidade: string | null;
   ccpValidade: string | null;
-  _count?: { sessoesFormacao: number };
+  _count?: { sessoesFormacao: number; documentos?: number };
 };
 
 type Alerta = {
@@ -56,21 +59,12 @@ function CredencialBadge({ validade }: { validade: string | null }) {
 }
 
 export default function FormadoresPage() {
-  const { canManage } = useTenantRole();
+  const router = useRouter();
+  const { canManageFormacao: canManage } = useTenantRole();
   const [formadores, setFormadores] = useState<Formador[]>([]);
   const [alertas, setAlertas] = useState<Alerta[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editFormador, setEditFormador] = useState<Formador | null>(null);
-  const [form, setForm] = useState({
-    ccNumero: "",
-    ccpNumero: "",
-    ccValidade: "",
-    ccpValidade: "",
-  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -90,43 +84,6 @@ export default function FormadoresPage() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  function openEdit(f: Formador) {
-    setEditFormador(f);
-    setForm({
-      ccNumero: f.ccNumero ?? "",
-      ccpNumero: f.ccpNumero ?? "",
-      ccValidade: f.ccValidade ? f.ccValidade.slice(0, 10) : "",
-      ccpValidade: f.ccpValidade ? f.ccpValidade.slice(0, 10) : "",
-    });
-    setDialogOpen(true);
-  }
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!canManage || !editFormador) return;
-    setBusy(true);
-    setMsg(null);
-    setError(null);
-    const res = await bffFetch(`/api/v1/formadores/${editFormador.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({
-        ccNumero: form.ccNumero.trim() || undefined,
-        ccpNumero: form.ccpNumero.trim() || undefined,
-        ccValidade: form.ccValidade || undefined,
-        ccpValidade: form.ccpValidade || undefined,
-      }),
-    });
-    if (!res.ok) setError(await parseApiError(res));
-    else {
-      setMsg("Credenciais actualizadas.");
-      setDialogOpen(false);
-      setEditFormador(null);
-      await load();
-    }
-    setBusy(false);
-  }
 
   const COLS: Column<Formador>[] = [
     {
@@ -166,6 +123,11 @@ export default function FormadoresPage() {
       header: "Sessões",
       cell: (f) => <span className="text-slate-300">{f._count?.sessoesFormacao ?? 0}</span>,
     },
+    {
+      key: "documentos",
+      header: "Docs",
+      cell: (f) => <Badge variant="default">{f._count?.documentos ?? 0}</Badge>,
+    },
   ];
 
   const criticos = alertas.filter((a) => a.severidade === "critico").length;
@@ -174,11 +136,12 @@ export default function FormadoresPage() {
     <>
       <PageHeader
         title="Formadores"
-        description="Gestão de credenciais CC/CCP - requisito DGERT para inspecção e alocação a acções formativas."
+        description="Perfil, contacto e documentos dos formadores - CC/CCP e ficheiros para DGERT."
       />
 
       {error && <Alert variant="error" className="mb-4">{error}</Alert>}
-      {msg && <Alert variant="success" className="mb-4">{msg}</Alert>}
+
+      <DgertRequisitoBanner backHref="/portal/dossie" />
 
       {alertas.length > 0 && (
         <Card className="mb-6 border-yellow-700/30">
@@ -221,69 +184,55 @@ export default function FormadoresPage() {
         </Card>
       )}
 
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={COLS}
-            data={formadores}
-            keyField="id"
-            loading={loading}
-            emptyMessage="Sem formadores registados neste centro."
-            rowActions={
-              canManage
-                ? (f) => (
-                    <Button size="sm" variant="secondary" onClick={() => openEdit(f)}>
+      <DgertTarget id="formadores_lista">
+        <Card>
+          <CardContent className="p-0">
+            <DataTable
+              columns={COLS}
+              data={formadores}
+              keyField="id"
+              loading={loading}
+              emptyMessage="Sem formadores registados neste centro."
+              onRowClick={(f) => router.push(`/portal/formadores/${f.id}`)}
+              rowActions={(f) => (
+                <div className="flex items-center gap-0.5">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label="Abrir perfil"
+                    title="Perfil"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      router.push(`/portal/formadores/${f.id}`);
+                    }}
+                  >
+                    <UserRound className="h-3.5 w-3.5 text-sky-400" />
+                  </Button>
+                  {canManage ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label="Editar"
+                      title="Editar dados"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(`/portal/formadores/${f.id}`);
+                      }}
+                      className={cn(
+                        !f.ccNumero?.trim() &&
+                          !f.ccpNumero?.trim() &&
+                          "ring-1 ring-amber-400/50",
+                      )}
+                    >
                       <Pencil className="h-3.5 w-3.5" />
-                      Credenciais
                     </Button>
-                  )
-                : undefined
-            }
-          />
-        </CardContent>
-      </Card>
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent
-          title="Credenciais do formador"
-          description={editFormador ? editFormador.nomeCompleto : undefined}
-        >
-          <form onSubmit={(e) => void submit(e)} className="grid gap-4">
-            <div className="grid grid-cols-2 gap-3">
-              <Input
-                label="CC n.º"
-                value={form.ccNumero}
-                onChange={(ev) => setForm((f) => ({ ...f, ccNumero: ev.target.value }))}
-              />
-              <Input
-                label="CC validade"
-                type="date"
-                value={form.ccValidade}
-                onChange={(ev) => setForm((f) => ({ ...f, ccValidade: ev.target.value }))}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Input
-                label="CCP n.º"
-                value={form.ccpNumero}
-                onChange={(ev) => setForm((f) => ({ ...f, ccpNumero: ev.target.value }))}
-              />
-              <Input
-                label="CCP validade"
-                type="date"
-                value={form.ccpValidade}
-                onChange={(ev) => setForm((f) => ({ ...f, ccpValidade: ev.target.value }))}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button type="submit" disabled={busy}>{busy ? "A guardar…" : "Guardar"}</Button>
-              <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>
-                Cancelar
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+                  ) : null}
+                </div>
+              )}
+            />
+          </CardContent>
+        </Card>
+      </DgertTarget>
     </>
   );
 }

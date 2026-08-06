@@ -8,13 +8,13 @@ import {
   UnauthorizedException,
   UseGuards,
 } from "@nestjs/common";
-import { createHmac, timingSafeEqual } from "crypto";
 import { Public } from "../auth/decorators/public.decorator";
 import { LeadsService } from "../crm/leads.service";
 import { CrmConfigService } from "../crm/crm-config.service";
 import { PublicCreateLeadDto } from "../crm/dto/public-lead.dto";
 import { ApiKeyGuard, type ApiKeyRequest } from "./api-key.guard";
 import { PrismaService } from "../prisma/prisma.service";
+import { verifyLeadWebhookSignature } from "@nexiforma/shared";
 
 type ReqWithKey = { apiKey: ApiKeyRequest };
 
@@ -46,33 +46,34 @@ export class PublicLeadsController {
       select: { id: true },
     });
     if (!tenant) {
-      throw new UnauthorizedException("Tenant inválido.");
+      throw new UnauthorizedException("Pedido não autorizado.");
     }
 
     const cfg = await this.config.getByTenantId(tenant.id);
     const secret = cfg.leadWebhookSecret?.trim();
     if (!secret) {
-      throw new UnauthorizedException("Webhook de leads não configurado.");
+      throw new UnauthorizedException("Pedido não autorizado.");
     }
 
-    const secretHeader = signature?.replace(/^sha256=/, "") ?? "";
-    const payload = `${dto.empresaNome}|${dto.email ?? ""}|${dto.telefone ?? ""}`;
-    const expected = createHmac("sha256", secret).update(payload).digest("hex");
+    const signInput = {
+      empresaNome: dto.empresaNome,
+      contactoNome: dto.contactoNome,
+      email: dto.email,
+      telefone: dto.telefone,
+      nif: dto.nif,
+      origem: dto.origem,
+      valorEstimadoCentavos: dto.valorEstimadoCentavos,
+      notas: dto.notas,
+      customFields: dto.customFields,
+    };
 
-    if (!secretHeader || !this.safeEqual(secretHeader, expected)) {
-      throw new UnauthorizedException("Assinatura HMAC inválida.");
+    if (!verifyLeadWebhookSignature(secret, signature, signInput)) {
+      throw new UnauthorizedException("Pedido não autorizado.");
     }
 
     return this.leads.createFromPublic(tenant.id, dto, {
       source: "website_webhook",
       origem: dto.origem ?? "WEBSITE",
     });
-  }
-
-  private safeEqual(a: string, b: string): boolean {
-    const ba = Buffer.from(a);
-    const bb = Buffer.from(b);
-    if (ba.length !== bb.length) return false;
-    return timingSafeEqual(ba, bb);
   }
 }

@@ -1,10 +1,13 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { MailService } from "../mail/mail.service";
 import { PrismaService } from "../prisma/prisma.service";
+import type { RequestUser } from "../auth/types/access-token-payload";
+import { requireTenantId } from "../common/tenant-scope";
 import { EmailTemplates } from "./templates/email.templates";
 import { PushService } from "./push.service";
 import { GESTOR_ROLES, GESTOR_E_COMERCIAL_ROLES, resolverEmailNotificacaoUtilizador } from "./notificacao-roles.util";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 
 export type CriarNotificacaoInput = {
   tenantId: string;
@@ -31,6 +34,31 @@ export class PortalNotificacoesService {
     private readonly config: ConfigService,
   ) {}
 
+  /**
+   * Caixa pessoal: só notificações do utilizador autenticado.
+   * (Antes o gestor via todas do tenant  partilhava avisos destinados a formadores.)
+   */
+  private readWhere(user: RequestUser) {
+    const tenantId = requireTenantId(user);
+    return { tenantId, userId: user.sub };
+  }
+
+  listForUser(user: RequestUser, limit = 30) {
+    return this.prisma.notificacaoPortal.findMany({
+      where: this.readWhere(user),
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+  }
+
+  countUnreadForUser(user: RequestUser) {
+    const where = this.readWhere(user);
+    return this.prisma.notificacaoPortal.count({
+      where: { ...where, lida: false },
+    });
+  }
+
+  /** @deprecated Preferir listForUser */
   listMine(userId: string, limit = 30) {
     return this.prisma.notificacaoPortal.findMany({
       where: { userId },
@@ -39,23 +67,27 @@ export class PortalNotificacoesService {
     });
   }
 
+  /** @deprecated Preferir countUnreadForUser */
   countUnread(userId: string) {
     return this.prisma.notificacaoPortal.count({
       where: { userId, lida: false },
     });
   }
 
-  async markRead(userId: string, id: string) {
-    await this.prisma.notificacaoPortal.updateMany({
-      where: { id, userId },
+  async markRead(user: RequestUser, id: string) {
+    const result = await this.prisma.notificacaoPortal.updateMany({
+      where: { id, ...this.readWhere(user) },
       data: { lida: true },
     });
+    if (result.count === 0) {
+      throw new NotFoundException("Notificação não encontrada.");
+    }
     return { ok: true };
   }
 
-  async markAllRead(userId: string) {
+  async markAllRead(user: RequestUser) {
     await this.prisma.notificacaoPortal.updateMany({
-      where: { userId, lida: false },
+      where: { ...this.readWhere(user), lida: false },
       data: { lida: true },
     });
     return { ok: true };
@@ -119,7 +151,7 @@ export class PortalNotificacoesService {
       select: { id: true, email: true, displayName: true, role: true },
     });
 
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     const link = input.link?.startsWith("http")
       ? input.link
       : `${appUrl}${input.link ?? "/portal"}`;
@@ -170,7 +202,7 @@ export class PortalNotificacoesService {
       select: { id: true, email: true, displayName: true, role: true },
     });
 
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     const link = input.link?.startsWith("http")
       ? input.link
       : `${appUrl}${input.link ?? "/portal"}`;

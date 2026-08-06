@@ -86,16 +86,14 @@ function podeEnviarProposta(estado: string): boolean {
   return estado !== "CANCELADA";
 }
 
-function podeFaturarProposta(p: Proposta, gestor: boolean): boolean {
-  if (p.fatura || p.estado === "REJEITADA" || p.estado === "CANCELADA") return false;
-  if (p.estado === "ACEITE") return true;
-  return gestor;
+function podeFaturarProposta(p: Proposta): boolean {
+  return !p.fatura && p.estado === "ACEITE";
 }
 
 export default function PropostasPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { canManageCrm, canManage } = useTenantRole();
+  const { canManageCrm, canManage, writeDisabled } = useTenantRole();
   const [estadoFilter, setEstadoFilter] = useState<string>("TODAS");
   const [entidadeFilter, setEntidadeFilter] = useState("");
   const [entidades, setEntidades] = useState<EntidadeOpt[]>([]);
@@ -165,7 +163,8 @@ export default function PropostasPage() {
       if (data.countsByEstado) setCounts(data.countsByEstado);
     }
     if (eRes.ok) {
-      const ents = (await eRes.json()) as EntidadeOpt[];
+      const raw = (await eRes.json()) as EntidadeOpt[] | { items?: EntidadeOpt[] };
+      const ents = Array.isArray(raw) ? raw : (raw.items ?? []);
       setEntidades(ents);
       setForm((f) => {
         if (f.entidadeClienteId) return f;
@@ -390,7 +389,11 @@ export default function PropostasPage() {
       <CrmContextNav tabs={PROPOSTAS_NAV} ariaLabel="Secções Propostas" />
       <PageHeader
         title="Propostas comerciais"
-        description="Orçamentos B2B com envio por email, aceitação e registo de facturação pipeline."
+        description={
+          canManage
+            ? "Orçamentos B2B com envio por email, aceitação e registo de facturação pipeline."
+            : "Orçamentos B2B com envio por email e aceitação pelo cliente."
+        }
         actions={
           <div className="flex flex-wrap gap-2">
             {canManage ? (
@@ -400,12 +403,13 @@ export default function PropostasPage() {
                 </Button>
               </Link>
             ) : null}
-            {canManageCrm && entidades.length ? (
+            {canManageCrm ? (
               <Button
                 onClick={() => {
                   setForm((f) => ({ ...f, codigo: generatePropostaCodigo() }));
                   setCreateOpen(true);
                 }}
+                disabled={writeDisabled}
               >
                 <Plus className="h-4 w-4" />
                 Nova proposta
@@ -496,25 +500,25 @@ export default function PropostasPage() {
                           {p.estado === "RASCUNHO" ? "Enviar" : "Reenviar"}
                         </Button>
                       )}
-                      {podeFaturarProposta(p, canManage) &&
-                        (p.fatura ? (
-                          <Button size="sm" variant="secondary" asChild>
-                            <Link href={`/portal/crm/faturas/${p.fatura.id}`}>
-                              <Receipt className="h-3.5 w-3.5" />
-                              Ver fatura
-                            </Link>
-                          </Button>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="teal"
-                            onClick={() => void faturarProposta(p.id)}
-                            disabled={busy}
-                          >
+                      {canManage && p.fatura ? (
+                        <Button size="sm" variant="secondary" asChild>
+                          <Link href={`/portal/crm/faturas/${p.fatura.id}`}>
                             <Receipt className="h-3.5 w-3.5" />
-                            Faturar
-                          </Button>
-                        ))}
+                            Ver fatura
+                          </Link>
+                        </Button>
+                      ) : null}
+                      {canManage && podeFaturarProposta(p) ? (
+                        <Button
+                          size="sm"
+                          variant="teal"
+                          onClick={() => void faturarProposta(p.id)}
+                          disabled={busy}
+                        >
+                          <Receipt className="h-3.5 w-3.5" />
+                          Faturar
+                        </Button>
+                      ) : null}
                     </div>
                   )
                 : undefined
@@ -537,18 +541,28 @@ export default function PropostasPage() {
           className="max-w-2xl"
         >
           <form onSubmit={(e) => void criar(e)} className="grid min-w-0 gap-4">
-            <Select
-              label="Entidade cliente *"
-              required
-              value={form.entidadeClienteId}
-              onChange={(ev) => setForm((f) => ({ ...f, entidadeClienteId: ev.target.value }))}
-            >
-              {entidades.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.nome} (NIF {e.nif})
-                </option>
-              ))}
-            </Select>
+            {entidades.length === 0 ? (
+              <Alert variant="info">
+                Registe primeiro um{" "}
+                <Link href="/portal/clientes" className="font-medium text-blue-400 underline">
+                  cliente B2B
+                </Link>{" "}
+                para associar à proposta.
+              </Alert>
+            ) : (
+              <Select
+                label="Entidade cliente *"
+                required
+                value={form.entidadeClienteId}
+                onChange={(ev) => setForm((f) => ({ ...f, entidadeClienteId: ev.target.value }))}
+              >
+                {entidades.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.nome} (NIF {e.nif})
+                  </option>
+                ))}
+              </Select>
+            )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Input
                 label="Código"
@@ -602,7 +616,9 @@ export default function PropostasPage() {
             </div>
             <PropostaLinhasEditor compact linhas={linhas} onChange={setLinhas} />
             <div className="flex gap-2">
-              <Button type="submit" disabled={busy}>{busy ? "A criar…" : "Criar rascunho"}</Button>
+              <Button type="submit" disabled={busy || writeDisabled || !entidades.length}>
+                {busy ? "A criar…" : "Criar rascunho"}
+              </Button>
               <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>Cancelar</Button>
             </div>
           </form>
@@ -632,8 +648,8 @@ export default function PropostasPage() {
             <p className="text-xs text-slate-500 flex items-start gap-2">
               <Mail className="h-4 w-4 shrink-0 mt-0.5" />
               {activeProposta?.estado === "RASCUNHO"
-                ? "O cliente recebe um email com resumo e o documento da proposta em anexo (HTML imprimível em PDF). O estado passa para «Enviada»."
-                : "O cliente recebe novamente o email com resumo e o documento em anexo. O estado da proposta mantém-se."}
+                ? "O cliente recebe um email com resumo e o documento da proposta em PDF. O estado passa para «Enviada»."
+                : "O cliente recebe novamente o email com resumo e o PDF em anexo. O estado da proposta mantém-se."}
             </p>
             <div className="flex gap-2">
               <Button type="submit" disabled={busy}>

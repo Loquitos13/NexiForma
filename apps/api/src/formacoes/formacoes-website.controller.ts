@@ -14,19 +14,19 @@ export class FormacoesWebsiteController {
   constructor(private readonly publish: FormacoesPublishService) {}
 
   @Get("config")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_comercial", "comercial")
   config(@CurrentUser() user: RequestUser) {
     return this.publish.getWebsiteConfig(requireTenantId(user));
   }
 
   @Patch("config")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_comercial")
   updateConfig(@CurrentUser() user: RequestUser, @Body() dto: UpdateWebsiteSyncDto) {
     return this.publish.updateWebsiteConfig(requireTenantId(user), dto);
   }
 
   @Post("sync")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_comercial")
   async syncNow(@CurrentUser() user: RequestUser) {
     const tenantId = requireTenantId(user);
     const result = await this.publish.pushFullCatalog(tenantId, "catalog.full_sync");

@@ -8,8 +8,17 @@ export class BillingEntitlementsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async forTenant(tenantId: string): Promise<TenantEntitlements> {
-    const sub = await findCurrentTenantSubscription(this.prisma, tenantId);
-    return resolveTenantEntitlements(sub?.plan?.code, sub?.customAddons);
+    const [sub, tenant] = await Promise.all([
+      findCurrentTenantSubscription(this.prisma, tenantId),
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { status: true },
+      }),
+    ]);
+    return resolveTenantEntitlements(sub?.plan?.code, sub?.customAddons, {
+      subscriptionStatus: sub?.status ?? null,
+      tenantStatus: tenant?.status ?? null,
+    });
   }
 
   async assertRelatoriosDashboard(tenantId: string): Promise<void> {

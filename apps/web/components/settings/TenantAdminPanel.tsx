@@ -207,7 +207,7 @@ export const TenantAdminPanel: React.FC = () => {
               <div className="mt-3 p-4 bg-gray-100 rounded-lg">
                 <img
                   src={branding.logoUrl}
-                  alt="Preview Logo"
+                  alt={`Pré-visualização do logótipo ${branding.companyName || "da entidade"}`}
                   className="max-h-24"
                 />
               </div>

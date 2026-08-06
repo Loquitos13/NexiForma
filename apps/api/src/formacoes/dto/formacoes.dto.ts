@@ -5,6 +5,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -143,6 +144,11 @@ export class CreateFormacaoAcaoDto {
   @IsOptional()
   @IsBoolean()
   publicado?: boolean;
+
+  /** Se definido, todas as sessões geradas ficam com este formador. */
+  @IsOptional()
+  @IsUUID()
+  formadorId?: string;
 
   @ValidateNested()
   @Type(() => AgendaSessoesDto)

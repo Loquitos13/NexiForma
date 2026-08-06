@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   CATALOG_PAGE_DEFAULT,
@@ -120,7 +121,7 @@ export class FormacoesCatalogService {
       acoesByCurso.set(a.cursoId, list);
     }
 
-    const appUrl = this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000";
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
     const items = page.map((c) =>
       this.mapCursoPublico(c, acoesByCurso.get(c.id) ?? [], appUrl),
     );

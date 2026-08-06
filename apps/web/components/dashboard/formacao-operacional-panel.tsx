@@ -19,6 +19,7 @@ type ComplianceResumo = {
 
 type ComplianceAlerta = {
   id: string;
+  tipo?: string;
   severidade: "critico" | "aviso";
   codigoInterno: string;
   mensagem: string;
@@ -91,8 +92,18 @@ export function FormacaoOperacionalPanel({
   onDigest,
 }: Props) {
   const score = compliance?.resumo.mediaScoreObrigatorio ?? 0;
-  const criticos = alertas.filter((a) => a.severidade === "critico");
-  const avisos = alertas.filter((a) => a.severidade === "aviso");
+  const alertasOrdenados = [...alertas].sort((a, b) => {
+    const rank = (x: ComplianceAlerta) => {
+      if (x.tipo === "inspecao" && x.severidade === "critico") return 0;
+      if (x.tipo === "inspecao") return 1;
+      if (x.tipo === "formador") return 2;
+      if (x.severidade === "critico") return 3;
+      return 4;
+    };
+    return rank(a) - rank(b);
+  });
+  const criticos = alertasOrdenados.filter((a) => a.severidade === "critico");
+  const avisos = alertasOrdenados.filter((a) => a.severidade === "aviso");
 
   if (!compliance && alertas.length === 0 && alertasCc.length === 0) return null;
 
@@ -123,7 +134,7 @@ export function FormacaoOperacionalPanel({
             ) : null}
           </CardHeader>
           <CardContent className="space-y-2 pt-0">
-            {alertas.slice(0, 3).map((a) => (
+            {alertasOrdenados.slice(0, 3).map((a) => (
               <div key={a.id} className="flex items-start gap-2 rounded-lg bg-slate-800/40 p-2.5 text-sm">
                 <Badge variant={a.severidade === "critico" ? "red" : "yellow"}>
                   {a.severidade === "critico" ? "Crítico" : "Aviso"}

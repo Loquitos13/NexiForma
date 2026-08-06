@@ -14,11 +14,15 @@ import type { TenantUserRole } from "@nexiforma/database";
 
 const ROLES: TenantUserRole[] = [
   "ADMIN",
-  "COORDENADOR",
+  "COORDENADOR_COMERCIAL",
+  "COORDENADOR_PEDAGOGICO",
+  "COORDENADOR_FINANCEIRO",
   "FORMADOR",
   "FORMANDO",
-  "FINANCEIRO",
   "COMERCIAL",
+  // legados (ainda aceites na API / BD)
+  "COORDENADOR",
+  "FINANCEIRO",
 ];
 
 export class InviteUserDto {
@@ -32,8 +36,8 @@ export class InviteUserDto {
   @MaxLength(120)
   displayName!: string;
 
-  /** Obrigatório quando `role` é FORMANDO — ficha DGERT para inscrições. */
-  @ValidateIf((o: InviteUserDto) => o.role === "FORMANDO")
+  /** Obrigatório para FORMANDO (ficha DGERT) e FORMADOR (perfil + NIF confirmado). */
+  @ValidateIf((o: InviteUserDto) => o.role === "FORMANDO" || o.role === "FORMADOR")
   @IsString()
   @MinLength(9)
   @MaxLength(9)
@@ -80,6 +84,14 @@ export class UpdateUserDto {
   @IsString()
   @MaxLength(120)
   displayName?: string;
+
+  /** Obrigatório ao atribuir cargo FORMADOR se ainda não existir perfil. */
+  @ValidateIf((o: UpdateUserDto) => o.role === "FORMADOR")
+  @IsOptional()
+  @IsString()
+  @MinLength(9)
+  @MaxLength(9)
+  nif?: string;
 }
 
 export class EnforceMfaDto {

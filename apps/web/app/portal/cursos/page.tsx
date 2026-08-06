@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { PlusCircle, Pencil, Eye } from "lucide-react";
+import { PlusCircle, Pencil, Eye, Trash2 } from "lucide-react";
+import { DgertRequisitoBanner, useDgertRequisitoId } from "@/components/portal/dgert-requisito-banner";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
+import { cn } from "@/lib/ui/cn";
 import {
-  Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle,
+  Alert, Badge, Button,
   DataTable, Dialog, DialogContent, Input, PageHeader, Select, Textarea, type Column,
 } from "@/components/ui";
 
@@ -23,7 +25,7 @@ const MODALIDADE_LABEL: Record<string, string> = {
 };
 
 export default function CursosPage() {
-  const { canManage } = useTenantRole();
+  const { canManageFormacao: canManage, writeDisabled } = useTenantRole();
   const [cursos, setCursos] = useState<Curso[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +33,10 @@ export default function CursosPage() {
   const [busy, setBusy] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Curso | null>(null);
   const [form, setForm] = useState(EMPTY);
+  const dgertRequisito = useDgertRequisitoId();
+  const [deepLinkHandled, setDeepLinkHandled] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -42,6 +47,16 @@ export default function CursosPage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (deepLinkHandled || loading || !cursos.length) return;
+    const edit = new URLSearchParams(window.location.search).get("edit");
+    if (!edit) return;
+    const curso = cursos.find((c) => c.id === edit);
+    if (!curso) return;
+    setDeepLinkHandled(true);
+    void openEdit(curso);
+  }, [cursos, loading, deepLinkHandled]);
 
   function openCreate() { setEditId(null); setForm(EMPTY); setDialogOpen(true); }
   async function openEdit(c: Curso) {
@@ -62,9 +77,24 @@ export default function CursosPage() {
     }
   }
 
+  async function removeCurso() {
+    if (!deleteTarget || !canManage || writeDisabled) return;
+    setBusy(true);
+    setMsg(null);
+    setError(null);
+    const res = await bffFetch(`/api/v1/cursos/${deleteTarget.id}`, { method: "DELETE" });
+    if (!res.ok) setError(await parseApiError(res));
+    else {
+      setMsg(`Curso «${deleteTarget.designacao}» eliminado.`);
+      setDeleteTarget(null);
+      await load();
+    }
+    setBusy(false);
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!canManage) return;
+    if (!canManage || writeDisabled) return;
     setBusy(true); setMsg(null); setError(null);
     const body = {
       codigoUfcd: form.codigoUfcd.trim() || undefined,
@@ -115,11 +145,20 @@ export default function CursosPage() {
       <PageHeader
         title="Cursos"
         description="Catálogo formativo – UFCD, carga horária e objectivos (critério DGERT)."
-        actions={canManage ? <Button onClick={openCreate}><PlusCircle className="h-4 w-4" />Novo curso</Button> : null}
+        actions={
+          canManage ? (
+            <Button onClick={openCreate} disabled={writeDisabled}>
+              <PlusCircle className="h-4 w-4" />
+              Novo curso
+            </Button>
+          ) : null
+        }
       />
 
       {error && <Alert variant="error" className="mb-4">{error}</Alert>}
       {msg && <Alert variant="success" className="mb-4">{msg}</Alert>}
+
+      <DgertRequisitoBanner backHref="/portal/dossie" />
 
       <DataTable
         columns={COLUMNS}
@@ -132,17 +171,76 @@ export default function CursosPage() {
             <Link
               href={`/portal/cursos/${c.id}`}
               className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+              aria-label={`Ver ${c.designacao}`}
+              title="Ver"
             >
               <Eye className="h-3.5 w-3.5" />
             </Link>
             {canManage ? (
-              <Button size="sm" variant="ghost" onClick={() => void openEdit(c)}>
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={writeDisabled}
+                  onClick={() => void openEdit(c)}
+                  aria-label={`Editar ${c.designacao}`}
+                  title="Editar"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={writeDisabled || busy}
+                  onClick={() => setDeleteTarget(c)}
+                  aria-label={`Eliminar ${c.designacao}`}
+                  title="Eliminar"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                </Button>
+              </>
             ) : null}
           </div>
         )}
       />
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent
+          title="Eliminar curso"
+          description={
+            deleteTarget
+              ? `Eliminar «${deleteTarget.designacao}»? Esta acção é permanente.`
+              : undefined
+          }
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-slate-400">
+              Só é possível eliminar cursos sem acções de formação associadas
+              {deleteTarget && (deleteTarget._count?.acoesFormacao ?? 0) > 0
+                ? ` (este tem ${deleteTarget._count?.acoesFormacao}).`
+                : "."}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setDeleteTarget(null)}>
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                disabled={busy || writeDisabled || (deleteTarget?._count?.acoesFormacao ?? 0) > 0}
+                onClick={() => void removeCurso()}
+              >
+                {busy ? "A eliminar…" : "Eliminar"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent
@@ -150,17 +248,41 @@ export default function CursosPage() {
           description="UFCD opcional – obrigatório para acções financiadas e SIGO."
         >
           <form onSubmit={(e) => void submit(e)} className="grid gap-4">
-            <Input label="Código UFCD / CNQ" value={form.codigoUfcd} onChange={(e) => setForm((f) => ({ ...f, codigoUfcd: e.target.value }))} placeholder="7834" />
+            <div
+              data-dgert-target="curso_ufcd"
+              className={cn(
+                dgertRequisito === "curso_ufcd" &&
+                  "rounded-lg ring-2 ring-amber-400/55 ring-offset-2 ring-offset-slate-950 p-2 -m-2",
+              )}
+            >
+              <Input label="Código UFCD / CNQ" value={form.codigoUfcd} onChange={(e) => setForm((f) => ({ ...f, codigoUfcd: e.target.value }))} placeholder="7834" />
+            </div>
             <Input label="Designação *" required value={form.designacao} onChange={(e) => setForm((f) => ({ ...f, designacao: e.target.value }))} />
             <div className="grid grid-cols-2 gap-4">
-              <Input label="Carga horária *" type="number" min={1} required value={form.cargaHoras} onChange={(e) => setForm((f) => ({ ...f, cargaHoras: e.target.value }))} />
+              <div
+                data-dgert-target="curso_carga_horas"
+                className={cn(
+                  dgertRequisito === "curso_carga_horas" &&
+                    "rounded-lg ring-2 ring-amber-400/55 ring-offset-2 ring-offset-slate-950 p-2 -m-2",
+                )}
+              >
+                <Input label="Carga horária *" type="number" min={1} required value={form.cargaHoras} onChange={(e) => setForm((f) => ({ ...f, cargaHoras: e.target.value }))} />
+              </div>
               <Select label="Modalidade" value={form.modalidade} onChange={(e) => setForm((f) => ({ ...f, modalidade: e.target.value }))}>
                 <option value="presencial">Presencial</option>
                 <option value="b-learning">B-learning</option>
                 <option value="e-learning">E-learning</option>
               </Select>
             </div>
-            <Textarea label="Objectivos de aprendizagem" rows={3} value={form.objetivos} onChange={(e) => setForm((f) => ({ ...f, objetivos: e.target.value }))} />
+            <div
+              data-dgert-target="curso_objetivos"
+              className={cn(
+                dgertRequisito === "curso_objetivos" &&
+                  "rounded-lg ring-2 ring-amber-400/55 ring-offset-2 ring-offset-slate-950 p-2 -m-2",
+              )}
+            >
+              <Textarea label="Objectivos de aprendizagem" rows={3} value={form.objetivos} onChange={(e) => setForm((f) => ({ ...f, objetivos: e.target.value }))} />
+            </div>
             <div className="flex gap-2 pt-1">
               <Button type="submit" disabled={busy}>{busy ? "A guardar…" : editId ? "Guardar" : "Criar curso"}</Button>
               <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>Cancelar</Button>

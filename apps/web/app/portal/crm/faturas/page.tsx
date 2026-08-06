@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Download, Pencil, Plus, Building2, Search } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
+import { canAccessFaturacaoPortal } from "@nexiforma/shared";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { withPortalFrom } from "@/lib/ui/portal-back-nav";
 import {
@@ -15,6 +17,8 @@ import {
   type FaturaEstado,
 } from "@/lib/crm/shared";
 import { FaturaEstadoBadge } from "@/components/crm/fatura-estado-badge";
+import { ListPagination } from "@/components/crm/list-pagination";
+import { parsePaginatedList } from "@/lib/crm/paginated-list";
 import {
   Alert,
   Badge,
@@ -63,7 +67,9 @@ const NOVA_ENTIDADE_RETURN = "/portal/crm/faturas";
 
 export default function CrmFaturasPage() {
   const pathname = usePathname();
-  const { canManageCrm } = useTenantRole();
+  const { role, writeDisabled } = useTenantRole();
+  const { entitlements } = useTenantEntitlements();
+  const canAccessFaturacao = canAccessFaturacaoPortal(role, entitlements);
   const [faturas, setFaturas] = useState<Fatura[]>([]);
   const [entidades, setEntidades] = useState<EntidadeOpt[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,32 +83,65 @@ export default function CrmFaturasPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [exportAno, setExportAno] = useState(String(new Date().getFullYear()));
   const [exportMes, setExportMes] = useState(String(new Date().getMonth() + 1));
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [countsByEstado, setCountsByEstado] = useState<Record<string, number>>({ TODAS: 0 });
+  const pageSize = 50;
 
   useEffect(() => {
     const t = window.setTimeout(() => setSearchQuery(searchInput.trim()), 320);
     return () => window.clearTimeout(t);
   }, [searchInput]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [estadoFilter, searchQuery]);
+
   const load = useCallback(async (q: string, signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     const params = new URLSearchParams();
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
     if (estadoFilter !== "TODAS") params.set("estado", estadoFilter);
     if (q) params.set("q", q);
     const qs = params.toString();
-    const res = await bffFetch(`/api/v1/crm/faturas${qs ? `?${qs}` : ""}`, {
-      headers: { accept: "application/json" },
-      signal,
-    });
-    if (signal?.aborted) return;
-    setLoading(false);
-    if (!res.ok) {
-      setError(await parseApiError(res));
+    try {
+      const res = await bffFetch(`/api/v1/crm/faturas?${qs}`, {
+        headers: { accept: "application/json" },
+        signal,
+      });
+      if (signal?.aborted) return;
+      setLoading(false);
+      if (!res.ok) {
+        setError(await parseApiError(res));
+        setFaturas([]);
+        setTotal(0);
+        return;
+      }
+      const data = parsePaginatedList<Fatura>(await res.json());
+      setFaturas(data.items);
+      setTotal(data.total);
+      if (data.countsByEstado) {
+        setCountsByEstado({ TODAS: data.countsByEstado.TODAS ?? data.total, ...data.countsByEstado });
+      } else {
+        setCountsByEstado({ TODAS: data.total });
+      }
+    } catch (err) {
+      // Cleanup do useEffect / Strict Mode cancela o fetch - não é erro de UI.
+      if (
+        signal?.aborted ||
+        (err instanceof DOMException && err.name === "AbortError") ||
+        (err instanceof Error && err.name === "AbortError")
+      ) {
+        return;
+      }
+      setLoading(false);
+      setError("Erro ao carregar faturas.");
       setFaturas([]);
-      return;
+      setTotal(0);
     }
-    setFaturas((await res.json()) as Fatura[]);
-  }, [estadoFilter]);
+  }, [estadoFilter, page]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -111,7 +150,7 @@ export default function CrmFaturasPage() {
   }, [load, searchQuery]);
 
   useEffect(() => {
-    if (!canManageCrm) return;
+    if (!canAccessFaturacao) return;
     void (async () => {
       const res = await bffFetch("/api/v1/entidades-cliente", {
         headers: { accept: "application/json" },
@@ -133,7 +172,7 @@ export default function CrmFaturasPage() {
         window.history.replaceState({}, "", NOVA_ENTIDADE_RETURN);
       }
     })();
-  }, [canManageCrm]);
+  }, [canAccessFaturacao]);
 
   async function criarFatura(e: FormEvent) {
     e.preventDefault();
@@ -159,19 +198,11 @@ export default function CrmFaturasPage() {
     window.location.href = withPortalFrom(`/portal/crm/faturas/${data.id}`, pathname);
   }
 
-  const filtered = useMemo(() => faturas, [faturas]);
-
-  const counts = useMemo(() => {
-    const c: Record<string, number> = { TODAS: faturas.length };
-    for (const e of ESTADOS) {
-      if (e !== "TODAS") c[e] = faturas.filter((f) => f.estado === e).length;
-    }
-    return c;
-  }, [faturas]);
+  const counts = countsByEstado;
 
   const countsLabel =
     searchQuery && !loading
-      ? `${filtered.length} resultado${filtered.length === 1 ? "" : "s"}`
+      ? `${total} resultado${total === 1 ? "" : "s"}`
       : null;
 
   const COLS: Column<Fatura>[] = [
@@ -238,11 +269,13 @@ export default function CrmFaturasPage() {
     },
   ];
 
-  if (!canManageCrm) {
+  if (!canAccessFaturacao) {
     return (
       <div className="max-w-3xl space-y-4">
         <h1 className="text-2xl font-bold text-slate-50">Faturas</h1>
-        <p className="text-sm text-slate-400">Sem permissão para o módulo CRM.</p>
+        <p className="text-sm text-slate-400">
+          Módulo de faturação AT reservado ao gestor. O CRM comercial funciona independentemente deste add-on.
+        </p>
       </div>
     );
   }
@@ -251,10 +284,10 @@ export default function CrmFaturasPage() {
     <div className="space-y-5">
       <PageHeader
         title="Faturação"
-        description="Emissão de documentos, comunicação à AT e exportação SAF-T PT."
+        description="Emissão de documentos, comunicação à AT, SAF-T PT e pacote de auditoria fiscal."
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => setCreateOpen(true)} disabled={busy}>
+            <Button size="sm" onClick={() => setCreateOpen(true)} disabled={busy || writeDisabled}>
               <Plus className="h-3.5 w-3.5" />
               Nova fatura
             </Button>
@@ -273,7 +306,7 @@ export default function CrmFaturasPage() {
       <Card>
         <CardContent className="pt-5 flex flex-wrap items-end gap-3">
           <div>
-            <label className="text-xs text-slate-500 block mb-1">Export SAF-T PT</label>
+            <label className="text-xs text-slate-500 block mb-1">Período (ano / mês)</label>
             <div className="flex gap-2">
               <input
                 type="number"
@@ -297,24 +330,70 @@ export default function CrmFaturasPage() {
             type="button"
             size="sm"
             variant="secondary"
+            disabled={writeDisabled || busy}
             onClick={() => {
               void (async () => {
-                const res = await bffFetch(
-                  `/api/v1/crm/faturas/export/saft?ano=${exportAno}&mes=${exportMes}`,
-                );
-                if (!res.ok) return;
-                const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `SAFT-PT_${exportAno}-${exportMes.padStart(2, "0")}.xml`;
-                a.click();
-                URL.revokeObjectURL(url);
+                setBusy(true);
+                setError(null);
+                try {
+                  const res = await bffFetch(
+                    `/api/v1/crm/faturas/export/saft?ano=${exportAno}&mes=${exportMes}`,
+                  );
+                  if (!res.ok) {
+                    setError(`Falha no SAF-T (HTTP ${res.status}).`);
+                    return;
+                  }
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `SAFT-PT_${exportAno}-${exportMes.padStart(2, "0")}.xml`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  setMsg("SAF-T PT descarregado.");
+                } finally {
+                  setBusy(false);
+                }
               })();
             }}
           >
             <Download className="h-3.5 w-3.5" />
-            Descarregar XML
+            SAF-T XML
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="bg-amber-700/90 hover:bg-amber-600 text-white border-0"
+            disabled={writeDisabled || busy}
+            onClick={() => {
+              void (async () => {
+                setBusy(true);
+                setError(null);
+                setMsg(null);
+                try {
+                  const res = await bffFetch(
+                    `/api/v1/crm/faturas/export/auditoria.zip?ano=${exportAno}&mes=${exportMes}`,
+                  );
+                  if (!res.ok) {
+                    setError(`Falha no pacote de auditoria (HTTP ${res.status}).`);
+                    return;
+                  }
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `auditoria-faturacao_${exportAno}-${exportMes.padStart(2, "0")}.zip`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  setMsg("Pacote de auditoria fiscal descarregado (SAF-T, inventário, AT, PDFs).");
+                } finally {
+                  setBusy(false);
+                }
+              })();
+            }}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Pacote auditoria
           </Button>
         </CardContent>
       </Card>
@@ -341,6 +420,7 @@ export default function CrmFaturasPage() {
             key={e}
             type="button"
             onClick={() => setEstadoFilter(e)}
+            aria-pressed={estadoFilter === e}
             className={`rounded-xl px-3 py-1.5 text-sm border transition-colors ${
               estadoFilter === e
                 ? "border-blue-500/40 bg-blue-500/10 text-blue-300"
@@ -359,7 +439,7 @@ export default function CrmFaturasPage() {
         <CardContent className="p-0">
           <DataTable
             columns={COLS}
-            data={filtered}
+            data={faturas}
             keyField="id"
             loading={loading}
             emptyMessage={
@@ -380,6 +460,13 @@ export default function CrmFaturasPage() {
           />
         </CardContent>
       </Card>
+
+      <ListPagination
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={setPage}
+      />
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent
@@ -429,7 +516,7 @@ export default function CrmFaturasPage() {
                 <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={busy || !entidadeClienteId}>
+                <Button type="submit" disabled={busy || writeDisabled || !entidadeClienteId}>
                   Criar rascunho
                 </Button>
               </div>

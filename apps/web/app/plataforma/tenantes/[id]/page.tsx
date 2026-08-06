@@ -65,6 +65,51 @@ export default function TenantDetailPage() {
   const [subBusy, setSubBusy] = useState(false);
   const [inviteForm, setInviteForm] = useState({ email: "", displayName: "" });
   const [inviteBusy, setInviteBusy] = useState(false);
+  const [lockoutForm, setLockoutForm] = useState({
+    enabled: true,
+    maxAttempts: 5,
+    windowMinutes: 15,
+    lockoutMinutes: 15,
+  });
+  const [lockoutDefaults, setLockoutDefaults] = useState({
+    enabled: true,
+    maxAttempts: 5,
+    windowMinutes: 15,
+    lockoutMinutes: 15,
+  });
+  const [lockoutHasCustom, setLockoutHasCustom] = useState(false);
+  const [lockoutClearEmail, setLockoutClearEmail] = useState("");
+  const [lockoutBusy, setLockoutBusy] = useState(false);
+
+  const loadLockout = useCallback(async () => {
+    const r = await bffFetch(`/api/v1/control-plane/tenants/${id}/login-lockout`, {
+      headers: { accept: "application/json" },
+    });
+    if (!r.ok) return;
+    const data = (await r.json()) as {
+      config: {
+        enabled?: boolean;
+        maxAttempts?: number;
+        windowMinutes?: number;
+        lockoutMinutes?: number;
+      } | null;
+      effective: {
+        enabled: boolean;
+        maxAttempts: number;
+        windowMinutes: number;
+        lockoutMinutes: number;
+      };
+      platformDefaults: {
+        enabled: boolean;
+        maxAttempts: number;
+        windowMinutes: number;
+        lockoutMinutes: number;
+      };
+    };
+    setLockoutDefaults(data.platformDefaults);
+    setLockoutHasCustom(data.config != null);
+    setLockoutForm(data.effective);
+  }, [id]);
 
   const loadIntegracoes = useCallback(async () => {
     const [listR, statusR] = await Promise.all([
@@ -103,8 +148,8 @@ export default function TenantDetailPage() {
       setUsers(list);
       if (list.length) setImpersonateUserId((prev) => prev || list[0].id);
     }
-    await loadIntegracoes();
-  }, [id, loadIntegracoes]);
+    await Promise.all([loadIntegracoes(), loadLockout()]);
+  }, [id, loadIntegracoes, loadLockout]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -194,6 +239,60 @@ export default function TenantDetailPage() {
     }
     setMsg("Dados do tenant actualizados.");
     await load();
+  }
+
+  async function guardarLockout(e: FormEvent) {
+    e.preventDefault();
+    setLockoutBusy(true);
+    setError(null);
+    const r = await bffFetch(`/api/v1/control-plane/tenants/${id}/login-lockout`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", accept: "application/json" },
+      body: JSON.stringify(lockoutForm),
+    });
+    setLockoutBusy(false);
+    if (!r.ok) {
+      setError(await parseApiError(r));
+      return;
+    }
+    setMsg("Política de lockout actualizada.");
+    await loadLockout();
+  }
+
+  async function reporLockoutPlataforma() {
+    setLockoutBusy(true);
+    setError(null);
+    const r = await bffFetch(`/api/v1/control-plane/tenants/${id}/login-lockout`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", accept: "application/json" },
+      body: JSON.stringify(lockoutDefaults),
+    });
+    setLockoutBusy(false);
+    if (!r.ok) {
+      setError(await parseApiError(r));
+      return;
+    }
+    setMsg("Lockout reposto aos valores globais da plataforma.");
+    await loadLockout();
+  }
+
+  async function desbloquearUtilizador(e: FormEvent) {
+    e.preventDefault();
+    if (!lockoutClearEmail.trim()) return;
+    setLockoutBusy(true);
+    setError(null);
+    const r = await bffFetch(`/api/v1/control-plane/tenants/${id}/login-lockout/clear`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ email: lockoutClearEmail.trim() }),
+    });
+    setLockoutBusy(false);
+    if (!r.ok) {
+      setError(await parseApiError(r));
+      return;
+    }
+    setMsg(`Lockout removido para ${lockoutClearEmail.trim()}.`);
+    setLockoutClearEmail("");
   }
 
   async function arquivarTenant() {
@@ -376,6 +475,107 @@ export default function TenantDetailPage() {
                   </button>
                 ) : null}
               </div>
+            </form>
+          </div>
+
+          {/* Lockout de login */}
+          <div className="rounded-2xl bg-[#0c0a14]/80 border border-amber-500/15 p-5">
+            <h2 className="text-sm font-semibold text-amber-200 mb-1">Lockout de login</h2>
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+              Bloqueio temporário após tentativas falhadas no login deste tenant. Valores globais da plataforma:{" "}
+              {lockoutDefaults.maxAttempts} tentativas / {lockoutDefaults.windowMinutes} min, bloqueio{" "}
+              {lockoutDefaults.lockoutMinutes} min.
+              {lockoutHasCustom ? (
+                <span className="block mt-1 text-amber-400/90">Este tenant tem política personalizada.</span>
+              ) : (
+                <span className="block mt-1 text-slate-600">A usar valores globais (sem override guardado).</span>
+              )}
+            </p>
+            <form onSubmit={(e) => void guardarLockout(e)} className="grid gap-3 max-w-md">
+              <label className="flex items-center gap-2 text-sm text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={lockoutForm.enabled}
+                  onChange={(e) => setLockoutForm((f) => ({ ...f, enabled: e.target.checked }))}
+                  className="rounded border-purple-500/30"
+                />
+                Activar lockout após credenciais inválidas
+              </label>
+              <label className="grid gap-1 text-xs text-slate-500">
+                Tentativas máximas (3–20)
+                <input
+                  type="number"
+                  min={3}
+                  max={20}
+                  required
+                  disabled={!lockoutForm.enabled}
+                  className={inputClass}
+                  value={lockoutForm.maxAttempts}
+                  onChange={(e) =>
+                    setLockoutForm((f) => ({ ...f, maxAttempts: Number(e.target.value) || f.maxAttempts }))
+                  }
+                />
+              </label>
+              <label className="grid gap-1 text-xs text-slate-500">
+                Janela de contagem (minutos, 1–60)
+                <input
+                  type="number"
+                  min={1}
+                  max={60}
+                  required
+                  disabled={!lockoutForm.enabled}
+                  className={inputClass}
+                  value={lockoutForm.windowMinutes}
+                  onChange={(e) =>
+                    setLockoutForm((f) => ({ ...f, windowMinutes: Number(e.target.value) || f.windowMinutes }))
+                  }
+                />
+              </label>
+              <label className="grid gap-1 text-xs text-slate-500">
+                Duração do bloqueio (minutos, 1–1440)
+                <input
+                  type="number"
+                  min={1}
+                  max={1440}
+                  required
+                  disabled={!lockoutForm.enabled}
+                  className={inputClass}
+                  value={lockoutForm.lockoutMinutes}
+                  onChange={(e) =>
+                    setLockoutForm((f) => ({ ...f, lockoutMinutes: Number(e.target.value) || f.lockoutMinutes }))
+                  }
+                />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button type="submit" disabled={lockoutBusy} className={btnPrimaryClass}>
+                  {lockoutBusy ? "A guardar…" : "Guardar política"}
+                </button>
+                <button
+                  type="button"
+                  disabled={lockoutBusy}
+                  onClick={() => void reporLockoutPlataforma()}
+                  className={btnSecondaryClass}
+                >
+                  Repor valores globais
+                </button>
+              </div>
+            </form>
+            <form onSubmit={(e) => void desbloquearUtilizador(e)} className="mt-5 pt-5 border-t border-amber-500/10 max-w-md space-y-2">
+              <h3 className="text-sm font-medium text-slate-300">Desbloquear utilizador</h3>
+              <p className="text-xs text-slate-500">
+                Remove o bloqueio activo para um email neste tenant (suporte).
+              </p>
+              <input
+                type="email"
+                required
+                placeholder="email@empresa.pt"
+                className={inputClass}
+                value={lockoutClearEmail}
+                onChange={(e) => setLockoutClearEmail(e.target.value)}
+              />
+              <button type="submit" disabled={lockoutBusy} className={btnSecondaryClass}>
+                Desbloquear agora
+              </button>
             </form>
           </div>
 

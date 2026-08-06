@@ -4,7 +4,7 @@ import type { PrismaService } from "../prisma/prisma.service";
 
 type Tx = Prisma.TransactionClient | PrismaService;
 
-/** NIF provisório único (8…) até o gestor corrigir — só para convites legados sem NIF. */
+/** NIF provisório único (8…) até o gestor corrigir - só para convites legados sem NIF. */
 export function provisionalFormandoNif(seed: string): string {
   const hex = seed.replace(/-/g, "");
   const num = Number.parseInt(hex.slice(0, 10), 16) % 100_000_000;
@@ -130,7 +130,7 @@ async function linkOrphanFormandoProfilesToUsers(
   }
 }
 
-/** Garante ficha para convites/contas FORMANDO — visível na tab Formandos. */
+/** Garante ficha para convites/contas FORMANDO - visível na tab Formandos. */
 export async function ensureFormandoProfilesForTenant(
   db: PrismaService,
   tenantId: string,

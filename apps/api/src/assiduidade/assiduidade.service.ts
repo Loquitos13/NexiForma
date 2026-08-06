@@ -166,8 +166,11 @@ export class AssiduidadeService {
   }
 
   async handleZoomWebhook(dto: ZoomWebhookDto, token: string | undefined) {
-    const expected = this.config.get<string>("ZOOM_WEBHOOK_TOKEN");
-    if (expected && token !== expected) {
+    const expected = this.config.get<string>("ZOOM_WEBHOOK_TOKEN")?.trim();
+    if (!expected) {
+      throw new UnauthorizedException("Webhook Zoom não configurado.");
+    }
+    if (token !== expected) {
       throw new UnauthorizedException("Token Zoom inválido.");
     }
 
@@ -267,8 +270,11 @@ export class AssiduidadeService {
   }
 
   async handleTeamsWebhook(dto: TeamsWebhookDto, token: string | undefined) {
-    const expected = this.config.get<string>("TEAMS_WEBHOOK_TOKEN");
-    if (expected && token !== expected) {
+    const expected = this.config.get<string>("TEAMS_WEBHOOK_TOKEN")?.trim();
+    if (!expected) {
+      throw new UnauthorizedException("Webhook Teams não configurado.");
+    }
+    if (token !== expected) {
       throw new UnauthorizedException("Token Teams inválido.");
     }
 

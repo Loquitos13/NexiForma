@@ -7,13 +7,11 @@ import { Shield } from "lucide-react";
 import { TotpInput } from "@/components/auth/totp-input";
 import { AuthShell } from "@/components/site/auth-shell";
 import { PasswordInput } from "@/components/ui/password-input";
-import { getSavedTenantSlug, persistTenantSlug, clearTenantSlug } from "@/lib/client/login-preferences";
+import { clearTenantSlug } from "@/lib/client/login-preferences";
 import {
   isPlatformAuthMode,
   platformAuthHref,
-  resolveTenantSlugForAuth,
 } from "@/lib/client/platform-auth-mode";
-import { isDevEnvironment } from "@/lib/ui/site";
 import { mfaAppOpenHint, mfaVerificationSubtitle } from "@nexiforma/shared";
 import { consumeSensitiveUrlParams } from "@/lib/client/sensitive-url";
 
@@ -32,7 +30,6 @@ type ResetPreview = {
 function TenantForgotPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const isDev = isDevEnvironment();
 
   const [urlSecrets, setUrlSecrets] = useState({ token: "", slug: "", u: "" });
   useEffect(() => {
@@ -49,9 +46,6 @@ function TenantForgotPasswordForm() {
   const userRef = urlSecrets.u;
   const platformMode = isPlatformAuthMode(searchParams);
 
-  const [tenantSlug, setTenantSlug] = useState(() =>
-    resolveTenantSlugForAuth(searchParams, { slugFromUrl: slugFromUrl || undefined, isDev }),
-  );
   const [email, setEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -66,15 +60,8 @@ function TenantForgotPasswordForm() {
   useEffect(() => {
     if (platformMode) {
       clearTenantSlug();
-      setTenantSlug("");
-      return;
     }
-    if (slugFromUrl) persistTenantSlug(slugFromUrl);
-    else {
-      const saved = getSavedTenantSlug();
-      if (saved) setTenantSlug(saved);
-    }
-  }, [slugFromUrl, platformMode]);
+  }, [platformMode]);
 
   const isResetStep = token.length >= 16;
   const resetSlug = slugFromUrl || preview?.tenantSlug || "";
@@ -125,10 +112,10 @@ function TenantForgotPasswordForm() {
           ? `Confirma com o código em ${preview.mfaAppLabel} e define a nova palavra-passe.`
           : "Confirma com o código da app autenticadora e define a nova palavra-passe.";
       }
-      return "Define uma nova palavra-passe segura para a tua conta.";
+      return "Define uma nova palavra-passe para a tua conta (válida em todas as entidades).";
     }
-    return "Indica o teu email. Enviaremos um link para redefinir a palavra-passe (válido cerca de 1 hora).";
-  }, [isResetStep, preview?.mfaRequired]);
+    return "Indica o teu email. Enviaremos um link para redefinir a palavra-passe (válido cerca de 1 hora). A mesma password serve para todas as entidades.";
+  }, [isResetStep, preview?.mfaRequired, preview?.mfaAppLabel]);
 
   async function onRequestLink(e: FormEvent) {
     e.preventDefault();
@@ -136,10 +123,11 @@ function TenantForgotPasswordForm() {
     setSuccess(null);
     setBusy(true);
 
-    const slug = platformMode ? "" : tenantSlug.trim();
-    const endpoint = slug ? "/api/auth/tenant/forgot-password" : "/api/auth/platform/forgot-password";
-    const body = slug
-      ? { tenantSlug: slug, email: email.trim() }
+    const endpoint = platformMode
+      ? "/api/auth/platform/forgot-password"
+      : "/api/auth/tenant/forgot-password";
+    const body = platformMode
+      ? { email: email.trim() }
       : { email: email.trim() };
 
     try {
@@ -218,9 +206,9 @@ function TenantForgotPasswordForm() {
           ? data.message
           : "Palavra-passe actualizada. Podes iniciar sessão.";
       setSuccess(okMsg);
-      if (slug) persistTenantSlug(slug);
+      clearTenantSlug();
       setTimeout(() => {
-        router.push(slug ? `/login?slug=${encodeURIComponent(slug)}` : platformAuthHref("/login"));
+        router.push(isPlatformReset ? platformAuthHref("/login") : "/login");
       }, 1500);
     } catch {
       setError("Não foi possível contactar o servidor.");
@@ -235,7 +223,10 @@ function TenantForgotPasswordForm() {
       subtitle={subtitle}
       footer={
         <p className="mt-5 text-center text-sm text-slate-500">
-          <Link href={platformMode ? platformAuthHref("/login") : "/login"} className="text-slate-400 hover:text-slate-200 transition-colors">
+          <Link
+            href={platformMode ? platformAuthHref("/login") : "/login"}
+            className="text-slate-400 hover:text-slate-200 transition-colors"
+          >
             Voltar ao login
           </Link>
         </p>
@@ -249,15 +240,14 @@ function TenantForgotPasswordForm() {
             <p className="text-sm text-red-300">{previewError}</p>
           </div>
         ) : (
-          <form onSubmit={onResetPassword} className="space-y-4">
+          <form onSubmit={(e) => void onResetPassword(e)} className="space-y-4">
             {preview?.emailHint ? (
               <p className="text-xs text-slate-500">
                 Conta: <span className="text-slate-300">{preview.emailHint}</span>
                 {resetSlug && !isPlatformReset ? (
-                  <>
-                    {" "}
-                    · Entidade: <span className="text-slate-300">{resetSlug}</span>
-                  </>
+                  <span className="block mt-1 text-slate-500">
+                    A nova password aplica-se a todas as entidades desta conta.
+                  </span>
                 ) : null}
               </p>
             ) : null}
@@ -266,11 +256,14 @@ function TenantForgotPasswordForm() {
               <div className="rounded-xl border border-slate-700/40 bg-slate-800/30 px-4 py-5">
                 <div className="flex items-center justify-center gap-2 mb-4 text-slate-400">
                   <Shield className="h-4 w-4 text-blue-400" />
-                  <span className="text-xs font-medium uppercase tracking-wider">Código de verificação</span>
+                  <span className="text-xs font-medium uppercase tracking-wider">
+                    Código de verificação
+                  </span>
                 </div>
                 <p className="text-sm text-slate-300 text-center mb-4">
                   {mfaAppOpenHint(preview.mfaAppLabel ?? null)}
                 </p>
+                <p className="sr-only">{mfaVerificationSubtitle(preview.mfaAppLabel ?? null)}</p>
                 <TotpInput value={mfaCode} onChange={setMfaCode} disabled={busy} />
               </div>
             ) : null}
@@ -323,24 +316,12 @@ function TenantForgotPasswordForm() {
           </form>
         )
       ) : (
-        <form onSubmit={onRequestLink} className="space-y-4">
+        <form onSubmit={(e) => void onRequestLink(e)} className="space-y-4">
           {platformMode ? (
             <p className="rounded-xl border border-purple-500/25 bg-purple-950/20 px-3 py-2 text-xs text-purple-200/90">
               Recuperação da conta super-admin (equipa NexiForma).
             </p>
           ) : null}
-          <div>
-            <label className={labelClass}>Identificador da entidade</label>
-            <input
-              value={tenantSlug}
-              onChange={(x) => setTenantSlug(x.target.value)}
-              autoComplete="organization"
-              placeholder="ex.: minha-entidade (vazio = equipa NexiForma)"
-              className={inputClass}
-              readOnly={platformMode}
-            />
-          </div>
-
           <div>
             <label className={labelClass}>Email</label>
             <input
@@ -375,7 +356,8 @@ function TenantForgotPasswordForm() {
           </button>
 
           <p className="text-xs text-slate-500 leading-relaxed">
-            Contas com verificação em dois passos precisam do código da app registada ao usar o link.
+            Contas com verificação em dois passos precisam do código da app registada ao usar o
+            link.
           </p>
         </form>
       )}

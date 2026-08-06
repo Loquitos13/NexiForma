@@ -21,6 +21,10 @@ import { MailService } from "../mail/mail.service";
 import { PropostaNotificacoesService } from "../notificacoes/proposta-notificacoes.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
+import {
+  assertPropostaAcessivel,
+  propostaScopeWhere,
+} from "../common/comercial-scope.util";
 import type { PropostaEstado } from "@nexiforma/database";
 import { buildPropostaHtmlDocument } from "../propostas/proposta-html.util";
 import {
@@ -40,6 +44,9 @@ import type { PropostaLinhaDto } from "../propostas/dto/proposta-linha.dto";
 import { CrmAuditService } from "./crm-audit.service";
 import { CrmWebhooksService } from "./crm-webhooks.service";
 import { CrmAutomationService } from "./crm-automation.service";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
+import { HtmlPdfExportService } from "../common/html-pdf-export.service";
+import { EmailTemplates } from "../notificacoes/templates/email.templates";
 
 export interface PropostaComercialDto {
   entidadeClienteId: string;
@@ -63,6 +70,7 @@ export class ProposalService {
     private readonly mail: MailService,
     private readonly propostaNotificacoes: PropostaNotificacoesService,
     private readonly config: ConfigService,
+    private readonly htmlPdf: HtmlPdfExportService,
     private readonly audit: CrmAuditService,
     private readonly webhooks: CrmWebhooksService,
     @Inject(forwardRef(() => CrmAutomationService))
@@ -220,9 +228,11 @@ export class ProposalService {
   ): Promise<{ total: number; propostas: any[] }> {
     const tenantId = requireTenantId(user);
 
+    const scope = propostaScopeWhere(user);
     const where: any = {
       tenantId,
       entidadeClienteId,
+      ...(scope ? scope : {}),
     };
 
     if (filtros?.estado) {
@@ -276,6 +286,7 @@ export class ProposalService {
     if (!proposta) {
       throw new NotFoundException("Proposta não encontrada.");
     }
+    assertPropostaAcessivel(user, proposta);
 
     return {
       ...proposta,
@@ -302,6 +313,7 @@ export class ProposalService {
     if (!proposta) {
       throw new NotFoundException("Proposta não encontrada.");
     }
+    assertPropostaAcessivel(user, proposta);
 
     if (proposta.estado !== "RASCUNHO") {
       throw new ForbiddenException(
@@ -350,6 +362,7 @@ export class ProposalService {
     if (!proposta) {
       throw new NotFoundException("Proposta não encontrada.");
     }
+    assertPropostaAcessivel(user, proposta);
 
     if (proposta.estado === "CANCELADA") {
       throw new BadRequestException(
@@ -371,7 +384,7 @@ export class ProposalService {
         data: { tenantId, ...DEFAULTS_PROPOSTA_TEMPLATE, validadeDiasPadrao: 30 },
       }));
 
-    const { html, filename } = buildPropostaHtmlDocument({
+    const { html, filename: htmlFilename } = buildPropostaHtmlDocument({
       codigo: proposta.codigo,
       titulo: proposta.titulo,
       subtitulo: proposta.subtitulo,
@@ -398,6 +411,19 @@ export class ProposalService {
       })),
     });
 
+    const pdfFilename = htmlFilename.replace(/\.html$/i, ".pdf");
+    let pdfBuffer: Buffer;
+    try {
+      pdfBuffer = await this.htmlPdf.htmlToPdfBuffer(html);
+    } catch (err) {
+      this.logger.warn(
+        `Falha ao gerar PDF da proposta ${proposta.codigo}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new BadRequestException(
+        "Não foi possível gerar o PDF da proposta para envio por email.",
+      );
+    }
+
     const totais = proposta.linhas.length
       ? totaisPropostaLinhas(
           proposta.linhas.map((l) => ({
@@ -410,13 +436,11 @@ export class ProposalService {
       : { valorCentavos: proposta.valorCentavos, ivaCentavos: 0 };
     const totalComIva = (totais.valorCentavos + totais.ivaCentavos) / 100;
 
-    // Template email
-    const portalUrl = process.env.APP_PUBLIC_URL ?? "https://nexiforma.pt";
-    const assunto = `Proposta Comercial – ${proposta.codigo} (NexiForma)`;
+    const portalUrl = resolveAppPublicUrlForLinks(this.config);
     const valorLabel =
       proposta.linhas.length > 0
-        ? `Total c/ IVA: €${totalComIva.toFixed(2)} (s/ IVA: €${(totais.valorCentavos / 100).toFixed(2)})`
-        : `Valor: €${(proposta.valorCentavos / 100).toFixed(2)}`;
+        ? `€${totalComIva.toFixed(2)} c/ IVA (s/ IVA: €${(totais.valorCentavos / 100).toFixed(2)})`
+        : `€${(proposta.valorCentavos / 100).toFixed(2)}`;
 
     const links = this.buildLinksRespostaProposta(
       propostaId,
@@ -425,40 +449,37 @@ export class ProposalService {
       portalUrl,
     );
 
-    const texto =
-      `Proposta: ${proposta.titulo}\n\n` +
-      `Código: ${proposta.codigo}\n` +
-      `${valorLabel}\n` +
-      `Válida até: ${proposta.validadeAte?.toLocaleDateString("pt-PT") ?? "N/A"}\n\n` +
-      (proposta.descricao ? `Descrição:\n${proposta.descricao}\n\n` : "") +
-      `Em anexo encontra o documento completo da proposta (${filename}).\n\n` +
-      `Para aceitar a proposta:\n${links.aceitarUrl}\n\n` +
-      `Para recusar a proposta:\n${links.rejeitarUrl}\n`;
+    const validadeLabel = proposta.validadeAte
+      ? proposta.validadeAte.toLocaleDateString("pt-PT", {
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+        })
+      : null;
 
-    const htmlBody =
-      `<h2>${proposta.titulo}</h2>` +
-      `<p><strong>Código:</strong> ${proposta.codigo}</p>` +
-      `<p><strong>${proposta.linhas.length ? "Total c/ IVA" : "Valor"}:</strong> €${proposta.linhas.length ? totalComIva.toFixed(2) : (proposta.valorCentavos / 100).toFixed(2)}</p>` +
-      (proposta.validadeAte
-        ? `<p><strong>Válida até:</strong> ${proposta.validadeAte.toLocaleDateString("pt-PT")}</p>`
-        : "") +
-      (proposta.descricao ? `<p>${proposta.descricao.replace(/\n/g, "<br>")}</p>` : "") +
-      `<p>Em anexo: documento completo da proposta (<strong>${filename}</strong>). Abra no browser e use «Imprimir» para PDF.</p>` +
-      `<p style="margin-top:24px">` +
-      `<a href="${links.aceitarUrl}" style="display:inline-block;padding:12px 20px;background:#0d9488;color:#fff;text-decoration:none;border-radius:6px;margin-right:12px">Aceitar proposta</a>` +
-      `<a href="${links.rejeitarUrl}" style="display:inline-block;padding:12px 20px;background:#64748b;color:#fff;text-decoration:none;border-radius:6px">Recusar proposta</a>` +
-      `</p>`;
+    const emailTpl = EmailTemplates.propostaComercialCliente({
+      titulo: proposta.titulo,
+      codigo: proposta.codigo,
+      entidadeFormadora: proposta.tenant.legalName,
+      clienteNome: proposta.entidadeCliente.nome,
+      valorLabel,
+      validadeLabel,
+      descricao: proposta.descricao,
+      pdfFilename,
+      aceitarUrl: links.aceitarUrl,
+      rejeitarUrl: links.rejeitarUrl,
+    });
 
     await this.mail.send({
       to: email,
-      subject: assunto,
-      text: texto,
-      html: htmlBody,
+      subject: emailTpl.subject,
+      text: emailTpl.text,
+      html: emailTpl.html,
       attachments: [
         {
-          filename,
-          content: html,
-          contentType: "text/html; charset=utf-8",
+          filename: pdfFilename,
+          content: pdfBuffer,
+          contentType: "application/pdf",
         },
       ],
     });
@@ -548,6 +569,7 @@ export class ProposalService {
     token: string,
     acao: "aceitar" | "rejeitar",
     motivo?: string,
+    actorIp?: string,
   ) {
     let parsed: { propostaId: string; tenantId: string };
     try {
@@ -559,15 +581,28 @@ export class ProposalService {
     }
 
     if (acao === "aceitar") {
-      return this.finalizarAceite(parsed.tenantId, parsed.propostaId);
+      return this.finalizarAceite(parsed.tenantId, parsed.propostaId, {
+        via: "public_link",
+        actorIp,
+      });
     }
-    return this.finalizarRejeicao(parsed.tenantId, parsed.propostaId, motivo);
+    return this.finalizarRejeicao(parsed.tenantId, parsed.propostaId, motivo, {
+      via: "public_link",
+      actorIp,
+    });
   }
 
   /** @deprecated Aceite é feito pelo cliente via link no email. */
   async aceitarProposta(user: RequestUser, propostaId: string): Promise<void> {
     const tenantId = requireTenantId(user);
-    await this.finalizarAceite(tenantId, propostaId);
+    const proposta = await this.prisma.propostaComercial.findFirst({
+      where: { id: propostaId, tenantId },
+    });
+    if (!proposta) {
+      throw new NotFoundException("Proposta não encontrada.");
+    }
+    assertPropostaAcessivel(user, proposta);
+    await this.finalizarAceite(tenantId, propostaId, { via: "tenant_user", user });
   }
 
   /** @deprecated Recusa é feita pelo cliente via link no email. */
@@ -577,10 +612,28 @@ export class ProposalService {
     motivo?: string,
   ): Promise<void> {
     const tenantId = requireTenantId(user);
-    await this.finalizarRejeicao(tenantId, propostaId, motivo);
+    const proposta = await this.prisma.propostaComercial.findFirst({
+      where: { id: propostaId, tenantId },
+    });
+    if (!proposta) {
+      throw new NotFoundException("Proposta não encontrada.");
+    }
+    assertPropostaAcessivel(user, proposta);
+    await this.finalizarRejeicao(tenantId, propostaId, motivo, {
+      via: "tenant_user",
+      user,
+    });
   }
 
-  private async finalizarAceite(tenantId: string, propostaId: string) {
+  private async finalizarAceite(
+    tenantId: string,
+    propostaId: string,
+    ctx?: {
+      via?: "public_link" | "tenant_user";
+      user?: RequestUser;
+      actorIp?: string;
+    },
+  ) {
     const proposta = await this.prisma.propostaComercial.findFirst({
       where: { id: propostaId, tenantId },
     });
@@ -616,6 +669,21 @@ export class ProposalService {
       "ACEITE",
     );
 
+    void this.audit.log({
+      user: ctx?.user,
+      tenantId,
+      action: "crm.proposta.accepted",
+      resourceType: "PropostaComercial",
+      resourceId: propostaId,
+      actorType: ctx?.via === "public_link" ? "PUBLIC_LINK" : undefined,
+      actorId: ctx?.via === "public_link" ? "public-proposta-link" : undefined,
+      actorIp: ctx?.actorIp,
+      payload: {
+        codigo: proposta.codigo,
+        via: ctx?.via ?? "unknown",
+      },
+    });
+
     this.logger.log(`✓ Proposta aceite pelo cliente: ${proposta.codigo}`);
     return { sucesso: true, estado: "ACEITE" as const, already: false };
   }
@@ -624,6 +692,11 @@ export class ProposalService {
     tenantId: string,
     propostaId: string,
     motivo?: string,
+    ctx?: {
+      via?: "public_link" | "tenant_user";
+      user?: RequestUser;
+      actorIp?: string;
+    },
   ) {
     const proposta = await this.prisma.propostaComercial.findFirst({
       where: { id: propostaId, tenantId },
@@ -658,6 +731,22 @@ export class ProposalService {
       "REJEITADA",
       motivo,
     );
+
+    void this.audit.log({
+      user: ctx?.user,
+      tenantId,
+      action: "crm.proposta.rejected",
+      resourceType: "PropostaComercial",
+      resourceId: propostaId,
+      actorType: ctx?.via === "public_link" ? "PUBLIC_LINK" : undefined,
+      actorId: ctx?.via === "public_link" ? "public-proposta-link" : undefined,
+      actorIp: ctx?.actorIp,
+      payload: {
+        codigo: proposta.codigo,
+        via: ctx?.via ?? "unknown",
+        ...(motivo ? { motivo } : {}),
+      },
+    });
 
     this.logger.log(
       `✓ Proposta recusada pelo cliente: ${proposta.codigo}${motivo ? ` – ${motivo}` : ""}`,

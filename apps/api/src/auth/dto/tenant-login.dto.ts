@@ -1,9 +1,10 @@
 import { IsBoolean, IsEmail, IsOptional, IsString, MinLength } from "class-validator";
 
 export class TenantLoginDto {
+  @IsOptional()
   @IsString()
   @MinLength(1)
-  tenantSlug!: string;
+  tenantSlug?: string;
 
   @IsEmail()
   email!: string;

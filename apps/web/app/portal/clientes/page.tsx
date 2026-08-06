@@ -12,6 +12,7 @@ import { ClienteRowActions } from "@/components/crm/cliente-row-actions";
 import { ListPagination } from "@/components/crm/list-pagination";
 import { ContextSugestoesBadge, CrmSugestoesPanel } from "@/components/crm/crm-sugestoes-panel";
 import { useSugestoesPendentesPorEntidade } from "@/components/crm/entidade-crm-insights";
+import { NifStatusField, type NifStatus } from "@/components/crm/nif-status-field";
 import {
   Alert,
   Button,
@@ -57,6 +58,7 @@ export default function ClientesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [nifStatus, setNifStatus] = useState<NifStatus>("idle");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -100,15 +102,22 @@ export default function ClientesPage() {
   function openCreate() {
     setEditId(null);
     setForm(emptyForm);
+    setNifStatus("idle");
     setDialogOpen(true);
   }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!canGerirClientes) return;
+    if (!editId && nifStatus !== "valid") {
+      setError("NIF inválido. Tente novamente.");
+      return;
+    }
     setBusyId("form");
     setMsg(null);
     setError(null);
+
+    // Confirmação NIF/NIF.PT só no backend (API key nunca chega ao browser).
     const body = {
       nif: form.nif.trim(),
       nome: form.nome.trim(),
@@ -176,7 +185,26 @@ export default function ClientesPage() {
     router.push(`/portal/crm/faturas/${data.id}`);
   }
 
+  function openEdit(cliente: Cliente) {
+    setEditId(cliente.id);
+    setForm({
+      nif: cliente.nif,
+      nome: cliente.nome,
+      moradaFiscal: cliente.moradaFiscal ?? "",
+      email: cliente.email ?? "",
+      telefone: cliente.telefone ?? "",
+    });
+    setDialogOpen(true);
+  }
+
   async function tornarParceiro(cliente: Cliente) {
+    if (!cliente.moradaFiscal?.trim() || cliente.moradaFiscal.trim().length < 5) {
+      setError(
+        "Complete a morada fiscal do cliente antes de o tornar parceiro. Actualize a ficha e tente novamente.",
+      );
+      openEdit(cliente);
+      return;
+    }
     setBusyId(cliente.id);
     setError(null);
     setMsg(null);
@@ -187,7 +215,11 @@ export default function ClientesPage() {
     });
     setBusyId(null);
     if (!res.ok) {
-      setError(await parseApiError(res));
+      const msg = await parseApiError(res);
+      setError(msg);
+      if (/incompletos|morada/i.test(msg)) {
+        openEdit(cliente);
+      }
       return;
     }
     router.push(`/portal/parceiros?entidade=${cliente.id}`);
@@ -323,18 +355,15 @@ export default function ClientesPage() {
           description="Dados obrigatórios para faturação e propostas comerciais."
         >
           <form onSubmit={(e) => void submit(e)} className="grid gap-4">
-            {!editId && (
-              <Input
+            {!editId ? (
+              <NifStatusField
                 label="Número de contribuinte (NIF) *"
-                required
-                minLength={9}
-                maxLength={9}
                 value={form.nif}
-                onChange={(ev) => setForm((f) => ({ ...f, nif: ev.target.value.replace(/\D/g, "").slice(0, 9) }))}
-                placeholder="123456789"
+                onChange={(nif) => setForm((f) => ({ ...f, nif }))}
+                tipo="empresa"
+                onStatusChange={setNifStatus}
               />
-            )}
-            {editId && (
+            ) : (
               <div className="rounded-lg bg-slate-800/60 px-3 py-2 text-sm text-slate-400">
                 <Building2 className="inline h-4 w-4 mr-1.5 text-slate-500" />
                 NIF {form.nif} (não editável)
@@ -366,8 +395,20 @@ export default function ClientesPage() {
               onChange={(ev) => setForm((f) => ({ ...f, telefone: ev.target.value }))}
             />
             <div className="flex gap-2 pt-1">
-              <Button type="submit" disabled={busyId === "form"}>
-                {busyId === "form" ? "A guardar…" : editId ? "Guardar alterações" : "Criar cliente"}
+              <Button
+                type="submit"
+                disabled={
+                  busyId === "form" ||
+                  (!editId && (nifStatus === "checking" || nifStatus !== "valid"))
+                }
+              >
+                {busyId === "form"
+                  ? editId
+                    ? "A guardar…"
+                    : "A criar…"
+                  : editId
+                    ? "Guardar alterações"
+                    : "Criar cliente"}
               </Button>
               <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>
                 Cancelar

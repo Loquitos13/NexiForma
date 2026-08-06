@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -52,6 +53,45 @@ export class UsersController {
     return this.users.acceptInvite(dto);
   }
 
+  @Delete("invites/:inviteId")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager")
+  cancelInvite(
+    @CurrentUser() user: RequestUser,
+    @Param("inviteId", ParseUUIDPipe) inviteId: string,
+  ) {
+    return this.users.cancelInvite(user, inviteId);
+  }
+
+  @Post("invites/:inviteId/resend")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager")
+  resendInvite(
+    @CurrentUser() user: RequestUser,
+    @Param("inviteId", ParseUUIDPipe) inviteId: string,
+    @Req() req: Request,
+  ) {
+    return this.users.resendInvite(user, inviteId, req);
+  }
+
+  @Get(":id")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager")
+  getOne(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
+    return this.users.getOne(user, id);
+  }
+
+  @Post(":id/resend-email-confirmation")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager")
+  resendEmailConfirmation(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ) {
+    return this.users.resendEmailConfirmation(user, id, req);
+  }
+
   @Patch(":id")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("tenant_manager")
@@ -61,6 +101,16 @@ export class UsersController {
     @Body() dto: UpdateUserDto,
   ) {
     return this.users.update(user, id, dto);
+  }
+
+  @Delete(":id")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager")
+  removePermanent(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return this.users.removePermanent(user, id);
   }
 
   @Post("mfa/require")

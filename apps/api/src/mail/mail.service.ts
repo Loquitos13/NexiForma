@@ -4,6 +4,8 @@ import { SendEmailCommand, SendRawEmailCommand, SESClient } from "@aws-sdk/clien
 import * as nodemailer from "nodemailer";
 import MailComposer from "nodemailer/lib/mail-composer";
 import type Transporter from "nodemailer/lib/mailer";
+import { wrapEmailHtml, emailButton, emailParagraph, emailMuted, escapeHtml } from "./email-layout.util";
+import { EmailTemplates } from "../notificacoes/templates/email.templates";
 
 export type MailAttachment = {
   filename: string;
@@ -123,39 +125,51 @@ export class MailService implements OnModuleInit {
     };
   }
 
+  /** Envolve fragmentos HTML num layout compatível com clientes de email. */
+  private prepareHtml(html: string | undefined, text: string, subject: string): string {
+    const raw = html ?? text.replace(/\n/g, "<br>");
+    if (/<!DOCTYPE html>/i.test(raw)) return raw;
+    const body = raw
+      .replace(/<p>\s*[–-]\s*<br\s*\/?>\s*NexiForma[^<]*<\/p>\s*$/i, "")
+      .trim();
+    return wrapEmailHtml(body, { preheader: subject, title: subject });
+  }
+
   async send(input: SendMailInput): Promise<void> {
     const from =
       this.config.get<string>("MAIL_FROM") ?? "NexiForma <noreply@nexiforma.local>";
     const replyTo = this.config.get<string>("MAIL_REPLY_TO")?.trim() || undefined;
+    const html = this.prepareHtml(input.html, input.text, input.subject);
+    const mail = { ...input, html };
 
     if (this.provider === "log") {
       const attachInfo =
-        input.attachments?.length ?
-          ` | Anexos: ${input.attachments.map((a) => a.filename).join(", ")}`
+        mail.attachments?.length ?
+          ` | Anexos: ${mail.attachments.map((a) => a.filename).join(", ")}`
         : "";
       this.logger.log(
-        `[email] To: ${input.to} | ${input.subject}${attachInfo}${replyTo ? ` | Reply-To: ${replyTo}` : ""}\n${input.text}`,
+        `[email] To: ${mail.to} | ${mail.subject}${attachInfo}${replyTo ? ` | Reply-To: ${replyTo}` : ""}\n${mail.text}`,
       );
       return;
     }
 
     if (this.provider === "ses" && this.ses) {
-      if (input.attachments?.length) {
-        await this.sendSesRaw(from, replyTo, input);
+      if (mail.attachments?.length) {
+        await this.sendSesRaw(from, replyTo, mail);
         return;
       }
       const fromEmail = from.match(/<([^>]+)>/)?.[1] ?? from;
       await this.ses.send(
         new SendEmailCommand({
           Source: fromEmail,
-          Destination: { ToAddresses: [input.to] },
+          Destination: { ToAddresses: [mail.to] },
           ReplyToAddresses: replyTo ? [replyTo] : undefined,
           Message: {
-            Subject: { Data: input.subject, Charset: "UTF-8" },
+            Subject: { Data: mail.subject, Charset: "UTF-8" },
             Body: {
-              Text: { Data: input.text, Charset: "UTF-8" },
+              Text: { Data: mail.text, Charset: "UTF-8" },
               Html: {
-                Data: input.html ?? input.text.replace(/\n/g, "<br>"),
+                Data: html,
                 Charset: "UTF-8",
               },
             },
@@ -166,23 +180,23 @@ export class MailService implements OnModuleInit {
     }
 
     if (this.provider === "brevo" && this.brevoApiKey) {
-      await this.sendViaBrevo(from, replyTo, input);
+      await this.sendViaBrevo(from, replyTo, mail);
       return;
     }
 
     if (!this.transporter) {
-      this.logger.log(`[email] To: ${input.to} | ${input.subject}\n${input.text}`);
+      this.logger.log(`[email] To: ${mail.to} | ${mail.subject}\n${mail.text}`);
       return;
     }
 
     await this.transporter.sendMail({
       from,
       replyTo,
-      to: input.to,
-      subject: input.subject,
-      text: input.text,
-      html: input.html ?? input.text.replace(/\n/g, "<br>"),
-      attachments: this.nodemailerAttachments(input.attachments),
+      to: mail.to,
+      subject: mail.subject,
+      text: mail.text,
+      html,
+      attachments: this.nodemailerAttachments(mail.attachments),
     });
   }
 
@@ -192,25 +206,21 @@ export class MailService implements OnModuleInit {
     inviteUrl: string,
     role: string,
     displayName?: string,
+    options?: { documentosObrigatorios?: string[] },
   ) {
     const nome = displayName?.trim() || to;
+    const tpl = EmailTemplates.conviteUtilizador({
+      nomeUtilizador: nome,
+      entidadeFormadora: tenantName,
+      papel: role,
+      linkConvite: inviteUrl,
+      documentosObrigatorios: options?.documentosObrigatorios,
+    });
     await this.send({
       to,
-      subject: `Convite NexiForma – ${tenantName}`,
-      text:
-        `Olá ${nome},\n\n` +
-        `Foste convidado(a) para a entidade formadora «${tenantName}» no NexiForma.\n\n` +
-        `Papel: ${role}\n\n` +
-        `Para activar a conta e confirmar o teu email, aceita o convite em:\n${inviteUrl}\n\n` +
-        `Define a palavra-passe no link - isso confirma que és o titular deste endereço de email.\n\n` +
-        `O link expira em 7 dias.`,
-      html:
-        `<p>Olá <strong>${nome}</strong>,</p>` +
-        `<p>Foste convidado(a) para <strong>${tenantName}</strong>.</p>` +
-        `<p>Papel: <strong>${role}</strong></p>` +
-        `<p>Clica no link abaixo para <strong>confirmar o email</strong> e definir a palavra-passe:</p>` +
-        `<p><a href="${inviteUrl}">Activar conta</a></p>` +
-        `<p style="color:#64748b;font-size:0.9em">O link expira em 7 dias.</p>`,
+      subject: tpl.subject,
+      text: tpl.text,
+      html: tpl.html,
     });
   }
 
@@ -220,27 +230,29 @@ export class MailService implements OnModuleInit {
     expiresMinutes: number,
     options?: { mfaRequired?: boolean; mfaAppLabel?: string },
   ) {
-    const appLabel = options?.mfaAppLabel ?? "a tua app autenticadora";
+    const appLabel = options?.mfaAppLabel ?? "a aplicação autenticadora";
     const mfaNote = options?.mfaRequired
-      ? `\n\nA tua conta tem verificação em dois passos. Ao abrir o link, serás pedido o código de 6 dígitos em ${appLabel}.\n`
-      : "";
-    const mfaHtml = options?.mfaRequired
-      ? `<p style="color:#64748b;font-size:0.9em">Precisas do código de 6 dígitos em <strong>${appLabel}</strong> para concluir a redefinição.</p>`
+      ? `\n\nA sua conta tem verificação em dois passos. Ao abrir o link, será pedido o código de 6 dígitos em ${appLabel}.\n`
       : "";
     await this.send({
       to,
       subject: "NexiForma – redefinir palavra-passe",
       text:
-        `Recebemos um pedido para redefinir a tua palavra-passe no NexiForma.\n\n` +
-        `Abre este link (válido ${expiresMinutes} minutos):\n${resetUrl}\n` +
+        `Recebemos um pedido para redefinir a sua palavra-passe no NexiForma.\n\n` +
+        `Abra este link (válido ${expiresMinutes} minutos):\n${resetUrl}\n` +
         mfaNote +
-        `\nSe não fizeste este pedido, ignora este email.`,
+        `\nSe não fez este pedido, ignore este email.`,
       html:
-        `<p>Recebemos um pedido para redefinir a tua palavra-passe.</p>` +
-        mfaHtml +
-        `<p><a href="${resetUrl}">Redefinir palavra-passe</a></p>` +
-        `<p style="color:#64748b;font-size:0.9em">O link expira em ${expiresMinutes} minutos. ` +
-        `Se não fizeste este pedido, ignora este email.</p>`,
+        emailParagraph("Recebemos um pedido para redefinir a sua palavra-passe no NexiForma.") +
+        (options?.mfaRequired
+          ? emailMuted(
+              `Precisa do código de 6 dígitos em <strong>${escapeHtml(appLabel)}</strong> para concluir a redefinição.`,
+            )
+          : "") +
+        emailButton("Redefinir palavra-passe", resetUrl, "primary") +
+        emailMuted(
+          `O link expira em ${expiresMinutes} minutos. Se não fez este pedido, ignore este email.`,
+        ),
     });
   }
 

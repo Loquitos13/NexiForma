@@ -13,6 +13,9 @@ export class CreateSessaoFormacaoDto {
   @IsUUID()
   cronogramaId!: string;
 
+  @IsUUID()
+  turmaId!: string;
+
   @IsInt()
   @Min(1)
   numeroSessao!: number;

@@ -8,6 +8,7 @@ import {
   ServiceUnavailableException,
   forwardRef,
 } from "@nestjs/common";
+import { assertSafeOutboundUrl } from "@nexiforma/shared";
 import { ConfigService } from "@nestjs/config";
 import { IntegracaoMode, IntegracaoProvider } from "@nexiforma/database";
 import type { Prisma } from "@nexiforma/database";
@@ -15,6 +16,7 @@ import { isModalidadeOnline, isIntegracaoProviderAllowed } from "@nexiforma/shar
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 import type { UpsertIntegracaoDto } from "./dto/integracoes.dto";
 import { FormadorScopeService } from "../common/formador-scope.service";
 import { SessoesFormacaoService } from "../sessoes-formacao/sessoes-formacao.service";
@@ -151,15 +153,17 @@ export class IntegracoesService {
 
   async oauthStatus(user: RequestUser) {
     const tenantId = requireTenantId(user);
-    const ent = await this.entitlements.forTenant(tenantId);
-    if (!ent.canAccessFormacaoTeams) {
-      throw new ForbiddenException("Módulo Formação Teams não contratado.");
-    }
-    return this.oauthStatusForTenant(tenantId);
+    return this.oauthStatusForTenant(tenantId, user);
   }
 
-  async oauthStatusForTenant(tenantId: string) {
+  async oauthStatusForTenant(tenantId: string, user?: RequestUser) {
     await this.assertTenantExists(tenantId);
+    if (user) {
+      const ent = await this.entitlements.forTenant(tenantId);
+      if (!ent.canAccessFormacaoTeams && !ent.canAccessCrm) {
+        throw new ForbiddenException("Integração Teams não disponível neste plano.");
+      }
+    }
     const [zoom, teams] = await Promise.all([
       this.resolveOAuthReadiness("ZOOM", tenantId),
       this.resolveOAuthReadiness("TEAMS", tenantId),
@@ -167,43 +171,66 @@ export class IntegracoesService {
     return { zoom, teams, platformTeamsAppConfigured: Boolean(this.platformTeamsClientId()) };
   }
 
-  /** Estado resumido para LMS / formadores (sem segredos). */
+  /** Estado resumido para LMS / formadores / CRM (sem segredos). */
   async disponibilidade(user: RequestUser) {
     const tenantId = requireTenantId(user);
     const ent = await this.entitlements.forTenant(tenantId);
-    if (!ent.canAccessFormacaoTeams) {
-      return {
-        zoom: { mode: "DISABLED", oauth: false, ready: false, aviso: "Módulo Formação Teams não contratado." },
-        teams: { mode: "DISABLED", oauth: false, ready: false, aviso: "Módulo Formação Teams não contratado." },
-        podeCriarSalaZoom: false,
-        podeCriarSalaTeams: false,
-      };
-    }
+    const teamsAllowed = ent.canAccessFormacaoTeams || ent.canAccessCrm;
+    const zoomAllowed = ent.canAccessFormacaoTeams;
+
+    const disabledZoom = {
+      mode: "DISABLED" as const,
+      oauth: false,
+      ready: false,
+      aviso: zoomAllowed ? null : "Módulo Formação Teams não contratado.",
+    };
+    const disabledTeams = {
+      mode: "DISABLED" as const,
+      oauth: false,
+      ready: false,
+      aviso: teamsAllowed ? null : "Integração Teams não disponível neste plano.",
+    };
+
     const [zoomReady, teamsReady] = await Promise.all([
-      this.resolveOAuthReadiness("ZOOM", tenantId),
+      zoomAllowed
+        ? this.resolveOAuthReadiness("ZOOM", tenantId)
+        : Promise.resolve({ mode: "DISABLED" as const, ready: false, missing: [] as string[] }),
       this.resolveOAuthReadiness("TEAMS", tenantId),
     ]);
-    const avisoZoom = !zoomReady.ready
-      ? `Zoom não configurado (${zoomReady.missing.join(", ")})`
-      : null;
-    const avisoTeams = !teamsReady.ready
-      ? `Teams não configurado (${teamsReady.missing.join(", ")})`
-      : null;
+
+    const avisoZoom = !zoomAllowed
+      ? "Módulo Formação Teams não contratado."
+      : !zoomReady.ready
+        ? `Zoom não configurado (${zoomReady.missing.join(", ")})`
+        : null;
+    const avisoTeams = !teamsAllowed
+      ? teamsReady.ready
+        ? null
+        : "Integração Teams não disponível neste plano."
+      : !teamsReady.ready
+        ? `Teams não configurado (${teamsReady.missing.join(", ")})`
+        : null;
+
     return {
-      zoom: {
-        mode: zoomReady.mode,
-        oauth: zoomReady.mode === "OAUTH",
-        ready: zoomReady.ready,
-        aviso: avisoZoom,
-      },
-      teams: {
-        mode: teamsReady.mode,
-        oauth: teamsReady.mode === "OAUTH",
-        ready: teamsReady.ready,
-        aviso: avisoTeams,
-      },
-      podeCriarSalaZoom: zoomReady.ready,
+      zoom: zoomAllowed
+        ? {
+            mode: zoomReady.mode,
+            oauth: zoomReady.mode === "OAUTH",
+            ready: zoomReady.ready,
+            aviso: avisoZoom,
+          }
+        : { ...disabledZoom, aviso: avisoZoom },
+      teams: teamsAllowed
+        ? {
+            mode: teamsReady.mode,
+            oauth: teamsReady.mode === "OAUTH",
+            ready: teamsReady.ready,
+            aviso: avisoTeams,
+          }
+        : { ...disabledTeams, aviso: avisoTeams },
+      podeCriarSalaZoom: zoomAllowed && zoomReady.ready,
       podeCriarSalaTeams: teamsReady.ready,
+      teamsModuleAllowed: teamsAllowed,
     };
   }
 
@@ -390,7 +417,7 @@ export class IntegracoesService {
     }
     const redirect =
       this.config.get<string>("NEXIFORMA_TEAMS_CONSENT_REDIRECT") ??
-      `${this.config.get<string>("APP_PUBLIC_URL") ?? "http://localhost:3000"}/plataforma/microsoft/consent`;
+      `${resolveAppPublicUrlForLinks(this.config)}/plataforma/microsoft/consent`;
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirect,
@@ -473,7 +500,7 @@ export class IntegracoesService {
     }
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m365)) {
       throw new BadRequestException(
-        "Azure Tenant ID inválido — deve ser um GUID (ex.: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx) do Entra ID do cliente.",
+        "Azure Tenant ID inválido - deve ser um GUID (ex.: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx) do Entra ID do cliente.",
       );
     }
   }
@@ -482,14 +509,14 @@ export class IntegracoesService {
     if (body.includes("AADSTS90002")) {
       return (
         "Azure Tenant ID não existe na Microsoft (AADSTS90002). " +
-        "Confirma o «ID do inquilino» no Entra ID do cliente — não uses o UUID da URL NexiForma (/plataforma/tenantes/...)."
+        "Confirma o «ID do inquilino» no Entra ID do cliente - não uses o UUID da URL NexiForma (/plataforma/tenantes/...)."
       );
     }
     if (body.includes("AADSTS700016") || body.includes("AADSTS700022")) {
-      return "A app NexiForma não está registada ou autorizada neste tenant M365 — gera o link de admin consent e pede ao IT do cliente para aprovar.";
+      return "A app NexiForma não está registada ou autorizada neste tenant M365 - gera o link de admin consent e pede ao IT do cliente para aprovar.";
     }
     if (body.includes("AADSTS7000215")) {
-      return "Client secret inválido ou expirado — verifica NEXIFORMA_TEAMS_CLIENT_SECRET no .env da API.";
+      return "Client secret inválido ou expirado - verifica NEXIFORMA_TEAMS_CLIENT_SECRET no .env da API.";
     }
     return null;
   }
@@ -531,6 +558,30 @@ export class IntegracoesService {
       );
     }
     return this.testarConexaoOAuth(integracao.config, provider, tenantId);
+  }
+
+  async criarTeamsMeetingComercial(
+    tenantId: string,
+    opts: { subject: string; start?: Date; end?: Date },
+  ): Promise<{ meetingId: string; joinUrl: string }> {
+    const ent = await this.entitlements.forTenant(tenantId);
+    if (!ent.canAccessFormacaoTeams && !ent.canAccessCrm) {
+      throw new ForbiddenException("Integração Teams não disponível neste plano.");
+    }
+    const readiness = await this.resolveOAuthReadiness("TEAMS", tenantId);
+    if (!readiness.ready) {
+      throw new ServiceUnavailableException(
+        `Integração Teams não configurada - ${readiness.missing.join(", ")}.`,
+      );
+    }
+    const { config } = await this.ensureOAuthMode(tenantId, "TEAMS");
+    const { values, missing } = this.resolveOAuthCredentials("TEAMS", config);
+    if (missing.length) {
+      throw new BadRequestException(`Credenciais Teams em falta: ${missing.join(", ")}`);
+    }
+    const token = await this.fetchMsToken(values.tenantId, values.clientId, values.clientSecret);
+    const meeting = await this.createTeamsMeeting(token, values.organizerId, opts);
+    return { meetingId: meeting.id, joinUrl: meeting.joinUrl };
   }
 
   async criarReuniao(
@@ -709,6 +760,17 @@ export class IntegracoesService {
     const token = cfg.token ?? this.config.get<string>("MOODLE_WS_TOKEN");
     if (!baseUrl || !token) {
       throw new BadRequestException("MOODLE baseUrl/token em falta na integração.");
+    }
+
+    try {
+      assertSafeOutboundUrl(baseUrl, {
+        requireHttps: process.env.NODE_ENV === "production",
+        allowHttp: process.env.NODE_ENV !== "production",
+      });
+    } catch (e) {
+      throw new BadRequestException(
+        e instanceof Error ? e.message : "URL Moodle inválida.",
+      );
     }
 
     const url = `${baseUrl.replace(/\/$/, "")}/webservice/rest/server.php?wstoken=${encodeURIComponent(token)}&wsfunction=core_course_get_courses&moodlewsrestformat=json`;
@@ -891,8 +953,14 @@ export class IntegracoesService {
     return "";
   }
 
-  private async createTeamsMeeting(token: string, organizerIdOrEmail: string) {
+  private async createTeamsMeeting(
+    token: string,
+    organizerIdOrEmail: string,
+    opts?: { subject?: string; start?: Date; end?: Date },
+  ) {
     const organizer = await this.resolveMsUser(token, organizerIdOrEmail);
+    const start = opts?.start ?? new Date();
+    const end = opts?.end ?? new Date(start.getTime() + 2 * 60 * 60 * 1000);
     const res = await fetch(
       `https://graph.microsoft.com/v1.0/users/${organizer.id}/onlineMeetings`,
       {
@@ -902,9 +970,9 @@ export class IntegracoesService {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          subject: "Sessão NexiForma",
-          startDateTime: new Date().toISOString(),
-          endDateTime: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+          subject: opts?.subject ?? "Sessão NexiForma",
+          startDateTime: start.toISOString(),
+          endDateTime: end.toISOString(),
         }),
       },
     );

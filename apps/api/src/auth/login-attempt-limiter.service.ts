@@ -6,12 +6,10 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import type { ResolvedLoginLockoutPolicy } from "@nexiforma/shared";
 import Redis from "ioredis";
-import {
-  loginFailLockoutMs,
-  loginFailMaxAttempts,
-  loginFailWindowMs,
-} from "../common/ddos-throttle.config";
+import { loginFailWindowMs } from "../common/ddos-throttle.config";
+import { resolveTenantLoginLockoutPolicy } from "./login-lockout-policy.util";
 
 export type LoginAttemptScope = "tenant" | "platform";
 
@@ -41,6 +39,11 @@ export class LoginAttemptLimiterService implements OnModuleInit, OnModuleDestroy
         .catch(() => {
           void client.quit();
         });
+    } else if (process.env.NODE_ENV === "production") {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[security] REDIS_URL em falta – lockout de login e rate limits não partilham estado entre instâncias.",
+      );
     }
     this.pruneTimer = setInterval(() => this.prune(), 60_000);
   }
@@ -54,6 +57,14 @@ export class LoginAttemptLimiterService implements OnModuleInit, OnModuleDestroy
     return `${scope}:${identifier.trim().toLowerCase()}`;
   }
 
+  private defaultPolicy(): ResolvedLoginLockoutPolicy {
+    return resolveTenantLoginLockoutPolicy(null);
+  }
+
+  private resolvePolicy(policy?: ResolvedLoginLockoutPolicy): ResolvedLoginLockoutPolicy {
+    return policy ?? this.defaultPolicy();
+  }
+
   private throwLocked(retryAfterSec: number): never {
     throw new HttpException(
       {
@@ -65,7 +76,14 @@ export class LoginAttemptLimiterService implements OnModuleInit, OnModuleDestroy
     );
   }
 
-  async assertNotLocked(scope: LoginAttemptScope, identifier: string): Promise<void> {
+  async assertNotLocked(
+    scope: LoginAttemptScope,
+    identifier: string,
+    policy?: ResolvedLoginLockoutPolicy,
+  ): Promise<void> {
+    const resolved = this.resolvePolicy(policy);
+    if (!resolved.enabled) return;
+
     const k = this.key(scope, identifier);
     if (this.redis) {
       const ttl = await this.redis.ttl(`login_lock:${k}`);
@@ -85,11 +103,18 @@ export class LoginAttemptLimiterService implements OnModuleInit, OnModuleDestroy
     this.throwLocked(Math.max(1, Math.ceil((record.lockedUntil - now) / 1000)));
   }
 
-  async recordFailure(scope: LoginAttemptScope, identifier: string): Promise<void> {
+  async recordFailure(
+    scope: LoginAttemptScope,
+    identifier: string,
+    policy?: ResolvedLoginLockoutPolicy,
+  ): Promise<void> {
+    const resolved = this.resolvePolicy(policy);
+    if (!resolved.enabled) return;
+
     const k = this.key(scope, identifier);
-    const windowMs = loginFailWindowMs();
-    const maxAttempts = loginFailMaxAttempts();
-    const lockoutMs = loginFailLockoutMs();
+    const windowMs = resolved.windowMs;
+    const maxAttempts = resolved.maxAttempts;
+    const lockoutMs = resolved.lockoutMs;
     const windowSec = Math.max(1, Math.ceil(windowMs / 1000));
     const lockoutSec = Math.max(1, Math.ceil(lockoutMs / 1000));
 

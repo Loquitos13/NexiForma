@@ -25,7 +25,7 @@ export class MatriculasController {
   constructor(private readonly matriculas: MatriculasService) {}
 
   @Get()
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   list(
     @CurrentUser() user: RequestUser,
     @Query("turmaId", ParseUUIDPipe) turmaId: string,
@@ -34,7 +34,7 @@ export class MatriculasController {
   }
 
   @Post()
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   create(
     @CurrentUser() user: RequestUser,
     @Body() dto: CreateMatriculaDto,
@@ -43,7 +43,7 @@ export class MatriculasController {
   }
 
   @Patch(":id")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   updateEstado(
     @CurrentUser() user: RequestUser,
     @Param("id", ParseUUIDPipe) id: string,

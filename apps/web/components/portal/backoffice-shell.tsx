@@ -53,7 +53,7 @@ export function BackofficeShell({
         </div>
         <PortalPushRegister />
         <ImpersonationBanner />
-        <main className="portal-main portal-scroll-main">
+        <main id="main-content" className="portal-main portal-scroll-main">
           <div className="mx-auto max-w-6xl px-3 py-4 sm:px-6 sm:py-6">{children}</div>
         </main>
       </div>

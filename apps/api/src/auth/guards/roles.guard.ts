@@ -1,6 +1,6 @@
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import type { JwtRole } from "@nexiforma/shared";
+import { roleSatisfies, type JwtRole } from "@nexiforma/shared";
 import { ROLES_KEY } from "../decorators/roles.decorator";
 import type { RequestUser } from "../types/access-token-payload";
 
@@ -22,7 +22,8 @@ export class RolesGuard implements CanActivate {
     if (!user?.role) {
       throw new ForbiddenException("Sem papel no token.");
     }
-    if (!required.includes(user.role)) {
+    const allowed = required.some((r) => roleSatisfies(user.role, r));
+    if (!allowed) {
       throw new ForbiddenException("Permissões insuficientes.");
     }
     return true;

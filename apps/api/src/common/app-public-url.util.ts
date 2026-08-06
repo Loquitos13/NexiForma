@@ -1,6 +1,18 @@
 import type { ConfigService } from "@nestjs/config";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 export const APP_PUBLIC_URL_HEADER = "x-nexiforma-app-public-url";
+
+const requestAppPublicUrlStorage = new AsyncLocalStorage<string>();
+
+/** Guarda a origem do pedido HTTP para links em email dentro da mesma request. */
+export function runWithAppPublicUrl<T>(url: string, fn: () => T): T {
+  return requestAppPublicUrlStorage.run(url, fn);
+}
+
+export function getRequestAppPublicUrl(): string | undefined {
+  return requestAppPublicUrlStorage.getStore();
+}
 
 function normalizeOrigin(raw: string): string {
   const trimmed = raw.trim().replace(/\/$/, "");
@@ -68,7 +80,7 @@ export function isAllowedAppPublicUrl(origin: string, config: ConfigService): bo
   }
 }
 
-/** Base URL da app Web para links em email — preferência ao pedido HTTP, fallback APP_PUBLIC_URL. */
+/** Base URL da app Web para links em email - preferência ao pedido HTTP, fallback APP_PUBLIC_URL. */
 export function resolveAppPublicUrl(
   config: ConfigService,
   req?: { headers: Record<string, string | string[] | undefined> },
@@ -106,5 +118,18 @@ export function resolveAppPublicUrl(
   return fallback;
 }
 
-/** @deprecated Use resolveAppPublicUrl */
+/**
+ * Base URL para links em emails e notificações.
+ * Preferência: contexto do pedido HTTP (interceptor) → cabeçalhos do pedido → APP_PUBLIC_URL.
+ */
+export function resolveAppPublicUrlForLinks(
+  config: ConfigService,
+  req?: { headers: Record<string, string | string[] | undefined> },
+): string {
+  const fromContext = getRequestAppPublicUrl();
+  if (fromContext) return fromContext;
+  return resolveAppPublicUrl(config, req);
+}
+
+/** @deprecated Use resolveAppPublicUrlForLinks ou resolveAppPublicUrl */
 export const resolvePasswordResetAppUrl = resolveAppPublicUrl;

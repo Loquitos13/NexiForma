@@ -43,6 +43,22 @@ export class PortalController {
     return this.tenantSettings.getTenantInfo(user);
   }
 
+  @Put("tenant/entidade")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager")
+  updateEntidade(
+    @CurrentUser() user: RequestUser,
+    @Body() body: { legalName?: string; nif?: string },
+  ): Promise<{
+    slug: string;
+    legalName: string;
+    nif: string;
+    status: string;
+    metadata: unknown;
+  }> {
+    return this.tenantSettings.updateEntidade(user, body);
+  }
+
   @Get("tenant/branding")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("tenant_manager")
@@ -84,6 +100,23 @@ export class PortalController {
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 2 * 1024 * 1024 } }))
   uploadLogo(@CurrentUser() user: RequestUser, @UploadedFile() file: Express.Multer.File) {
     return this.tenantSettings.uploadLogo(user, file);
+  }
+
+  @Get("tenant/documentos-politica")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager")
+  documentosPolitica(@CurrentUser() user: RequestUser) {
+    return this.tenantSettings.getDocumentosPolitica(user);
+  }
+
+  @Put("tenant/documentos-politica")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager")
+  updateDocumentosPolitica(
+    @CurrentUser() user: RequestUser,
+    @Body() body: { universaisObrigatorios?: string[] },
+  ) {
+    return this.tenantSettings.updateDocumentosPolitica(user, body);
   }
 
   @Get("tenant/logo")

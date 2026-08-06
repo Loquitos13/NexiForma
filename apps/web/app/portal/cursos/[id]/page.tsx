@@ -81,16 +81,23 @@ const ACao_COLS: Column<AcaoRow>[] = [
 export default function CursoDetailPage() {
   const params = useParams();
   const cursoId = String(params.id ?? "");
-  const { canManage, isFormador } = useTenantRole();
+  const { canManageFormacao: canManage, isFormador } = useTenantRole();
   const canEditContent = canManage || isFormador;
   const [tab, setTab] = useState<CursoTab>("resumo");
   const [curso, setCurso] = useState<CursoDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [openUnidadeId, setOpenUnidadeId] = useState<string | null>(null);
 
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get("tab");
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("tab");
     if (t === "conteudos" || t === "resumo") setTab(t);
+    const unidade = params.get("unidade")?.trim();
+    if (unidade) {
+      setOpenUnidadeId(unidade);
+      setTab("conteudos");
+    }
   }, []);
 
   const load = useCallback(async () => {
@@ -260,6 +267,7 @@ export default function CursoDetailPage() {
               cursoId={curso.id}
               cursoTitulo={curso.designacao}
               canEdit={canEditContent}
+              initialUnidadeId={openUnidadeId}
             />
           </CardContent>
         </Card>

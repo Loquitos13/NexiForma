@@ -20,11 +20,11 @@ const COPY: Record<
 > = {
   expired: {
     subtitle:
-      "A tua sessão expirou (limite de segurança de cerca de 1 hora). Inicia sessão novamente para continuar no portal.",
-    body: "Por motivos de segurança, o acesso ao CRM e restantes módulos foi encerrado automaticamente.",
+      "A tua sessão terminou. Inicia sessão novamente para continuares.",
+    body: "Isto pode acontecer se ficaste muito tempo sem usar a plataforma, se iniciaste sessão noutro dispositivo ou browser, ou se o browser limpou os dados de acesso. Basta voltar a entrar - os teus dados estão guardados.",
   },
   logout: {
-    subtitle: "Terminaste sessão com sucesso.",
+    subtitle: "Saíste da conta com sucesso.",
     body: "Obrigado por utilizares o NexiForma. Quando quiseres voltar, inicia sessão novamente.",
   },
 };

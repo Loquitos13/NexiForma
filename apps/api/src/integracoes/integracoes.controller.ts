@@ -13,26 +13,26 @@ import { UpsertIntegracaoDto } from "./dto/integracoes.dto";
 export class IntegracoesController {
   constructor(private readonly integracoes: IntegracoesService) {}
 
+  /** Estado Teams/Zoom do tenant - qualquer utilizador autenticado (sem segredos). */
   @Get("disponibilidade")
-  @Roles("tenant_manager", "formador")
   disponibilidade(@CurrentUser() user: RequestUser) {
     return this.integracoes.disponibilidade(user);
   }
 
   @Get()
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   list(@CurrentUser() user: RequestUser) {
     return this.integracoes.list(user);
   }
 
   @Post()
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   upsert(@CurrentUser() user: RequestUser, @Body() dto: UpsertIntegracaoDto): Promise<TenantIntegracao> {
     return this.integracoes.upsert(user, dto);
   }
 
   @Post("sessoes/:sessaoId/reuniao")
-  @Roles("tenant_manager", "formador")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   criarReuniao(
     @CurrentUser() user: RequestUser,
     @Param("sessaoId", ParseUUIDPipe) sessaoId: string,
@@ -45,13 +45,13 @@ export class IntegracoesController {
   }
 
   @Get("oauth/status")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico", "comercial")
   oauthStatus(@CurrentUser() user: RequestUser) {
     return this.integracoes.oauthStatus(user);
   }
 
   @Post("oauth/activar")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   activarOAuthReal(
     @CurrentUser() user: RequestUser,
     @Query("provider") provider?: "ZOOM" | "TEAMS" | "ALL",
@@ -61,7 +61,7 @@ export class IntegracoesController {
   }
 
   @Post("testar")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   testarConexao(
     @CurrentUser() user: RequestUser,
     @Query("provider") provider: "ZOOM" | "TEAMS",
@@ -73,7 +73,7 @@ export class IntegracoesController {
   }
 
   @Get("moodle/sync")
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   moodleSync(@CurrentUser() user: RequestUser, @Query("cursoId") cursoId?: string) {
     return this.integracoes.moodleSync(user, cursoId);
   }

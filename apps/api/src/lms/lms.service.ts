@@ -19,10 +19,14 @@ import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 import type { CreateLmsEventoDto } from "./dto/create-lms-evento.dto";
 import { isModalidadeOnline, resolveSalaOnline } from "./sessao-sala.util";
+import { FormadorScopeService } from "../common/formador-scope.service";
 
 @Injectable()
 export class LmsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly formadorScope: FormadorScopeService,
+  ) {}
 
   /** Regista leave automático para cada formando com entrada aberta na sessão. */
   async fecharPresencasAbertasSessao(
@@ -240,11 +244,27 @@ export class LmsService {
     return this.mapPresencaComSessao(acessos, sessao, new Date());
   }
 
-  listAcessos(
+  async listAcessos(
     user: RequestUser,
     opts: { sessaoFormacaoId?: string; matriculaId?: string; acaoFormacaoId?: string },
   ): Promise<Record<string, unknown>[]> {
     const tenantId = requireTenantId(user);
+    if (opts.acaoFormacaoId) {
+      await this.formadorScope.assertCanAccessAcao(user, opts.acaoFormacaoId);
+    }
+    if (opts.sessaoFormacaoId) {
+      await this.formadorScope.assertCanAccessSessao(user, opts.sessaoFormacaoId);
+    }
+    if (user.role === "formador" && !opts.acaoFormacaoId && !opts.sessaoFormacaoId) {
+      const acaoIds = await this.formadorScope.assignedAcaoIds(user);
+      if (!acaoIds?.length) return [];
+      const batches = await Promise.all(
+        acaoIds.map((acaoFormacaoId) =>
+          this.listAcessosForTenant(tenantId, { ...opts, acaoFormacaoId }),
+        ),
+      );
+      return batches.flat().slice(0, 500);
+    }
     return this.listAcessosForTenant(tenantId, opts);
   }
 

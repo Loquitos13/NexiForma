@@ -3,7 +3,15 @@
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { JwtRole } from "@nexiforma/shared";
-import { isComercial, isFormando, isTenantManager, isTenantStaff, canManageCrm } from "@nexiforma/shared";
+import {
+  canManageCrm,
+  canManageFormacao,
+  canManageFaturacao,
+  isComercial,
+  isFormando,
+  isTenantManager,
+  isTenantStaff,
+} from "@nexiforma/shared";
 import { getAccessToken, setAccessToken } from "@/lib/client/access-token";
 import { bffFetch, refreshViaBffCookies } from "@/lib/client/bff-fetch";
 import { decodeJwtRole, tokenKindMismatchForPath } from "@/lib/client/jwt-role";
@@ -13,6 +21,10 @@ import {
   markSessionExpired,
   subscribeSessionExpired,
 } from "@/lib/client/session-lifecycle";
+
+let verifyInflight: Promise<void> | null = null;
+let lastFocusVerifyMs = 0;
+const FOCUS_VERIFY_DEBOUNCE_MS = 3_000;
 
 export function useTenantRole() {
   const pathname = usePathname();
@@ -24,6 +36,8 @@ export function useTenantRole() {
     if (!token || isAccessTokenExpired(token)) return null;
     return decodeJwtRole(token);
   });
+  const [impersonating, setImpersonating] = useState(false);
+  const [readOnlyImpersonation, setReadOnlyImpersonation] = useState(false);
   const [loading, setLoading] = useState(() => {
     if (typeof window === "undefined") return true;
     return isAuthenticatedAppPath(window.location.pathname);
@@ -33,6 +47,8 @@ export function useTenantRole() {
   const handleSessionDead = useCallback(() => {
     setAccessToken(null);
     setRole(null);
+    setImpersonating(false);
+    setReadOnlyImpersonation(false);
     setSessionExpired(true);
     setLoading(false);
     const path = pathnameRef.current;
@@ -44,11 +60,19 @@ export function useTenantRole() {
   const applySessionDeadState = useCallback(() => {
     setAccessToken(null);
     setRole(null);
+    setImpersonating(false);
+    setReadOnlyImpersonation(false);
     setSessionExpired(true);
     setLoading(false);
   }, []);
 
   const verifySession = useCallback(async () => {
+    if (verifyInflight) {
+      await verifyInflight;
+      return;
+    }
+
+    verifyInflight = (async () => {
     const path = pathnameRef.current;
     if (!isAuthenticatedAppPath(path)) {
       setLoading(false);
@@ -73,9 +97,16 @@ export function useTenantRole() {
     });
 
     if (res.ok) {
-      const me = (await res.json()) as { role?: JwtRole; accessToken?: string };
+      const me = (await res.json()) as {
+        role?: JwtRole;
+        accessToken?: string;
+        impersonating?: boolean;
+        readOnlyImpersonation?: boolean;
+      };
       if (me.role) setRole(me.role);
       if (me.accessToken) setAccessToken(me.accessToken);
+      setImpersonating(!!me.impersonating);
+      setReadOnlyImpersonation(!!me.impersonating && !!me.readOnlyImpersonation);
       setSessionExpired(false);
       setLoading(false);
       return;
@@ -87,6 +118,11 @@ export function useTenantRole() {
     }
 
     setLoading(false);
+  })().finally(() => {
+      verifyInflight = null;
+    });
+
+    await verifyInflight;
   }, [handleSessionDead]);
 
   useEffect(() => {
@@ -102,7 +138,11 @@ export function useTenantRole() {
     const unsub = subscribeSessionExpired(applySessionDeadState);
 
     const onVisible = () => {
-      if (document.visibilityState === "visible") void verifySession();
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastFocusVerifyMs < FOCUS_VERIFY_DEBOUNCE_MS) return;
+      lastFocusVerifyMs = now;
+      void verifySession();
     };
 
     const interval = window.setInterval(() => {
@@ -128,8 +168,14 @@ export function useTenantRole() {
     loading,
     sessionExpired,
     authenticated: !loading && !sessionExpired && role !== null,
+    impersonating,
+    readOnlyImpersonation,
+    /** True quando personificação read-only bloqueia escritas na UI. */
+    writeDisabled: readOnlyImpersonation,
     canManage: isTenantManager(role ?? undefined),
+    canManageFormacao: canManageFormacao(role ?? undefined),
     canManageCrm: canManageCrm(role ?? undefined),
+    canManageFaturacao: canManageFaturacao(role ?? undefined),
     isComercial: isComercial(role ?? undefined),
     isFormador: role === "formador",
     isFormando: isFormando(role ?? undefined),

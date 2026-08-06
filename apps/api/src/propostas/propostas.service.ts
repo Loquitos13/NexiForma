@@ -9,6 +9,11 @@ import {
   parseListPagination,
   type PaginatedList,
 } from "../common/paginated-list.util";
+import {
+  assertPropostaAcessivel,
+  propostaScopeWhere,
+  resolvePropostaListFilters,
+} from "../common/comercial-scope.util";
 import { requireTenantId } from "../common/tenant-scope";
 import type { CreatePropostaDto, UpdatePropostaDto } from "./dto/proposta.dto";
 import type { UpdateConfigPropostaDto } from "./dto/proposta-config.dto";
@@ -108,8 +113,11 @@ export class PropostasService {
   ): Promise<PaginatedList<PropostaComercial>> {
     const tenantId = requireTenantId(user);
     const pagination = parseListPagination(filters?.page, filters?.pageSize);
-    const where = buildPropostaWhere(tenantId, filters);
-    const whereForCounts = buildPropostaWhere(tenantId, filters, { omitEstado: true });
+    const scopedFilters = resolvePropostaListFilters(user, filters);
+    const where = buildPropostaWhere(tenantId, scopedFilters);
+    const whereForCounts = buildPropostaWhere(tenantId, scopedFilters, {
+      omitEstado: true,
+    });
 
     const [total, items, countRows] = await Promise.all([
       this.prisma.propostaComercial.count({ where }),
@@ -145,6 +153,7 @@ export class PropostasService {
     if (!row) {
       throw new NotFoundException("Proposta não encontrada.");
     }
+    assertPropostaAcessivel(user, row);
     return row;
   }
 
@@ -293,6 +302,7 @@ export class PropostasService {
     if (!existing) {
       throw new NotFoundException("Proposta não encontrada.");
     }
+    assertPropostaAcessivel(user, existing);
     if (dto.cursoId) {
       await this.assertCurso(tenantId, dto.cursoId);
     }
@@ -362,9 +372,10 @@ export class PropostasService {
 
   resumo(user: RequestUser) {
     const tenantId = requireTenantId(user);
+    const scope = propostaScopeWhere(user);
     return this.prisma.propostaComercial.groupBy({
       by: ["estado"],
-      where: { tenantId },
+      where: scope ? { tenantId, AND: [scope] } : { tenantId },
       _count: { _all: true },
       _sum: { valorCentavos: true },
     });
@@ -387,6 +398,7 @@ export class PropostasService {
     if (!row) {
       throw new NotFoundException("Proposta não encontrada.");
     }
+    assertPropostaAcessivel(user, row);
 
     return buildPropostaHtmlDocument({
       codigo: row.codigo,

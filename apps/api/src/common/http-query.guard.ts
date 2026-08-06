@@ -8,14 +8,14 @@ import {
 import { HTTP_QUERY_METHOD } from "@nexiforma/shared";
 import type { Request } from "express";
 
-/** Exige método QUERY (RFC 10008) e Content-Type JSON. */
+/** Exige QUERY (RFC 10008) ou POST com corpo JSON - Next.js não expõe QUERY no App Router. */
 @Injectable()
 export class HttpQueryMethodGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<Request>();
-    if (req.method !== HTTP_QUERY_METHOD) {
+    if (req.method !== HTTP_QUERY_METHOD && req.method !== "POST") {
       throw new MethodNotAllowedException(
-        `Utilize ${HTTP_QUERY_METHOD} com corpo application/json (evita dados sensíveis na URL).`,
+        `Utilize ${HTTP_QUERY_METHOD} ou POST com corpo application/json (evita dados sensíveis na URL).`,
       );
     }
     const ct = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();

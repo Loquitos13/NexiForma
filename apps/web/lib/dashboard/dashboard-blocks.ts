@@ -66,13 +66,19 @@ export const DASHBOARD_BLOCKS: DashboardBlockEntry[] = [
   },
 ];
 
+/** Com core de formação, DGERT/formação fica no topo por defeito. */
 export const DEFAULT_BLOCK_IDS: DashboardBlockId[] = [
+  "panel-formacao-operacional",
+  "panel-formacao-resumo",
+  "panel-atalhos",
   "slider-financeiro",
   "slider-comercial",
   "slider-empresarial",
-  "panel-formacao-resumo",
+];
+
+export const CORE_FORMATION_PRIORITY_BLOCKS: DashboardBlockId[] = [
   "panel-formacao-operacional",
-  "panel-atalhos",
+  "panel-formacao-resumo",
 ];
 
 export function getBlockEntry(id: string): DashboardBlockEntry | undefined {

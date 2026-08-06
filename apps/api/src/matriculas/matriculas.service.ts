@@ -2,30 +2,59 @@ import {
   ConflictException,
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { Matricula } from "@nexiforma/database";
+import { resolverEmailNotificacaoFormando } from "@nexiforma/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import {
   emailPresencaEfectivoDeFormando,
   turmaExigeEmailPresenca,
 } from "../common/formando-presenca.util";
+import { FormadorScopeService } from "../common/formador-scope.service";
 import { requireTenantId } from "../common/tenant-scope";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
+import { MailService } from "../mail/mail.service";
 import { FormadorNotificacoesService } from "../notificacoes/formador-notificacoes.service";
+import { EmailTemplates } from "../notificacoes/templates/email.templates";
 import type { CreateMatriculaDto } from "./dto/create-matricula.dto";
 import type { UpdateMatriculaDto } from "./dto/update-matricula.dto";
+import {
+  labelMatriculaDoc,
+  matriculaDocumentosSeedRows,
+} from "../formandos/matricula-documentos.util";
+import {
+  resolveDocumentosPolitica,
+  UNIVERSAL_DOC_OPTIONS,
+} from "../formandos/documentos-politica.util";
 
 @Injectable()
 export class MatriculasService {
+  private readonly logger = new Logger(MatriculasService.name);
+
   constructor(
     private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+    private readonly mail: MailService,
     private readonly formadorNotificacoes: FormadorNotificacoesService,
+    private readonly formadorScope: FormadorScopeService,
   ) {}
 
-  /** Lista matrículas de uma turma. */
+  /** Lista matrículas de uma turma (gestor ou formador da acção - só leitura). */
   async listByTurma(user: RequestUser, turmaId: string) {
     const tenantId = requireTenantId(user);
+    const turma = await this.prisma.turma.findFirst({
+      where: { id: turmaId, tenantId },
+      select: { acaoFormacaoId: true },
+    });
+    if (!turma) {
+      throw new NotFoundException("Turma inexistente ou de outro tenant.");
+    }
+    await this.formadorScope.assertCanAccessAcao(user, turma.acaoFormacaoId);
+
     const rows = await this.prisma.matricula.findMany({
       where: { tenantId, turmaId },
       orderBy: { dataInscricao: "desc" },
@@ -94,30 +123,110 @@ export class MatriculasService {
       throw new ConflictException("Este formando já está matriculado nesta turma.");
     }
 
-    const matricula = await this.prisma.matricula.create({
-      data: {
-        tenantId,
-        turmaId: dto.turmaId,
-        formandoId: dto.formandoId,
-      },
-    });
-
-    const ctx = await this.prisma.turma.findFirst({
+    const turmaCtx = await this.prisma.turma.findFirst({
       where: { id: dto.turmaId, tenantId },
       select: {
         codigo: true,
-        acaoFormacao: { select: { id: true, titulo: true } },
+        acaoFormacao: {
+          select: {
+            id: true,
+            titulo: true,
+            codigoInterno: true,
+            configuracaoMatricula: true,
+            curso: { select: { configuracaoMatricula: true } },
+          },
+        },
       },
     });
-    if (ctx?.acaoFormacao) {
-      void this.formadorNotificacoes.notifyMatriculaNova(tenantId, ctx.acaoFormacao.id, {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true, legalName: true },
+    });
+    const politica = resolveDocumentosPolitica({
+      tenantMetadata: tenant?.metadata,
+      cursoConfig: turmaCtx?.acaoFormacao.curso.configuracaoMatricula,
+      acaoConfig: turmaCtx?.acaoFormacao.configuracaoMatricula,
+    });
+
+    const matricula = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.matricula.create({
+        data: {
+          tenantId,
+          turmaId: dto.turmaId,
+          formandoId: dto.formandoId,
+        },
+      });
+      await tx.matriculaDocumento.createMany({
+        data: matriculaDocumentosSeedRows(
+          tenantId,
+          created.id,
+          politica.inscricaoObrigatorios,
+        ),
+      });
+      return created;
+    });
+
+    if (turmaCtx?.acaoFormacao) {
+      void this.formadorNotificacoes.notifyMatriculaNova(tenantId, turmaCtx.acaoFormacao.id, {
         formandoNome: formando.nome,
-        turmaCodigo: ctx.codigo,
-        acaoTitulo: ctx.acaoFormacao.titulo,
+        turmaCodigo: turmaCtx.codigo,
+        acaoTitulo: turmaCtx.acaoFormacao.titulo,
+      });
+
+      void this.enviarEmailInscricaoFormando({
+        formando,
+        turmaCodigo: turmaCtx.codigo,
+        acao: turmaCtx.acaoFormacao,
+        entidadeFormadora: tenant?.legalName ?? "entidade formadora",
+        documentosInscricao: politica.inscricaoObrigatorios.map(labelMatriculaDoc),
+        documentosUniversais: politica.universaisObrigatorios.map(
+          (id) => UNIVERSAL_DOC_OPTIONS.find((o) => o.id === id)?.label ?? id,
+        ),
+      }).catch((err) => {
+        this.logger.warn(
+          `Email inscrição formando: ${err instanceof Error ? err.message : err}`,
+        );
       });
     }
 
     return matricula;
+  }
+
+  private async enviarEmailInscricaoFormando(params: {
+    formando: {
+      nome: string;
+      email: string | null;
+      user?: { email: string | null } | null;
+    };
+    turmaCodigo: string;
+    acao: { codigoInterno: string; titulo: string };
+    entidadeFormadora: string;
+    documentosInscricao: string[];
+    documentosUniversais: string[];
+  }) {
+    const to = resolverEmailNotificacaoFormando({
+      emailContacto: params.formando.email,
+      emailConta: params.formando.user?.email,
+    });
+    if (!to) return;
+
+    const appUrl = resolveAppPublicUrlForLinks(this.config).replace(/\/$/, "");
+    const acaoLabel = `${params.acao.codigoInterno} – ${params.acao.titulo}`;
+    const tpl = EmailTemplates.formandoInscritoAcao({
+      nomeFormando: params.formando.nome,
+      acaoLabel,
+      turmaCodigo: params.turmaCodigo,
+      entidadeFormadora: params.entidadeFormadora,
+      documentosInscricao: params.documentosInscricao,
+      documentosUniversais: params.documentosUniversais,
+      portalUrl: `${appUrl}/portal/formando`,
+    });
+    await this.mail.send({
+      to,
+      subject: tpl.subject,
+      text: tpl.text,
+      html: tpl.html,
+    });
   }
 
   async updateEstado(user: RequestUser, id: string, dto: UpdateMatriculaDto) {

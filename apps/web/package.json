@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "clean": "node -e \"require('node:fs').rmSync('.next',{recursive:true,force:true})\"",
+    "clean": "node -e \"const fs=require('node:fs'); for (const p of ['.next','node_modules/.cache']) { try { fs.rmSync(p,{recursive:true,force:true}); } catch {} }\"",
     "dev": "node ../../scripts/next-dev.mjs",
     "dev:turbo": "node ../../scripts/next-dev.mjs -- --turbo",
     "dev:clean": "npm run clean && node ../../scripts/next-dev.mjs",
@@ -23,6 +23,7 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "jsqr": "^1.4.0",
     "lucide-react": "^1.17.0",
     "next": "^15.1.6",
     "pdfjs-dist": "^4.10.38",

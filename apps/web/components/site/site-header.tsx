@@ -15,14 +15,17 @@ export function SiteHeader() {
           Planos
         </a>
 
-        <Link href="/" className="flex items-center gap-3 group justify-self-center min-w-0">
+        <Link
+          href="/"
+          className="flex items-center justify-self-center group"
+          aria-label="NexiForma"
+        >
           <NexiFormaLogoAnimated
             size={38}
             variant="reveal"
             loop
             className="group-hover:scale-105 transition-transform duration-300 drop-shadow-[0_0_16px_rgba(255,71,171,0.32)]"
           />
-          <span className="font-bold text-lg text-slate-100 tracking-tight">NexiForma</span>
         </Link>
 
         <EntrarButton />

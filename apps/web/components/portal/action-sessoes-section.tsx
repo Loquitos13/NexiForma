@@ -26,7 +26,12 @@ import {
   Select,
 } from "@/components/ui";
 
-type CronogramaRow = { id: string; versao: number; aprovadoEm: string | null };
+type CronogramaRow = {
+  id: string;
+  versao: number;
+  aprovadoEm: string | null;
+  _count?: { sessoes: number };
+};
 
 type SessaoRow = {
   id: string;
@@ -131,7 +136,10 @@ export function ActionSessoesSection({ acaoId, cursoId, canManage }: Props) {
       return;
     }
     const cronos = (await cronoRes.json()) as CronogramaRow[];
-    const ativo = cronos[0];
+    const ativo =
+      cronos.find((c) => (c._count?.sessoes ?? 0) > 0) ??
+      cronos.find((c) => c.aprovadoEm) ??
+      cronos[0];
     if (!ativo) {
       setCronogramaId("");
       setCronogramaVersao(null);

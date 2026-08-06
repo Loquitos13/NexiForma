@@ -116,6 +116,8 @@ export class FolhaPresencaHtmlExportService {
     const validadaEm = folha.validadaFormadorEm.toLocaleString("pt-PT");
     const fechadaEm = folha.fechadaEm?.toLocaleString("pt-PT") ?? validadaEm;
     const aprovadaEm = folha.aprovadaGestorEm?.toLocaleString("pt-PT") ?? null;
+    const assinaturaFormador = folha.validacaoFormadorAssinaturaNome?.trim() || null;
+    const assinaturaGestor = folha.aprovacaoAssinaturaNome?.trim() || null;
     const inicioReal = folha.sessao.iniciadaEm?.toLocaleString("pt-PT") ?? "-";
     const fimReal = folha.sessao.terminadaEm?.toLocaleString("pt-PT") ?? "-";
     const formadorPresente =
@@ -241,6 +243,26 @@ export class FolhaPresencaHtmlExportService {
   </table>
 
   <p class="sum"><strong>Resumo:</strong> ${presentes} presente(s) de ${total} formando(s) na turma.</p>
+  <div style="margin-top:16px;display:flex;gap:24px;flex-wrap:wrap">
+  ${
+    assinaturaFormador
+      ? `<div style="flex:1;min-width:180px;border-top:1px solid #ccc;padding-top:10px">
+    <p style="font-size:8pt;color:#555;margin:0 0 4px">Assinatura do formador (validação)</p>
+    <p style="font-family:'Harris Signature',cursive;font-size:22pt;margin:0">${escapeHtml(assinaturaFormador)}</p>
+    <p style="font-size:7.5pt;color:#666;margin:4px 0 0">Validada em ${escapeHtml(validadaEm)}</p>
+  </div>`
+      : ""
+  }
+  ${
+    assinaturaGestor
+      ? `<div style="flex:1;min-width:180px;border-top:1px solid #ccc;padding-top:10px">
+    <p style="font-size:8pt;color:#555;margin:0 0 4px">Assinatura do gestor / coordenador (aprovação)</p>
+    <p style="font-family:'Harris Signature',cursive;font-size:22pt;margin:0">${escapeHtml(assinaturaGestor)}</p>
+    ${aprovadaEm ? `<p style="font-size:7.5pt;color:#666;margin:4px 0 0">Aprovada em ${escapeHtml(aprovadaEm)}</p>` : ""}
+  </div>`
+      : ""
+  }
+  </div>
   <p class="foot">Documento gerado em ${escapeHtml(new Date().toLocaleString("pt-PT"))} · NexiForma</p>
 </body>
 </html>`;

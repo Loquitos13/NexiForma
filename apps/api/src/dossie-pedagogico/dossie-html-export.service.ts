@@ -45,7 +45,7 @@ export class DossieHtmlExportService {
         const sumOk = s.sumarios.some((x) => x.imutavel);
         const folha = s.folhasPresenca[0];
         const folhaOk = folha
-          ? folha.fechadaEm || folha.validadaFormadorEm
+          ? folha.fechadaEm || folha.aprovadaGestorEm
             ? "Validada"
             : "Aberta"
           : "–";

@@ -8,6 +8,7 @@ import type { ProgressoModulo } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
+import { FormadorNotificacoesService } from "../notificacoes/formador-notificacoes.service";
 
 type ScormMetadata = {
   scormVersion?: "1.2" | "2004";
@@ -27,7 +28,10 @@ const LESSON_TO_PERCENT: Record<string, number> = {
 
 @Injectable()
 export class ScormService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly formadorNotificacoes: FormadorNotificacoesService,
+  ) {}
 
   async getLaunchContext(user: RequestUser, moduloId: string, matriculaId: string) {
     const tenantId = requireTenantId(user);
@@ -117,7 +121,7 @@ export class ScormService {
     const concluidoEm = pct >= 100 ? new Date() : null;
     const metadata = { cmi, committedAt: new Date().toISOString() };
 
-    return this.prisma.progressoModulo.upsert({
+    const row = await this.prisma.progressoModulo.upsert({
       where: { matriculaId_moduloId: { matriculaId, moduloId } },
       create: {
         tenantId,
@@ -138,6 +142,10 @@ export class ScormService {
         ...(concluidoEm ? { concluidoEm } : {}),
       },
     });
+    if (concluidoEm) {
+      void this.formadorNotificacoes.notifyIfPercursoCompleto(tenantId, matriculaId);
+    }
+    return row;
   }
 
   private async assertMatriculaAccess(user: RequestUser, matriculaId: string, tenantId: string) {

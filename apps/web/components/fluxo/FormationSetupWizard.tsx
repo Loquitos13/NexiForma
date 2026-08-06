@@ -158,7 +158,7 @@ export function FormationSetupWizard() {
         <Card>
           <CardContent className="pt-6 space-y-4">
             <p className="text-sm text-slate-400">
-              Passo 1 — Define o curso (UFCD, horas e modalidade). Podes seleccionar um curso existente ou criar novo.
+              Passo 1 - Define o curso (UFCD, horas e modalidade). Podes seleccionar um curso existente ou criar novo.
             </p>
             <Select
               label="Curso existente (opcional)"
@@ -170,7 +170,7 @@ export function FormationSetupWizard() {
                 else setCursoForm({ designacao: "", codigoUfcd: "", cargaHoras: "25", modalidade: "presencial" });
               }}
             >
-              <option value="">— Criar curso novo —</option>
+              <option value="">- Criar curso novo -</option>
               {cursos.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.codigoUfcd ? `${c.codigoUfcd} – ` : ""}
@@ -220,7 +220,7 @@ export function FormationSetupWizard() {
       {step === 2 ? (
         <Card>
           <CardContent className="pt-6 space-y-4">
-            <p className="text-sm text-slate-400">Passo 2 — Cria a acção formativa ligada ao curso.</p>
+            <p className="text-sm text-slate-400">Passo 2 - Cria a acção formativa ligada ao curso.</p>
             <form onSubmit={(e) => void saveAcao(e)} className="space-y-3">
               <Input
                 label="Código interno"
@@ -267,7 +267,7 @@ export function FormationSetupWizard() {
         <Card>
           <CardContent className="pt-6 space-y-4">
             <p className="text-sm text-slate-400">
-              Passo 3 — Conteúdos LMS (opcional). Os módulos ficam associados ao curso e são
+              Passo 3 - Conteúdos LMS (opcional). Os módulos ficam associados ao curso e são
               partilhados por todas as acções desse curso. Abre o editor visual ou salta para concluir.
             </p>
             <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
@@ -302,7 +302,7 @@ export function FormationSetupWizard() {
         <Card>
           <CardContent className="pt-6 space-y-4">
             <p className="text-sm text-slate-400">
-              Passo 4 — Sessão e cronograma (opcional). Configura presenças e sala Teams na acção.
+              Passo 4 - Sessão e cronograma (opcional). Configura presenças e sala Teams na acção.
             </p>
             <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
               <input

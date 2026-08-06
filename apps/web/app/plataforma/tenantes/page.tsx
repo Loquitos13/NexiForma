@@ -154,21 +154,22 @@ export default function PlataformaTenantsPage() {
           <h1 className="text-2xl font-bold text-slate-50">Tenants</h1>
           <p className="text-sm text-slate-500 mt-1">Gestao multi-tenant · {rows?.length ?? 0} entidades</p>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex w-full flex-wrap items-stretch gap-2 sm:w-auto sm:items-center sm:justify-end">
           <button
             type="button"
             onClick={() => setCreateOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors"
+            className="inline-flex flex-1 items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors sm:flex-none"
           >
             <Plus className="h-4 w-4" />
             Novo tenant
           </button>
           <input
-            type="text"
+            type="search"
+            aria-label="Buscar tenants"
             placeholder="Buscar por nome, slug ou NIF..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="px-3.5 py-2 rounded-xl bg-[#0c0a14] border border-purple-500/15 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-purple-500/40 transition-colors w-64"
+            className="min-w-0 flex-1 px-3.5 py-2 rounded-xl bg-[#0c0a14] border border-purple-500/15 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-purple-500/40 transition-colors sm:w-64 sm:flex-none"
           />
           <button
             onClick={() => void load()}
@@ -208,7 +209,7 @@ export default function PlataformaTenantsPage() {
           <p className="text-sm text-slate-500">{search ? "Nenhum tenant encontrado." : "Sem tenants registados."}</p>
         </div>
       ) : (
-        <div className="rounded-2xl bg-[#0c0a14]/80 border border-purple-500/10 overflow-hidden">
+        <div className="table-scroll-shell rounded-2xl bg-[#0c0a14]/80 border border-purple-500/10">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-purple-500/10">

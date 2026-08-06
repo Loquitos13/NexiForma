@@ -10,6 +10,7 @@ import {
   type SupportTicketPayload,
 } from "../common/support-ticket-crypto.util";
 import type { RequestUser } from "../auth/types/access-token-payload";
+import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 import type { CreateSupportTicketDto, UpdateSupportTicketDto } from "./dto/support.dto";
 
 function ticketRef(): string {
@@ -111,7 +112,7 @@ export class SupportTicketsService {
       "Descrição:",
       payload.body,
       "",
-      `Ver em: ${this.config.get<string>("APP_PUBLIC_URL") ?? ""}/plataforma/suporte`,
+      `Ver em: ${resolveAppPublicUrlForLinks(this.config)}/plataforma/suporte`,
     ].join("\n");
 
     const html = text.replace(/\n/g, "<br>");

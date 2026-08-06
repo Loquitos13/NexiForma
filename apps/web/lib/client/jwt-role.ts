@@ -1,4 +1,4 @@
-import type { JwtKind, JwtRole } from "@nexiforma/shared";
+import type { JwtKind, JwtRole, TenantEntitlements } from "@nexiforma/shared";
 import {
   isFormando as sharedIsFormando,
   isTenantStaff,
@@ -44,9 +44,10 @@ export function isBackofficeRole(role: JwtRole | null): boolean {
 export function resolvePostLoginPath(
   accessToken: string | null | undefined,
   next: string | null | undefined,
+  entitlements?: TenantEntitlements | null,
 ): string {
   const payload = decodeJwtPayload(accessToken);
-  return resolvePath(payload?.role, payload?.kind, next);
+  return resolvePath(payload?.role, payload?.kind, next, entitlements);
 }
 
 /** Token de plataforma no portal (ou inverso) após impersonação/chave sem gravar JWT. */

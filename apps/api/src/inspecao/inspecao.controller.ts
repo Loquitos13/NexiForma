@@ -22,7 +22,7 @@ import { InspecaoPacoteService } from "./inspecao-pacote.service";
 
 @Controller("inspecao")
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles("tenant_manager")
+@Roles("tenant_manager", "coordenador_pedagogico")
 export class InspecaoController {
   private readonly logger = new Logger(InspecaoController.name);
 

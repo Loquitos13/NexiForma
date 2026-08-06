@@ -18,6 +18,8 @@ type Acao = {
   totalSessoes: number;
 };
 
+type FormadorOpt = { id: string; nomeCompleto: string };
+
 type Props = {
   cursoUuid: string;
   cursoTitulo: string;
@@ -47,11 +49,13 @@ const EMPTY_ACAO = {
   local: "",
   inscricoes: "ABERTAS" as "ABERTAS" | "FECHADAS",
   publicado: true,
+  formadorId: "",
 };
 
 export function FormacaoAcoesPanel({ cursoUuid, cursoTitulo, canManage, onChanged }: Props) {
   const [open, setOpen] = useState(false);
   const [acoes, setAcoes] = useState<Acao[]>([]);
+  const [formadores, setFormadores] = useState<FormadorOpt[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -77,6 +81,15 @@ export function FormacaoAcoesPanel({ cursoUuid, cursoTitulo, canManage, onChange
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!dialogOpen) return;
+    void bffFetch("/api/v1/formadores", { headers: { accept: "application/json" } }).then(
+      async (r) => {
+        if (r.ok) setFormadores((await r.json()) as FormadorOpt[]);
+      },
+    );
+  }, [dialogOpen]);
+
   async function createAcao(e: FormEvent) {
     e.preventDefault();
     if (!canManage) return;
@@ -89,6 +102,7 @@ export function FormacaoAcoesPanel({ cursoUuid, cursoTitulo, canManage, onChange
         titulo: form.titulo.trim() || undefined,
         codigoInterno: form.codigoInterno.trim() || undefined,
         publicado: form.publicado,
+        formadorId: form.formadorId || undefined,
         sessoes: {
           dataInicio: form.dataInicio,
           dataFim: form.dataFim,
@@ -280,6 +294,24 @@ export function FormacaoAcoesPanel({ cursoUuid, cursoTitulo, canManage, onChange
               value={form.local}
               onChange={(e) => setForm((p) => ({ ...p, local: e.target.value }))}
             />
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400">Atribuir Formador</label>
+              <select
+                className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-slate-200 text-sm"
+                value={form.formadorId}
+                onChange={(e) => setForm((p) => ({ ...p, formadorId: e.target.value }))}
+              >
+                <option value="">Sem formador (atribuir depois por sessão)</option>
+                {formadores.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.nomeCompleto}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-slate-500">
+                Opcional: aplica o mesmo formador a todas as sessões geradas.
+              </p>
+            </div>
             <label className="flex items-center gap-2 text-slate-300">
               <input
                 type="checkbox"

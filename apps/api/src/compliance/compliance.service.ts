@@ -87,6 +87,15 @@ export class ComplianceService {
       }
     }
 
+    const matriculaWhere = { tenantId, turma: { acaoFormacaoId: acaoId }, estado: "ATIVA" as const };
+    const [totalAvaliacoes, totalCertificados, totalDocumentosMatricula] = await Promise.all([
+      this.prisma.avaliacaoFormando.count({ where: { tenantId, matricula: matriculaWhere } }),
+      this.prisma.certificadoVerificacao.count({
+        where: { tenantId, revogadoEm: null, matricula: matriculaWhere },
+      }),
+      this.prisma.matriculaDocumento.count({ where: { tenantId, matricula: matriculaWhere } }),
+    ]);
+
     const checklist = buildDgertChecklist({
       tenantNif: tenant?.nif ?? null,
       curso: acao.curso,
@@ -103,6 +112,9 @@ export class ComplianceService {
       totalMatriculas,
       presencasPresentes,
       presencasTotal,
+      totalAvaliacoes,
+      totalCertificados,
+      totalDocumentosMatricula,
     });
 
     const pendencias = checklist.items
@@ -116,7 +128,7 @@ export class ComplianceService {
       }));
 
     const folhaValidada = (f: { fechadaEm: Date | null; validadaFormadorEm: Date | null }) =>
-      Boolean(f.fechadaEm || f.validadaFormadorEm);
+      Boolean(f.fechadaEm);
 
     const sessoesResumo = sessoes.map((s) => {
       const folhas = s.folhasPresenca.map((f) => {
