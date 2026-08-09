@@ -649,7 +649,7 @@ export class EmailTemplates {
         `Caro(a) ${params.gestorNome},\n\n` +
         `A proposta ${params.codigo} («${params.titulo}») foi ${label}.\n` +
         `Cliente: ${params.cliente}\n` +
-        (params.motivo ? `Motivo: ${params.motivo}\n` : "") +
+        (params.motivo ? `Nota do cliente: ${params.motivo}\n` : "") +
         `\nPortal: ${params.portalUrl}\n\n` +
         `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
@@ -662,7 +662,10 @@ export class EmailTemplates {
           emailDataTable(
             emailDataRow("Cliente", escapeHtml(params.cliente)) +
               (params.motivo
-                ? emailDataRow("Motivo", escapeHtml(params.motivo).replace(/\n/g, "<br>"))
+                ? emailDataRow(
+                    "Nota do cliente",
+                    escapeHtml(params.motivo).replace(/\n/g, "<br>"),
+                  )
                 : ""),
           ),
           params.estado === "ACEITE" ? "#0d9488" : "#dc2626",
@@ -688,7 +691,7 @@ export class EmailTemplates {
         `Caro(a) ${params.comercialNome},\n\n` +
         `A proposta ${params.codigo} («${params.titulo}») que enviou foi ${label}.\n` +
         `Cliente: ${params.cliente}\n` +
-        (params.motivo ? `Nota: ${params.motivo}\n` : "") +
+        (params.motivo ? `Nota do cliente: ${params.motivo}\n` : "") +
         `\nPortal: ${params.portalUrl}\n\n` +
         `Com os melhores cumprimentos,\nNexiForma\n`,
       html:
@@ -701,7 +704,10 @@ export class EmailTemplates {
           emailDataTable(
             emailDataRow("Cliente", escapeHtml(params.cliente)) +
               (params.motivo
-                ? emailDataRow("Nota", escapeHtml(params.motivo).replace(/\n/g, "<br>"))
+                ? emailDataRow(
+                    "Nota do cliente",
+                    escapeHtml(params.motivo).replace(/\n/g, "<br>"),
+                  )
                 : ""),
           ),
         ) +

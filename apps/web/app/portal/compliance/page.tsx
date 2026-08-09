@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ShieldCheck, Bell, Clock, CheckCircle, XCircle } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { parseApiError } from "@/lib/ui/backoffice";
-import { Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader, type Column } from "@/components/ui";
+import { Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle, PaginatedDataTable, PageHeader, type Column } from "@/components/ui";
 import { cn } from "@/lib/ui/cn";
 
 type AcaoCompliance = {
@@ -145,7 +145,7 @@ export default function CompliancePage() {
         </div>
       )}
 
-      <DataTable
+      <PaginatedDataTable
         columns={COLUMNS}
         data={data?.acoes ?? []}
         keyField="acaoId"

@@ -1,6 +1,11 @@
 import {
   formatarMotivoIsencaoAt,
 } from "@nexiforma/shared";
+import {
+  FATURA_TEMPLATE_CORES_DEFAULT,
+  faturaHeaderBackground,
+  type FaturaTemplateCores,
+} from "./fatura-template-cores.util";
 
 export type FaturaDocumentoLinha = {
   descricao: string;
@@ -12,6 +17,8 @@ export type FaturaDocumentoLinha = {
   codigoIsencaoIva: string | null;
 };
 
+export type FaturaDocumentoExemplar = "ORIGINAL" | "DUPLICADO";
+
 export type FaturaDocumentoInput = {
   tipoSerie: string;
   tipoDocumentoLabel: string;
@@ -19,6 +26,8 @@ export type FaturaDocumentoInput = {
   codigoAtcud: string;
   dataEmissao: Date;
   dataVencimento: Date | null;
+  /** ORIGINAL (cliente) | DUPLICADO (arquivo interno / tenant) */
+  exemplar?: FaturaDocumentoExemplar;
   emitente: {
     nomeEmpresa: string;
     moradaFiscal: string | null;
@@ -45,6 +54,9 @@ export type FaturaDocumentoInput = {
   hashIntegridade: string | null;
   softwareCertificado: string | null;
   qrDataUrl: string;
+  /** data-URI ou URL https do logo do tenant */
+  logoSrc?: string | null;
+  cores?: FaturaTemplateCores;
   /** Metadados internos para nome de ficheiro */
   serieCodigo: string;
   numero: number;
@@ -84,13 +96,16 @@ function linhaTotal(l: FaturaDocumentoLinha): number {
   return linhaBase(l) + l.valorIvaCentavos;
 }
 
-/** HTML imprimível alinhado ao layout roxo do portal (FaturaInlineEditor). */
+/** HTML imprimível alinhado ao layout do portal (FaturaInlineEditor). */
 export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
   const totalLiquido = input.valorCentavos + input.ivaCentavos - input.retencaoCentavos;
   const hashFooter = input.hashIntegridade?.trim().slice(0, 4) ?? "----";
   const vencimento = input.dataVencimento
     ? input.dataVencimento.toLocaleDateString("pt-PT")
     : "-";
+  const exemplar = input.exemplar === "DUPLICADO" ? "DUPLICADO" : "ORIGINAL";
+  const cores = input.cores ?? FATURA_TEMPLATE_CORES_DEFAULT;
+  const headerBg = faturaHeaderBackground(cores);
 
   const isencoesUsadas = new Map<string, number>();
   let refCounter = 0;
@@ -179,209 +194,247 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
       : "",
   ].join("");
 
+  const logoHtml =
+    input.logoSrc &&
+    (input.logoSrc.startsWith("data:") ||
+      input.logoSrc.startsWith("http://") ||
+      input.logoSrc.startsWith("https://"))
+      ? `<img class="tenant-logo" src="${input.logoSrc}" alt="Logo"/>`
+      : `<div class="tenant-logo-placeholder"></div>`;
+
   return `<!DOCTYPE html>
 <html lang="pt">
 <head>
   <meta charset="utf-8"/>
   <title>${escapeHtml(input.tipoDocumentoLabel)} Nº ${escapeHtml(input.numeroDocumento)}</title>
   <style>
-    @page { size: A4; margin: 10mm; }
+    @page { size: A4; margin: 8mm; }
     @media print { .no-print { display: none !important; } }
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; border-radius: 0 !important; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
     body {
       font-family: "Segoe UI", system-ui, sans-serif;
       color: #171717;
-      margin: 0;
-      padding: 16px;
       background: #fff;
-      font-size: 11pt;
-      line-height: 1.45;
+      font-size: 10.5pt;
+      line-height: 1.4;
     }
     .doc {
-      max-width: 820px;
-      margin: 0 auto;
-      border: 1px solid #ddd6fe;
-      border-radius: 16px;
+      width: 100%;
+      /* Altura útil A4 com margem 8mm (297 − 16) */
+      min-height: 281mm;
+      border: 1px solid ${cores.border};
+      display: flex;
+      flex-direction: column;
       overflow: hidden;
     }
-    .header {
-      background: linear-gradient(135deg, #6d28d9 0%, #9333ea 45%, #6366f1 100%);
-      color: #fff;
-      padding: 24px 28px;
+    .brand-row {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
+      align-items: center;
       gap: 16px;
+      padding: 14px 18px;
+      background: #fff;
+      border-bottom: 1px solid ${cores.border};
+      flex-shrink: 0;
+    }
+    .tenant-logo {
+      max-height: 64px;
+      max-width: 200px;
+      object-fit: contain;
+      background: transparent !important;
+      display: block;
+    }
+    .tenant-logo-placeholder { min-height: 48px; min-width: 100px; }
+    .brand-qr {
+      width: 120px;
+      height: 120px;
+      background: #fff;
+      padding: 3px;
+      flex-shrink: 0;
+      border: 1px solid ${cores.border};
+    }
+    .header {
+      background: ${headerBg};
+      color: #fff;
+      padding: 18px 20px;
+      flex-shrink: 0;
     }
     .header-kicker {
       font-size: 11px;
       font-weight: 600;
-      letter-spacing: 0.2em;
+      letter-spacing: 0.18em;
       text-transform: uppercase;
-      opacity: 0.9;
+      opacity: 0.92;
       margin: 0;
     }
     .header-num {
-      font-size: 2rem;
+      font-size: 1.85rem;
       font-weight: 700;
       margin: 4px 0 0;
-    }
-    .header-atcud {
-      font-family: ui-monospace, monospace;
-      font-size: 0.875rem;
-      opacity: 0.85;
-      margin: 4px 0 0;
-    }
-    .header-qr {
-      width: 88px;
-      height: 88px;
-      border-radius: 8px;
-      background: #fff;
-      padding: 4px;
-      flex-shrink: 0;
+      letter-spacing: -0.01em;
     }
     .meta-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       border-bottom: 1px solid #e5e5e5;
+      flex-shrink: 0;
     }
     .meta-cell {
-      padding: 12px 16px;
+      padding: 12px 14px;
       border-right: 1px solid #e5e5e5;
     }
     .meta-cell:last-child { border-right: none; }
     .meta-label {
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: #7c3aed;
+      color: ${cores.accent};
       margin: 0;
     }
     .meta-value {
-      font-size: 0.875rem;
+      font-size: 10.5pt;
       font-weight: 500;
-      margin: 2px 0 0;
+      margin: 4px 0 0;
+      word-break: break-word;
+    }
+    .body-grow {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
     }
     .parties {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      padding: 20px 24px;
+      gap: 12px;
+      padding: 14px 16px;
+      flex-shrink: 0;
     }
     .party {
-      background: #f5f3ff;
-      border: 1px solid #ddd6fe;
-      border-radius: 12px;
-      padding: 16px;
+      background: ${cores.surface};
+      border: 1px solid ${cores.border};
+      padding: 14px 16px;
     }
     .party-label {
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      color: #7c3aed;
+      color: ${cores.accent};
       margin: 0 0 8px;
     }
-    .party p { margin: 4px 0; font-size: 0.875rem; }
-    .party .name { font-weight: 600; }
+    .party p { margin: 4px 0; font-size: 10pt; }
+    .party .name { font-weight: 600; font-size: 11pt; }
     .muted { color: #6b7280; }
-    .mono { font-family: ui-monospace, monospace; font-size: 0.75rem; }
-    .articles { padding: 0 24px 16px; }
+    .mono { font-family: ui-monospace, monospace; font-size: 9pt; }
+    .articles {
+      padding: 4px 16px 12px;
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+    }
     .section-label {
-      font-size: 12px;
+      font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: #6d28d9;
+      color: ${cores.headerFrom};
       margin: 0 0 8px;
     }
     table.lines {
       width: 100%;
       border-collapse: collapse;
-      border: 1px solid #ede9fe;
-      border-radius: 12px;
-      overflow: hidden;
-      font-size: 0.875rem;
+      border: 1px solid ${cores.border};
+      font-size: 10pt;
+      flex: 1 1 auto;
     }
     table.lines thead tr {
-      background: #7c3aed;
+      background: ${cores.accent};
       color: #fff;
       text-align: left;
     }
     table.lines th {
       padding: 10px 8px;
-      font-size: 10px;
+      font-size: 9px;
       text-transform: uppercase;
       font-weight: 700;
     }
     table.lines td {
       padding: 10px 8px;
-      border-top: 1px solid #f5f3ff;
+      border-top: 1px solid ${cores.surface};
       vertical-align: top;
     }
     td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
     td.bold { font-weight: 600; }
     .line-desc { font-weight: 500; }
-    .line-motivo { font-size: 0.75rem; color: #7c3aed; margin-top: 4px; font-weight: 500; }
+    .line-motivo { font-size: 9pt; color: ${cores.accent}; margin-top: 3px; font-weight: 500; }
     .iva-box {
-      margin: 0 24px 16px;
-      padding: 12px 16px;
-      background: #f5f3ff;
-      border: 1px solid #ddd6fe;
-      border-radius: 12px;
+      margin: 0 16px 12px;
+      padding: 12px 14px;
+      background: ${cores.surface};
+      border: 1px solid ${cores.border};
+      flex-shrink: 0;
     }
-    .iva-list { margin: 0; padding-left: 0; list-style: none; font-size: 0.875rem; }
+    .iva-list { margin: 0; padding-left: 0; list-style: none; font-size: 10pt; }
     .iva-list li { margin: 4px 0; }
-    .iva-ref { font-weight: 600; color: #7c3aed; }
+    .iva-ref { font-weight: 600; color: ${cores.accent}; }
     .footer-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      border-top: 1px solid #ede9fe;
-      padding: 20px 24px;
+      gap: 14px;
+      border-top: 1px solid ${cores.border};
+      padding: 16px;
+      align-items: start;
+      flex-shrink: 0;
+      margin-top: auto;
     }
     .summary {
       background: #fafafa;
-      border: 1px solid #ddd6fe;
-      border-radius: 12px;
-      padding: 16px;
+      border: 1px solid ${cores.border};
+      padding: 14px 16px;
       margin-left: auto;
-      max-width: 360px;
+      max-width: 340px;
+      width: 100%;
     }
     .summary-row {
       display: flex;
       justify-content: space-between;
-      gap: 16px;
-      font-size: 0.875rem;
+      gap: 14px;
+      font-size: 10.5pt;
       margin-bottom: 8px;
     }
     .summary-total {
       display: flex;
       justify-content: space-between;
-      gap: 16px;
-      border-top: 1px solid #ddd6fe;
-      padding-top: 12px;
-      margin-top: 8px;
+      gap: 14px;
+      border-top: 1px solid ${cores.border};
+      padding-top: 10px;
+      margin-top: 6px;
       font-weight: 700;
-      color: #6d28d9;
+      color: ${cores.headerFrom};
     }
-    .summary-total .amount { font-size: 1.25rem; }
+    .summary-total .amount { font-size: 1.35rem; }
     .legal-footer {
-      border-top: 1px solid #ede9fe;
-      background: rgba(245, 243, 255, 0.4);
-      padding: 10px 24px;
+      border-top: 1px solid ${cores.border};
+      background: ${cores.surface};
+      padding: 10px 16px;
       text-align: center;
-      font-size: 10px;
+      font-size: 9px;
       color: #6b7280;
+      flex-shrink: 0;
     }
-    .no-print { margin-bottom: 12px; }
+    .no-print { margin: 8px; }
     .no-print button {
-      background: #7c3aed;
+      background: ${cores.accent};
       color: #fff;
       border: none;
       padding: 8px 16px;
-      border-radius: 8px;
       cursor: pointer;
       font-size: 0.875rem;
     }
@@ -390,13 +443,13 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
 <body>
   <div class="no-print"><button type="button" onclick="window.print()">Imprimir</button></div>
   <article class="doc">
+    <div class="brand-row">
+      ${logoHtml}
+      <img class="brand-qr" src="${input.qrDataUrl}" alt="QR Code AT"/>
+    </div>
     <header class="header">
-      <div>
-        <p class="header-kicker">${escapeHtml(input.tipoDocumentoLabel)} ORIGINAL</p>
-        <h1 class="header-num">Nº ${escapeHtml(input.numeroDocumento)}</h1>
-        <p class="header-atcud">${escapeHtml(input.codigoAtcud)}</p>
-      </div>
-      <img class="header-qr" src="${input.qrDataUrl}" alt="QR Code AT"/>
+      <p class="header-kicker">${escapeHtml(input.tipoDocumentoLabel)} ${exemplar}</p>
+      <h1 class="header-num">Nº ${escapeHtml(input.numeroDocumento)}</h1>
     </header>
 
     <div class="meta-grid">
@@ -418,65 +471,67 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
       </div>
     </div>
 
-    <div class="parties">
-      <div class="party">
-        <p class="party-label">De</p>
-        <p class="name">${escapeHtml(input.emitente.nomeEmpresa)}</p>
-        ${input.emitente.moradaFiscal ? `<p class="muted">${escapeHtml(input.emitente.moradaFiscal).replace(/\n/g, "<br/>")}</p>` : ""}
-        <p><span class="muted">NIF </span>${escapeHtml(input.emitente.nifEmitente)}</p>
-        ${emitenteExtras}
-      </div>
-      <div class="party">
-        <p class="party-label">Para</p>
-        <p class="name">${escapeHtml(input.destinatario.nome)}</p>
-        ${input.destinatario.morada ? `<p class="muted">${escapeHtml(input.destinatario.morada).replace(/\n/g, "<br/>")}</p>` : ""}
-        <p><span class="muted">NIF </span>${escapeHtml(input.destinatario.nif)}</p>
-        ${input.destinatario.email ? `<p>${escapeHtml(input.destinatario.email)}</p>` : ""}
-      </div>
-    </div>
-
-    <div class="parties moradas-transporte">
-      <div class="party">
-        <p class="party-label">Morada de carga</p>
-        <p class="muted">${escapeHtml(input.moradaCarga).replace(/\n/g, "<br/>")}</p>
-      </div>
-      <div class="party">
-        <p class="party-label">Morada de descarga</p>
-        <p class="muted">${escapeHtml(input.moradaDescarga).replace(/\n/g, "<br/>")}</p>
-      </div>
-    </div>
-
-    <div class="articles">
-      <p class="section-label">Lista de Artigos</p>
-      <table class="lines">
-        <thead>
-          <tr>
-            <th>Descrição do artigo</th>
-            <th style="width:56px;text-align:right">Quant.</th>
-            <th style="width:72px;text-align:right">Preço</th>
-            <th style="width:56px;text-align:right">Desc.</th>
-            <th style="width:64px;text-align:right">IVA (%)</th>
-            <th style="width:80px;text-align:right">Total</th>
-          </tr>
-        </thead>
-        <tbody>${linhasHtml}</tbody>
-      </table>
-    </div>
-
-    ${isencoesHtml}
-
-    <div class="footer-grid">
-      ${input.notas ? `<p class="muted"><strong>Notas:</strong> ${escapeHtml(input.notas)}</p>` : "<div></div>"}
-      <div class="summary">
-        <p class="section-label">Resumo</p>
-        <div class="summary-row">
-          <span class="muted">Subtotal da Fatura</span>
-          <span>${fmtEuro(input.valorCentavos)} €</span>
+    <div class="body-grow">
+      <div class="parties">
+        <div class="party">
+          <p class="party-label">De</p>
+          <p class="name">${escapeHtml(input.emitente.nomeEmpresa)}</p>
+          ${input.emitente.moradaFiscal ? `<p class="muted">${escapeHtml(input.emitente.moradaFiscal).replace(/\n/g, "<br/>")}</p>` : ""}
+          <p><span class="muted">NIF </span>${escapeHtml(input.emitente.nifEmitente)}</p>
+          ${emitenteExtras}
         </div>
-        ${resumoIvaHtml}
-        <div class="summary-total">
-          <span>Total da Fatura</span>
-          <span class="amount">${fmtEuro(totalLiquido)} €</span>
+        <div class="party">
+          <p class="party-label">Para</p>
+          <p class="name">${escapeHtml(input.destinatario.nome)}</p>
+          ${input.destinatario.morada ? `<p class="muted">${escapeHtml(input.destinatario.morada).replace(/\n/g, "<br/>")}</p>` : ""}
+          <p><span class="muted">NIF </span>${escapeHtml(input.destinatario.nif)}</p>
+          ${input.destinatario.email ? `<p>${escapeHtml(input.destinatario.email)}</p>` : ""}
+        </div>
+      </div>
+
+      <div class="parties moradas-transporte">
+        <div class="party">
+          <p class="party-label">Morada de carga</p>
+          <p class="muted">${escapeHtml(input.moradaCarga).replace(/\n/g, "<br/>")}</p>
+        </div>
+        <div class="party">
+          <p class="party-label">Morada de descarga</p>
+          <p class="muted">${escapeHtml(input.moradaDescarga).replace(/\n/g, "<br/>")}</p>
+        </div>
+      </div>
+
+      <div class="articles">
+        <p class="section-label">Lista de Artigos</p>
+        <table class="lines">
+          <thead>
+            <tr>
+              <th>Descrição do artigo</th>
+              <th style="width:56px;text-align:right">Quant.</th>
+              <th style="width:72px;text-align:right">Preço</th>
+              <th style="width:56px;text-align:right">Desc.</th>
+              <th style="width:64px;text-align:right">IVA (%)</th>
+              <th style="width:80px;text-align:right">Total</th>
+            </tr>
+          </thead>
+          <tbody>${linhasHtml}</tbody>
+        </table>
+      </div>
+
+      ${isencoesHtml}
+
+      <div class="footer-grid">
+        ${input.notas ? `<p class="muted"><strong>Notas:</strong> ${escapeHtml(input.notas)}</p>` : "<div></div>"}
+        <div class="summary">
+          <p class="section-label">Resumo</p>
+          <div class="summary-row">
+            <span class="muted">Subtotal da Fatura</span>
+            <span>${fmtEuro(input.valorCentavos)} €</span>
+          </div>
+          ${resumoIvaHtml}
+          <div class="summary-total">
+            <span>Total da Fatura</span>
+            <span class="amount">${fmtEuro(totalLiquido)} €</span>
+          </div>
         </div>
       </div>
     </div>
@@ -489,6 +544,12 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
 </html>`;
 }
 
-export function faturaDocumentoFilename(tipoSerie: string, serieCodigo: string, numero: number): string {
-  return `fatura-${tipoSerie.toLowerCase()}-${serieCodigo}-${numero}`;
+export function faturaDocumentoFilename(
+  tipoSerie: string,
+  serieCodigo: string,
+  numero: number,
+  exemplar: FaturaDocumentoExemplar = "ORIGINAL",
+): string {
+  const base = `fatura-${tipoSerie.toLowerCase()}-${serieCodigo}-${numero}`;
+  return exemplar === "DUPLICADO" ? `${base}-duplicado` : base;
 }

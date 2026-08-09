@@ -6,6 +6,7 @@ import { ArrowLeft, Save } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
+import { roleSatisfies } from "@nexiforma/shared";
 import {
   configToPadroesForm,
   PropostaConteudoFields,
@@ -34,7 +35,8 @@ type Config = {
 };
 
 export default function PropostasConfigPage() {
-  const { canManage } = useTenantRole();
+  const { role } = useTenantRole();
+  const canEditModeloPropostas = roleSatisfies(role, "coordenador_comercial");
   const [conteudo, setConteudo] = useState<PropostaConteudoForm | null>(null);
   const [validadeDias, setValidadeDias] = useState("30");
   const [nomeContacto, setNomeContacto] = useState("");
@@ -108,10 +110,15 @@ export default function PropostasConfigPage() {
     await load();
   }
 
-  if (!canManage) {
+  if (!canEditModeloPropostas) {
     return (
       <div className="max-w-3xl">
-        <p className="text-sm text-slate-400">Apenas o gestor pode configurar o modelo de propostas.</p>
+        <p className="text-sm text-slate-400">
+          Apenas o gestor ou o coordenador comercial podem configurar o modelo de propostas.
+        </p>
+        <Link href="/portal/propostas" className="mt-3 inline-block text-sm text-blue-400 hover:underline">
+          Voltar a Propostas
+        </Link>
       </div>
     );
   }
@@ -120,7 +127,7 @@ export default function PropostasConfigPage() {
     <div className="max-w-3xl space-y-5">
       <PageHeader
         title="Modelo de propostas comerciais"
-        description="Textos padrão da empresa usados em todas as propostas. Os comerciais podem personalizar por proposta."
+        description="Textos modelo da empresa. Na personalização de cada proposta, use «Usar padrão» para os copiar - só o texto gravado na proposta entra no PDF."
         actions={
           <Link href="/portal/propostas">
             <Button size="sm" variant="secondary">

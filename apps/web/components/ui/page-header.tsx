@@ -16,18 +16,24 @@ export function PageHeader({ title, description, actions, className }: PageHeade
   return (
     <div
       className={cn(
-        "mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between",
+        "mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-start sm:justify-between sm:gap-4",
         className,
       )}
     >
-      <div className="min-w-0">
-        <h1 className="text-xl font-bold tracking-tight text-slate-100 sm:text-2xl">{title}</h1>
+      <div className="min-w-0 flex-1">
+        <h1 className="text-[1.35rem] font-bold tracking-tight text-slate-100 leading-tight sm:text-2xl">
+          {title}
+        </h1>
         {description && (
-          <p className="mt-1 text-sm text-slate-400">{description}</p>
+          <p className="mt-1.5 max-w-3xl text-[0.9375rem] leading-relaxed text-slate-400 sm:text-sm">
+            {description}
+          </p>
         )}
       </div>
       {actions && (
-        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">{actions}</div>
+        <div className="flex w-full flex-wrap items-stretch gap-2 sm:w-auto sm:shrink-0 sm:items-center">
+          {actions}
+        </div>
       )}
     </div>
   );

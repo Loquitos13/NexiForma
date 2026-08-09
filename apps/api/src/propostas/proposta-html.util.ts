@@ -19,7 +19,7 @@ function fmtEuro(cents: number, moeda = "EUR"): string {
   );
 }
 
-/** Converte texto com linhas `- item` ou `• item` em HTML. */
+/** Converte texto com linhas `- item` / `• item` / `– item` em HTML com lista. */
 export function renderTextoPropostaHtml(text: string | null | undefined): string {
   if (!text?.trim()) return "";
   const lines = text.replace(/\r\n/g, "\n").split("\n");
@@ -28,20 +28,24 @@ export function renderTextoPropostaHtml(text: string | null | undefined): string
 
   const flushList = () => {
     if (listItems.length) {
-      parts.push(`<ul>${listItems.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul>`);
+      parts.push(
+        `<ul class="bullets">${listItems.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul>`,
+      );
       listItems = [];
     }
   };
 
   for (const raw of lines) {
-    const line = raw.trim();
+    // Mantém indentação relativa, mas remove espaços finais.
+    const line = raw.replace(/\s+$/g, "").replace(/^\s+/, "");
     if (!line) {
       flushList();
       continue;
     }
-    const bullet = line.match(/^[-•*✔✓]\s*(.+)$/);
-    if (bullet) {
-      listItems.push(bullet[1]!);
+    // Bullet no início: -, –, -, •, *, etc. (com ou sem espaço a seguir).
+    const bullet = line.match(/^[-–-•*✔✓∙·]\s*(.+)$/u);
+    if (bullet?.[1]?.trim()) {
+      listItems.push(bullet[1].trim());
       continue;
     }
     flushList();
@@ -150,9 +154,13 @@ export type PropostaHtmlInput = {
   linhas?: PropostaHtmlLinha[];
   conteudo: PropostaConteudoCampos;
   config: ConfigPropostaTemplate;
+  /** data-URI ou URL https do logo do tenant (opcional). */
+  logoSrc?: string | null;
 };
 
 export function buildPropostaHtmlDocument(row: PropostaHtmlInput): { html: string; filename: string } {
+  // Só campos preenchidos na proposta entram no documento; vazios são omitidos
+  // e a numeração é recalculada (buildSectionsNumeradas).
   const resolvido = resolverConteudoPropostaDocumento(row.conteudo, row.config);
   const { before, after, investimentoNum } = buildSectionsNumeradas(
     resolvido,
@@ -231,6 +239,8 @@ export function buildPropostaHtmlDocument(row: PropostaHtmlInput): { html: strin
     * { box-sizing: border-box; }
     body { font-family: "Segoe UI", Georgia, serif; color: #1e293b; margin: 0; padding: 2rem; line-height: 1.55; font-size: 11pt; max-width: 820px; }
     .cover { border-bottom: 3px solid #1e40af; padding-bottom: 1.25rem; margin-bottom: 1.5rem; }
+    .cover-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.75rem; }
+    .tenant-logo { max-height: 64px; max-width: 180px; object-fit: contain; }
     .cover h1 { font-size: 1.65rem; margin: 0 0 0.35rem; color: #1e3a8a; letter-spacing: 0.02em; text-transform: uppercase; }
     .cover .subtitle { font-size: 1.05rem; color: #334155; margin: 0 0 1rem; font-weight: 500; }
     .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size: 0.92rem; }
@@ -241,8 +251,22 @@ export function buildPropostaHtmlDocument(row: PropostaHtmlInput): { html: strin
     .sec h2 { font-size: 1rem; color: #1e40af; margin: 0 0 0.6rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.35rem; }
     .sec h2 .num { color: #64748b; font-weight: 600; }
     .sec .body p { margin: 0.35rem 0; }
-    .sec .body ul { margin: 0.4rem 0 0.6rem 1.1rem; padding: 0; }
-    .sec .body li { margin: 0.25rem 0; }
+    .sec .body ul.bullets,
+    .apresentacao ul.bullets {
+      margin: 0.45rem 0 0.7rem;
+      padding-left: 1.35rem;
+      list-style-type: disc;
+      list-style-position: outside;
+    }
+    .sec .body ul.bullets li,
+    .apresentacao ul.bullets li {
+      margin: 0.28rem 0;
+      display: list-item;
+    }
+    .sec .body ul.bullets li::marker,
+    .apresentacao ul.bullets li::marker {
+      color: #1e40af;
+    }
     table.inv { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 10.5pt; }
     table.inv th, table.inv td { border: 1px solid #cbd5e1; padding: 0.5rem 0.65rem; text-align: left; }
     table.inv th { background: #f1f5f9; font-weight: 600; }
@@ -261,8 +285,20 @@ export function buildPropostaHtmlDocument(row: PropostaHtmlInput): { html: strin
   <div class="no-print"><p style="font-size:0.9rem;color:#64748b">Use Ctrl+P / Cmd+P para imprimir ou guardar PDF.</p></div>
 
   <header class="cover">
-    <h1>Proposta Comercial</h1>
-    ${resolvido.subtitulo ? `<p class="subtitle">${escapeHtml(resolvido.subtitulo)}</p>` : `<p class="subtitle">${escapeHtml(row.titulo)}</p>`}
+    <div class="cover-top">
+      <div>
+        <h1>Proposta Comercial</h1>
+        ${resolvido.subtitulo ? `<p class="subtitle">${escapeHtml(resolvido.subtitulo)}</p>` : `<p class="subtitle">${escapeHtml(row.titulo)}</p>`}
+      </div>
+      ${
+        row.logoSrc &&
+        (row.logoSrc.startsWith("data:") ||
+          row.logoSrc.startsWith("http://") ||
+          row.logoSrc.startsWith("https://"))
+          ? `<img class="tenant-logo" src="${row.logoSrc}" alt="Logo"/>`
+          : ""
+      }
+    </div>
     <dl class="meta-grid">
       <div><dt>Data</dt><dd>${escapeHtml(dataProposta)}</dd></div>
       <div><dt>Código</dt><dd>${escapeHtml(row.codigo)}</dd></div>

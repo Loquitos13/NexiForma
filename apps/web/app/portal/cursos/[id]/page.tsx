@@ -16,7 +16,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  DataTable,
+  PaginatedDataTable,
   estadoBadge,
   PageHeader,
   type Column,
@@ -241,7 +241,7 @@ export default function CursoDetailPage() {
               ) : null}
             </CardHeader>
             <CardContent>
-              <DataTable
+              <PaginatedDataTable
                 columns={ACao_COLS}
                 data={curso.acoesFormacao}
                 keyField="id"

@@ -123,8 +123,8 @@ export async function resolveUpstreamAuthorization(incoming: Request): Promise<s
 
 export type ProxyAuthOptions = {
   nestPath: `/${string}`;
-  method: "GET" | "POST";
-  /** Corpo JSON para POST */
+  method: "GET" | "POST" | "PATCH" | "PUT";
+  /** Corpo JSON (POST/PATCH/PUT) */
   body?: unknown;
   /** Pedido do browser (cookies + Authorization) */
   incoming: Request;
@@ -151,18 +151,24 @@ export function resolveIncomingAppPublicUrl(req: Request): string | undefined {
 }
 
 /**
- * Encaminha para `GET` ou `POST` na API Nest e devolve `NextResponse` com cookies reescritas.
+ * Encaminha para a API Nest e devolve `NextResponse` com cookies reescritas.
+ * Suporta GET/POST/PATCH/PUT com corpo JSON quando aplicável.
  */
 export async function proxyAuthToNest(opts: ProxyAuthOptions): Promise<NextResponse> {
   const base = getNexiBackendBaseUrl();
   const url = `${base}${opts.nestPath}`;
+  const hasJsonBody =
+    opts.body !== undefined &&
+    (opts.method === "POST" || opts.method === "PATCH" || opts.method === "PUT");
 
   const headers = new Headers();
   const cookie = opts.incoming.headers.get("cookie");
   if (cookie) {
     headers.set("cookie", cookie);
   }
-  const authz = opts.incoming.headers.get("authorization");
+  const authz =
+    opts.incoming.headers.get("authorization") ??
+    (await resolveUpstreamAuthorization(opts.incoming));
   if (authz) {
     headers.set("authorization", authz);
   }
@@ -179,7 +185,7 @@ export async function proxyAuthToNest(opts: ProxyAuthOptions): Promise<NextRespo
   if (opts.incoming.headers.get("origin")) {
     headers.set("origin", opts.incoming.headers.get("origin")!);
   }
-  if (opts.method === "POST" && opts.body !== undefined) {
+  if (hasJsonBody) {
     headers.set("content-type", "application/json");
   }
 
@@ -188,10 +194,7 @@ export async function proxyAuthToNest(opts: ProxyAuthOptions): Promise<NextRespo
     upstream = await fetch(url, {
       method: opts.method,
       headers,
-      body:
-        opts.method === "POST" && opts.body !== undefined
-          ? JSON.stringify(opts.body)
-          : undefined,
+      body: hasJsonBody ? JSON.stringify(opts.body) : undefined,
       cache: "no-store",
       signal: AbortSignal.timeout(30_000),
     });

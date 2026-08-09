@@ -114,16 +114,18 @@ export class SocialAuthController {
     return this.social.exchangeSession(token, res);
   }
 
+  /** @deprecated Preferir control-plane - só superadmin. */
   @Get("enterprise/social-login")
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("tenant_manager")
+  @Roles("super_admin")
   managerConfig(@CurrentUser() user: RequestUser) {
     return this.social.getManagerConfig(user);
   }
 
+  /** @deprecated Preferir control-plane - só superadmin. */
   @Patch("enterprise/social-login")
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("tenant_manager")
+  @Roles("super_admin")
   updateConfig(
     @CurrentUser() user: RequestUser,
     @Body() body: { google?: boolean; microsoft?: boolean },

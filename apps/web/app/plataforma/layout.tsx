@@ -3,13 +3,15 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Menu } from "lucide-react";
 import { NexiFormaLogoAnimated } from "@/components/brand/NexiFormaLogoAnimated";
+import { NavAtmosphere } from "@/components/portal/nav-atmosphere";
+import { MobileNavToggle } from "@/components/portal/mobile-nav-toggle";
 import { canAccessPlatformArea } from "@nexiforma/shared";
 import { getAccessToken } from "@/lib/client/access-token";
 import { decodeJwtPayload } from "@/lib/client/jwt-role";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { markSessionExpired } from "@/lib/client/session-lifecycle";
+import { publishMobileNavOpen } from "@/lib/client/mobile-nav";
 import { cn } from "@/lib/ui/cn";
 import { UserSessionBar } from "@/components/site/user-session-bar";
 import { PlataformaShellSkeleton } from "@/components/plataforma/plataforma-shell-skeleton";
@@ -62,6 +64,11 @@ export default function PlataformaLayout({ children }: { children: React.ReactNo
     setMobileNavOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    publishMobileNavOpen(mobileNavOpen);
+    return () => publishMobileNavOpen(false);
+  }, [mobileNavOpen]);
+
   if (sessionExpired) {
     return null;
   }
@@ -71,7 +78,8 @@ export default function PlataformaLayout({ children }: { children: React.ReactNo
   }
 
   return (
-    <div className="portal-app-shell flex-row bg-[#0c0a14]">
+    <div className="portal-app-shell ui-shell-atmosphere-host flex-row">
+      <NavAtmosphere variant="shell" />
       {mobileNavOpen ? (
         <button
           type="button"
@@ -82,28 +90,35 @@ export default function PlataformaLayout({ children }: { children: React.ReactNo
       ) : null}
       <aside
         className={cn(
-          "portal-fixed-drawer flex w-[min(88vw,17rem)] flex-col border-r border-purple-500/15 bg-[#0c0a14]/98 transition-transform duration-300 lg:h-full lg:w-56 lg:flex-shrink-0",
+          "portal-fixed-drawer ui-themed-sidebar ui-nav-atmosphere-host flex w-[min(88vw,17rem)] flex-col border-r transition-transform duration-300 lg:h-full lg:w-56 lg:flex-shrink-0",
           mobileNavOpen ? "translate-x-0" : "max-lg:-translate-x-full",
         )}
         aria-hidden={drawerHidden}
         inert={drawerHidden ? true : undefined}
       >
-        <div className="px-4 py-5">
-          <div className="flex items-center gap-2.5">
+        <NavAtmosphere />
+        <div className="ui-nav-brand-slot relative z-[1] flex items-center gap-2 px-4 py-5">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
             <NexiFormaLogoAnimated
               size={28}
               variant="reveal"
               loop
-              className="shrink-0 drop-shadow-[0_0_12px_rgba(255,71,171,0.3)]"
+              className="shrink-0"
             />
             <div className="min-w-0">
-              <div className="truncate text-sm font-bold text-purple-100">Control Plane</div>
-              <div className="text-[10px] text-purple-400/60">NexiForma</div>
+              <div className="ui-nav-brand truncate text-sm font-bold">Control Plane</div>
+              <div className="ui-nav-brand-sub text-[10px]">Superadmin</div>
             </div>
           </div>
+          {mobileNavOpen ? (
+            <MobileNavToggle
+              variant="close"
+              onClick={() => setMobileNavOpen(false)}
+            />
+          ) : null}
         </div>
 
-        <nav aria-label="Menu da plataforma" className="flex-1 overflow-y-auto px-2 pb-4">
+        <nav aria-label="Menu da plataforma" className="ui-themed-scroll relative z-[1] flex-1 px-2 pb-4">
           {NAV.map((item) => {
             const active =
               item.href === "/plataforma" ? pathname === "/plataforma" : pathname.startsWith(item.href);
@@ -114,12 +129,15 @@ export default function PlataformaLayout({ children }: { children: React.ReactNo
                 onClick={() => setMobileNavOpen(false)}
                 className={cn(
                   "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
-                  active
-                    ? "bg-purple-500/20 font-semibold text-purple-200"
-                    : "text-slate-400 hover:bg-white/5 hover:text-slate-200",
+                  active ? "ui-nav-item-active font-semibold" : "ui-nav-item",
                 )}
               >
-                <span className={cn("h-1.5 w-1.5 rounded-full", active ? "bg-purple-400" : "bg-slate-700")} />
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 rounded-full",
+                    active ? "ui-nav-dot-active" : "ui-nav-dot",
+                  )}
+                />
                 {item.label}
               </Link>
             );
@@ -127,21 +145,18 @@ export default function PlataformaLayout({ children }: { children: React.ReactNo
         </nav>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="portal-mobile-bar flex items-center gap-2 border-b border-purple-500/15 bg-[#0c0a14]/95 px-3 py-2 lg:hidden">
-          <button
-            type="button"
-            onClick={() => setMobileNavOpen(true)}
-            className="rounded-lg p-2 text-purple-200 hover:bg-white/5"
-            aria-label="Abrir menu"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-          <span className="truncate text-sm font-semibold text-purple-100">Control Plane</span>
+      <div className="flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col overflow-hidden">
+        <div className="ui-portal-top-cluster shrink-0">
+          <div className="portal-mobile-bar ui-themed-topbar relative z-[1] flex items-center gap-2 border-b bg-transparent px-3 py-2 lg:hidden">
+            <MobileNavToggle variant="open" onClick={() => setMobileNavOpen(true)} />
+            <span className="ui-nav-brand truncate text-sm font-semibold">Control Plane</span>
+          </div>
+          <UserSessionBar area="plataforma" embeddedInAtmosphere />
         </div>
-        <UserSessionBar area="plataforma" />
         <main id="main-content" className="portal-main portal-scroll-main">
-          <div className="mx-auto max-w-6xl px-3 py-4 sm:px-6 sm:py-6">{children}</div>
+          <div className="mx-auto w-full max-w-6xl px-3 py-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-6">
+            {children}
+          </div>
         </main>
       </div>
     </div>

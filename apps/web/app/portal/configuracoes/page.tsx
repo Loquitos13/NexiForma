@@ -4,9 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
-import { SocialLoginSettings } from "@/components/settings/social-login-settings";
 import { DocumentosPoliticaSettings } from "@/components/settings/documentos-politica-settings";
 import { DgertRequisitoBanner, DgertTarget } from "@/components/portal/dgert-requisito-banner";
+import { publicTenantLogoUrl } from "@/lib/client/tenant-logo-url";
 
 type TenantInfo = {
   slug: string;
@@ -14,16 +14,6 @@ type TenantInfo = {
   nif: string;
   status: string;
   metadata: Record<string, unknown> | null;
-};
-
-type CronogramaConfig = {
-  local?: string;
-  horarioInicio?: string;
-  horarioFim?: string;
-  horarioSabadoInicio?: string;
-  horarioSabadoFim?: string;
-  funcionamento?: "laboral" | "pos_laboral" | "misto";
-  metodologias?: string[];
 };
 
 type Branding = {
@@ -34,7 +24,6 @@ type Branding = {
   supportEmail?: string;
   supportPhone?: string;
   footerText?: string;
-  cronograma?: CronogramaConfig;
 };
 
 type PlanInfo = {
@@ -56,16 +45,8 @@ export default function ConfiguracoesPage() {
     "481 - Ciencias Informaticas",
     "482 - Informatica na Optica do Utilizador",
   ]);
-  const [feriados, setFeriados] = useState<string[]>([
-    "2026-01-01",
-    "2026-04-25",
-    "2026-05-01",
-    "2026-06-10",
-    "2026-08-15",
-    "2026-12-25",
-  ]);
   const [novaArea, setNovaArea] = useState("");
-  const [novoFeriado, setNovoFeriado] = useState("");
+  const [logoBust, setLogoBust] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -123,10 +104,11 @@ export default function ConfiguracoesPage() {
     setBusy(true);
     setError(null);
     setMsg(null);
+    const { logoUrl: _logo, ...payload } = branding;
     const r = await bffFetch("/api/v1/portal/tenant/branding", {
       method: "PUT",
       headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify(branding),
+      body: JSON.stringify(payload),
     });
     setBusy(false);
     if (!r.ok) {
@@ -155,20 +137,9 @@ export default function ConfiguracoesPage() {
     }
     const data = (await r.json()) as { logoUrl?: string };
     setBranding((p) => (p ? { ...p, logoUrl: data.logoUrl ?? p.logoUrl } : p));
+    setLogoBust(Date.now());
     setMsg("Logo da entidade actualizado.");
     await load();
-  }
-
-  function toggleMetodologia(key: string) {
-    setBranding((p) => {
-      if (!p) return p;
-      const current = p.cronograma?.metodologias ?? [];
-      const next = current.includes(key) ? current.filter((x) => x !== key) : [...current, key];
-      return {
-        ...p,
-        cronograma: { ...(p.cronograma ?? {}), metodologias: next },
-      };
-    });
   }
 
   function addItem(
@@ -184,20 +155,24 @@ export default function ConfiguracoesPage() {
     setMsg("Item adicionado (guardado localmente).");
   }
 
-  const logoPreview = branding?.logoUrl
-    ? branding.logoUrl.startsWith("/")
-      ? branding.logoUrl
-      : branding.logoUrl
-    : null;
+  const logoPreview = (() => {
+    if (!branding?.logoUrl) return null;
+    if (/^https?:\/\//i.test(branding.logoUrl)) return branding.logoUrl;
+    if (tenant?.slug) return publicTenantLogoUrl(tenant.slug, logoBust || undefined);
+    return branding.logoUrl;
+  })();
 
   return (
-    <div className="max-w-4xl space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-50">Configurações</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Branding da entidade, logo no cronograma DGERT, horários e preferências.
+    <div className="max-w-4xl space-y-6">
+      <header className="ui-settings-hero space-y-2 border-b border-slate-700/30 pb-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Administração
         </p>
-      </div>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-50">Configurações</h1>
+        <p className="max-w-2xl text-sm leading-relaxed text-slate-500">
+          Identidade da entidade, logótipo nos documentos e preferências operacionais.
+        </p>
+      </header>
 
       {error ? (
         <div className="flex items-start gap-2.5 rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3">
@@ -213,9 +188,9 @@ export default function ConfiguracoesPage() {
       <DgertRequisitoBanner backHref="/portal/dossie" />
 
       {tenant ? (
-        <DgertTarget id="entidade_nif" className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
-          <h2 className="text-sm font-semibold text-slate-200 mb-1">Entidade formadora</h2>
-          <p className="text-xs text-slate-500 mb-4">
+        <DgertTarget id="entidade_nif" className="ui-settings-card rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
+          <h2 className="ui-settings-card-title text-sm font-semibold mb-1">Entidade formadora</h2>
+          <p className="ui-settings-card-desc text-xs mb-4">
             Nome legal e NIF usados em DGERT, dossiê e faturação. Alterações ficam na base de dados
             partilhada com o painel do superadmin.
           </p>
@@ -299,21 +274,26 @@ export default function ConfiguracoesPage() {
       ) : null}
 
       {canManage ? (
-        <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-slate-200">Branding e logo (cronograma)</h2>
-          <p className="text-xs text-slate-500">
-            O logo aparece no canto superior esquerdo do cronograma DGERT impresso.
+        <div className="ui-settings-card rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5 space-y-4">
+          <h2 className="ui-settings-card-title text-sm font-semibold">Branding e logótipo</h2>
+          <p className="ui-settings-card-desc text-xs">
+            O logótipo desta entidade aparece em faturas, propostas, cronogramas, folhas de presença,
+            sumários, certificados e restantes documentos gerados pela aplicação.
           </p>
 
           <div className="flex flex-wrap items-center gap-4">
             {logoPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={logoPreview}
-                alt="Logótipo da entidade formadora"
-                className="h-14 max-w-[180px] object-contain rounded-lg bg-white/95 px-2 py-1"
+                alt=""
+                className="h-14 max-w-[180px] object-contain rounded-lg bg-white px-2 py-1 border border-slate-600/40"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                }}
               />
             ) : (
-              <div className="h-14 w-32 rounded-lg border border-dashed border-slate-600 flex items-center justify-center text-xs text-slate-500">
+              <div className="h-14 w-32 rounded-lg border border-dashed border-slate-600 bg-slate-950/60 flex items-center justify-center text-xs text-slate-400">
                 Sem logo
               </div>
             )}
@@ -374,136 +354,6 @@ export default function ConfiguracoesPage() {
             </div>
           </div>
 
-          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider pt-2">
-            Dados do cronograma DGERT
-          </h3>
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Local da formação</label>
-              <input
-                value={branding?.cronograma?.local ?? ""}
-                onChange={(e) =>
-                  setBranding((p) =>
-                    p ? { ...p, cronograma: { ...(p.cronograma ?? {}), local: e.target.value } } : null,
-                  )
-                }
-                className={inputClass}
-                placeholder="Ex: Lisboa"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Funcionamento</label>
-              <select
-                value={branding?.cronograma?.funcionamento ?? "pos_laboral"}
-                onChange={(e) =>
-                  setBranding((p) =>
-                    p
-                      ? {
-                          ...p,
-                          cronograma: {
-                            ...(p.cronograma ?? {}),
-                            funcionamento: e.target.value as CronogramaConfig["funcionamento"],
-                          },
-                        }
-                      : null,
-                  )
-                }
-                className={inputClass}
-              >
-                <option value="laboral">Laboral</option>
-                <option value="pos_laboral">Pós-Laboral</option>
-                <option value="misto">Misto</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Horário início (dias úteis)</label>
-              <input
-                value={branding?.cronograma?.horarioInicio ?? ""}
-                onChange={(e) =>
-                  setBranding((p) =>
-                    p
-                      ? { ...p, cronograma: { ...(p.cronograma ?? {}), horarioInicio: e.target.value } }
-                      : null,
-                  )
-                }
-                className={inputClass}
-                placeholder="18:30"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Horário fim (dias úteis)</label>
-              <input
-                value={branding?.cronograma?.horarioFim ?? ""}
-                onChange={(e) =>
-                  setBranding((p) =>
-                    p ? { ...p, cronograma: { ...(p.cronograma ?? {}), horarioFim: e.target.value } } : null,
-                  )
-                }
-                className={inputClass}
-                placeholder="22:00"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Sábados - início</label>
-              <input
-                value={branding?.cronograma?.horarioSabadoInicio ?? ""}
-                onChange={(e) =>
-                  setBranding((p) =>
-                    p
-                      ? {
-                          ...p,
-                          cronograma: { ...(p.cronograma ?? {}), horarioSabadoInicio: e.target.value },
-                        }
-                      : null,
-                  )
-                }
-                className={inputClass}
-                placeholder="09:00"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Sábados - fim</label>
-              <input
-                value={branding?.cronograma?.horarioSabadoFim ?? ""}
-                onChange={(e) =>
-                  setBranding((p) =>
-                    p
-                      ? { ...p, cronograma: { ...(p.cronograma ?? {}), horarioSabadoFim: e.target.value } }
-                      : null,
-                  )
-                }
-                className={inputClass}
-                placeholder="13:30"
-              />
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-4 text-sm text-slate-300">
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={branding?.cronograma?.metodologias?.includes("elearning") ?? false}
-                onChange={() => toggleMetodologia("elearning")}
-              />
-              Formação à distância
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={branding?.cronograma?.metodologias?.includes("formacao_acao") ?? true}
-                onChange={() => toggleMetodologia("formacao_acao")}
-              />
-              Formação-Acção
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={branding?.cronograma?.metodologias?.includes("outras") ?? false}
-                onChange={() => toggleMetodologia("outras")}
-              />
-              Outras
-            </label>
-          </div>
-
           <button
             onClick={() => void saveBranding()}
             disabled={busy}
@@ -515,9 +365,9 @@ export default function ConfiguracoesPage() {
       ) : null}
 
       {canManage ? (
-        <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
-          <h2 className="text-sm font-semibold text-slate-200 mb-3">Áreas de formação (CNAEF)</h2>
-          <p className="text-xs text-slate-500 mb-3">
+        <div className="ui-settings-card rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
+          <h2 className="ui-settings-card-title text-sm font-semibold mb-3">Áreas de formação (CNAEF)</h2>
+          <p className="ui-settings-card-desc text-xs mb-3">
             Áreas de educação e formação da tabela oficial CNAEF em que a entidade está certificada.
           </p>
           <div className="space-y-1.5 mb-3">
@@ -563,50 +413,7 @@ export default function ConfiguracoesPage() {
         </div>
       ) : null}
 
-      {canManage ? (
-        <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
-          <h2 className="text-sm font-semibold text-slate-200 mb-3">Pausas e feriados</h2>
-          <p className="text-xs text-slate-500 mb-3">
-            Registo de pausas letivas e feriados a considerar nos cronogramas de formação.
-          </p>
-          <div className="flex flex-wrap gap-2 mb-3">
-            {feriados.map((f, i) => (
-              <span
-                key={i}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/40 border border-slate-700/20 text-xs text-slate-300"
-              >
-                {formatDatePt(f)}
-                <button
-                  onClick={() => {
-                    setFeriados(feriados.filter((_, j) => j !== i));
-                    setMsg("Feriado removido.");
-                  }}
-                  className="text-red-400 hover:text-red-300 ml-1"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-          <div className="flex gap-2 max-w-xs">
-            <input
-              type="date"
-              value={novoFeriado}
-              onChange={(e) => setNovoFeriado(e.target.value)}
-              className={inputClass}
-            />
-            <button
-              onClick={() => addItem(feriados, setFeriados, novoFeriado, setNovoFeriado)}
-              className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors flex-shrink-0"
-            >
-              +
-            </button>
-          </div>
-        </div>
-      ) : null}
-
       {canManage ? <DocumentosPoliticaSettings /> : null}
-      {canManage ? <SocialLoginSettings /> : null}
     </div>
   );
 }

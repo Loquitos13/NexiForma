@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
-import { ListPagination } from "@/components/crm/list-pagination";
+import { ListPaginationControls } from "@/components/crm/list-pagination";
 import { Alert, Card, CardContent, DataTable, PageHeader, type Column } from "@/components/ui";
 
 type AuditRow = {
@@ -24,7 +24,7 @@ export default function CrmAuditPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const pageSize = 50;
+  const [pageSize, setPageSize] = useState(10);
 
   const load = useCallback(async () => {
     if (!canManage) return;
@@ -98,11 +98,16 @@ export default function CrmAuditPage() {
         </CardContent>
       </Card>
 
-      <ListPagination
+      <ListPaginationControls
         page={page}
         pageSize={pageSize}
         total={rows.length}
         onPageChange={setPage}
+        onPageSizeChange={(next) => {
+          setPageSize(next);
+          setPage(1);
+        }}
+        numberedPages
       />
     </>
   );

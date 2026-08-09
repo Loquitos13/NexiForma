@@ -44,18 +44,23 @@ type FieldDef = {
 
 const SECOES: FieldDef[] = [
   { key: "subtitulo", label: "Subtítulo da proposta", rows: 2, hint: "Ex.: Serviço de Formação Comercial para Equipas de Farmácia" },
-  { key: "apresentacaoEmpresa", label: "Apresentação da empresa", rows: 4, hint: "Deixe vazio para usar o texto padrão do gestor." },
-  { key: "enquadramento", label: "1. Enquadramento", rows: 5 },
-  { key: "objetivos", label: "2. Objectivos da formação", rows: 5, hint: "Uma linha por objectivo, prefixo - opcional." },
-  { key: "conteudosProgramaticos", label: "3. Conteúdos programáticos", rows: 8 },
-  { key: "metodologia", label: "4. Metodologia", rows: 4 },
-  { key: "destinatarios", label: "5. Destinatários", rows: 3 },
-  { key: "duracaoTexto", label: "6. Duração", rows: 2 },
-  { key: "localTexto", label: "7. Local", rows: 2 },
-  { key: "beneficios", label: "8. Benefícios", rows: 5 },
-  { key: "condicoesComerciais", label: "10. Condições comerciais", rows: 4 },
-  { key: "porqueEscolher", label: "11. Porque escolher a nossa formação", rows: 4 },
-  { key: "proximosPassos", label: "12. Próximos passos", rows: 4 },
+  {
+    key: "apresentacaoEmpresa",
+    label: "Apresentação da empresa",
+    rows: 4,
+    hint: "Vazio = omitido no PDF. «Usar padrão» copia o texto do modelo para este campo.",
+  },
+  { key: "enquadramento", label: "Enquadramento", rows: 5 },
+  { key: "objetivos", label: "Objetivos", rows: 5, hint: "Uma linha por objetivo, prefixo - opcional." },
+  { key: "conteudosProgramaticos", label: "Conteúdos programáticos", rows: 8 },
+  { key: "metodologia", label: "Metodologia", rows: 4 },
+  { key: "destinatarios", label: "Destinatários", rows: 3 },
+  { key: "duracaoTexto", label: "Duração", rows: 2 },
+  { key: "localTexto", label: "Local", rows: 2 },
+  { key: "beneficios", label: "Benefícios", rows: 5 },
+  { key: "condicoesComerciais", label: "Condições comerciais", rows: 4 },
+  { key: "porqueEscolher", label: "Porque escolher a nossa formação", rows: 4 },
+  { key: "proximosPassos", label: "Próximos passos", rows: 4 },
 ];
 
 type Props = {
@@ -69,27 +74,32 @@ export function conteudoTemCamposPreenchidos(c: PropostaConteudoForm): boolean {
   return Object.values(c).some((v) => v.trim().length > 0);
 }
 
+function padraoParaCampo(
+  key: keyof PropostaConteudoForm,
+  padroes?: Partial<PropostaConteudoForm> & Record<string, string | undefined>,
+): string {
+  if (!padroes || key === "subtitulo") return "";
+  return String(padroes[key] ?? "").trim();
+}
+
 export function PropostaConteudoFields({ value, onChange, padroes, readOnly }: Props) {
   function setField(key: keyof PropostaConteudoForm, v: string) {
     onChange({ ...value, [key]: v });
   }
 
   function restaurarPadrao(key: keyof PropostaConteudoForm) {
-    const padraoMap: Partial<Record<keyof PropostaConteudoForm, string>> = {
-      apresentacaoEmpresa: padroes?.apresentacaoEmpresa,
-      enquadramento: padroes?.enquadramento,
-      objetivos: padroes?.objetivos,
-      conteudosProgramaticos: padroes?.conteudosProgramaticos,
-      metodologia: padroes?.metodologia,
-      destinatarios: padroes?.destinatarios,
-      duracaoTexto: padroes?.duracaoTexto,
-      localTexto: padroes?.localTexto,
-      beneficios: padroes?.beneficios,
-      condicoesComerciais: padroes?.condicoesComerciais,
-      porqueEscolher: padroes?.porqueEscolher,
-      proximosPassos: padroes?.proximosPassos,
-    };
-    setField(key, padraoMap[key] ?? "");
+    setField(key, padraoParaCampo(key, padroes));
+  }
+
+  function aplicarTodosPadroes() {
+    if (!padroes) return;
+    const next = { ...value };
+    for (const sec of SECOES) {
+      if (sec.key === "subtitulo") continue;
+      const p = padraoParaCampo(sec.key, padroes);
+      if (p) next[sec.key] = p;
+    }
+    onChange(next);
   }
 
   const secoesVisiveis = readOnly
@@ -100,8 +110,22 @@ export function PropostaConteudoFields({ value, onChange, padroes, readOnly }: P
     return null;
   }
 
+  const temAlgumPadrao =
+    !!padroes && SECOES.some((s) => s.key !== "subtitulo" && padraoParaCampo(s.key, padroes).length > 0);
+
   return (
     <div className="space-y-5">
+      {!readOnly && temAlgumPadrao ? (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            className="shrink-0 text-xs font-medium text-blue-400 hover:text-blue-300"
+            onClick={aplicarTodosPadroes}
+          >
+            Usar todos os padrões
+          </button>
+        </div>
+      ) : null}
       {secoesVisiveis.map((sec) => (
         <div key={sec.key} className="space-y-1.5">
           <div className="flex items-center justify-between gap-2">
@@ -109,7 +133,8 @@ export function PropostaConteudoFields({ value, onChange, padroes, readOnly }: P
             {!readOnly && padroes && sec.key !== "subtitulo" ? (
               <button
                 type="button"
-                className="text-xs text-blue-400 hover:text-blue-300"
+                className="text-xs text-blue-400 hover:text-blue-300 disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={!padraoParaCampo(sec.key, padroes)}
                 onClick={() => restaurarPadrao(sec.key)}
               >
                 Usar padrão
@@ -127,11 +152,7 @@ export function PropostaConteudoFields({ value, onChange, padroes, readOnly }: P
               onChange={(e) => setField(sec.key, e.target.value)}
               rows={sec.rows}
               className="font-mono text-sm"
-              placeholder={
-                padroes && sec.key !== "subtitulo" && !value[sec.key]
-                  ? "(vazio = texto padrão da empresa)"
-                  : undefined
-              }
+              placeholder={!value[sec.key] ? "(vazio = omitido no documento)" : undefined}
             />
           )}
         </div>

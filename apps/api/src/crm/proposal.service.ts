@@ -20,12 +20,14 @@ import { PrismaService } from "../prisma/prisma.service";
 import { MailService } from "../mail/mail.service";
 import { PropostaNotificacoesService } from "../notificacoes/proposta-notificacoes.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
+import { resolveTenantLogoDataUri } from "../common/tenant-logo-embed.util";
 import { requireTenantId } from "../common/tenant-scope";
 import {
   assertPropostaAcessivel,
   propostaScopeWhere,
 } from "../common/comercial-scope.util";
 import type { PropostaEstado } from "@nexiforma/database";
+import { StorageService } from "../storage/storage.service";
 import { buildPropostaHtmlDocument } from "../propostas/proposta-html.util";
 import {
   gerarTokenRespostaProposta,
@@ -73,6 +75,7 @@ export class ProposalService {
     private readonly htmlPdf: HtmlPdfExportService,
     private readonly audit: CrmAuditService,
     private readonly webhooks: CrmWebhooksService,
+    private readonly storage: StorageService,
     @Inject(forwardRef(() => CrmAutomationService))
     private readonly automation: CrmAutomationService,
   ) {}
@@ -354,7 +357,7 @@ export class ProposalService {
       include: {
         entidadeCliente: true,
         curso: true,
-        tenant: { select: { legalName: true, nif: true } },
+        tenant: { select: { legalName: true, nif: true, metadata: true } },
         linhas: { orderBy: { ordem: "asc" } },
       },
     });
@@ -383,6 +386,7 @@ export class ProposalService {
       (await this.prisma.configPropostaTenant.create({
         data: { tenantId, ...DEFAULTS_PROPOSTA_TEMPLATE, validadeDiasPadrao: 30 },
       }));
+    const logoSrc = await resolveTenantLogoDataUri(this.storage, proposta.tenant.metadata);
 
     const { html, filename: htmlFilename } = buildPropostaHtmlDocument({
       codigo: proposta.codigo,
@@ -393,7 +397,10 @@ export class ProposalService {
       valorCentavos: proposta.valorCentavos,
       validadeAte: proposta.validadeAte,
       createdAt: proposta.createdAt,
-      tenant: proposta.tenant,
+      tenant: {
+        legalName: proposta.tenant.legalName,
+        nif: proposta.tenant.nif,
+      },
       entidadeCliente: {
         nome: proposta.entidadeCliente.nome,
         nif: proposta.entidadeCliente.nif,
@@ -402,6 +409,7 @@ export class ProposalService {
       curso: proposta.curso,
       conteudo: extractPropostaConteudo(proposta),
       config: configRowToTemplate(configRow),
+      logoSrc,
       linhas: proposta.linhas.map((l) => ({
         descricao: l.descricao,
         quantidade: Number(l.quantidade),
@@ -716,11 +724,14 @@ export class ProposalService {
       );
     }
 
+    const motivoTrim = motivo?.trim() || null;
+
     await this.prisma.propostaComercial.update({
       where: { id: propostaId },
       data: {
         estado: "REJEITADA",
         rejeitadaEm: proposta.rejeitadaEm ?? new Date(),
+        ...(motivoTrim ? { motivoRejeicao: motivoTrim.slice(0, 2000) } : {}),
       },
     });
 
@@ -729,7 +740,7 @@ export class ProposalService {
       propostaId,
       proposta.estado,
       "REJEITADA",
-      motivo,
+      motivoTrim ?? undefined,
     );
 
     void this.audit.log({
@@ -744,12 +755,12 @@ export class ProposalService {
       payload: {
         codigo: proposta.codigo,
         via: ctx?.via ?? "unknown",
-        ...(motivo ? { motivo } : {}),
+        ...(motivoTrim ? { motivo: motivoTrim } : {}),
       },
     });
 
     this.logger.log(
-      `✓ Proposta recusada pelo cliente: ${proposta.codigo}${motivo ? ` – ${motivo}` : ""}`,
+      `✓ Proposta recusada pelo cliente: ${proposta.codigo}${motivoTrim ? ` – ${motivoTrim}` : ""}`,
     );
     return { sucesso: true, estado: "REJEITADA" as const, already: false };
   }

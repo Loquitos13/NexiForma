@@ -42,7 +42,10 @@ export function labelForPortalFrom(path: string): string {
   return "Voltar";
 }
 
-/** Anexa origem à URL de destino (lista → detalhe). */
+/**
+ * Anexa origem à URL de destino (lista → detalhe).
+ * O `PortalBackButton` usa este `from` para voltar à view do fluxo (não ao histórico).
+ */
 export function withPortalFrom(targetHref: string, fromPath: string): string {
   if (!isValidPortalFrom(fromPath)) return targetHref;
   const qIndex = targetHref.indexOf("?");

@@ -168,6 +168,8 @@ export function CrmContextInsights({
   const [rejectMotivo, setRejectMotivo] = useState<CrmSugestaoRejeicaoMotivo>(CRM_SUGESTAO_REJEICAO_MOTIVOS[0]);
   const [rejectComentario, setRejectComentario] = useState("");
   const [formOpen, setFormOpen] = useState(false);
+  /** Acordeão exclusivo: só uma nota expandida de cada vez. */
+  const [expandedNotaId, setExpandedNotaId] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const enabled = !!(entidadeClienteId || leadComercialId);
@@ -176,6 +178,17 @@ export function CrmContextInsights({
     () => mergeNotas(interaccoesRaw, sugestoesRaw),
     [interaccoesRaw, sugestoesRaw],
   );
+
+  useEffect(() => {
+    if (notas.length === 0) {
+      setExpandedNotaId(null);
+      return;
+    }
+    setExpandedNotaId((prev) => {
+      if (prev && notas.some((n) => n.id === prev)) return prev;
+      return notas[0]?.id ?? null;
+    });
+  }, [notas]);
 
   const pendentes = useMemo(
     () => sugestoesRaw.filter((s) => s.estado === "PENDENTE"),
@@ -367,12 +380,15 @@ export function CrmContextInsights({
               Ainda não há notas registadas para este cliente. Usa o botão Nova nota para a primeira reunião.
             </p>
           ) : (
-            notas.map((nota, idx) => (
+            notas.map((nota) => (
               <NotaRegistoCard
                 key={nota.id}
                 nota={nota}
                 busy={busy}
-                defaultExpanded={idx === 0}
+                expanded={expandedNotaId === nota.id}
+                onExpandedChange={(open) =>
+                  setExpandedNotaId(open ? nota.id : null)
+                }
                 onAceitar={(id) => setAcceptId(id)}
                 onRejeitar={(id) => setRejectId(id)}
               />

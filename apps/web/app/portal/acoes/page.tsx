@@ -7,7 +7,7 @@ import { bffFetch } from "@/lib/client/bff-fetch";
 import { extractCronogramaTextFromFile } from "@/lib/client/extract-cronograma-text";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
-import { Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle, DataTable, estadoBadge, Input, PageHeader, Select, type Column } from "@/components/ui";
+import { Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle, PaginatedDataTable, estadoBadge, Input, PageHeader, Select, type Column } from "@/components/ui";
 
 type CursoOpt = { id: string; designacao: string };
 type Acao = {
@@ -390,7 +390,7 @@ export default function AcoesPage() {
         </Card>
       )}
 
-      <DataTable
+      <PaginatedDataTable
         columns={COLUMNS}
         data={acoes}
         keyField="id"

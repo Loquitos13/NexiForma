@@ -76,16 +76,42 @@ export function linhasFromApi(
   });
 }
 
-/** Paleta alinhada ao mockup Figma (fatura roxa). */
-const THEME = {
-  gradient: "linear-gradient(135deg, #6d28d9 0%, #9333ea 45%, #6366f1 100%)",
-  primary: "#7c3aed",
-  primaryDark: "#5b21b6",
-  tint: "#f5f3ff",
-  tintBorder: "#ddd6fe",
-  accentText: "#7c3aed",
-  mutedText: "#6b7280",
+export type FaturaTemplateCoresUi = {
+  headerMode?: "solid" | "gradient";
+  headerFrom: string;
+  headerVia: string;
+  headerTo: string;
+  accent: string;
+  surface: string;
+  border: string;
 };
+
+const THEME_DEFAULT: FaturaTemplateCoresUi = {
+  headerMode: "gradient",
+  headerFrom: "#6d28d9",
+  headerVia: "#9333ea",
+  headerTo: "#6366f1",
+  accent: "#7c3aed",
+  surface: "#f5f3ff",
+  border: "#ddd6fe",
+};
+
+function themeFromCores(cores?: Partial<FaturaTemplateCoresUi> | null) {
+  const c = { ...THEME_DEFAULT, ...(cores ?? {}) };
+  const headerBg =
+    c.headerMode === "solid"
+      ? c.headerFrom
+      : `linear-gradient(135deg, ${c.headerFrom} 0%, ${c.headerVia} 45%, ${c.headerTo} 100%)`;
+  return {
+    gradient: headerBg,
+    primary: c.accent,
+    primaryDark: c.headerFrom,
+    tint: c.surface,
+    tintBorder: c.border,
+    accentText: c.accent,
+    mutedText: "#6b7280",
+  };
+}
 
 function fmtQuantidade(q: number): string {
   return q.toLocaleString("pt-PT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -197,6 +223,7 @@ type Props = {
   totais: { valorCentavos: number; ivaCentavos: number };
   softwareCertificado: string | null;
   hashIntegridade?: string | null;
+  templateCores?: Partial<FaturaTemplateCoresUi> | null;
 };
 
 export function FaturaInlineEditor({
@@ -231,7 +258,9 @@ export function FaturaInlineEditor({
   totais,
   softwareCertificado,
   hashIntegridade,
+  templateCores,
 }: Props) {
+  const THEME = themeFromCores(templateCores);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -344,12 +373,12 @@ export function FaturaInlineEditor({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             {logoUrl ? (
-              <div className="relative mb-3 h-10 w-32">
+              <div className="relative mb-3 h-12 w-40 bg-transparent">
                 <Image
                   src={logoUrl}
                   alt="Logótipo da entidade emissora"
                   fill
-                  className="object-contain object-left brightness-0 invert"
+                  className="object-contain object-left"
                   unoptimized
                 />
               </div>
@@ -368,21 +397,21 @@ export function FaturaInlineEditor({
                 <Image
                   src={qrDataUrl}
                   alt="QR Code - validação AT"
-                  width={88}
-                  height={88}
+                  width={128}
+                  height={128}
                   className="rounded-lg bg-white p-1"
                   unoptimized
                 />
               ) : (
                 <div
-                  className="flex h-[88px] w-[88px] items-center justify-center rounded-lg bg-white text-[9px] font-medium text-violet-400"
+                  className="flex h-[128px] w-[128px] items-center justify-center rounded-lg bg-white text-[9px] font-medium text-violet-400"
                   aria-busy="true"
                 >
                   QR…
                 </div>
               )
             ) : (
-              <div className="flex h-[88px] w-[88px] items-center justify-center rounded-lg border border-dashed border-white/40 bg-white/10 text-center text-[9px] text-white/70">
+              <div className="flex h-[128px] w-[128px] items-center justify-center rounded-lg border border-dashed border-white/40 bg-white/10 text-center text-[9px] text-white/70">
                 {editavel ? "QR na emissão" : "QR Code"}
               </div>
             )}

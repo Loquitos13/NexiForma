@@ -11,7 +11,12 @@ type SocialLoginConfig = {
   redirectUri?: string;
 };
 
-export function SocialLoginSettings() {
+type Props = {
+  /** Endpoint GET/PATCH (default: control-plane exige tenantId na página). */
+  endpoint: string;
+};
+
+export function SocialLoginSettings({ endpoint }: Props) {
   const [socialLogin, setSocialLogin] = useState<SocialLoginConfig | null>(null);
   const [socialForm, setSocialForm] = useState({ google: true, microsoft: true });
   const [busy, setBusy] = useState(false);
@@ -19,7 +24,7 @@ export function SocialLoginSettings() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const r = await bffFetch("/api/v1/enterprise/social-login", {
+    const r = await bffFetch(endpoint, {
       headers: { accept: "application/json" },
     });
     if (!r.ok) return;
@@ -29,7 +34,7 @@ export function SocialLoginSettings() {
       google: data.google?.tenantEnabled !== false,
       microsoft: data.microsoft?.tenantEnabled !== false,
     });
-  }, []);
+  }, [endpoint]);
 
   useEffect(() => {
     void load();
@@ -40,7 +45,7 @@ export function SocialLoginSettings() {
     setBusy(true);
     setError(null);
     setMsg(null);
-    const r = await bffFetch("/api/v1/enterprise/social-login", {
+    const r = await bffFetch(endpoint, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", accept: "application/json" },
       body: JSON.stringify(socialForm),
@@ -63,6 +68,7 @@ export function SocialLoginSettings() {
         <h2 className="text-base font-semibold text-slate-100">Login Google / Microsoft</h2>
         <p className="text-sm text-slate-400 mt-1">
           Permite entrar com conta Google ou Microsoft (email igual ao da conta NexiForma).
+          Configuração reservada ao superadmin da plataforma.
         </p>
       </div>
 

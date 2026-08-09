@@ -6,7 +6,12 @@ import {
 import QRCode from "qrcode";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
+import {
+  resolveTenantLogoDataUri,
+  tenantLogoImgHtml,
+} from "../common/tenant-logo-embed.util";
 import { requireTenantId } from "../common/tenant-scope";
+import { StorageService } from "../storage/storage.service";
 import { CertificadoVerificacaoService } from "./certificado-verificacao.service";
 import { NotificacoesExtendedService } from "../notificacoes/notificacoes-extended.service";
 import { SigoAccessService } from "../sigo/sigo-access.service";
@@ -21,6 +26,7 @@ export class CertificadosService {
     private readonly verificacao: CertificadoVerificacaoService,
     private readonly notificacoes: NotificacoesExtendedService,
     private readonly sigoAccess: SigoAccessService,
+    private readonly storage: StorageService,
   ) {}
 
   async listByAcao(user: RequestUser, acaoId: string) {
@@ -126,7 +132,7 @@ export class CertificadosService {
             acaoFormacao: {
               include: {
                 curso: true,
-                tenant: { select: { legalName: true, nif: true } },
+                tenant: { select: { legalName: true, nif: true, metadata: true } },
               },
             },
           },
@@ -163,11 +169,15 @@ export class CertificadosService {
       }
     }
 
-    const qrDataUrl = await QRCode.toDataURL(verif.verifyUrl, {
-      width: 120,
-      margin: 1,
-      color: { dark: "#1e40af", light: "#ffffff" },
-    });
+    const [qrDataUrl, logoSrc] = await Promise.all([
+      QRCode.toDataURL(verif.verifyUrl, {
+        width: 120,
+        margin: 1,
+        color: { dark: "#1e40af", light: "#ffffff" },
+      }),
+      resolveTenantLogoDataUri(this.storage, acao.tenant.metadata),
+    ]);
+    const logoHtml = tenantLogoImgHtml(logoSrc);
 
     const emitidoEm = new Date().toLocaleDateString("pt-PT", {
       day: "2-digit",
@@ -185,6 +195,7 @@ export class CertificadosService {
     body { font-family: Georgia, "Times New Roman", serif; color: #0f172a; margin: 0; }
     .cert { border: 3px double #1e40af; padding: 2.5rem 3rem; min-height: 420px; position: relative; }
     .cert-header { text-align: center; margin-bottom: 1.5rem; }
+    .tenant-logo { max-height: 56px; max-width: 180px; object-fit: contain; margin: 0 auto 0.75rem; display: block; }
     .cert-header h1 { font-size: 1.75rem; color: #1e3a8a; margin: 0 0 0.25rem; letter-spacing: 0.04em; }
     .cert-header p { margin: 0; color: #64748b; font-size: 0.95rem; }
     .cert-body { text-align: center; line-height: 1.7; font-size: 1.05rem; }
@@ -205,6 +216,7 @@ export class CertificadosService {
   ${elegivel ? "" : `<div class="aviso no-print">Presença ${stats.taxaPresenca ?? 0}% – mínimo recomendado ${PRESENCA_MINIMA_DEFAULT}% para certificação DGERT.</div>`}
   <div class="cert">
     <div class="cert-header">
+      ${logoHtml}
       <h1>CERTIFICADO DE FORMAÇÃO</h1>
       <p>${escapeHtml(acao.tenant.legalName)}${acao.tenant.nif ? ` · NIF ${escapeHtml(acao.tenant.nif)}` : ""}</p>
     </div>

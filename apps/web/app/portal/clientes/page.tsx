@@ -9,7 +9,7 @@ import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { withPortalFrom } from "@/lib/ui/portal-back-nav";
 import { ClienteRowActions } from "@/components/crm/cliente-row-actions";
-import { ListPagination } from "@/components/crm/list-pagination";
+import { ListPaginationControls } from "@/components/crm/list-pagination";
 import { ContextSugestoesBadge, CrmSugestoesPanel } from "@/components/crm/crm-sugestoes-panel";
 import { useSugestoesPendentesPorEntidade } from "@/components/crm/entidade-crm-insights";
 import { NifStatusField, type NifStatus } from "@/components/crm/nif-status-field";
@@ -54,7 +54,7 @@ export default function ClientesPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const pageSize = 25;
+  const [pageSize, setPageSize] = useState(10);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -81,11 +81,11 @@ export default function ClientesPage() {
       }
     }
     setLoading(false);
-  }, [search, page]);
+  }, [search, page, pageSize]);
 
   useEffect(() => {
     setPage(1);
-  }, [search]);
+  }, [search, pageSize]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), search ? 300 : 0);
@@ -339,12 +339,14 @@ export default function ClientesPage() {
                 : undefined
             }
           />
-          <ListPagination
+          <ListPaginationControls
             className="border-t border-slate-700/40 px-4 py-3"
             page={page}
             pageSize={pageSize}
             total={total}
             onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            numberedPages
           />
         </CardContent>
       </Card>

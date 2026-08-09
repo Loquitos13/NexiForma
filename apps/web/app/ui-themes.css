@@ -1,0 +1,1310 @@
+/* Temas pessoais - tokens + adaptações do shell / superfícies comuns */
+
+html[data-ui-theme] {
+  --bg: var(--ui-bg);
+  --bg-elevated: var(--ui-panel);
+  --fg: var(--ui-fg);
+  --fg-muted: var(--ui-muted);
+  --accent: var(--ui-accent);
+  --border: var(--ui-border);
+  --shell-bg: var(--ui-bg);
+  --sidebar-bg: var(--ui-sidebar);
+  --panel-bg: var(--ui-panel);
+  --accent-soft: var(--ui-accent-soft);
+  --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 82%, white);
+  --ui-accent-active: color-mix(in srgb, var(--ui-accent) 78%, black);
+  --ui-on-accent: #ffffff;
+  /* Thumb overflow: soft ↔ accent (breathing no shell) */
+  --ui-scroll-a: var(--ui-accent-soft);
+  --ui-scroll-b: var(--ui-accent);
+  --portal-scroll-thumb: var(--ui-scroll-a);
+}
+
+/* Em temas claros o soft é pastel demais para o thumb - usar accent visível */
+html[data-ui-scheme="light"] {
+  --ui-scroll-a: color-mix(in srgb, var(--ui-accent) 55%, var(--ui-muted));
+  --ui-scroll-b: var(--ui-accent);
+  --portal-scroll-thumb: var(--ui-scroll-a);
+  --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 88%, black);
+  --ui-accent-active: color-mix(in srgb, var(--ui-accent) 72%, black);
+  --ui-on-accent: #ffffff;
+}
+
+html[data-ui-theme="midnight"] {
+  color-scheme: dark;
+  --ui-bg: #070b12;
+  --ui-panel: #0f172a;
+  --ui-fg: #e8eef7;
+  --ui-muted: #94a3b8;
+  --ui-accent: #2563eb;
+  --ui-accent-soft: #1e3a5f;
+  --ui-sidebar: #020617;
+  --ui-border: rgba(148, 163, 184, 0.22);
+  --ui-body-glow: #1e3a5f;
+}
+
+html[data-ui-theme="graphite"] {
+  color-scheme: dark;
+  --ui-bg: #0d1117;
+  --ui-panel: #161b22;
+  --ui-fg: #f0f3f6;
+  --ui-muted: #9aa4b2;
+  --ui-accent: #2dd4bf;
+  --ui-accent-soft: #0f3d3a;
+  --ui-sidebar: #0a0e14;
+  --ui-border: rgba(45, 212, 191, 0.18);
+  --ui-body-glow: #0f3d3a;
+  --ui-scroll-a: color-mix(in srgb, #2dd4bf 42%, #0a0e14);
+  --ui-scroll-b: #2dd4bf;
+}
+
+html[data-ui-theme="violet-night"] {
+  color-scheme: dark;
+  --ui-bg: #0c0a14;
+  --ui-panel: #1a1028;
+  --ui-fg: #f3e8ff;
+  --ui-muted: #a78bfa;
+  --ui-accent: #8b5cf6;
+  --ui-accent-soft: #4c1d95;
+  --ui-sidebar: #09060f;
+  --ui-border: rgba(167, 139, 250, 0.22);
+  --ui-body-glow: #4c1d95;
+}
+
+html[data-ui-theme="ocean"] {
+  color-scheme: dark;
+  --ui-bg: #04141c;
+  --ui-panel: #0a2230;
+  --ui-fg: #e0f2fe;
+  --ui-muted: #7dd3fc;
+  --ui-accent: #06b6d4;
+  --ui-accent-soft: #155e75;
+  --ui-sidebar: #021018;
+  --ui-border: rgba(125, 211, 252, 0.22);
+  --ui-body-glow: #155e75;
+}
+
+html[data-ui-theme="forest"] {
+  color-scheme: dark;
+  --ui-bg: #07140c;
+  --ui-panel: #0f2418;
+  --ui-fg: #ecfdf5;
+  --ui-muted: #86efac;
+  --ui-accent: #22c55e;
+  --ui-accent-soft: #14532d;
+  --ui-sidebar: #03100a;
+  --ui-border: rgba(134, 239, 172, 0.22);
+  --ui-body-glow: #14532d;
+}
+
+html[data-ui-theme="snow-azure"] {
+  color-scheme: light;
+  --ui-bg: #f1f5f9;
+  --ui-panel: #ffffff;
+  --ui-fg: #0f172a;
+  --ui-muted: #64748b;
+  --ui-accent: #2563eb;
+  --ui-accent-soft: #dbeafe;
+  --ui-sidebar: #ffffff;
+  --ui-border: rgba(15, 23, 42, 0.12);
+  --ui-body-glow: #bfdbfe;
+}
+
+html[data-ui-theme="snow-rose"] {
+  color-scheme: light;
+  --ui-bg: #fdf2f8;
+  --ui-panel: #ffffff;
+  --ui-fg: #1f1018;
+  --ui-muted: #9d174d;
+  --ui-accent: #e11d48;
+  --ui-accent-soft: #ffe4e6;
+  --ui-sidebar: #ffffff;
+  --ui-border: rgba(31, 16, 24, 0.12);
+  --ui-body-glow: #fecdd3;
+}
+
+html[data-ui-theme="snow-emerald"] {
+  color-scheme: light;
+  --ui-bg: #ecfdf5;
+  --ui-panel: #ffffff;
+  --ui-fg: #052e16;
+  --ui-muted: #047857;
+  --ui-accent: #059669;
+  --ui-accent-soft: #d1fae5;
+  --ui-sidebar: #ffffff;
+  --ui-border: rgba(5, 46, 22, 0.12);
+  --ui-body-glow: #a7f3d0;
+}
+
+html[data-ui-theme="snow-amber"] {
+  color-scheme: light;
+  --ui-bg: #fffbeb;
+  --ui-panel: #ffffff;
+  --ui-fg: #1c1917;
+  --ui-muted: #92400e;
+  --ui-accent: #d97706;
+  --ui-accent-soft: #fef3c7;
+  --ui-sidebar: #ffffff;
+  --ui-border: rgba(28, 25, 23, 0.12);
+  --ui-body-glow: #fde68a;
+}
+
+html[data-ui-theme="snow-violet"] {
+  color-scheme: light;
+  --ui-bg: #f5f3ff;
+  --ui-panel: #ffffff;
+  --ui-fg: #1e1b4b;
+  --ui-muted: #6d28d9;
+  --ui-accent: #7c3aed;
+  --ui-accent-soft: #ede9fe;
+  --ui-sidebar: #ffffff;
+  --ui-border: rgba(30, 27, 75, 0.12);
+  --ui-body-glow: #ddd6fe;
+}
+
+html[data-ui-theme] body {
+  background: radial-gradient(
+    1200px circle at 15% -5%,
+    var(--ui-body-glow) 0%,
+    var(--ui-bg) 55%
+  );
+  color: var(--ui-fg);
+}
+
+/* Shells usam tokens - fundo sólido; bolhas ficam numa camada absoluta por cima */
+.portal-app-shell {
+  background: var(--shell-bg, var(--ui-bg, #070b12));
+  color: var(--ui-fg, inherit);
+}
+
+.portal-app-shell .portal-main,
+.portal-app-shell .portal-scroll-main {
+  background: transparent;
+}
+
+.ui-themed-sidebar {
+  /* Mais translúcido para a atmosfera do shell continuar a ver-se no rail */
+  background: color-mix(in srgb, var(--sidebar-bg) 82%, transparent) !important;
+  border-color: var(--ui-border) !important;
+  color: var(--ui-fg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.ui-themed-topbar {
+  background: color-mix(in srgb, var(--ui-panel) 62%, transparent) !important;
+  border-color: var(--ui-border) !important;
+  color: var(--ui-fg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* --- Nav lateral (portal + plataforma) --- */
+.ui-nav-brand {
+  color: var(--ui-fg);
+}
+
+.ui-nav-brand-sub,
+.ui-nav-section-label,
+.ui-nav-chevron,
+.ui-nav-count {
+  color: var(--ui-muted);
+}
+
+.ui-nav-count {
+  background: color-mix(in srgb, var(--ui-accent-soft) 70%, transparent);
+}
+
+.ui-nav-item {
+  color: var(--ui-muted);
+}
+
+.ui-nav-item:hover {
+  background: color-mix(in srgb, var(--ui-accent-soft) 55%, transparent);
+  color: var(--ui-fg);
+}
+
+.ui-nav-item-active {
+  background: color-mix(in srgb, var(--ui-accent) 22%, transparent) !important;
+  color: var(--ui-accent) !important;
+}
+
+.ui-nav-item-active:hover {
+  background: color-mix(in srgb, var(--ui-accent) 30%, transparent) !important;
+  color: var(--ui-accent) !important;
+}
+
+.ui-nav-group {
+  color: color-mix(in srgb, var(--ui-fg) 82%, var(--ui-muted));
+}
+
+.ui-nav-group:hover {
+  background: color-mix(in srgb, var(--ui-accent-soft) 45%, transparent);
+  color: var(--ui-fg);
+}
+
+.ui-nav-group-active {
+  background: color-mix(in srgb, var(--ui-accent-soft) 75%, transparent);
+  color: var(--ui-fg);
+}
+
+.ui-nav-nested {
+  border-color: var(--ui-border) !important;
+}
+
+.ui-nav-dot {
+  background: color-mix(in srgb, var(--ui-muted) 55%, transparent);
+}
+
+.ui-nav-dot-active {
+  background: var(--ui-accent);
+}
+
+/* Sidebar: ícones SVG herdam a cor do item */
+.ui-themed-sidebar .ui-nav-item svg,
+.ui-themed-sidebar .ui-nav-item-active svg,
+.ui-themed-sidebar .ui-nav-group svg,
+.ui-themed-sidebar .ui-nav-group-active svg {
+  color: currentColor;
+}
+
+/* --- Botões (componente Button + classes soltas) --- */
+.ui-btn-primary {
+  background-color: var(--ui-accent) !important;
+  color: var(--ui-on-accent, #fff) !important;
+  border-color: transparent;
+}
+
+.ui-btn-primary:hover:not(:disabled) {
+  background-color: var(--ui-accent-hover) !important;
+}
+
+.ui-btn-primary:active:not(:disabled) {
+  background-color: var(--ui-accent-active) !important;
+}
+
+.ui-btn-secondary {
+  background-color: transparent !important;
+  color: var(--ui-fg) !important;
+  border: 1px solid var(--ui-border) !important;
+}
+
+.ui-btn-secondary:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--ui-accent-soft) 55%, transparent) !important;
+  color: var(--ui-fg) !important;
+  border-color: color-mix(in srgb, var(--ui-accent) 35%, var(--ui-border)) !important;
+}
+
+.ui-btn-ghost {
+  background-color: transparent !important;
+  color: var(--ui-muted) !important;
+}
+
+.ui-btn-ghost:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--ui-accent-soft) 50%, transparent) !important;
+  color: var(--ui-fg) !important;
+}
+
+.ui-btn-link {
+  background-color: transparent !important;
+  color: var(--ui-accent) !important;
+}
+
+.ui-btn-link:hover:not(:disabled) {
+  color: var(--ui-accent-hover) !important;
+}
+
+/*
+ * Remapear botões Tailwind “duros” (bg-blue-600, purple, teal…) para o accent do tema.
+ * Cobre páginas que ainda não usam o componente <Button>.
+ */
+html[data-ui-theme] .portal-app-shell .bg-blue-600,
+html[data-ui-theme] .portal-app-shell .bg-blue-500,
+html[data-ui-theme] .portal-app-shell .bg-purple-600,
+html[data-ui-theme] .portal-app-shell .bg-purple-500,
+html[data-ui-theme] .portal-app-shell .bg-teal-600,
+html[data-ui-theme] .portal-app-shell .bg-indigo-600,
+html[data-ui-theme] .portal-app-shell .bg-sky-600 {
+  background-color: var(--ui-accent) !important;
+  color: var(--ui-on-accent, #fff);
+}
+
+html[data-ui-theme] .portal-app-shell .hover\:bg-blue-500:hover,
+html[data-ui-theme] .portal-app-shell .hover\:bg-blue-400:hover,
+html[data-ui-theme] .portal-app-shell .hover\:bg-purple-500:hover,
+html[data-ui-theme] .portal-app-shell .hover\:bg-purple-400:hover,
+html[data-ui-theme] .portal-app-shell .hover\:bg-teal-500:hover,
+html[data-ui-theme] .portal-app-shell .hover\:bg-indigo-500:hover {
+  background-color: var(--ui-accent-hover) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .active\:bg-blue-700:active,
+html[data-ui-theme] .portal-app-shell .active\:bg-purple-700:active,
+html[data-ui-theme] .portal-app-shell .active\:bg-teal-700:active {
+  background-color: var(--ui-accent-active) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .focus-visible\:ring-blue-400:focus-visible,
+html[data-ui-theme] .portal-app-shell .focus\:ring-blue-500:focus,
+html[data-ui-theme] .portal-app-shell .focus\:border-blue-500\/40:focus {
+  --tw-ring-color: var(--ui-accent) !important;
+  border-color: color-mix(in srgb, var(--ui-accent) 40%, transparent) !important;
+}
+
+html[data-ui-theme] .portal-app-shell input[type="checkbox"],
+html[data-ui-theme] .portal-app-shell input[type="radio"] {
+  accent-color: var(--ui-accent);
+}
+
+html[data-ui-theme] .portal-app-shell a.text-blue-400,
+html[data-ui-theme] .portal-app-shell a.text-blue-300,
+html[data-ui-theme] .portal-app-shell .text-teal-400 {
+  color: var(--ui-accent) !important;
+}
+
+/* Esquema claro: texto + superfícies legíveis (cards/tabs/KPIs) */
+html[data-ui-scheme="light"] .portal-app-shell .text-slate-50,
+html[data-ui-scheme="light"] .portal-app-shell .text-slate-100,
+html[data-ui-scheme="light"] .portal-app-shell .text-slate-200 {
+  color: var(--ui-fg) !important;
+}
+
+html[data-ui-scheme="light"] .portal-app-shell .text-slate-300,
+html[data-ui-scheme="light"] .portal-app-shell .text-slate-400,
+html[data-ui-scheme="light"] .portal-app-shell .text-slate-500,
+html[data-ui-scheme="light"] .portal-app-shell .text-slate-600,
+html[data-ui-scheme="light"] .portal-app-shell .text-slate-700 {
+  color: var(--ui-muted) !important;
+}
+
+html[data-ui-scheme="light"] .portal-app-shell .text-blue-200,
+html[data-ui-scheme="light"] .portal-app-shell .text-blue-300,
+html[data-ui-scheme="light"] .portal-app-shell .text-violet-200,
+html[data-ui-scheme="light"] .portal-app-shell .text-amber-200,
+html[data-ui-scheme="light"] .portal-app-shell .text-amber-200\/90 {
+  color: var(--ui-accent) !important;
+}
+
+html[data-ui-scheme="light"] .portal-app-shell .bg-blue-600\/25,
+html[data-ui-scheme="light"] .portal-app-shell .bg-violet-600\/30,
+html[data-ui-scheme="light"] .portal-app-shell .bg-violet-900\/30,
+html[data-ui-scheme="light"] .portal-app-shell .bg-amber-950\/20,
+html[data-ui-scheme="light"] .portal-app-shell .bg-amber-950\/30 {
+  background-color: var(--ui-accent-soft) !important;
+}
+
+html[data-ui-scheme="light"] .portal-app-shell .ring-violet-500\/40,
+html[data-ui-scheme="light"] .portal-app-shell .ring-blue-500\/40 {
+  --tw-ring-color: color-mix(in srgb, var(--ui-accent) 45%, transparent) !important;
+}
+
+html[data-ui-scheme="light"] .portal-app-shell input,
+html[data-ui-scheme="light"] .portal-app-shell select,
+html[data-ui-scheme="light"] .portal-app-shell textarea {
+  background-color: var(--ui-panel) !important;
+  color: var(--ui-fg) !important;
+  border-color: var(--ui-border) !important;
+}
+
+/* Destaques legados (badges / chips) alinhados ao accent do tema */
+html[data-ui-theme] .portal-app-shell .bg-blue-500\/10,
+html[data-ui-theme] .portal-app-shell .bg-purple-500\/15,
+html[data-ui-theme] .portal-app-shell .bg-purple-500\/20 {
+  background-color: color-mix(in srgb, var(--ui-accent) 18%, transparent) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .text-blue-300,
+html[data-ui-theme] .portal-app-shell .text-blue-400,
+html[data-ui-theme] .portal-app-shell .text-purple-100,
+html[data-ui-theme] .portal-app-shell .text-purple-200,
+html[data-ui-theme] .portal-app-shell .text-purple-400 {
+  color: var(--ui-accent) !important;
+}
+
+/* Shell usa scroll tokens do tema (sobrepõe o default navy do globals) */
+html[data-ui-theme] .portal-app-shell {
+  --portal-scroll-thumb: var(--ui-scroll-a);
+}
+
+/* --- Superfícies, cards, bordas e hovers (todas as views do shell) --- */
+html[data-ui-theme] .portal-app-shell {
+  --ui-hover-surface: color-mix(in srgb, var(--ui-accent-soft) 55%, transparent);
+  --ui-card-bg: color-mix(in srgb, var(--ui-panel) 92%, transparent);
+  --ui-input-bg: color-mix(in srgb, var(--ui-panel) 88%, var(--ui-bg));
+}
+
+html[data-ui-scheme="light"] .portal-app-shell {
+  --ui-card-bg: var(--ui-panel);
+  --ui-hover-surface: color-mix(in srgb, var(--ui-accent-soft) 75%, var(--ui-panel));
+  --ui-input-bg: color-mix(in srgb, var(--ui-panel) 96%, var(--ui-bg));
+}
+
+html[data-ui-theme] .portal-app-shell .bg-slate-950,
+html[data-ui-theme] .portal-app-shell .bg-slate-950\/40,
+html[data-ui-theme] .portal-app-shell .bg-slate-950\/50,
+html[data-ui-theme] .portal-app-shell .bg-slate-950\/60,
+html[data-ui-theme] .portal-app-shell .bg-slate-950\/80,
+html[data-ui-theme] .portal-app-shell .bg-slate-950\/90,
+html[data-ui-theme] .portal-app-shell .bg-slate-950\/95,
+html[data-ui-theme] .portal-app-shell .bg-slate-900,
+html[data-ui-theme] .portal-app-shell .bg-slate-900\/20,
+html[data-ui-theme] .portal-app-shell .bg-slate-900\/30,
+html[data-ui-theme] .portal-app-shell .bg-slate-900\/40,
+html[data-ui-theme] .portal-app-shell .bg-slate-900\/50,
+html[data-ui-theme] .portal-app-shell .bg-slate-900\/60,
+html[data-ui-theme] .portal-app-shell .bg-slate-900\/70,
+html[data-ui-theme] .portal-app-shell .bg-slate-900\/80,
+html[data-ui-theme] .portal-app-shell .bg-slate-900\/90,
+html[data-ui-theme] .portal-app-shell .bg-slate-800,
+html[data-ui-theme] .portal-app-shell .bg-slate-800\/30,
+html[data-ui-theme] .portal-app-shell .bg-slate-800\/40,
+html[data-ui-theme] .portal-app-shell .bg-slate-800\/50,
+html[data-ui-theme] .portal-app-shell .bg-slate-800\/60,
+html[data-ui-theme] .portal-app-shell .bg-slate-800\/70,
+html[data-ui-theme] .portal-app-shell .bg-slate-800\/80,
+html[data-ui-theme] .portal-app-shell .bg-slate-700\/40,
+html[data-ui-theme] .portal-app-shell .bg-slate-700\/50,
+html[data-ui-theme] .portal-app-shell .bg-\[\#070b12\],
+html[data-ui-theme] .portal-app-shell .bg-\[\#0a0f18\],
+html[data-ui-theme] .portal-app-shell .bg-\[\#0a0f18\]\/90,
+html[data-ui-theme] .portal-app-shell .bg-\[\#0f172a\],
+html[data-ui-theme] .portal-app-shell .bg-\[\#0f172a\]\/85,
+html[data-ui-theme] .portal-app-shell .bg-\[\#0c0a14\],
+html[data-ui-theme] .portal-app-shell .bg-\[\#0c0a14\]\/90,
+html[data-ui-theme] .portal-app-shell .bg-\[\#0c0a14\]\/80,
+html[data-ui-theme] .portal-app-shell .bg-\[\#0c1220\],
+html[data-ui-theme] .portal-app-shell .bg-\[\#0c1220\]\/97 {
+  background-color: var(--ui-card-bg) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .border-slate-700\/20,
+html[data-ui-theme] .portal-app-shell .border-slate-700\/30,
+html[data-ui-theme] .portal-app-shell .border-slate-700\/40,
+html[data-ui-theme] .portal-app-shell .border-slate-700\/50,
+html[data-ui-theme] .portal-app-shell .border-slate-700\/60,
+html[data-ui-theme] .portal-app-shell .border-slate-600\/40,
+html[data-ui-theme] .portal-app-shell .border-slate-600\/60,
+html[data-ui-theme] .portal-app-shell .border-slate-800\/80,
+html[data-ui-theme] .portal-app-shell .border-purple-500\/10,
+html[data-ui-theme] .portal-app-shell .border-purple-500\/15 {
+  border-color: var(--ui-border) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .hover\:bg-slate-800\/60:hover,
+html[data-ui-theme] .portal-app-shell .hover\:bg-slate-800\/40:hover,
+html[data-ui-theme] .portal-app-shell .hover\:bg-slate-800:hover,
+html[data-ui-theme] .portal-app-shell .hover\:bg-slate-700:hover,
+html[data-ui-theme] .portal-app-shell .hover\:bg-slate-700\/40:hover,
+html[data-ui-theme] .portal-app-shell .hover\:bg-purple-500\/10:hover,
+html[data-ui-theme] .portal-app-shell .hover\:bg-purple-500\/20:hover {
+  background-color: var(--ui-hover-surface) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .bg-emerald-600,
+html[data-ui-theme] .portal-app-shell .bg-emerald-500,
+html[data-ui-theme] .portal-app-shell .bg-green-600,
+html[data-ui-theme] .portal-app-shell .bg-green-500 {
+  background-color: var(--ui-accent) !important;
+  color: var(--ui-on-accent, #fff);
+}
+
+html[data-ui-theme] .portal-app-shell .hover\:bg-emerald-500:hover,
+html[data-ui-theme] .portal-app-shell .hover\:bg-emerald-400:hover,
+html[data-ui-theme] .portal-app-shell .hover\:bg-green-500:hover {
+  background-color: var(--ui-accent-hover) !important;
+}
+
+/* Campos (Input/Select/Textarea + inputs soltos) */
+html[data-ui-theme] .portal-app-shell .ui-field,
+html[data-ui-theme] .portal-app-shell input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
+html[data-ui-theme] .portal-app-shell select,
+html[data-ui-theme] .portal-app-shell textarea {
+  background-color: var(--ui-input-bg) !important;
+  color: var(--ui-fg) !important;
+  border-color: var(--ui-border) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .ui-field:focus,
+html[data-ui-theme] .portal-app-shell .ui-field:focus-visible,
+html[data-ui-theme] .portal-app-shell input:not([type="checkbox"]):not([type="radio"]):focus,
+html[data-ui-theme] .portal-app-shell select:focus,
+html[data-ui-theme] .portal-app-shell textarea:focus {
+  border-color: color-mix(in srgb, var(--ui-accent) 45%, var(--ui-border)) !important;
+  --tw-ring-color: color-mix(in srgb, var(--ui-accent) 35%, transparent) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .ui-field::placeholder,
+html[data-ui-theme] .portal-app-shell input::placeholder,
+html[data-ui-theme] .portal-app-shell textarea::placeholder {
+  color: var(--ui-muted) !important;
+  opacity: 0.85;
+}
+
+/* Search bar global */
+html[data-ui-theme] .portal-app-shell .ui-search-input {
+  background-color: var(--ui-input-bg) !important;
+  color: var(--ui-fg) !important;
+  border-color: var(--ui-border) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .ui-search-input:focus {
+  border-color: color-mix(in srgb, var(--ui-accent) 50%, var(--ui-border)) !important;
+  --tw-ring-color: color-mix(in srgb, var(--ui-accent) 28%, transparent) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .ui-search-input::placeholder {
+  color: var(--ui-muted) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .ui-search-icon {
+  color: var(--ui-muted);
+}
+
+html[data-ui-theme] .portal-app-shell .ui-search-kbd {
+  color: var(--ui-muted);
+  border-color: var(--ui-border);
+  background: color-mix(in srgb, var(--ui-bg) 80%, transparent);
+}
+
+html[data-ui-theme] .portal-app-shell .ui-search-panel {
+  background: color-mix(in srgb, var(--ui-panel) 96%, transparent) !important;
+  border-color: var(--ui-border) !important;
+  color: var(--ui-fg);
+}
+
+html[data-ui-theme] .portal-app-shell .ui-search-empty,
+html[data-ui-theme] .portal-app-shell .ui-search-desc {
+  color: var(--ui-muted) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .ui-search-title {
+  color: var(--ui-fg) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .ui-search-chip {
+  background: color-mix(in srgb, var(--ui-accent-soft) 70%, transparent) !important;
+  color: var(--ui-muted) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .ui-search-hit:hover {
+  background: var(--ui-hover-surface) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .ui-search-hit-active {
+  background: color-mix(in srgb, var(--ui-accent) 18%, transparent) !important;
+}
+
+/* --- Modais (Dialog / Sheet / Theme shop) --- */
+html[data-ui-theme] .ui-modal {
+  background: color-mix(in srgb, var(--ui-panel) 96%, var(--ui-bg)) !important;
+  border-color: var(--ui-border) !important;
+  color: var(--ui-fg);
+  --portal-scroll-thumb: var(--ui-scroll-a);
+  animation: portal-scrollbar-breathe 3.2s ease-in-out infinite;
+}
+
+html[data-ui-theme] .ui-modal-header {
+  border-color: var(--ui-border) !important;
+}
+
+html[data-ui-theme] .ui-modal-title {
+  color: var(--ui-fg) !important;
+}
+
+html[data-ui-theme] .ui-modal-desc {
+  color: var(--ui-muted) !important;
+}
+
+html[data-ui-theme] .ui-modal-close {
+  color: var(--ui-muted);
+}
+
+html[data-ui-theme] .ui-modal-close:hover {
+  color: var(--ui-fg);
+  background: color-mix(in srgb, var(--ui-accent-soft) 55%, transparent);
+}
+
+html[data-ui-theme] .ui-modal-close:focus-visible {
+  --tw-ring-color: var(--ui-accent);
+}
+
+/* Topbar / search: brilho suave (overlay) */
+@keyframes ui-glow-breathe {
+  0%,
+  100% {
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.26;
+  }
+}
+
+html[data-ui-theme] .ui-surface-breathe {
+  position: relative;
+  isolation: isolate;
+}
+
+html[data-ui-theme] .ui-surface-breathe::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: radial-gradient(
+    700px circle at 20% -20%,
+    var(--ui-accent-soft) 0%,
+    transparent 60%
+  );
+  opacity: 0.14;
+  animation: ui-glow-breathe 7.5s ease-in-out infinite;
+}
+
+html[data-ui-theme] .ui-surface-breathe > *:not(.ui-nav-atmosphere),
+html[data-ui-theme] .ui-nav-atmosphere-host > *:not(.ui-nav-atmosphere) {
+  position: relative;
+  z-index: 1;
+}
+
+/* Nav / topbar / search: bolhas desfocadas a flutuar (cor do tema).
+ * NÃO forçar position:relative no drawer - isso anulava position:fixed em mobile
+ * e o aside (translate -100%) continuava a ocupar largura no flex. */
+html[data-ui-theme] .ui-nav-atmosphere-host {
+  isolation: isolate;
+}
+
+html[data-ui-theme] .ui-nav-atmosphere-host:not(.portal-fixed-drawer) {
+  position: relative;
+}
+
+/* Atmosfera partilhada: uma camada no shell (nav + header + view) */
+.portal-app-shell.ui-shell-atmosphere-host {
+  position: relative;
+  isolation: isolate;
+}
+
+.portal-app-shell > .ui-shell-atmosphere {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: 0;
+  pointer-events: none;
+}
+
+/*
+ * Só a coluna de conteúdo (não drawer nem overlays fixed).
+ * Evita anular z-index:50 do drawer / z-40 do scrim mobile.
+ */
+.portal-app-shell.ui-shell-atmosphere-host > .flex.min-h-0.flex-1,
+.portal-app-shell.ui-shell-atmosphere-host > .ui-portal-top-cluster,
+.portal-app-shell.ui-shell-atmosphere-host > main {
+  position: relative;
+  z-index: 1;
+}
+
+.ui-portal-top-cluster {
+  position: relative;
+  background: transparent;
+}
+
+.ui-portal-top-cluster > .ui-themed-topbar {
+  background: transparent !important;
+}
+
+/* Sidebar: cortar orbs locais do rail; a camada shell passa por baixo (translucidez). */
+html[data-ui-theme] .ui-themed-sidebar.ui-nav-atmosphere-host {
+  overflow: hidden;
+}
+
+html[data-ui-theme] .ui-themed-topbar.ui-nav-atmosphere-host {
+  overflow: visible;
+  flex-shrink: 0;
+  z-index: 30;
+}
+
+.ui-nav-atmosphere {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.ui-nav-orb {
+  --orb-base-opacity: 0.52;
+  position: absolute;
+  display: block;
+  border-radius: 999px;
+  filter: blur(28px);
+  will-change: transform, opacity;
+  background: radial-gradient(
+    circle at 30% 30%,
+    color-mix(in srgb, var(--ui-accent) 80%, white) 0%,
+    color-mix(in srgb, var(--ui-accent) 50%, transparent) 45%,
+    transparent 70%
+  );
+  opacity: var(--orb-base-opacity);
+}
+
+html[data-ui-scheme="light"] .ui-nav-orb {
+  --orb-base-opacity: 0.58;
+  filter: blur(26px);
+  background: radial-gradient(
+    circle at 30% 30%,
+    color-mix(in srgb, var(--ui-accent) 72%, transparent) 0%,
+    color-mix(in srgb, var(--ui-accent) 38%, transparent) 48%,
+    transparent 72%
+  );
+}
+
+@keyframes ui-orb-shimmer {
+  0%,
+  100% {
+    opacity: var(--orb-base-opacity);
+  }
+  50% {
+    opacity: calc(var(--orb-base-opacity) * 1.4);
+  }
+}
+
+.ui-nav-orb-a {
+  width: 9rem;
+  height: 9rem;
+  top: -8%;
+  left: -25%;
+  animation:
+    ui-orb-drift-a 14s ease-in-out infinite,
+    ui-orb-shimmer 5.5s ease-in-out infinite;
+}
+
+.ui-nav-orb-b {
+  --orb-base-opacity: 0.42;
+  width: 7rem;
+  height: 7rem;
+  top: 28%;
+  right: -30%;
+  animation:
+    ui-orb-drift-b 18s ease-in-out infinite,
+    ui-orb-shimmer 7s ease-in-out infinite 0.4s;
+}
+
+.ui-nav-orb-c {
+  --orb-base-opacity: 0.4;
+  width: 11rem;
+  height: 11rem;
+  bottom: 8%;
+  left: -35%;
+  animation:
+    ui-orb-drift-c 22s ease-in-out infinite,
+    ui-orb-shimmer 8s ease-in-out infinite 0.8s;
+}
+
+.ui-nav-orb-d {
+  --orb-base-opacity: 0.48;
+  width: 5.5rem;
+  height: 5.5rem;
+  top: 55%;
+  left: 45%;
+  filter: blur(22px);
+  animation:
+    ui-orb-drift-d 12s ease-in-out infinite,
+    ui-orb-shimmer 4.8s ease-in-out infinite 0.2s;
+}
+
+.ui-nav-orb-e {
+  --orb-base-opacity: 0.55;
+  width: 4rem;
+  height: 4rem;
+  top: 12%;
+  left: 55%;
+  filter: blur(16px);
+  background: radial-gradient(
+    circle at 40% 40%,
+    color-mix(in srgb, var(--ui-accent) 85%, white) 0%,
+    color-mix(in srgb, var(--ui-accent-soft) 70%, transparent) 55%,
+    transparent 75%
+  );
+  animation:
+    ui-orb-drift-e 16s ease-in-out infinite,
+    ui-orb-shimmer 6.2s ease-in-out infinite 1s;
+}
+
+/* Orbs extra - camada shell (viewport inteiro) */
+.ui-nav-orb-f {
+  --orb-base-opacity: 0.38;
+  width: 14rem;
+  height: 14rem;
+  top: 35%;
+  left: 20%;
+  filter: blur(40px);
+  animation:
+    ui-orb-drift-f 26s ease-in-out infinite,
+    ui-orb-shimmer 9s ease-in-out infinite 0.6s;
+}
+
+.ui-nav-orb-g {
+  --orb-base-opacity: 0.44;
+  width: 8rem;
+  height: 8rem;
+  top: 62%;
+  right: 12%;
+  filter: blur(24px);
+  animation:
+    ui-orb-drift-g 19s ease-in-out infinite,
+    ui-orb-shimmer 5.8s ease-in-out infinite 1.2s;
+}
+
+.ui-nav-orb-h {
+  --orb-base-opacity: 0.36;
+  width: 18rem;
+  height: 18rem;
+  bottom: -8%;
+  right: 28%;
+  filter: blur(48px);
+  animation:
+    ui-orb-drift-h 32s ease-in-out infinite,
+    ui-orb-shimmer 11s ease-in-out infinite 0.3s;
+}
+
+.ui-nav-orb-i {
+  --orb-base-opacity: 0.5;
+  width: 5rem;
+  height: 5rem;
+  top: 18%;
+  left: 72%;
+  filter: blur(14px);
+  background: radial-gradient(
+    circle at 40% 40%,
+    color-mix(in srgb, var(--ui-accent) 90%, white) 0%,
+    transparent 72%
+  );
+  animation:
+    ui-orb-drift-i 13s ease-in-out infinite,
+    ui-orb-shimmer 4.4s ease-in-out infinite 0.9s;
+}
+
+.ui-nav-orb-j {
+  --orb-base-opacity: 0.4;
+  width: 10rem;
+  height: 10rem;
+  top: 78%;
+  left: 8%;
+  filter: blur(30px);
+  animation:
+    ui-orb-drift-j 21s ease-in-out infinite,
+    ui-orb-shimmer 7.4s ease-in-out infinite 1.5s;
+}
+
+html[data-ui-scheme="light"] .ui-nav-orb-b {
+  --orb-base-opacity: 0.5;
+}
+html[data-ui-scheme="light"] .ui-nav-orb-c {
+  --orb-base-opacity: 0.48;
+}
+html[data-ui-scheme="light"] .ui-nav-orb-d {
+  --orb-base-opacity: 0.55;
+}
+html[data-ui-scheme="light"] .ui-nav-orb-e {
+  --orb-base-opacity: 0.65;
+  background: radial-gradient(
+    circle at 40% 40%,
+    color-mix(in srgb, var(--ui-accent) 80%, transparent) 0%,
+    transparent 70%
+  );
+}
+html[data-ui-scheme="light"] .ui-nav-orb-f,
+html[data-ui-scheme="light"] .ui-nav-orb-h {
+  --orb-base-opacity: 0.42;
+}
+html[data-ui-scheme="light"] .ui-nav-orb-i {
+  --orb-base-opacity: 0.58;
+}
+
+@keyframes ui-orb-drift-a {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(55%, 35%) scale(1.15);
+  }
+}
+
+@keyframes ui-orb-drift-b {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-60%, 40%) scale(1.2);
+  }
+}
+
+@keyframes ui-orb-drift-c {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1.05);
+  }
+  50% {
+    transform: translate(50%, -45%) scale(0.9);
+  }
+}
+
+@keyframes ui-orb-drift-d {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  33% {
+    transform: translate(-40%, -30%);
+  }
+  66% {
+    transform: translate(30%, 25%);
+  }
+}
+
+@keyframes ui-orb-drift-e {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(0.9);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translate(-50%, 60%) scale(1.25);
+    opacity: 0.65;
+  }
+}
+
+@keyframes ui-orb-drift-f {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(35%, -25%) scale(1.12);
+  }
+}
+
+@keyframes ui-orb-drift-g {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-45%, -30%) scale(1.18);
+  }
+}
+
+@keyframes ui-orb-drift-h {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1.05);
+  }
+  50% {
+    transform: translate(-30%, -40%) scale(0.92);
+  }
+}
+
+@keyframes ui-orb-drift-i {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(0.95);
+  }
+  33% {
+    transform: translate(-25%, 40%) scale(1.2);
+  }
+  66% {
+    transform: translate(20%, -20%) scale(1.05);
+  }
+}
+
+@keyframes ui-orb-drift-j {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(55%, -35%) scale(1.15);
+  }
+}
+
+/* Session bar / search identity */
+html[data-ui-theme] .ui-session-name,
+html[data-ui-theme] .ui-session-action {
+  color: var(--ui-muted);
+}
+
+html[data-ui-theme] .ui-session-action:hover {
+  color: var(--ui-fg);
+}
+
+html[data-ui-theme] .ui-session-slug {
+  color: color-mix(in srgb, var(--ui-muted) 80%, transparent);
+}
+
+html[data-ui-theme] .ui-session-dot {
+  background: var(--ui-muted);
+}
+
+html[data-ui-theme] .ui-session-role {
+  background: color-mix(in srgb, var(--ui-accent) 16%, transparent);
+  color: var(--ui-accent);
+}
+
+html[data-ui-theme] .ui-icon-btn {
+  color: var(--ui-muted);
+}
+
+html[data-ui-theme] .ui-icon-btn:hover {
+  background: color-mix(in srgb, var(--ui-accent-soft) 55%, transparent);
+  color: var(--ui-fg);
+}
+
+/* Badge do plano (sob o nome NexiForma) */
+.ui-plan-badge {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 0.1rem 0.45rem;
+  line-height: 1.2;
+  text-decoration: none;
+}
+
+.ui-plan-badge-text {
+  display: inline-block;
+  max-width: 9.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ui-plan-shimmer 3.2s linear infinite;
+}
+
+@keyframes ui-plan-shimmer {
+  0% {
+    background-position: 0% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+.ui-plan-badge.plan-starter {
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(59, 130, 246, 0.35);
+}
+.ui-plan-badge.plan-starter .ui-plan-badge-text {
+  background-image: linear-gradient(
+    90deg,
+    #93c5fd 0%,
+    #3b82f6 35%,
+    #dbeafe 50%,
+    #60a5fa 70%,
+    #93c5fd 100%
+  );
+}
+
+.ui-plan-badge.plan-pro {
+  background: rgba(139, 92, 246, 0.16);
+  border-color: rgba(139, 92, 246, 0.4);
+}
+.ui-plan-badge.plan-pro .ui-plan-badge-text {
+  background-image: linear-gradient(
+    90deg,
+    #c4b5fd 0%,
+    #8b5cf6 35%,
+    #ede9fe 50%,
+    #a78bfa 70%,
+    #c4b5fd 100%
+  );
+}
+
+.ui-plan-badge.plan-enterprise {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.42);
+}
+.ui-plan-badge.plan-enterprise .ui-plan-badge-text {
+  background-image: linear-gradient(
+    90deg,
+    #fcd34d 0%,
+    #f59e0b 30%,
+    #fff7ed 48%,
+    #fbbf24 65%,
+    #fcd34d 100%
+  );
+}
+
+.ui-plan-badge.plan-modular {
+  background: rgba(45, 212, 191, 0.14);
+  border-color: rgba(45, 212, 191, 0.4);
+}
+.ui-plan-badge.plan-modular .ui-plan-badge-text {
+  background-image: linear-gradient(
+    90deg,
+    #5eead4 0%,
+    #14b8a6 35%,
+    #ccfbf1 50%,
+    #2dd4bf 70%,
+    #5eead4 100%
+  );
+}
+
+.ui-plan-badge.plan-default {
+  background: color-mix(in srgb, var(--ui-accent-soft, #1e3a5f) 55%, transparent);
+  border-color: color-mix(in srgb, var(--ui-accent, #2563eb) 40%, transparent);
+}
+.ui-plan-badge.plan-default .ui-plan-badge-text {
+  background-image: linear-gradient(
+    90deg,
+    var(--ui-muted, #94a3b8) 0%,
+    var(--ui-accent, #2563eb) 40%,
+    var(--ui-fg, #e8eef7) 55%,
+    var(--ui-accent, #2563eb) 75%,
+    var(--ui-muted, #94a3b8) 100%
+  );
+}
+
+/* Contadores / badges accent (CRM sugestões, etc.) */
+html[data-ui-theme] .ui-count-badge,
+html[data-ui-theme] .ui-badge-accent {
+  background: color-mix(in srgb, var(--ui-accent) 22%, transparent) !important;
+  color: var(--ui-accent) !important;
+  border-color: color-mix(in srgb, var(--ui-accent) 35%, transparent) !important;
+}
+
+/* Flyout + toggle da rail */
+html[data-ui-theme] .ui-nav-flyout {
+  background: color-mix(in srgb, var(--ui-panel) 96%, var(--ui-bg));
+  border-color: var(--ui-border);
+  color: var(--ui-fg);
+  backdrop-filter: blur(10px);
+}
+
+html[data-ui-theme] .ui-nav-flyout-title {
+  color: var(--ui-muted);
+}
+
+html[data-ui-theme] .ui-nav-rail-toggle {
+  color: var(--ui-muted);
+  border: 1px solid transparent;
+}
+
+html[data-ui-theme] .ui-nav-rail-toggle:hover {
+  color: var(--ui-fg);
+  background: color-mix(in srgb, var(--ui-accent-soft) 55%, transparent);
+  border-color: var(--ui-border);
+}
+
+html[data-ui-theme] .ui-nav-rail .border-t {
+  border-color: var(--ui-border) !important;
+}
+
+/* Menu Administração - bloco mais destacado */
+html[data-ui-theme] .ui-nav-admin {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--ui-border);
+}
+
+html[data-ui-theme] .ui-nav-admin .ui-nav-group,
+html[data-ui-theme] .ui-nav-admin .ui-nav-group-active {
+  border: 1px solid var(--ui-border);
+  background: color-mix(in srgb, var(--ui-accent-soft) 35%, transparent);
+}
+
+html[data-ui-theme] .ui-settings-card {
+  background: var(--ui-card-bg, var(--ui-panel));
+  border: 1px solid var(--ui-border);
+  border-radius: 1rem;
+}
+
+html[data-ui-theme] .ui-settings-card-title {
+  color: var(--ui-fg);
+}
+
+html[data-ui-theme] .ui-settings-card-desc {
+  color: var(--ui-muted);
+}
+
+/* Remap alargado: violet/purple leftovers + cards soltos */
+html[data-ui-theme] .portal-app-shell .bg-violet-500\/15,
+html[data-ui-theme] .portal-app-shell .bg-violet-500\/10,
+html[data-ui-theme] .portal-app-shell .bg-purple-500\/10,
+html[data-ui-theme] .portal-app-shell .bg-purple-500\/15,
+html[data-ui-theme] .portal-app-shell .bg-purple-500\/20,
+html[data-ui-theme] .portal-app-shell .bg-purple-900\/60,
+html[data-ui-theme] .portal-app-shell .bg-purple-900\/50 {
+  background-color: color-mix(in srgb, var(--ui-accent) 18%, transparent) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .text-violet-300,
+html[data-ui-theme] .portal-app-shell .text-violet-400,
+html[data-ui-theme] .portal-app-shell .text-purple-200,
+html[data-ui-theme] .portal-app-shell .text-purple-300,
+html[data-ui-theme] .portal-app-shell .text-purple-400 {
+  color: var(--ui-accent) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .border-purple-500\/10,
+html[data-ui-theme] .portal-app-shell .border-purple-500\/15,
+html[data-ui-theme] .portal-app-shell .border-purple-500\/20,
+html[data-ui-theme] .portal-app-shell .border-purple-500\/25,
+html[data-ui-theme] .portal-app-shell .border-purple-500\/35,
+html[data-ui-theme] .portal-app-shell .border-violet-500\/30 {
+  border-color: var(--ui-border) !important;
+}
+
+html[data-ui-theme] .portal-app-shell .rounded-2xl.border,
+html[data-ui-theme] .portal-app-shell .rounded-xl.border {
+  border-color: var(--ui-border);
+}
+
+/* Theme shop fora do shell: herdar breathing do thumb */
+html[data-ui-theme] .ui-theme-shop {
+  --ui-scroll-a: color-mix(in srgb, var(--ui-accent-soft) 70%, var(--ui-accent));
+  --ui-scroll-b: var(--ui-accent);
+}
+
+html[data-ui-theme] .ui-settings-hero {
+  border-color: var(--ui-border) !important;
+}
+
+/* Preferir reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  html[data-ui-theme] .ui-surface-breathe::before,
+  html[data-ui-theme] .ui-modal,
+  .portal-app-shell,
+  .ui-nav-orb,
+  .ui-plan-badge-text {
+    animation: none !important;
+  }
+
+  .ui-plan-badge-text {
+    background: none !important;
+    color: inherit;
+    -webkit-background-clip: unset;
+    background-clip: unset;
+  }
+
+  .ui-plan-badge.plan-starter .ui-plan-badge-text {
+    color: #60a5fa;
+  }
+  .ui-plan-badge.plan-pro .ui-plan-badge-text {
+    color: #a78bfa;
+  }
+  .ui-plan-badge.plan-enterprise .ui-plan-badge-text {
+    color: #fbbf24;
+  }
+  .ui-plan-badge.plan-modular .ui-plan-badge-text {
+    color: #2dd4bf;
+  }
+}

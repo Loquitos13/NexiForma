@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -29,6 +30,10 @@ import type {
   UpdateSerieFaturacaoDto,
 } from "./dto/fatura.dto";
 import { FaturaHtmlExportService } from "./fatura-html-export.service";
+import {
+  mergeFaturaTemplateCoresMetadata,
+  parseFaturaTemplateCores,
+} from "./fatura-template-cores.util";
 import {
   buildFaturaEmitidaInternaEmail,
   buildFaturaEnviadaClienteEmail,
@@ -546,7 +551,9 @@ export class FaturasService {
       });
       if (!fatura?.numero) return;
 
-      const pkg = await this.htmlExport.buildPrintablePdf(user, faturaId);
+      const pkg = await this.htmlExport.buildPrintablePdf(user, faturaId, {
+        exemplar: "DUPLICADO",
+      });
 
       const emitente = await this.prisma.user.findUnique({
         where: { id: user.sub },
@@ -567,6 +574,9 @@ export class FaturasService {
       for (const g of gestores) {
         const email = resolverEmailNotificacaoUtilizador(g.role, g.email);
         if (email) destinatarios.add(email.toLowerCase());
+      }
+      if (config.emailGestor?.trim()) {
+        destinatarios.add(config.emailGestor.trim().toLowerCase());
       }
 
       if (destinatarios.size === 0) return;
@@ -736,7 +746,9 @@ export class FaturasService {
       );
     }
 
-    const pkg = await this.htmlExport.buildPrintablePdf(user, id);
+    const pkg = await this.htmlExport.buildPrintablePdf(user, id, {
+      exemplar: "ORIGINAL",
+    });
     const config = await this.ensureConfig(tenantId);
     const resumo = this.buildFaturaEmailResumo(existing, config, pkg.filename);
     const emailTpl = buildFaturaEnviadaClienteEmail(resumo);
@@ -996,7 +1008,17 @@ export class FaturasService {
   }
 
   async getConfig(user: RequestUser) {
-    const tenantId = requireTenantId(user);
+    return this.getConfigForTenant(requireTenantId(user));
+  }
+
+  /** Configuração de faturação por tenant (control-plane / superadmin). */
+  async getConfigForTenant(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, metadata: true },
+    });
+    if (!tenant) throw new NotFoundException("Tenant não encontrado.");
+
     const config = await this.ensureConfig(tenantId);
     const series = await this.prisma.serieFaturacao.findMany({
       where: { tenantId, ativo: true },
@@ -1004,10 +1026,12 @@ export class FaturasService {
     });
     const integracao = this.atFaturas.getPublicConfig();
     const certificacao = this.buildCertificacaoStatus(config, series);
+    const templateCores = parseFaturaTemplateCores(tenant.metadata);
     return {
       config: this.sanitizeConfigForApi({
         ...config,
         softwareCertificadoEfectivo: this.resolveSoftwareCertNumber(config),
+        templateCores,
       }),
       series,
       integracao,
@@ -1065,8 +1089,63 @@ export class FaturasService {
     };
   }
 
+  /**
+   * Campos de integração AT / certificação - só superadmin (control-plane)
+   * ou personificação. O gestor preenche emitente, séries e template.
+   */
+  private assertTenantMayUpdateFaturacaoFields(
+    user: RequestUser,
+    dto: UpdateConfigFaturacaoDto,
+  ) {
+    if (user.impersonating || user.role === "super_admin") return;
+    const atKeys: (keyof UpdateConfigFaturacaoDto)[] = [
+      "softwareCertificado",
+      "atSubutilizador",
+      "atWfaPassword",
+      "atCertificadoRef",
+      "comunicacaoAtiva",
+      "comunicacaoAutomatica",
+      "aceitarLicencaAtWs",
+    ];
+    const presentes = atKeys.filter((k) => dto[k] !== undefined);
+    if (presentes.length > 0) {
+      throw new ForbiddenException(
+        "Campos de integração AT e certificação só podem ser alterados pelo superadmin na plataforma.",
+      );
+    }
+  }
+
   async updateConfig(user: RequestUser, dto: UpdateConfigFaturacaoDto) {
+    this.assertTenantMayUpdateFaturacaoFields(user, dto);
     const tenantId = requireTenantId(user);
+    return this.applyConfigUpdate(tenantId, user, dto);
+  }
+
+  /** Actualização de config AT pelo superadmin (control-plane). */
+  async updateConfigForTenantAsPlatform(
+    actor: RequestUser,
+    tenantId: string,
+    dto: UpdateConfigFaturacaoDto,
+  ) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, slug: true },
+    });
+    if (!tenant) throw new NotFoundException("Tenant não encontrado.");
+    const asUser: RequestUser = {
+      ...actor,
+      tenantId: tenant.id,
+      tenantSlug: tenant.slug,
+      impersonating: true,
+    };
+    return this.applyConfigUpdate(tenantId, asUser, dto);
+  }
+
+  private async applyConfigUpdate(
+    tenantId: string,
+    user: RequestUser,
+    dto: UpdateConfigFaturacaoDto,
+  ) {
     const existing = await this.ensureConfig(tenantId);
     const integracao = this.atFaturas.getPublicConfig();
 
@@ -1194,7 +1273,49 @@ export class FaturasService {
       },
     });
 
-    assertDadosEmitenteCompletos(config);
+    const emitenteTouched =
+      dto.nomeEmpresa !== undefined ||
+      dto.moradaFiscal !== undefined ||
+      dto.nifEmitente !== undefined ||
+      dto.iban !== undefined ||
+      dto.bicSwift !== undefined ||
+      dto.emailGestor !== undefined ||
+      dto.capitalSocial !== undefined ||
+      dto.consRegCom !== undefined;
+    if (emitenteTouched || nextComunicacao) {
+      assertDadosEmitenteCompletos(config);
+    }
+
+    let templateCores = parseFaturaTemplateCores(null);
+    if (dto.templateCores !== undefined) {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { metadata: true },
+      });
+      // Garantir plain object (DTO Nest) com headerMode explícito.
+      const coresPatch = {
+        headerMode:
+          dto.templateCores.headerMode === "solid" ? ("solid" as const) : ("gradient" as const),
+        headerFrom: dto.templateCores.headerFrom,
+        headerVia: dto.templateCores.headerVia,
+        headerTo: dto.templateCores.headerTo,
+        accent: dto.templateCores.accent,
+        surface: dto.templateCores.surface,
+        border: dto.templateCores.border,
+      };
+      const nextMeta = mergeFaturaTemplateCoresMetadata(tenant?.metadata, coresPatch);
+      await this.prisma.tenant.update({
+        where: { id: tenantId },
+        data: { metadata: nextMeta as Prisma.InputJsonValue },
+      });
+      templateCores = parseFaturaTemplateCores(nextMeta);
+    } else {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { metadata: true },
+      });
+      templateCores = parseFaturaTemplateCores(tenant?.metadata);
+    }
 
     if (aceitarAgora) {
       void this.audit.log({
@@ -1217,6 +1338,7 @@ export class FaturasService {
       config: this.sanitizeConfigForApi({
         ...config,
         softwareCertificadoEfectivo: this.resolveSoftwareCertNumber(config),
+        templateCores,
       }),
       series,
       integracao,
@@ -1228,6 +1350,20 @@ export class FaturasService {
         aceiteEm: config.atLicencaAceiteEm?.toISOString() ?? null,
       },
     };
+  }
+
+  async testarLigacaoAtAsPlatform(actor: RequestUser, tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, slug: true },
+    });
+    if (!tenant) throw new NotFoundException("Tenant não encontrado.");
+    return this.testarLigacaoAt({
+      ...actor,
+      tenantId: tenant.id,
+      tenantSlug: tenant.slug,
+      impersonating: true,
+    });
   }
 
   async testarLigacaoAt(user: RequestUser) {

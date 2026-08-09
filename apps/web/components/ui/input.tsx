@@ -20,7 +20,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           id={inputId}
           ref={ref}
           className={cn(
-            "h-9 w-full rounded-lg border border-slate-600/60 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500",
+            "ui-field h-9 w-full rounded-lg border border-slate-600/60 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500",
             "focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-500/60",
             "disabled:opacity-50 disabled:cursor-not-allowed",
             error && "border-red-500/60 focus:ring-red-500/40",
@@ -54,7 +54,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
           id={selectId}
           ref={ref}
           className={cn(
-            "h-9 w-full rounded-lg border border-slate-600/60 bg-slate-900/80 px-3 py-2 text-sm text-slate-100",
+            "ui-field h-9 w-full rounded-lg border border-slate-600/60 bg-slate-900/80 px-3 py-2 text-sm text-slate-100",
             "focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-500/60",
             "disabled:opacity-50 disabled:cursor-not-allowed",
             error && "border-red-500/60",
@@ -90,7 +90,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           id={textareaId}
           ref={ref}
           className={cn(
-            "w-full rounded-lg border border-slate-600/60 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 resize-y min-h-[80px]",
+            "ui-field w-full rounded-lg border border-slate-600/60 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 resize-y min-h-[80px]",
             "focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-500/60",
             "disabled:opacity-50 disabled:cursor-not-allowed",
             error && "border-red-500/60",

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { NexiFormaLogoAnimated } from "@/components/brand/NexiFormaLogoAnimated";
 import { cn } from "@/lib/ui/cn";
 import {
@@ -14,6 +14,13 @@ import {
   type NavItem,
 } from "@/lib/ui/nav-items";
 import { CrmSugestoesNavBadge } from "@/components/crm/crm-sugestoes-panel";
+import { NavAtmosphere } from "@/components/portal/nav-atmosphere";
+import { MobileNavToggle } from "@/components/portal/mobile-nav-toggle";
+import { TenantSubscriptionBadge } from "@/components/portal/tenant-subscription-badge";
+import {
+  readPortalNavRailCollapsed,
+  writePortalNavRailCollapsed,
+} from "@/lib/client/portal-nav-rail";
 import type { JwtRole, TenantEntitlements } from "@nexiforma/shared";
 
 interface SidebarProps {
@@ -22,16 +29,15 @@ interface SidebarProps {
   entitlements?: TenantEntitlements | null;
   mobileOpen?: boolean;
   onMobileClose?: () => void;
+  railCollapsed?: boolean;
+  onRailCollapsedChange?: (collapsed: boolean) => void;
 }
 
 function isActive(href: string, pathname: string) {
   if (href === "/portal") return pathname === "/portal";
   if (href === "/portal/crm") return pathname === "/portal/crm";
   if (href === "/portal/propostas") {
-    return (
-      pathname === "/portal/propostas" ||
-      (pathname.startsWith("/portal/propostas/") && !pathname.startsWith("/portal/propostas/config"))
-    );
+    return pathname === "/portal/propostas" || pathname.startsWith("/portal/propostas/");
   }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
@@ -55,29 +61,37 @@ function NavLink({
   entitlements,
   onNavigate,
   nested = false,
+  railCollapsed = false,
 }: {
   item: NavItem;
   pathname: string;
   entitlements?: TenantEntitlements | null;
   onNavigate?: () => void;
   nested?: boolean;
+  railCollapsed?: boolean;
 }) {
   const active = isActive(item.href, pathname);
   return (
     <Link
       href={item.href}
       onClick={onNavigate}
+      title={railCollapsed ? item.label : undefined}
       className={cn(
-        "flex items-center gap-2.5 rounded-lg text-sm transition-colors",
-        nested ? "px-3 py-1.5" : "px-3 py-2",
-        active
-          ? "bg-blue-600/20 font-semibold text-blue-300"
-          : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200",
+        "ui-nav-link flex items-center rounded-lg text-sm transition-[background-color,color,padding,gap] duration-300",
+        railCollapsed ? "justify-center px-2 py-2.5 gap-0" : nested ? "gap-2.5 px-3 py-1.5" : "gap-2.5 px-3 py-2",
+        active ? "ui-nav-item-active font-semibold" : "ui-nav-item",
       )}
     >
       <NavIcon name={item.icon} />
-      <span className="min-w-0 flex-1 truncate">{item.label}</span>
-      {item.href === "/portal/crm/sugestoes-ia" && entitlements?.canAccessCrm ? (
+      <span
+        className={cn(
+          "ui-nav-label min-w-0 flex-1 truncate transition-[opacity,max-width,margin] duration-300",
+          railCollapsed ? "max-w-0 opacity-0 overflow-hidden m-0" : "max-w-[12rem] opacity-100",
+        )}
+      >
+        {item.label}
+      </span>
+      {!railCollapsed && item.href === "/portal/crm/sugestoes-ia" && entitlements?.canAccessCrm ? (
         <CrmSugestoesNavBadge enabled />
       ) : null}
     </Link>
@@ -89,25 +103,33 @@ function NavSection({
   pathname,
   entitlements,
   onNavigate,
+  railCollapsed,
 }: {
   group: NavGroup;
   pathname: string;
   entitlements?: TenantEntitlements | null;
   onNavigate?: () => void;
+  railCollapsed: boolean;
 }) {
   const collapsible = isNavGroupCollapsible(group);
   const title = navGroupTitle(group);
   const hasActive = groupHasActiveItem(group.items, pathname);
   const storageKey = `portal-nav:${group.module ?? group.label}`;
-
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const flyoutRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(() => hasActive);
+  const [flyoutPos, setFlyoutPos] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
-    if (hasActive) setOpen(true);
-  }, [hasActive]);
+    if (hasActive && !railCollapsed) setOpen(true);
+  }, [hasActive, railCollapsed]);
 
   useEffect(() => {
-    if (!collapsible) return;
+    if (railCollapsed) setOpen(false);
+  }, [railCollapsed]);
+
+  useEffect(() => {
+    if (!collapsible || railCollapsed) return;
     try {
       const stored = sessionStorage.getItem(storageKey);
       if (stored === "1") setOpen(true);
@@ -115,24 +137,61 @@ function NavSection({
     } catch {
       /* ignore */
     }
-  }, [collapsible, storageKey]);
+  }, [collapsible, storageKey, railCollapsed]);
+
+  useEffect(() => {
+    if (!railCollapsed || !open) {
+      setFlyoutPos(null);
+      return;
+    }
+    const syncPos = () => {
+      const btn = sectionRef.current?.querySelector<HTMLElement>(".ui-nav-group-btn");
+      if (!btn) return;
+      const r = btn.getBoundingClientRect();
+      setFlyoutPos({ top: r.top, left: r.right + 8 });
+    };
+    syncPos();
+    window.addEventListener("resize", syncPos);
+    window.addEventListener("scroll", syncPos, true);
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (sectionRef.current?.contains(t) || flyoutRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => {
+      window.removeEventListener("resize", syncPos);
+      window.removeEventListener("scroll", syncPos, true);
+      document.removeEventListener("mousedown", onDoc);
+    };
+  }, [railCollapsed, open]);
 
   const toggle = () => {
     setOpen((prev) => {
       const next = !prev;
-      try {
-        sessionStorage.setItem(storageKey, next ? "1" : "0");
-      } catch {
-        /* ignore */
+      if (!railCollapsed) {
+        try {
+          sessionStorage.setItem(storageKey, next ? "1" : "0");
+        } catch {
+          /* ignore */
+        }
       }
       return next;
     });
   };
 
+  const isAdmin = group.label === "Administracao";
+  const groupIcon = group.icon ?? group.items[0]?.icon ?? "Circle";
+
   if (!collapsible) {
     return (
-      <div className="mb-4">
-        <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+      <div className={cn("mb-4", railCollapsed && "mb-2")}>
+        <div
+          className={cn(
+            "ui-nav-section-label mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest transition-[opacity,max-height,margin] duration-300 overflow-hidden",
+            railCollapsed ? "max-h-0 opacity-0 m-0 p-0" : "max-h-8 opacity-100",
+          )}
+        >
           {title}
         </div>
         <div className="space-y-0.5">
@@ -143,6 +202,7 @@ function NavSection({
               pathname={pathname}
               entitlements={entitlements}
               onNavigate={onNavigate}
+              railCollapsed={railCollapsed}
             />
           ))}
         </div>
@@ -151,52 +211,119 @@ function NavSection({
   }
 
   return (
-    <div className="mb-2">
+    <div
+      ref={sectionRef}
+      className={cn("ui-nav-section relative mb-2", isAdmin && "ui-nav-admin", railCollapsed && "mb-1")}
+    >
       <button
         type="button"
         onClick={toggle}
         aria-expanded={open}
+        title={railCollapsed ? title : undefined}
         className={cn(
-          "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-          hasActive
-            ? "bg-slate-800/70 text-slate-100"
-            : "text-slate-300 hover:bg-slate-800/50 hover:text-slate-100",
+          "ui-nav-group-btn flex w-full items-center rounded-lg text-sm font-medium transition-[background-color,color,padding,gap] duration-300",
+          railCollapsed ? "justify-center px-2 py-2.5 gap-0" : "gap-2.5 px-3 py-2",
+          hasActive || (railCollapsed && open) ? "ui-nav-group-active" : "ui-nav-group",
         )}
       >
-        <NavIcon name={group.icon} />
-        <span className="min-w-0 flex-1 truncate text-left">{title}</span>
-        <span className="shrink-0 rounded-md bg-slate-800/80 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-500">
+        <NavIcon name={groupIcon} />
+        <span
+          className={cn(
+            "ui-nav-label min-w-0 flex-1 truncate text-left transition-[opacity,max-width] duration-300",
+            railCollapsed ? "max-w-0 opacity-0 overflow-hidden" : "max-w-[10rem] opacity-100",
+          )}
+        >
+          {title}
+        </span>
+        <span
+          className={cn(
+            "ui-nav-count shrink-0 rounded-md px-1.5 py-0.5 text-[10px] tabular-nums transition-opacity duration-300",
+            railCollapsed ? "hidden" : "inline-flex",
+          )}
+        >
           {group.items.length}
         </span>
         <ChevronDown
-          className={cn("h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200", open && "rotate-180")}
+          className={cn(
+            "ui-nav-chevron h-4 w-4 shrink-0 transition-[transform,opacity,width] duration-300",
+            open && "rotate-180",
+            railCollapsed ? "w-0 opacity-0 overflow-hidden" : "opacity-100",
+          )}
           aria-hidden
         />
       </button>
-      {open ? (
-        <div className="mt-0.5 ml-3 space-y-0.5 border-l border-slate-800/80 pl-2">
-          {group.items.map((item) => (
-            <NavLink
-              key={item.href}
-              item={item}
-              pathname={pathname}
-              entitlements={entitlements}
-              onNavigate={onNavigate}
-              nested
-            />
-          ))}
+
+      {/* Painel expandido (accordion) */}
+      <div
+        className={cn(
+          "ui-nav-accordion grid transition-[grid-template-rows,opacity,margin] duration-300 ease-out",
+          railCollapsed ? "grid-rows-[0fr] opacity-0 m-0" : open ? "grid-rows-[1fr] opacity-100 mt-0.5" : "grid-rows-[0fr] opacity-0 m-0",
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="ui-nav-nested ml-3 space-y-0.5 border-l pl-2">
+            {group.items.map((item) => (
+              <NavLink
+                key={item.href}
+                item={item}
+                pathname={pathname}
+                entitlements={entitlements}
+                onNavigate={onNavigate}
+                nested
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Flyout fixo quando a rail está colapsada (evita clip do scroll) */}
+      {railCollapsed && open && flyoutPos ? (
+        <div
+          ref={flyoutRef}
+          className="ui-nav-flyout fixed z-[70] w-52 origin-left rounded-xl border p-1.5 shadow-2xl animate-in fade-in-0 zoom-in-95 duration-200"
+          style={{ top: flyoutPos.top, left: flyoutPos.left }}
+        >
+          <p className="ui-nav-flyout-title px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-widest">
+            {title}
+          </p>
+          <div className="space-y-0.5">
+            {group.items.map((item) => (
+              <NavLink
+                key={item.href}
+                item={item}
+                pathname={pathname}
+                entitlements={entitlements}
+                onNavigate={() => {
+                  setOpen(false);
+                  onNavigate?.();
+                }}
+              />
+            ))}
+          </div>
         </div>
       ) : null}
     </div>
   );
 }
 
-export function Sidebar({ pathname, role, entitlements, mobileOpen, onMobileClose }: SidebarProps) {
+export function Sidebar({
+  pathname,
+  role,
+  entitlements,
+  mobileOpen,
+  onMobileClose,
+  railCollapsed: railCollapsedProp,
+  onRailCollapsedChange,
+}: SidebarProps) {
   const groups = useMemo(
     () => filterGroups(NAV_GROUPS, role, entitlements),
     [role, entitlements],
   );
   const [isDesktop, setIsDesktop] = useState(false);
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
+
+  const controlled = typeof railCollapsedProp === "boolean";
+  const railCollapsed = controlled ? railCollapsedProp : internalCollapsed;
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 1024px)");
@@ -206,7 +333,20 @@ export function Sidebar({ pathname, role, entitlements, mobileOpen, onMobileClos
     return () => mq.removeEventListener("change", sync);
   }, []);
 
+  useEffect(() => {
+    if (controlled) return;
+    setInternalCollapsed(readPortalNavRailCollapsed());
+  }, [controlled]);
+
+  const setRailCollapsed = (next: boolean) => {
+    writePortalNavRailCollapsed(next);
+    if (controlled) onRailCollapsedChange?.(next);
+    else setInternalCollapsed(next);
+  };
+
   const drawerHidden = !isDesktop && !mobileOpen;
+  /** Em mobile o drawer abre em largura completa; a rail só aplica em desktop. */
+  const effectiveCollapsed = isDesktop && railCollapsed;
 
   return (
     <>
@@ -219,29 +359,64 @@ export function Sidebar({ pathname, role, entitlements, mobileOpen, onMobileClos
         />
       ) : null}
       <aside
+        data-nav-collapsed={effectiveCollapsed ? "true" : "false"}
         className={cn(
-          "portal-fixed-drawer flex h-full min-h-0 w-[min(88vw,17rem)] flex-col border-r border-slate-700/40 bg-slate-950/95 transition-transform duration-300 lg:w-64 lg:flex-shrink-0",
+          "portal-fixed-drawer ui-themed-sidebar ui-nav-atmosphere-host ui-nav-rail flex h-full min-h-0 flex-col border-r",
           mobileOpen ? "translate-x-0" : "max-lg:-translate-x-full",
+          effectiveCollapsed ? "ui-nav-rail-collapsed" : "ui-nav-rail-expanded",
         )}
         aria-hidden={drawerHidden}
         inert={drawerHidden ? true : undefined}
       >
-        <div className="flex items-center gap-2.5 px-4 py-5">
+        <NavAtmosphere />
+
+        <div
+          className={cn(
+            "ui-nav-brand-slot relative z-[1] flex shrink-0 transition-[padding,flex-direction,align-items,gap] duration-300",
+            effectiveCollapsed
+              ? "flex-col items-center gap-2 px-2 pt-4 pb-3"
+              : "items-center gap-2.5 px-4 py-5",
+          )}
+        >
           <NexiFormaLogoAnimated
-            size={32}
+            size={effectiveCollapsed ? 28 : 32}
             variant="reveal"
             loop
             className="shrink-0 drop-shadow-[0_0_14px_rgba(255,71,171,0.32)]"
           />
-          <div className="min-w-0">
-            <div className="truncate text-sm font-bold text-slate-100">NexiForma</div>
-            <div className="text-[10px] text-slate-500">Gestao de formacao</div>
+          <div
+            className={cn(
+              "min-w-0 transition-[opacity,max-width] duration-300",
+              effectiveCollapsed ? "flex flex-col items-center" : "flex-1",
+            )}
+          >
+            <div
+              className={cn(
+                "ui-nav-brand truncate text-sm font-bold transition-[opacity,max-height,margin] duration-300 overflow-hidden",
+                effectiveCollapsed ? "max-h-0 opacity-0 m-0" : "max-h-6 opacity-100",
+              )}
+            >
+              NexiForma
+            </div>
+            <TenantSubscriptionBadge
+              className={cn(
+                "transition-transform duration-300",
+                effectiveCollapsed ? "mt-0 scale-90" : "mt-1",
+              )}
+            />
           </div>
+          {!isDesktop && mobileOpen && onMobileClose ? (
+            <MobileNavToggle
+              variant="close"
+              onClick={onMobileClose}
+              className="ml-auto -mr-1"
+            />
+          ) : null}
         </div>
 
         <nav
           aria-label="Menu principal do portal"
-          className="portal-nav-scroll min-h-0 flex-1 px-2 pb-4"
+          className="portal-nav-scroll relative z-[1] min-h-0 flex-1 px-2 pb-2"
         >
           {groups.map((group) => (
             <NavSection
@@ -250,9 +425,30 @@ export function Sidebar({ pathname, role, entitlements, mobileOpen, onMobileClos
               pathname={pathname}
               entitlements={entitlements}
               onNavigate={onMobileClose}
+              railCollapsed={effectiveCollapsed}
             />
           ))}
         </nav>
+
+        <div className="relative z-[1] hidden shrink-0 border-t px-2 py-2 lg:block">
+          <button
+            type="button"
+            className="ui-nav-rail-toggle flex w-full items-center justify-center gap-2 rounded-lg px-2 py-2 text-xs font-medium transition-colors"
+            onClick={() => setRailCollapsed(!railCollapsed)}
+            aria-pressed={railCollapsed}
+            aria-label={railCollapsed ? "Expandir menu" : "Colapsar menu"}
+            title={railCollapsed ? "Expandir menu" : "Colapsar menu"}
+          >
+            {railCollapsed ? (
+              <PanelLeftOpen className="h-4 w-4" />
+            ) : (
+              <>
+                <PanelLeftClose className="h-4 w-4" />
+                <span className="ui-nav-label">Recolher</span>
+              </>
+            )}
+          </button>
+        </div>
       </aside>
     </>
   );

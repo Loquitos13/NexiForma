@@ -9,6 +9,10 @@ import type { Sumario } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { assertAllowedUpload } from "../common/upload-mime.util";
+import {
+  resolveTenantLogoDataUri,
+  tenantLogoImgHtml,
+} from "../common/tenant-logo-embed.util";
 import { FormadorScopeService } from "../common/formador-scope.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
@@ -253,4 +257,92 @@ export class SumariosService {
       nome: row.pdfNomeFicheiro ?? `sumario-${id.slice(0, 8)}.pdf`,
     };
   }
+
+  /** HTML imprimível do sumário com logo da entidade. */
+  async buildPrintableHtml(user: RequestUser, id: string) {
+    const tenantId = requireTenantId(user);
+    const row = await this.prisma.sumario.findFirst({
+      where: { id, tenantId },
+      include: {
+        sessao: {
+          select: {
+            numeroSessao: true,
+            data: true,
+            horaInicio: true,
+            horaFim: true,
+            modalidade: true,
+            formador: { select: { nomeCompleto: true } },
+            cronograma: {
+              select: {
+                acaoFormacao: { select: { titulo: true, codigoInterno: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException("Sumário não encontrado.");
+    await this.formadorScope.assertCanAccessSessao(user, row.sessaoId);
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { legalName: true, metadata: true },
+    });
+    const logoHtml = tenantLogoImgHtml(
+      await resolveTenantLogoDataUri(this.storage, tenant?.metadata),
+    );
+    const acao = row.sessao.cronograma.acaoFormacao;
+    const dataLabel = row.sessao.data
+      ? new Date(row.sessao.data).toLocaleDateString("pt-PT")
+      : "–";
+    const filename = `sumario-s${row.sessao.numeroSessao ?? "x"}-${id.slice(0, 8)}.html`;
+    const html = `<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8"/>
+  <title>Sumário – sessão ${row.sessao.numeroSessao ?? ""}</title>
+  <style>
+    body { font-family: "Segoe UI", system-ui, sans-serif; color: #111; margin: 2rem; line-height: 1.5; font-size: 11pt; }
+    .tenant-logo { max-height: 52px; max-width: 160px; object-fit: contain; margin: 0 0 12px; display: block; }
+    h1 { font-size: 1.25rem; margin: 0 0 0.35rem; }
+    .meta { color: #444; font-size: 0.9rem; margin-bottom: 1.25rem; }
+    .conteudo { white-space: pre-wrap; border: 1px solid #ddd; border-radius: 6px; padding: 1rem; background: #fafafa; }
+    .assinatura { margin-top: 1.5rem; font-size: 0.9rem; color: #334155; }
+    @media print { body { margin: 1cm; } .no-print { display: none; } }
+  </style>
+</head>
+<body>
+  <p class="no-print" style="background:#eff6ff;padding:0.75rem;border-radius:6px;">
+    <strong>Imprimir / PDF:</strong> Ctrl+P → «Guardar como PDF».
+  </p>
+  ${logoHtml}
+  <h1>Sumário pedagógico</h1>
+  <p class="meta">
+    ${escapeHtml(tenant?.legalName ?? "")}<br/>
+    Acção: ${escapeHtml(acao.titulo)} (${escapeHtml(acao.codigoInterno)})<br/>
+    Sessão ${row.sessao.numeroSessao ?? "–"} · ${escapeHtml(dataLabel)} ·
+    ${escapeHtml(row.sessao.horaInicio)}–${escapeHtml(row.sessao.horaFim)}
+    ${row.sessao.modalidade ? ` · ${escapeHtml(row.sessao.modalidade)}` : ""}
+    ${row.sessao.formador?.nomeCompleto ? `<br/>Formador: ${escapeHtml(row.sessao.formador.nomeCompleto)}` : ""}
+  </p>
+  <div class="conteudo">${escapeHtml(row.conteudo)}</div>
+  ${
+    row.assinadoEm
+      ? `<p class="assinatura">Assinado em ${escapeHtml(new Date(row.assinadoEm).toLocaleString("pt-PT"))}${
+          row.assinaturaTipo ? ` (${escapeHtml(row.assinaturaTipo)})` : ""
+        }</p>`
+      : ""
+  }
+</body>
+</html>`;
+    return { filename, html };
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }

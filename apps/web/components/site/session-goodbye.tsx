@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LogIn } from "lucide-react";
 import { AuthShell } from "@/components/site/auth-shell";
-import { buttonVariants } from "@/components/ui";
 import { cn } from "@/lib/ui/cn";
 
 export type SessionGoodbyeReason = "expired" | "logout";
@@ -56,9 +55,17 @@ export function SessionGoodbyeView({ returnTo, reason = "expired" }: SessionGood
         <div className="rounded-xl border border-slate-700/40 bg-slate-900/40 px-4 py-3.5">
           <p className="text-sm text-slate-300 leading-relaxed">{copy.body}</p>
         </div>
-        <Link href={loginHref} className={cn(buttonVariants({ size: "lg" }), "w-full justify-center gap-2")}>
-          <LogIn className="h-4 w-4" />
-          Iniciar sessão
+        <Link
+          href={loginHref}
+          className={cn(
+            "ui-holographic-btn inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg px-6 text-base font-semibold",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent,#22d3ee)]/50",
+          )}
+        >
+          <span className="ui-holographic-label gap-2">
+            <LogIn className="h-4 w-4 shrink-0" aria-hidden />
+            Iniciar sessão
+          </span>
         </Link>
       </div>
     </AuthShell>

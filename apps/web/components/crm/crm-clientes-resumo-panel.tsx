@@ -6,10 +6,12 @@ import { Search } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { CrmClienteHistoricoPanel } from "@/components/crm/crm-cliente-historico-panel";
 import { CrmClienteResumoCard, type CrmClienteResumoData } from "@/components/crm/crm-cliente-resumo-card";
-import { ListPagination } from "@/components/crm/list-pagination";
+import { ListPaginationControls } from "@/components/crm/list-pagination";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { withPortalFrom } from "@/lib/ui/portal-back-nav";
 import { Alert } from "@/components/ui";
+
+const ACCORDION_MS = 300;
 
 type Props = {
   tipo: "leads" | "notas" | "sugestoes" | "propostas";
@@ -25,9 +27,12 @@ export function CrmClientesResumoPanel({ tipo, tabDestino, countLabel, emptyMess
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 20;
+  const [pageSize, setPageSize] = useState(10);
   const [navigatingId, setNavigatingId] = useState<string | null>(null);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  /** Acordeão exclusivo: só um cliente expandido de cada vez. */
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  /** Mantém conteúdo montado durante a animação de fecho / troca. */
+  const [mountedIds, setMountedIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     if (!navigatingId) return;
@@ -66,20 +71,38 @@ export function CrmClientesResumoPanel({ tipo, tabDestino, countLabel, emptyMess
 
   useEffect(() => {
     setPage(1);
-  }, [search]);
+    setExpandedId(null);
+  }, [search, pageSize]);
+
+  useEffect(() => {
+    if (expandedId) {
+      setMountedIds((prev) => {
+        if (prev.has(expandedId) && prev.size === 1) return prev;
+        const next = new Set(prev);
+        next.add(expandedId);
+        return next;
+      });
+    }
+    const t = window.setTimeout(() => {
+      setMountedIds(expandedId ? new Set([expandedId]) : new Set());
+    }, ACCORDION_MS);
+    return () => clearTimeout(t);
+  }, [expandedId]);
 
   const pageItems = useMemo(
     () => filtered.slice((page - 1) * pageSize, page * pageSize),
     [filtered, page, pageSize],
   );
 
+  useEffect(() => {
+    if (!expandedId) return;
+    if (!pageItems.some((c) => c.id === expandedId)) {
+      setExpandedId(null);
+    }
+  }, [expandedId, pageItems]);
+
   function toggleExpanded(id: string) {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setExpandedId((prev) => (prev === id ? null : id));
   }
 
   return (
@@ -107,7 +130,8 @@ export function CrmClientesResumoPanel({ tipo, tabDestino, countLabel, emptyMess
       ) : (
         <div className="flex flex-col gap-3">
           {pageItems.map((c) => {
-            const isExpanded = expandedIds.has(c.id);
+            const isExpanded = expandedId === c.id;
+            const keepMounted = mountedIds.has(c.id);
             const href = withPortalFrom(
               `/portal/clientes/${c.id}?tab=${tabDestino}`,
               pathname,
@@ -124,12 +148,14 @@ export function CrmClientesResumoPanel({ tipo, tabDestino, countLabel, emptyMess
                 fichaHref={href}
                 onNavigate={() => setNavigatingId(c.id)}
               >
-                <CrmClienteHistoricoPanel
-                  tipo={tipo}
-                  entidadeId={c.id}
-                  fromPath={pathname}
-                  itemLabel={countLabel}
-                />
+                {keepMounted ? (
+                  <CrmClienteHistoricoPanel
+                    tipo={tipo}
+                    entidadeId={c.id}
+                    fromPath={pathname}
+                    itemLabel={countLabel}
+                  />
+                ) : null}
               </CrmClienteResumoCard>
             );
           })}
@@ -137,11 +163,20 @@ export function CrmClientesResumoPanel({ tipo, tabDestino, countLabel, emptyMess
       )}
 
       {!loading && filtered.length > 0 ? (
-        <ListPagination
+        <ListPaginationControls
+          className="pt-1"
           page={page}
           pageSize={pageSize}
           total={filtered.length}
-          onPageChange={setPage}
+          numberedPages
+          onPageChange={(next) => {
+            setExpandedId(null);
+            setPage(next);
+          }}
+          onPageSizeChange={(next) => {
+            setExpandedId(null);
+            setPageSize(next);
+          }}
         />
       ) : null}
     </div>

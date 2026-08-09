@@ -5,22 +5,17 @@ import * as React from "react";
 import { cn } from "@/lib/ui/cn";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-lg text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:pointer-events-none disabled:opacity-50 cursor-pointer",
+  "inline-flex items-center justify-center gap-2 rounded-lg text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent,#60a5fa)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ui-bg,#0f172a)] disabled:pointer-events-none disabled:opacity-50 cursor-pointer",
   {
     variants: {
       variant: {
-        default:
-          "bg-blue-600 text-white hover:bg-blue-500 active:bg-blue-700",
-        secondary:
-          "border border-slate-600 bg-transparent text-slate-300 hover:bg-slate-800 hover:text-slate-100",
-        teal:
-          "bg-teal-600 text-white hover:bg-teal-500 active:bg-teal-700",
+        default: "ui-btn-primary",
+        secondary: "ui-btn-secondary",
+        teal: "ui-btn-primary",
         danger:
           "bg-red-700 text-white hover:bg-red-600 active:bg-red-800",
-        ghost:
-          "bg-transparent text-slate-400 hover:bg-slate-800 hover:text-slate-100",
-        link:
-          "bg-transparent text-blue-400 hover:text-blue-300 underline-offset-4 hover:underline p-0 h-auto",
+        ghost: "ui-btn-ghost",
+        link: "ui-btn-link underline-offset-4 hover:underline p-0 h-auto",
       },
       size: {
         default: "h-9 px-4 py-2",

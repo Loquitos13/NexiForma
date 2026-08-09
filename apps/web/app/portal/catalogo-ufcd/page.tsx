@@ -11,7 +11,7 @@ import {
   Button,
   Card,
   CardContent,
-  DataTable,
+  PaginatedDataTable,
   Dialog,
   DialogContent,
   Input,
@@ -378,7 +378,7 @@ export default function CatalogoUfcdPage() {
       </div>
 
       <div className="min-h-0 flex-1">
-        <DataTable<Ufcd>
+        <PaginatedDataTable<Ufcd>
           columns={columns}
           data={displayedRows}
           keyField="codigo"

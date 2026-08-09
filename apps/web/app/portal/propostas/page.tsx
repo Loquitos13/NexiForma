@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Download,
@@ -10,12 +10,14 @@ import {
   Plus,
   Receipt,
   Send,
+  Trash2,
 } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { downloadResponseAsFile } from "@/lib/client/download-response";
 import { openHtmlForPrint } from "@/lib/client/open-html-for-print";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
+import { roleSatisfies } from "@nexiforma/shared";
 import {
   Alert,
   Button,
@@ -28,7 +30,9 @@ import {
   PageHeader,
   Select,
   Textarea,
+  pushToast,
   type Column,
+  type SortState,
 } from "@/components/ui";
 import { PropostaEstadoBadge } from "@/components/crm/proposta-estado-badge";
 import { CrmContextNav, PROPOSTAS_NAV } from "@/components/crm/crm-context-nav";
@@ -38,12 +42,12 @@ import {
   emptyCrmListFilters,
   type CrmListFiltersValue,
 } from "@/components/crm/crm-list-filters";
-import { ListPagination } from "@/components/crm/list-pagination";
+import { ListPaginationControls } from "@/components/crm/list-pagination";
 import { parsePaginatedList } from "@/lib/crm/paginated-list";
 import { withPortalFrom } from "@/lib/ui/portal-back-nav";
 import {
   PropostaLinhasEditor,
-  linhasPropostaParaApi,
+  buildLinhasCreateFromModal,
   novaPropostaLinha,
   type PropostaLinhaForm,
 } from "@/components/crm/PropostaLinhasEditor";
@@ -93,7 +97,10 @@ function podeFaturarProposta(p: Proposta): boolean {
 export default function PropostasPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { canManageCrm, canManage, writeDisabled } = useTenantRole();
+  const { canManageCrm, canManage, writeDisabled, role } = useTenantRole();
+  const canEditModeloPropostas = roleSatisfies(role, "coordenador_comercial");
+  /** Só gestor e coordenador comercial podem eliminar propostas. */
+  const canDeleteProposta = roleSatisfies(role, "coordenador_comercial");
   const [estadoFilter, setEstadoFilter] = useState<string>("TODAS");
   const [entidadeFilter, setEntidadeFilter] = useState("");
   const [entidades, setEntidades] = useState<EntidadeOpt[]>([]);
@@ -105,6 +112,7 @@ export default function PropostasPage() {
   const [busy, setBusy] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [enviarOpen, setEnviarOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Proposta | null>(null);
   const [activeProposta, setActiveProposta] = useState<Proposta | null>(null);
   const [enviarEmail, setEnviarEmail] = useState("");
   const [pendingEnviarId, setPendingEnviarId] = useState<string | null>(null);
@@ -120,9 +128,23 @@ export default function PropostasPage() {
   const [linhas, setLinhas] = useState<PropostaLinhaForm[]>([novaPropostaLinha()]);
   const [listFilters, setListFilters] = useState<CrmListFiltersValue>(emptyCrmListFilters);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState<Record<string, number>>({ TODAS: 0 });
-  const pageSize = 50;
+  const [sort, setSort] = useState<SortState | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const initialLoadDoneRef = useRef(false);
+  const pinTableScrollRef = useRef(false);
+  const pinnedScrollTopRef = useRef(0);
+
+  function portalScrollEl(): HTMLElement | null {
+    return document.querySelector<HTMLElement>(".portal-scroll-main");
+  }
+
+  function pinTableInView() {
+    pinTableScrollRef.current = true;
+    pinnedScrollTopRef.current = portalScrollEl()?.scrollTop ?? window.scrollY;
+  }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -142,12 +164,16 @@ export default function PropostasPage() {
   }, [canManageCrm]);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    const soft = initialLoadDoneRef.current;
+    if (soft) setRefreshing(true);
+    else setLoading(true);
     const params = crmListFiltersToParams(listFilters, canManage, {
       entidadeClienteId: entidadeFilter || undefined,
       estado: estadoFilter !== "TODAS" ? estadoFilter : undefined,
       page: String(page),
       pageSize: String(pageSize),
+      sortBy: sort?.key && sort.key !== "estado" ? sort.key : undefined,
+      sortDir: sort?.key && sort.key !== "estado" ? sort.direction : undefined,
     });
     const q = params.toString() ? `?${params}` : "";
     const [pRes, eRes, cRes] = await Promise.all([
@@ -176,16 +202,29 @@ export default function PropostasPage() {
       });
     }
     if (cRes.ok) setCursos((await cRes.json()) as CursoOpt[]);
+    initialLoadDoneRef.current = true;
     setLoading(false);
-  }, [entidadeFilter, listFilters, canManage, estadoFilter, page]);
+    setRefreshing(false);
+  }, [entidadeFilter, listFilters, canManage, estadoFilter, page, pageSize, sort]);
 
   useEffect(() => {
     setPage(1);
-  }, [entidadeFilter, listFilters, estadoFilter]);
+  }, [entidadeFilter, listFilters, estadoFilter, pageSize]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useLayoutEffect(() => {
+    if (!pinTableScrollRef.current || loading || refreshing) return;
+    pinTableScrollRef.current = false;
+    const scroller = portalScrollEl();
+    if (scroller) {
+      scroller.scrollTop = pinnedScrollTopRef.current;
+      return;
+    }
+    window.scrollTo({ top: pinnedScrollTopRef.current });
+  }, [propostas, page, pageSize, loading, refreshing]);
 
   useEffect(() => {
     if (!pendingEnviarId || loading) return;
@@ -215,8 +254,16 @@ export default function PropostasPage() {
     setBusy(true);
     setMsg(null);
     setError(null);
-    const linhasApi = linhasPropostaParaApi(linhas);
-    const euros = Number(form.valorEuros.replace(",", ".")) || 0;
+    const built = buildLinhasCreateFromModal({
+      linhas,
+      valorEuros: form.valorEuros,
+      titulo: form.titulo,
+    });
+    if (built.error) {
+      setError(built.error);
+      setBusy(false);
+      return;
+    }
     const body: Record<string, unknown> = {
       entidadeClienteId: form.entidadeClienteId,
       codigo: form.codigo.trim() || undefined,
@@ -225,40 +272,63 @@ export default function PropostasPage() {
       validadeAte: form.validadeAte || undefined,
       cursoId: form.cursoId || undefined,
     };
-    if (linhasApi.length > 0) {
-      body.linhas = linhasApi;
+    if (built.linhas.length > 0) {
+      // Sempre gravar como linhas para a personalização herdar produtos/valores.
+      body.linhas = built.linhas;
     } else {
-      body.valorCentavos = Math.round(euros * 100);
+      body.valorCentavos = 0;
     }
     const res = await bffFetch("/api/v1/propostas", {
       method: "POST",
       headers: { "Content-Type": "application/json", accept: "application/json" },
       body: JSON.stringify(body),
     });
-    if (!res.ok) setError(await parseApiError(res));
-    else {
-      const created = (await res.json()) as { id: string };
-      setMsg("Proposta criada - personalize o conteúdo.");
-      setCreateOpen(false);
-      setForm((f) => ({
-        ...f,
-        codigo: generatePropostaCodigo(),
-        titulo: "",
-        descricao: "",
-        valorEuros: "",
-        validadeAte: "",
-        cursoId: "",
-      }));
-      setLinhas([novaPropostaLinha()]);
-      router.push(withPortalFrom(`/portal/propostas/${created.id}`, pathname));
+    if (!res.ok) {
+      setError(await parseApiError(res));
+      setBusy(false);
+      return;
     }
-    setBusy(false);
+
+    const created = (await res.json()) as { id?: string };
+    const id = typeof created.id === "string" ? created.id.trim() : "";
+    if (!id) {
+      setError("Proposta criada, mas a resposta não trouxe o identificador.");
+      setBusy(false);
+      return;
+    }
+
+    // Navegação imediata para o editor - sem setState extra na lista
+    // (evita re-render com Dialog/Alert a meio do soft-nav, que podia
+    // disparar "Rendered more hooks than during the previous render").
+    // Filtros/ordenação da tabela e «Modelo padrão» não entram neste fluxo.
+    pushToast("success", "Proposta criada - personalize o conteúdo.");
+    const href = withPortalFrom(`/portal/propostas/${id}`, pathname || "/portal/propostas");
+    window.location.assign(href);
   }
 
   function openEnviar(p: Proposta) {
     setActiveProposta(p);
     setEnviarEmail(p.entidadeCliente.email ?? "");
     setEnviarOpen(true);
+  }
+
+  async function eliminarProposta() {
+    if (!deleteTarget || !canDeleteProposta) return;
+    setBusy(true);
+    setError(null);
+    setMsg(null);
+    const res = await bffFetch(`/api/v1/propostas/${deleteTarget.id}`, {
+      method: "DELETE",
+      headers: { accept: "application/json" },
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setError(await parseApiError(res));
+      return;
+    }
+    setMsg(`Proposta ${deleteTarget.codigo} eliminada.`);
+    setDeleteTarget(null);
+    await load();
   }
 
   async function enviarProposta(e: FormEvent) {
@@ -340,6 +410,8 @@ export default function PropostasPage() {
     {
       key: "codigo",
       header: "Proposta",
+      sortable: true,
+      sortValue: (p) => p.codigo,
       cell: (p) => (
         <Link href={withPortalFrom(`/portal/propostas/${p.id}`, pathname)} className="block hover:text-blue-300">
           <span className="font-medium text-slate-100">{p.codigo}</span>
@@ -353,6 +425,8 @@ export default function PropostasPage() {
     {
       key: "entidadeCliente",
       header: "Entidade",
+      sortable: true,
+      sortValue: (p) => p.entidadeCliente.nome,
       cell: (p) => (
         <div className="text-sm">
           <p className="text-slate-300">{p.entidadeCliente.nome}</p>
@@ -363,21 +437,53 @@ export default function PropostasPage() {
     {
       key: "valorCentavos",
       header: "Valor",
+      sortable: true,
+      sortValue: (p) => p.valorCentavos,
       cell: (p) => <span className="font-medium">{fmtEuro(p.valorCentavos)}</span>,
     },
     {
       key: "validadeAte",
       header: "Validade",
+      sortable: true,
+      sortValue: (p) => {
+        if (!p.validadeAte) return null;
+        const t = new Date(p.validadeAte).getTime();
+        return Number.isFinite(t) ? t : null;
+      },
       cell: (p) => <span className="text-sm text-slate-400">{fmtDate(p.validadeAte)}</span>,
     },
     {
       key: "estado",
       header: "Estado",
+      headerText: "Estado",
+      headerFilterLabel:
+        estadoFilter !== "TODAS" &&
+        (["ACEITE", "REJEITADA", "ENVIADA", "RASCUNHO"] as const).includes(
+          estadoFilter as "ACEITE" | "REJEITADA" | "ENVIADA" | "RASCUNHO",
+        )
+          ? propostaEstadoLabel(estadoFilter)
+          : undefined,
+      onHeaderClick: () => {
+        const cycle = ["ACEITE", "REJEITADA", "ENVIADA", "RASCUNHO"] as const;
+        pinTableInView();
+        setPage(1);
+        setEstadoFilter((prev) => {
+          const idx = cycle.indexOf(prev as (typeof cycle)[number]);
+          if (idx < 0) return cycle[0];
+          return cycle[(idx + 1) % cycle.length];
+        });
+        setSort((prev) => (prev?.key === "estado" ? null : prev));
+      },
       cell: (p) => <PropostaEstadoBadge estado={p.estado} />,
     },
     {
       key: "autoria",
       header: "Equipa comercial",
+      sortable: true,
+      sortValue: (p) =>
+        p.criadoPor?.displayName?.trim() ||
+        p.enviadaPor?.displayName?.trim() ||
+        "",
       cell: (p) => (
         <span className="text-sm text-slate-300">{fmtPropostaAutoria(p.criadoPor, p.enviadaPor)}</span>
       ),
@@ -396,7 +502,7 @@ export default function PropostasPage() {
         }
         actions={
           <div className="flex flex-wrap gap-2">
-            {canManage ? (
+            {canEditModeloPropostas ? (
               <Link href="/portal/propostas/config">
                 <Button size="sm" variant="secondary">
                   Modelo padrão
@@ -464,12 +570,22 @@ export default function PropostasPage() {
       )}
 
       <Card>
-        <CardContent className="p-0">
+        <CardContent
+          className={`p-0 transition-opacity ${refreshing ? "opacity-70 pointer-events-none" : ""}`}
+        >
           <DataTable
             columns={COLS}
             data={propostas}
             keyField="id"
             loading={loading}
+            fixedLayout
+            sort={sort}
+            disableClientSort
+            onSortChange={(next) => {
+              pinTableInView();
+              setPage(1);
+              setSort(next);
+            }}
             emptyMessage="Sem propostas neste estado."
             rowActions={
               canManageCrm
@@ -519,17 +635,37 @@ export default function PropostasPage() {
                           Faturar
                         </Button>
                       ) : null}
+                      {canDeleteProposta ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy || writeDisabled}
+                          onClick={() => setDeleteTarget(p)}
+                          aria-label={`Eliminar proposta ${p.codigo}`}
+                          title="Eliminar proposta"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                        </Button>
+                      ) : null}
                     </div>
                   )
                 : undefined
             }
           />
-          <ListPagination
+          <ListPaginationControls
             className="border-t border-slate-700/40 px-4 py-3"
             page={page}
             pageSize={pageSize}
             total={total}
-            onPageChange={setPage}
+            onPageChange={(next) => {
+              pinTableInView();
+              setPage(next);
+            }}
+            onPageSizeChange={(next) => {
+              pinTableInView();
+              setPageSize(next);
+            }}
+            numberedPages
           />
         </CardContent>
       </Card>
@@ -663,6 +799,47 @@ export default function PropostasPage() {
               <Button type="button" variant="secondary" onClick={() => setEnviarOpen(false)}>Cancelar</Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent
+          title="Eliminar proposta"
+          description={
+            deleteTarget
+              ? `Eliminar «${deleteTarget.codigo} - ${deleteTarget.titulo}»? Esta acção é permanente.`
+              : undefined
+          }
+        >
+          <div className="space-y-4">
+            {deleteTarget?.fatura ? (
+              <Alert variant="error">
+                Esta proposta tem fatura associada e não pode ser eliminada.
+              </Alert>
+            ) : (
+              <p className="text-sm text-slate-400">
+                O documento e o histórico desta proposta deixam de estar disponíveis na lista.
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setDeleteTarget(null)}>
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                disabled={busy || writeDisabled || Boolean(deleteTarget?.fatura)}
+                onClick={() => void eliminarProposta()}
+              >
+                {busy ? "A eliminar…" : "Eliminar"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </>

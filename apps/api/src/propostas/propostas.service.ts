@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import type { PropostaComercial, PropostaEstado, Prisma } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { PropostaNotificacoesService } from "../notificacoes/proposta-notificacoes.service";
@@ -14,7 +19,9 @@ import {
   propostaScopeWhere,
   resolvePropostaListFilters,
 } from "../common/comercial-scope.util";
+import { resolveTenantLogoDataUri } from "../common/tenant-logo-embed.util";
 import { requireTenantId } from "../common/tenant-scope";
+import { StorageService } from "../storage/storage.service";
 import type { CreatePropostaDto, UpdatePropostaDto } from "./dto/proposta.dto";
 import type { UpdateConfigPropostaDto } from "./dto/proposta-config.dto";
 import type { PropostaLinhaDto } from "./dto/proposta-linha.dto";
@@ -47,7 +54,63 @@ export type PropostaListFilters = {
   dataFim?: string;
   page?: string;
   pageSize?: string;
+  /** Coluna de ordenação global (antes da paginação). */
+  sortBy?: string;
+  sortDir?: string;
 };
+
+type PropostaSortSlim = {
+  id: string;
+  codigo: string;
+  valorCentavos: number;
+  validadeAte: Date | null;
+  estado: string;
+  updatedAt: Date;
+  entidadeCliente: { nome: string } | null;
+  criadoPor: { displayName: string | null } | null;
+  enviadaPor: { displayName: string | null } | null;
+};
+
+function compareNullableString(a: string | null | undefined, b: string | null | undefined, dir: 1 | -1): number {
+  const emptyA = !a?.trim();
+  const emptyB = !b?.trim();
+  if (emptyA && emptyB) return 0;
+  if (emptyA) return 1;
+  if (emptyB) return -1;
+  return a!.localeCompare(b!, "pt", { sensitivity: "base" }) * dir;
+}
+
+function comparePropostaSortSlim(
+  a: PropostaSortSlim,
+  b: PropostaSortSlim,
+  sortBy: string,
+  sortDir: "asc" | "desc",
+): number {
+  const dir: 1 | -1 = sortDir === "desc" ? -1 : 1;
+
+  if (sortBy === "codigo") {
+    return compareNullableString(a.codigo, b.codigo, dir);
+  }
+  if (sortBy === "entidadeCliente") {
+    return compareNullableString(a.entidadeCliente?.nome, b.entidadeCliente?.nome, dir);
+  }
+  if (sortBy === "valorCentavos") {
+    return (a.valorCentavos - b.valorCentavos) * dir;
+  }
+  if (sortBy === "validadeAte") {
+    if (!a.validadeAte && !b.validadeAte) return 0;
+    if (!a.validadeAte) return 1;
+    if (!b.validadeAte) return -1;
+    return (a.validadeAte.getTime() - b.validadeAte.getTime()) * dir;
+  }
+  if (sortBy === "autoria") {
+    const nameA = a.criadoPor?.displayName?.trim() || a.enviadaPor?.displayName?.trim() || "";
+    const nameB = b.criadoPor?.displayName?.trim() || b.enviadaPor?.displayName?.trim() || "";
+    return compareNullableString(nameA, nameB, dir);
+  }
+
+  return b.updatedAt.getTime() - a.updatedAt.getTime();
+}
 
 function buildPropostaWhere(
   tenantId: string,
@@ -105,6 +168,7 @@ export class PropostasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly propostaNotificacoes: PropostaNotificacoesService,
+    private readonly storage: StorageService,
   ) {}
 
   async list(
@@ -119,20 +183,57 @@ export class PropostasService {
       omitEstado: true,
     });
 
-    const [total, items, countRows] = await Promise.all([
+    const sortBy = filters?.sortBy?.trim() || "";
+    const sortDir = filters?.sortDir === "desc" ? "desc" : "asc";
+    const hasCustomSort = Boolean(sortBy) && sortBy !== "estado";
+
+    const [total, countRows, items] = await Promise.all([
       this.prisma.propostaComercial.count({ where }),
-      this.prisma.propostaComercial.findMany({
-        where,
-        orderBy: { updatedAt: "desc" },
-        skip: pagination.skip,
-        take: pagination.take,
-        include: PROPOSTA_LIST_INCLUDE,
-      }),
       this.prisma.propostaComercial.groupBy({
         by: ["estado"],
         where: whereForCounts,
         _count: { _all: true },
       }),
+      (async () => {
+        if (!hasCustomSort) {
+          return this.prisma.propostaComercial.findMany({
+            where,
+            orderBy: { updatedAt: "desc" },
+            skip: pagination.skip,
+            take: pagination.take,
+            include: PROPOSTA_LIST_INCLUDE,
+          });
+        }
+
+        // Ordena o conjunto filtrado completo e só depois pagina.
+        const slim = (await this.prisma.propostaComercial.findMany({
+          where,
+          select: {
+            id: true,
+            codigo: true,
+            valorCentavos: true,
+            validadeAte: true,
+            estado: true,
+            updatedAt: true,
+            entidadeCliente: { select: { nome: true } },
+            criadoPor: { select: { displayName: true } },
+            enviadaPor: { select: { displayName: true } },
+          },
+        })) as PropostaSortSlim[];
+
+        slim.sort((a, b) => comparePropostaSortSlim(a, b, sortBy, sortDir));
+        const pageIds = slim
+          .slice(pagination.skip, pagination.skip + pagination.take)
+          .map((row) => row.id);
+        if (pageIds.length === 0) return [];
+
+        const pageRows = await this.prisma.propostaComercial.findMany({
+          where: { tenantId, id: { in: pageIds } },
+          include: PROPOSTA_LIST_INCLUDE,
+        });
+        const byId = new Map(pageRows.map((row) => [row.id, row]));
+        return pageIds.map((id) => byId.get(id)).filter(Boolean) as typeof pageRows;
+      })(),
     ]);
 
     return {
@@ -293,6 +394,26 @@ export class PropostasService {
     });
   }
 
+  async remove(user: RequestUser, id: string): Promise<{ ok: true }> {
+    const tenantId = requireTenantId(user);
+    const existing = await this.prisma.propostaComercial.findFirst({
+      where: { id, tenantId },
+      include: { fatura: { select: { id: true } } },
+    });
+    if (!existing) {
+      throw new NotFoundException("Proposta não encontrada.");
+    }
+    assertPropostaAcessivel(user, existing);
+    if (existing.fatura) {
+      throw new BadRequestException(
+        "Não é possível eliminar uma proposta com fatura associada. Remova ou anule a fatura primeiro.",
+      );
+    }
+
+    await this.prisma.propostaComercial.delete({ where: { id } });
+    return { ok: true };
+  }
+
   async update(user: RequestUser, id: string, dto: UpdatePropostaDto): Promise<PropostaComercial> {
     const tenantId = requireTenantId(user);
     const existing = await this.prisma.propostaComercial.findFirst({
@@ -383,7 +504,7 @@ export class PropostasService {
 
   async buildPropostaHtml(user: RequestUser, id: string) {
     const tenantId = requireTenantId(user);
-    const [row, configRow] = await Promise.all([
+    const [row, configRow, tenantMeta] = await Promise.all([
       this.prisma.propostaComercial.findFirst({
         where: { id, tenantId },
         include: {
@@ -394,11 +515,16 @@ export class PropostasService {
         },
       }),
       this.ensureConfigProposta(tenantId),
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { metadata: true },
+      }),
     ]);
     if (!row) {
       throw new NotFoundException("Proposta não encontrada.");
     }
     assertPropostaAcessivel(user, row);
+    const logoSrc = await resolveTenantLogoDataUri(this.storage, tenantMeta?.metadata);
 
     return buildPropostaHtmlDocument({
       codigo: row.codigo,
@@ -414,6 +540,7 @@ export class PropostasService {
       curso: row.curso,
       conteudo: extractPropostaConteudo(row),
       config: this.toConfigTemplate(configRow),
+      logoSrc,
       linhas: row.linhas.map((l: (typeof row.linhas)[number]) => ({
         descricao: l.descricao,
         notas: l.notas,
@@ -442,24 +569,24 @@ export class PropostasService {
       proximosPassos: string | null;
     },
   ) {
-    const trim = (v: string | null | undefined) =>
-      v !== undefined ? v?.trim() || null : undefined;
+    /** `undefined` = não enviado; `null`/string = valor efectivo (inclui limpar campo). */
+    const pick = (v: string | null | undefined, prev: string | null | undefined) => {
+      if (v === undefined) return prev;
+      return v?.trim() || null;
+    };
     return {
-      apresentacaoEmpresa:
-        trim(dto.apresentacaoEmpresa) ?? existing?.apresentacaoEmpresa ?? undefined,
-      enquadramento: trim(dto.enquadramento) ?? existing?.enquadramento ?? undefined,
-      objetivos: trim(dto.objetivos) ?? existing?.objetivos ?? undefined,
-      conteudosProgramaticos:
-        trim(dto.conteudosProgramaticos) ?? existing?.conteudosProgramaticos ?? undefined,
-      metodologia: trim(dto.metodologia) ?? existing?.metodologia ?? undefined,
-      destinatarios: trim(dto.destinatarios) ?? existing?.destinatarios ?? undefined,
-      duracaoTexto: trim(dto.duracaoTexto) ?? existing?.duracaoTexto ?? undefined,
-      localTexto: trim(dto.localTexto) ?? existing?.localTexto ?? undefined,
-      beneficios: trim(dto.beneficios) ?? existing?.beneficios ?? undefined,
-      condicoesComerciais:
-        trim(dto.condicoesComerciais) ?? existing?.condicoesComerciais ?? undefined,
-      porqueEscolher: trim(dto.porqueEscolher) ?? existing?.porqueEscolher ?? undefined,
-      proximosPassos: trim(dto.proximosPassos) ?? existing?.proximosPassos ?? undefined,
+      apresentacaoEmpresa: pick(dto.apresentacaoEmpresa, existing?.apresentacaoEmpresa),
+      enquadramento: pick(dto.enquadramento, existing?.enquadramento),
+      objetivos: pick(dto.objetivos, existing?.objetivos),
+      conteudosProgramaticos: pick(dto.conteudosProgramaticos, existing?.conteudosProgramaticos),
+      metodologia: pick(dto.metodologia, existing?.metodologia),
+      destinatarios: pick(dto.destinatarios, existing?.destinatarios),
+      duracaoTexto: pick(dto.duracaoTexto, existing?.duracaoTexto),
+      localTexto: pick(dto.localTexto, existing?.localTexto),
+      beneficios: pick(dto.beneficios, existing?.beneficios),
+      condicoesComerciais: pick(dto.condicoesComerciais, existing?.condicoesComerciais),
+      porqueEscolher: pick(dto.porqueEscolher, existing?.porqueEscolher),
+      proximosPassos: pick(dto.proximosPassos, existing?.proximosPassos),
     };
   }
 

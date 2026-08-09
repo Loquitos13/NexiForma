@@ -16,6 +16,11 @@ build/
 .env.*.local
 !.env.example
 
+# DB dumps (nunca no git)
+*.dump
+*.sql.gz
+nexiforma.dump
+
 # IDE
 .idea/
 .vscode/*

@@ -4,8 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
+import { useClientTablePaging } from "@/lib/client/use-client-table-paging";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
+import { ListPaginationControls } from "@/components/crm/list-pagination";
 import {
   Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle, PageHeader, Select, TableScroll,
 } from "@/components/ui";
@@ -39,6 +41,7 @@ export default function MatriculasPage() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const paging = useClientTablePaging(matriculas, 10);
 
   useEffect(() => {
     void bffFetch("/api/v1/acoes-formacao", { headers: { accept: "application/json" } }).then(async (r) => {
@@ -151,48 +154,61 @@ export default function MatriculasPage() {
         {matriculas.length === 0 ? (
           <div className="p-5 text-sm text-slate-500">Sem matrículas nesta turma.</div>
         ) : (
-          <TableScroll>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-700/30">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Formando</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Turma</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Estado</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Data</th>
-                  {canManage ? <th className="px-4 py-3" /> : null}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-700/20">
-                {matriculas.map((m) => (
-                  <tr key={m.id} className="hover:bg-slate-800/30 transition-colors">
-                    <td className="px-4 py-3">
-                      <p className="text-slate-200 font-medium">{m.formando.nome}</p>
-                      <p className="text-xs text-slate-500">NIF {m.formando.nif}</p>
-                    </td>
-                    <td className="px-4 py-3 text-slate-400 hidden sm:table-cell">{m.turma.codigo}</td>
-                    <td className="px-4 py-3">
-                      <Badge variant={ESTADO_VARIANT[m.estado] ?? "default"}>{m.estado}</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-500 hidden sm:table-cell">{formatDatePt(m.createdAt)}</td>
-                    {canManage ? (
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {m.estado === "ATIVA" ? (
-                            <>
-                              <Button size="sm" variant="teal" onClick={() => void mudarEstado(m.id, "CONCLUSAO")}>Concluir</Button>
-                              <Button size="sm" variant="danger" onClick={() => void mudarEstado(m.id, "DESISTENCIA")}>Desistência</Button>
-                            </>
-                          ) : (
-                            <Button size="sm" onClick={() => void mudarEstado(m.id, "ATIVA")}>Reactivar</Button>
-                          )}
-                        </div>
-                      </td>
-                    ) : null}
+          <>
+            <TableScroll>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-700/30">
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Formando</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Turma</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Estado</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Data</th>
+                    {canManage ? <th className="px-4 py-3" /> : null}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableScroll>
+                </thead>
+                <tbody className="divide-y divide-slate-700/20">
+                  {paging.slice.map((m) => (
+                    <tr key={m.id} className="hover:bg-slate-800/30 transition-colors">
+                      <td className="px-4 py-3">
+                        <p className="text-slate-200 font-medium">{m.formando.nome}</p>
+                        <p className="text-xs text-slate-500">NIF {m.formando.nif}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-400 hidden sm:table-cell">{m.turma.codigo}</td>
+                      <td className="px-4 py-3">
+                        <Badge variant={ESTADO_VARIANT[m.estado] ?? "default"}>{m.estado}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-500 hidden sm:table-cell">{formatDatePt(m.createdAt)}</td>
+                      {canManage ? (
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {m.estado === "ATIVA" ? (
+                              <>
+                                <Button size="sm" variant="teal" onClick={() => void mudarEstado(m.id, "CONCLUSAO")}>Concluir</Button>
+                                <Button size="sm" variant="danger" onClick={() => void mudarEstado(m.id, "DESISTENCIA")}>Desistência</Button>
+                              </>
+                            ) : (
+                              <Button size="sm" onClick={() => void mudarEstado(m.id, "ATIVA")}>Reactivar</Button>
+                            )}
+                          </div>
+                        </td>
+                      ) : null}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableScroll>
+            {paging.total > 0 ? (
+              <ListPaginationControls
+                className="border-t border-slate-700/40 px-4 py-3"
+                page={paging.page}
+                pageSize={paging.pageSize}
+                total={paging.total}
+                numberedPages
+                onPageChange={paging.setPage}
+                onPageSizeChange={paging.setPageSize}
+              />
+            ) : null}
+          </>
         )}
       </Card>
     </>

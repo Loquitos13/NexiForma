@@ -12,6 +12,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { FormadorScopeService } from "../common/formador-scope.service";
+import { resolveTenantLogoDataUri } from "../common/tenant-logo-embed.util";
 import { requireTenantId } from "../common/tenant-scope";
 import { escapeHtml } from "../cronogramas/cronograma-export.util";
 
@@ -270,19 +271,7 @@ export class FolhaPresencaHtmlExportService {
     return { html, filename };
   }
 
-  private async resolverLogoSrc(meta: TenantMeta): Promise<string | null> {
-    const key = meta.branding?.logoStorageKey;
-    if (key) {
-      const obj = await this.storage.getObject(key);
-      if (obj) {
-        const b64 = obj.body.toString("base64");
-        return `data:${obj.contentType};base64,${b64}`;
-      }
-    }
-    const url = meta.branding?.logoUrl?.trim();
-    if (url && (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:"))) {
-      return url;
-    }
-    return null;
+  private resolverLogoSrc(meta: TenantMeta): Promise<string | null> {
+    return resolveTenantLogoDataUri(this.storage, meta);
   }
 }

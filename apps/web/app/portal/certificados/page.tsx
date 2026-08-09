@@ -6,7 +6,9 @@ import { Download } from "lucide-react";
 import { DgertRequisitoBanner, DgertTarget } from "@/components/portal/dgert-requisito-banner";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { openHtmlForPrint } from "@/lib/client/open-html-for-print";
+import { useClientTablePaging } from "@/lib/client/use-client-table-paging";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { ListPaginationControls } from "@/components/crm/list-pagination";
 import { Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle, PageHeader, Select, TableScroll } from "@/components/ui";
 
 type AcaoOpt = { id: string; codigoInterno: string; titulo: string };
@@ -35,6 +37,7 @@ export default function CertificadosPage() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [notifyBusy, setNotifyBusy] = useState(false);
+  const paging = useClientTablePaging(formandos, 10);
 
   useEffect(() => {
     void bffFetch("/api/v1/acoes-formacao", { headers: { accept: "application/json" } }).then(async (r) => {
@@ -131,6 +134,7 @@ export default function CertificadosPage() {
         ) : formandos.length === 0 ? (
           <div className="p-5 text-sm text-slate-500">Sem matrículas activas nesta acção.</div>
         ) : (
+          <>
           <TableScroll>
             <table className="w-full text-sm">
               <thead>
@@ -144,7 +148,7 @@ export default function CertificadosPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/20">
-                {formandos.map((f) => (
+                {paging.slice.map((f) => (
                   <tr key={f.matriculaId} className="hover:bg-slate-800/30 transition-colors">
                     <td className="px-4 py-3">
                       <p className="text-slate-200 font-medium">{f.formando.nome}</p>
@@ -200,6 +204,18 @@ export default function CertificadosPage() {
               </tbody>
             </table>
           </TableScroll>
+          {paging.total > 0 ? (
+            <ListPaginationControls
+              className="border-t border-slate-700/40 px-4 py-3"
+              page={paging.page}
+              pageSize={paging.pageSize}
+              total={paging.total}
+              numberedPages
+              onPageChange={paging.setPage}
+              onPageSizeChange={paging.setPageSize}
+            />
+          ) : null}
+          </>
         )}
       </Card>
       </DgertTarget>

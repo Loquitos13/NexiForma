@@ -2,13 +2,26 @@ import { MATRICULA_DOC_LABELS, type MatriculaDocCategoria } from "../formandos/m
 
 export function defaultTemplateHtml(
   categoria: MatriculaDocCategoria,
-  ctx: { tituloAcao: string; codigoInterno: string; cargaHoras?: number | null; notas?: string | null },
+  ctx: {
+    tituloAcao: string;
+    codigoInterno: string;
+    cargaHoras?: number | null;
+    notas?: string | null;
+    logoSrc?: string | null;
+  },
 ): string {
   const label = MATRICULA_DOC_LABELS[categoria];
   const horas = ctx.cargaHoras != null ? `${ctx.cargaHoras} horas` : "-";
   const notas = ctx.notas?.trim()
     ? `<p><strong>Notas:</strong> ${escapeHtml(ctx.notas.trim())}</p>`
     : "";
+  const logo =
+    ctx.logoSrc &&
+    (ctx.logoSrc.startsWith("data:") ||
+      ctx.logoSrc.startsWith("http://") ||
+      ctx.logoSrc.startsWith("https://"))
+      ? `<img class="tenant-logo" src="${ctx.logoSrc}" alt="Logo" style="max-height:52px;max-width:160px;object-fit:contain;margin:0 0 16px;display:block;"/>`
+      : "";
   return `<!DOCTYPE html>
 <html lang="pt">
 <head>
@@ -24,6 +37,7 @@ export function defaultTemplateHtml(
   </style>
 </head>
 <body>
+  ${logo}
   <h1>${escapeHtml(label)}</h1>
   <div class="meta">
     Acção: <strong>${escapeHtml(ctx.tituloAcao)}</strong><br/>

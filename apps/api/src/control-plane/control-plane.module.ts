@@ -4,6 +4,7 @@ import { IntegracoesModule } from "../integracoes/integracoes.module";
 import { NotificacoesModule } from "../notificacoes/notificacoes.module";
 import { MailModule } from "../mail/mail.module";
 import { SupportModule } from "../support/support.module";
+import { FaturasModule } from "../faturas/faturas.module";
 import { ControlPlaneController } from "./control-plane.controller";
 import { ControlPlaneOpsController } from "./control-plane-ops.controller";
 import { ControlPlaneSupportController } from "./control-plane-support.controller";
@@ -15,7 +16,14 @@ import { ImpersonationService } from "./impersonation.service";
 import { TenantAccessKeyService } from "./tenant-access-key.service";
 
 @Module({
-  imports: [AuthModule, IntegracoesModule, NotificacoesModule, MailModule, SupportModule],
+  imports: [
+    AuthModule,
+    IntegracoesModule,
+    NotificacoesModule,
+    MailModule,
+    SupportModule,
+    FaturasModule,
+  ],
   controllers: [
     ControlPlaneController,
     ControlPlaneOpsController,

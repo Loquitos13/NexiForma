@@ -11,7 +11,7 @@ import { labelSigoRole, mfaAppDisplayLabel } from "@nexiforma/shared";
 import { NifStatusField, type NifStatus } from "@/components/crm/nif-status-field";
 import {
   Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle,
-  DataTable, Dialog, DialogContent, Input, PageHeader, Select, type Column,
+  PaginatedDataTable, Dialog, DialogContent, Input, PageHeader, Select, type Column,
 } from "@/components/ui";
 
 type UserRow = {
@@ -593,7 +593,7 @@ export default function UtilizadoresPage() {
       {error && <Alert variant="error" className="mb-4">{error}</Alert>}
       {msg && <Alert variant="success" className="mb-4">{msg}</Alert>}
 
-      <DataTable
+      <PaginatedDataTable
         columns={USER_COLS}
         data={users}
         keyField="id"

@@ -7,10 +7,11 @@ import { FormadorScopeService } from "../common/formador-scope.service";
 import { userPodeVerReuniao } from "./calendario-reuniao.util";
 import { userPodeEditarCalendarioEvento } from "./calendario-notas.util";
 import { CalendarioNotasService } from "./calendario-notas.service";
+import { listFeriadosNacionaisPt } from "./feriados-nacionais.util";
 
 export type CalendarioEventoDto = {
   id: string;
-  tipo: "SESSAO_FORMACAO" | "REUNIAO_CRM" | "LEMBRETE" | "EVENTO" | "PRAZO_LMS";
+  tipo: "SESSAO_FORMACAO" | "REUNIAO_CRM" | "LEMBRETE" | "EVENTO" | "PRAZO_LMS" | "FERIADO";
   titulo: string;
   subtitulo?: string;
   data: string;
@@ -186,10 +187,33 @@ export class CalendarioService {
   ): Promise<CalendarioEventoDto[]> {
     await this.appendPrazosLms(user, tenantId, start, end, eventos);
     await this.appendNotasCalendario(user, tenantId, start, end, eventos);
+    await this.appendFeriadosNacionais(start, end, eventos);
 
     return eventos.sort((a, b) =>
       `${a.data}${a.horaInicio}`.localeCompare(`${b.data}${b.horaInicio}`),
     );
+  }
+
+  private async appendFeriadosNacionais(
+    start: Date,
+    end: Date,
+    eventos: CalendarioEventoDto[],
+  ) {
+    const feriados = await listFeriadosNacionaisPt(start, end);
+    for (const f of feriados) {
+      eventos.push({
+        id: `feriado-${f.date}`,
+        tipo: "FERIADO",
+        titulo: f.localName,
+        subtitulo: "Feriado nacional",
+        data: f.date,
+        horaInicio: "00:00",
+        horaFim: "23:59",
+        fonteId: f.date,
+        estado: "FERIADO",
+        editavel: false,
+      });
+    }
   }
 
   private async appendNotasCalendario(

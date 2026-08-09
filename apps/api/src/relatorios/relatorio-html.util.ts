@@ -13,6 +13,7 @@ export type RelatorioPdfInput = {
   tenantNome: string;
   dashboard: RelatorioDashboard;
   insights: RelatorioInsightsResponse;
+  logoSrc?: string | null;
 };
 
 function escapeHtml(raw: string): string {
@@ -469,11 +470,18 @@ const SECAO_TITULO: Record<RelatorioPdfInput["secao"], string> = {
 };
 
 export function buildRelatorioPdfHtml(input: RelatorioPdfInput): string {
-  const { secao, tenantNome, dashboard, insights } = input;
+  const { secao, tenantNome, dashboard, insights, logoSrc } = input;
   let body = "";
   if (secao === "financeiro") body = buildFinanceiro(dashboard.financeiro, insights);
   else if (secao === "comercial") body = buildComercial(dashboard.comercial, insights);
   else body = buildEmpresarial(dashboard.empresarial, insights);
+  const logo =
+    logoSrc &&
+    (logoSrc.startsWith("data:") ||
+      logoSrc.startsWith("http://") ||
+      logoSrc.startsWith("https://"))
+      ? `<img class="tenant-logo" src="${logoSrc}" alt="Logo"/>`
+      : "";
 
   return `<!DOCTYPE html>
 <html lang="pt">
@@ -483,7 +491,9 @@ export function buildRelatorioPdfHtml(input: RelatorioPdfInput): string {
 <style>
   * { box-sizing: border-box; }
   body { font-family: "Segoe UI", system-ui, sans-serif; font-size: 11px; color: #1e293b; margin: 0; padding: 0; }
-  .header { background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); color: #fff; padding: 20px 24px; }
+  .header { background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); color: #fff; padding: 20px 24px; display: flex; align-items: center; gap: 16px; }
+  .header-text { flex: 1; min-width: 0; }
+  .tenant-logo { max-height: 48px; max-width: 140px; object-fit: contain; background: #fff; border-radius: 6px; padding: 4px; flex-shrink: 0; }
   .header h1 { margin: 0 0 4px; font-size: 20px; font-weight: 700; }
   .header .meta { color: #c4b5fd; font-size: 10px; }
   .content { padding: 20px 24px; }
@@ -518,8 +528,11 @@ export function buildRelatorioPdfHtml(input: RelatorioPdfInput): string {
 </head>
 <body>
   <div class="header">
-    <h1>${escapeHtml(SECAO_TITULO[secao])}</h1>
-    <div class="meta">${escapeHtml(tenantNome)} · Gerado em ${escapeHtml(fmtData(dashboard.geradoEm))}</div>
+    ${logo}
+    <div class="header-text">
+      <h1>${escapeHtml(SECAO_TITULO[secao])}</h1>
+      <div class="meta">${escapeHtml(tenantNome)} · Gerado em ${escapeHtml(fmtData(dashboard.geradoEm))}</div>
+    </div>
   </div>
   <div class="content">${body}</div>
   <div class="footer">NexiForma · Relatório gerado automaticamente com dados do tenant</div>

@@ -66,9 +66,9 @@ export function buildFaturaEmitidaInternaEmail(p: FaturaEmailResumo): FaturaEmai
       `Fatura emitida no NexiForma\n\n` +
       `A fatura ${p.ref} foi emitida com sucesso para ${p.clienteNome}.\n\n` +
       resumoBoxText(p) +
-      `\nEm anexo encontra o PDF do documento fiscal (${p.filename}).\n` +
+      `\nEm anexo encontra o PDF DUPLICADO do documento fiscal (${p.filename}).\n` +
       `Pode consultar, comunicar à AT ou reenviar ao cliente a partir do portal:\n${p.portalUrl}\n\n` +
-      `Este email é uma cópia interna automática - não reencaminhe o PDF ao cliente sem validar os dados.\n\n` +
+      `Este email é uma cópia interna automática (duplicado) - o cliente recebe o ORIGINAL ao enviar por «Email cliente».\n\n` +
       `–\nNexiForma\n`,
     html:
       emailParagraph(
@@ -81,11 +81,11 @@ export function buildFaturaEmitidaInternaEmail(p: FaturaEmailResumo): FaturaEmai
       ) +
       resumoBoxHtml(p) +
       emailParagraph(
-        `O documento fiscal completo segue em anexo (<strong>${escapeHtml(p.filename)}</strong>), pronto para arquivo ou reenvio.`,
+        `Segue em anexo o PDF <strong>DUPLICADO</strong> (<strong>${escapeHtml(p.filename)}</strong>) para arquivo interno.`,
       ) +
       emailButton("Abrir fatura no portal", p.portalUrl, "primary") +
       emailMuted(
-        "Cópia interna automática. Valide os dados antes de partilhar o PDF com o cliente.",
+        "Cópia interna (duplicado). O cliente recebe o ORIGINAL quando usar «Email cliente».",
       ),
   };
 }
@@ -117,7 +117,7 @@ export function buildFaturaEnviadaClienteEmail(p: FaturaEmailResumo): FaturaEmai
       `referente a prestação de serviços / fornecimento acordado.\n\n` +
       resumoBoxText(p) +
       pagamentoText +
-      `\nEncontra em anexo o documento fiscal em PDF (${p.filename}).\n\n` +
+      `\nEncontra em anexo o documento fiscal ORIGINAL em PDF (${p.filename}).\n\n` +
       `Com os melhores cumprimentos,\n${p.nomeEmpresa}\n` +
       (p.emailGestor ? `\n${p.emailGestor}\n` : ""),
     html:
@@ -132,7 +132,7 @@ export function buildFaturaEnviadaClienteEmail(p: FaturaEmailResumo): FaturaEmai
       resumoBoxHtml(p) +
       pagamentoHtml +
       emailParagraph(
-        `O documento fiscal completo segue em anexo (<strong>${escapeHtml(p.filename)}</strong>).`,
+        `O documento fiscal <strong>ORIGINAL</strong> segue em anexo (<strong>${escapeHtml(p.filename)}</strong>).`,
       ) +
       contactoHtml +
       emailParagraph(

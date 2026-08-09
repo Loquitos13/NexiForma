@@ -1,5 +1,12 @@
 import { Injectable } from "@nestjs/common";
 import type { RequestUser } from "../auth/types/access-token-payload";
+import {
+  resolveTenantLogoDataUri,
+  tenantLogoImgHtml,
+} from "../common/tenant-logo-embed.util";
+import { requireTenantId } from "../common/tenant-scope";
+import { PrismaService } from "../prisma/prisma.service";
+import { StorageService } from "../storage/storage.service";
 import { DossiePedagogicoService } from "./dossie-pedagogico.service";
 import { SigoExportService } from "./sigo-export.service";
 import { validateSigoPayload } from "./sigo-validation.util";
@@ -17,12 +24,24 @@ export class DossieHtmlExportService {
   constructor(
     private readonly dossie: DossiePedagogicoService,
     private readonly sigo: SigoExportService,
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
   ) {}
 
   async buildPrintableHtml(user: RequestUser, acaoId: string) {
-    const dossie = await this.dossie.getByAcaoFormacao(user, acaoId);
+    const tenantId = requireTenantId(user);
+    const [dossie, tenantMeta] = await Promise.all([
+      this.dossie.getByAcaoFormacao(user, acaoId),
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { metadata: true },
+      }),
+    ]);
     const sigoPkg = await this.sigo.buildSigoJsonPackage(user, acaoId);
     const validacao = validateSigoPayload(sigoPkg.body as Parameters<typeof validateSigoPayload>[0]);
+    const logoHtml = tenantLogoImgHtml(
+      await resolveTenantLogoDataUri(this.storage, tenantMeta?.metadata),
+    );
 
     const acao = dossie.acaoFormacao as Record<string, unknown>;
     const curso = dossie.curso as Record<string, unknown>;
@@ -93,6 +112,7 @@ export class DossieHtmlExportService {
     body { font-family: "Segoe UI", system-ui, sans-serif; color: #111; margin: 2rem; line-height: 1.45; font-size: 11pt; }
     h1 { font-size: 1.35rem; margin-bottom: 0.25rem; }
     h2 { font-size: 1.05rem; margin-top: 1.35rem; border-bottom: 1px solid #ccc; padding-bottom: 0.25rem; }
+    .tenant-logo { max-height: 52px; max-width: 160px; object-fit: contain; margin: 0 0 12px; display: block; }
     .meta { color: #444; font-size: 0.9rem; margin-bottom: 1rem; }
     table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 10pt; }
     th, td { border: 1px solid #bbb; padding: 0.35rem 0.5rem; text-align: left; }
@@ -112,6 +132,7 @@ export class DossieHtmlExportService {
   <p class="no-print" style="background:#eff6ff;padding:0.75rem;border-radius:6px;">
     <strong>Imprimir / PDF:</strong> Ctrl+P (ou Cmd+P) → «Guardar como PDF».
   </p>
+  ${logoHtml}
   <h1>Dossiê pedagógico</h1>
   <p class="meta">
     ${escapeHtml(String(acao.titulo ?? ""))} · ${escapeHtml(codigo)}<br/>

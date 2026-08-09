@@ -14,6 +14,7 @@ import { SKIP_MUST_CHANGE_PASSWORD_KEY } from "./decorators/skip-must-change-pas
 const ALLOWED_PATHS = new Set([
   "/v1/auth/tenant/change-required-password",
   "/v1/auth/me",
+  "/v1/auth/preferences",
   "/v1/auth/logout",
   "/v1/auth/refresh",
 ]);

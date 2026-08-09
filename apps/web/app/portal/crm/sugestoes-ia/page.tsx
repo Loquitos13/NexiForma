@@ -10,7 +10,7 @@ import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { notifyCrmSugestoesUpdated } from "@/lib/crm/sugestoes-events";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { CrmContextNav, SUGESTOES_NAV } from "@/components/crm/crm-context-nav";
-import { ListPagination } from "@/components/crm/list-pagination";
+import { ListPaginationControls } from "@/components/crm/list-pagination";
 import {
   Alert,
   Badge,
@@ -158,7 +158,7 @@ export default function CrmSugestoesIaPage() {
   const [rejectComentario, setRejectComentario] = useState("");
   const [pendentesPage, setPendentesPage] = useState(1);
   const [historicoPage, setHistoricoPage] = useState(1);
-  const pageSize = 20;
+  const [pageSize, setPageSize] = useState(10);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -279,11 +279,17 @@ export default function CrmSugestoesIaPage() {
                     onRejeitar={setRejectId}
                   />
                 ))}
-                <ListPagination
+                <ListPaginationControls
                   page={pendentesPage}
                   pageSize={pageSize}
                   total={pendentes.length}
                   onPageChange={setPendentesPage}
+                  onPageSizeChange={(next) => {
+                    setPageSize(next);
+                    setPendentesPage(1);
+                    setHistoricoPage(1);
+                  }}
+                  numberedPages
                 />
               </>
             )}
@@ -309,11 +315,17 @@ export default function CrmSugestoesIaPage() {
                     onRejeitar={() => undefined}
                   />
                 ))}
-                <ListPagination
+                <ListPaginationControls
                   page={historicoPage}
                   pageSize={pageSize}
                   total={historico.length}
                   onPageChange={setHistoricoPage}
+                  onPageSizeChange={(next) => {
+                    setPageSize(next);
+                    setPendentesPage(1);
+                    setHistoricoPage(1);
+                  }}
+                  numberedPages
                 />
               </>
             )}

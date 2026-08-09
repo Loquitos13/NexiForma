@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString, MinLength } from "class-validator";
+import { IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 export class ResponderPropostaDto {
   @IsString()
@@ -8,7 +8,9 @@ export class ResponderPropostaDto {
   @IsIn(["aceitar", "rejeitar"])
   acao!: "aceitar" | "rejeitar";
 
+  /** Nota do cliente ao rejeitar - guardada na proposta e visível à equipa comercial. */
   @IsOptional()
   @IsString()
+  @MaxLength(2000)
   motivo?: string;
 }

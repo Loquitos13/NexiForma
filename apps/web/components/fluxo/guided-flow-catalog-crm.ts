@@ -113,7 +113,7 @@ export const GUIDED_FLOW_CRM: GuidedFlowModule[] = [
         title: "Pré-visualizar e enviar",
         description:
           "Revê o documento, envia o link de resposta ao cliente e acompanha o estado (aceite/recusado).",
-        tip: "O modelo de proposta pode ser ajustado em «Modelo propostas» (gestor).",
+        tip: "O modelo padrão edita-se em Propostas → «Modelo padrão» (gestor ou coordenador comercial).",
       },
     ],
   },

@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { useClientTablePaging } from "@/lib/client/use-client-table-paging";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
+import { ListPaginationControls } from "@/components/crm/list-pagination";
 
 type Parceiro = {
   id: string;
@@ -38,6 +40,7 @@ export default function ParceirosPage() {
   const [clienteId, setClienteId] = useState("");
   const [descontoPercent, setDescontoPercent] = useState("");
   const [editLabel, setEditLabel] = useState("");
+  const paging = useClientTablePaging(parceiros, 10);
 
   const loadParceiros = useCallback(async () => {
     const r = await bffFetch("/api/v1/entidades-cliente?parceiro=true", {
@@ -312,6 +315,7 @@ export default function ParceirosPage() {
             </p>
           </div>
         ) : (
+          <>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-700/30">
@@ -331,7 +335,7 @@ export default function ParceirosPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/20">
-              {parceiros.map((p) => (
+              {paging.slice.map((p) => (
                 <tr key={p.id} className="hover:bg-slate-800/30 transition-colors">
                   <td className="px-4 py-3 text-slate-200 font-medium">{p.nome}</td>
                   <td className="px-4 py-3 text-xs text-slate-400">{p.nif}</td>
@@ -357,6 +361,18 @@ export default function ParceirosPage() {
               ))}
             </tbody>
           </table>
+          {paging.total > 0 ? (
+            <ListPaginationControls
+              className="border-t border-slate-700/40 px-4 py-3"
+              page={paging.page}
+              pageSize={paging.pageSize}
+              total={paging.total}
+              numberedPages
+              onPageChange={paging.setPage}
+              onPageSizeChange={paging.setPageSize}
+            />
+          ) : null}
+          </>
         )}
       </div>
     </div>

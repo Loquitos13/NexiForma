@@ -7,6 +7,10 @@ import { EmailTemplates } from "./templates/email.templates";
 import { PortalNotificacoesService } from "./portal-notificacoes.service";
 import { resolverEmailUtilizador } from "@nexiforma/shared";
 import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
+import {
+  GESTOR_E_COORD_COMERCIAL_ROLES,
+  resolverEmailNotificacaoUtilizador,
+} from "./notificacao-roles.util";
 
 const ESTADOS_NOTIFICAR: PropostaEstado[] = ["ACEITE", "REJEITADA"];
 
@@ -47,36 +51,58 @@ export class PropostaNotificacoesService {
     const portalLink = `/portal/propostas/${propostaId}`;
     const estadoLabel = estadoNovo === "ACEITE" ? "aceite" : "rejeitada";
     const estadoEmail = estadoNovo as "ACEITE" | "REJEITADA";
+    const notaCliente = motivo?.trim() || undefined;
+    const portalMensagem = notaCliente
+      ? `${proposta.titulo} - ${estadoLabel}. Nota do cliente: ${notaCliente}`
+      : `${proposta.titulo} - ${estadoLabel}`;
 
-    // Gestor + comercial: emails internos com link «Abrir CRM».
-    await this.portal.notifyGestores(tenantId, {
-      tipo: "proposta_estado",
-      titulo: `Proposta ${proposta.codigo} ${estadoLabel}`,
-      mensagem: `${proposta.titulo} - ${estadoLabel}`,
-      link: portalLink,
-      buildEmail: (g) =>
-        EmailTemplates.propostaEstadoGestor({
-          gestorNome: g.displayName,
-          codigo: proposta.codigo,
-          titulo: proposta.titulo,
-          cliente: proposta.entidadeCliente.nome,
-          estado: estadoEmail,
-          motivo,
-          portalUrl,
-        }),
+    // Gestor + coordenador comercial (sem duplicar o comercial que enviou).
+    const gestao = await this.prisma.user.findMany({
+      where: { tenantId, active: true, role: { in: GESTOR_E_COORD_COMERCIAL_ROLES } },
+      select: { id: true, email: true, displayName: true, role: true },
     });
+    const notificados = new Set<string>();
 
+    for (const g of gestao) {
+      const to = resolverEmailNotificacaoUtilizador(g.role, g.email);
+      const tpl = EmailTemplates.propostaEstadoGestor({
+        gestorNome: g.displayName,
+        codigo: proposta.codigo,
+        titulo: proposta.titulo,
+        cliente: proposta.entidadeCliente.nome,
+        estado: estadoEmail,
+        motivo: notaCliente,
+        portalUrl,
+      });
+      await this.portal.notifyUser({
+        tenantId,
+        userId: g.id,
+        tipo: "proposta_estado",
+        titulo: `Proposta ${proposta.codigo} ${estadoLabel}`,
+        mensagem: portalMensagem.slice(0, 280),
+        link: portalLink,
+        email: to ? { to, subject: tpl.subject, text: tpl.text, html: tpl.html } : undefined,
+        push: {
+          title: `Proposta ${proposta.codigo} ${estadoLabel}`,
+          body: portalMensagem.slice(0, 160),
+          url: portalUrl,
+        },
+      });
+      notificados.add(g.id);
+    }
+
+    // Comercial que enviou a proposta (se ainda não notificado como gestor/coord).
     const comercial = proposta.enviadaPor;
-    if (comercial?.role === "COMERCIAL") {
+    if (comercial && !notificados.has(comercial.id)) {
       const to = resolverEmailUtilizador(comercial.email);
-      if (to) {
+      if (to || comercial.id) {
         const tpl = EmailTemplates.propostaEstadoComercial({
           comercialNome: comercial.displayName,
           codigo: proposta.codigo,
           titulo: proposta.titulo,
           cliente: proposta.entidadeCliente.nome,
           estado: estadoEmail,
-          motivo,
+          motivo: notaCliente,
           portalUrl,
         });
         await this.portal.notifyUser({
@@ -84,9 +110,16 @@ export class PropostaNotificacoesService {
           userId: comercial.id,
           tipo: "proposta_estado",
           titulo: `Proposta ${proposta.codigo} ${estadoLabel}`,
-          mensagem: tpl.text.slice(0, 280),
+          mensagem: portalMensagem.slice(0, 280),
           link: portalLink,
-          email: { to, subject: tpl.subject, text: tpl.text, html: tpl.html },
+          email: to
+            ? { to, subject: tpl.subject, text: tpl.text, html: tpl.html }
+            : undefined,
+          push: {
+            title: `Proposta ${proposta.codigo} ${estadoLabel}`,
+            body: portalMensagem.slice(0, 160),
+            url: portalUrl,
+          },
         });
       }
     }
@@ -100,7 +133,7 @@ export class PropostaNotificacoesService {
         titulo: proposta.titulo,
         entidadeFormadora: proposta.tenant.legalName,
         estado: estadoEmail,
-        motivo,
+        motivo: notaCliente,
       });
       try {
         await this.mail.send({

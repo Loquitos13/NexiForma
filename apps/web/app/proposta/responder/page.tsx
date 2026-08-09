@@ -187,10 +187,12 @@ function PropostaResponderContent() {
         ) : confirmarRejeicao ? (
           <div className="space-y-3">
             <Textarea
-              label="Motivo da recusa (opcional)"
+              label="Nota para a equipa comercial (opcional)"
               value={motivo}
               onChange={(e) => setMotivo(e.target.value)}
-              placeholder="Pode indicar brevemente o motivo…"
+              placeholder="Explique brevemente o motivo da recusa - a equipa comercial irá ver esta nota."
+              rows={4}
+              maxLength={2000}
             />
             <div className="flex flex-col gap-2 sm:flex-row">
               <Button

@@ -15,6 +15,12 @@ export const GESTOR_COORDENADOR_ROLES: TenantUserRole[] = [
   "COORDENADOR", // legado
 ];
 
+/** Gestor + coordenador comercial (estado de propostas, CRM). */
+export const GESTOR_E_COORD_COMERCIAL_ROLES: TenantUserRole[] = [
+  "ADMIN",
+  "COORDENADOR_COMERCIAL",
+];
+
 /** Gestão + coordenadores + comercial (CRM / website). */
 export const GESTOR_E_COMERCIAL_ROLES: TenantUserRole[] = [
   "ADMIN",

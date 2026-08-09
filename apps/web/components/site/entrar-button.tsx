@@ -69,19 +69,15 @@ export function EntrarButton() {
           : undefined
       }
       className={cn(
-        "entrar-glass-btn group/entrar justify-self-end relative inline-flex items-center justify-center overflow-hidden rounded-lg",
-        "border border-slate-600/55 bg-slate-800/35 px-4 py-1.5",
-        "text-sm font-semibold text-slate-200",
-        "transition-[transform,border-color,color,box-shadow] duration-200 ease-out",
-        "hover:border-fuchsia-500/40 hover:text-white",
-        "hover:shadow-[0_0_18px_rgba(168,85,247,0.22)]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400/50",
+        "ui-holographic-btn entrar-glass-btn group/entrar justify-self-end inline-flex items-center justify-center rounded-lg",
+        "px-4 py-1.5 text-sm font-semibold",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent,#22d3ee)]/50",
         "disabled:cursor-wait disabled:opacity-95",
         phase === "shatter" && "entrar-glass-btn--shatter",
         phase === "afterglow" && "entrar-glass-btn--afterglow",
       )}
     >
-      <span className="relative z-10">Entrar</span>
+      <span className="ui-holographic-label">Entrar</span>
 
       {shatterKey && phase === "shatter" ? (
         <span

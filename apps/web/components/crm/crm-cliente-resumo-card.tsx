@@ -53,7 +53,7 @@ export function CrmClienteResumoCard({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-xl border transition-all duration-200",
+        "overflow-hidden rounded-xl border transition-[border-color,background-color] duration-200",
         expanded ? "border-violet-500/30 bg-slate-900/35" : "border-slate-700/45 bg-slate-900/25",
         isNavigating && "ring-2 ring-violet-500/60 ring-offset-2 ring-offset-slate-950",
       )}
@@ -121,7 +121,7 @@ export function CrmClienteResumoCard({
                 <span className="text-violet-400/90">{countLabel}</span>
                 <ChevronDown
                   className={cn(
-                    "h-3.5 w-3.5 text-violet-300/80 transition-transform duration-200",
+                    "h-3.5 w-3.5 text-violet-300/80 transition-transform duration-300 ease-out",
                     expanded ? "rotate-180" : "-rotate-90",
                   )}
                 />
@@ -141,9 +141,22 @@ export function CrmClienteResumoCard({
         </div>
       </div>
 
-      {expanded && children ? (
-        <div className="border-t border-slate-700/40 bg-slate-950/25">{children}</div>
-      ) : null}
+      {/*
+        Acordeão: o conteúdo pode permanecer montado durante o fecho (parent)
+        para a animação de grid-rows correr com altura real.
+      */}
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows] duration-300 ease-out",
+          expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          {children ? (
+            <div className="border-t border-slate-700/40 bg-slate-950/25">{children}</div>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

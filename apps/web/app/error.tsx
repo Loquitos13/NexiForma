@@ -34,7 +34,7 @@ export default function GlobalError({
           <div className="px-7 py-7">
             <h1 className="text-xl font-bold text-slate-50 mb-2">Algo correu mal</h1>
             <p className="text-sm text-slate-400 mb-4 leading-relaxed">
-              Ocorreu um erro inesperado. Podes tentar novamente ou voltar à página anterior.
+              Ocorreu um erro inesperado. Podes tentar novamente ou ir para o portal.
             </p>
 
             {process.env.NODE_ENV === "development" && error.message ? (
@@ -53,10 +53,10 @@ export default function GlobalError({
               </button>
               <button
                 type="button"
-                onClick={() => router.back()}
+                onClick={() => router.push("/portal")}
                 className="text-sm font-semibold text-blue-400 hover:text-blue-300 transition-colors"
               >
-                Voltar atrás
+                Ir para o portal
               </button>
             </div>
           </div>

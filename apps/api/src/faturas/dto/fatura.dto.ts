@@ -3,16 +3,56 @@ import {
   IsArray,
   IsDateString,
   IsEmail,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
   ValidateNested,
 } from "class-validator";
+
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+export class FaturaTemplateCoresDto {
+  /** solid = uma cor no hero; gradient = 3 cores. Obrigatório ao enviar templateCores. */
+  @IsIn(["solid", "gradient"])
+  headerMode!: "solid" | "gradient";
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR)
+  headerFrom?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR)
+  headerVia?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR)
+  headerTo?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR)
+  accent?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR)
+  surface?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR)
+  border?: string;
+}
 
 export class FaturaLinhaDto {
   @IsString()
@@ -231,6 +271,12 @@ export class UpdateConfigFaturacaoDto {
   @IsString()
   @MaxLength(128)
   atCertificadoRef?: string | null;
+
+  /** Cores do template PDF/HTML da fatura (hex #RRGGBB). */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => FaturaTemplateCoresDto)
+  templateCores?: FaturaTemplateCoresDto;
 }
 
 export class UpdateSerieFaturacaoDto {

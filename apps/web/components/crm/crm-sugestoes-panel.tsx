@@ -203,7 +203,7 @@ export function CrmSugestoesNavBadge({ enabled = true }: { enabled?: boolean }) 
   if (pendentes <= 0) return null;
 
   return (
-    <span className="ml-auto rounded-md bg-purple-900/60 px-1.5 py-0.5 text-[10px] font-semibold text-purple-200">
+    <span className="ui-count-badge ml-auto rounded-md px-1.5 py-0.5 text-[10px] font-semibold">
       {pendentes}
     </span>
   );

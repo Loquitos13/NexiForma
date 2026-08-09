@@ -17,7 +17,7 @@ import {
   type FaturaEstado,
 } from "@/lib/crm/shared";
 import { FaturaEstadoBadge } from "@/components/crm/fatura-estado-badge";
-import { ListPagination } from "@/components/crm/list-pagination";
+import { ListPaginationControls } from "@/components/crm/list-pagination";
 import { parsePaginatedList } from "@/lib/crm/paginated-list";
 import {
   Alert,
@@ -86,7 +86,7 @@ export default function CrmFaturasPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [countsByEstado, setCountsByEstado] = useState<Record<string, number>>({ TODAS: 0 });
-  const pageSize = 50;
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     const t = window.setTimeout(() => setSearchQuery(searchInput.trim()), 320);
@@ -95,7 +95,7 @@ export default function CrmFaturasPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [estadoFilter, searchQuery]);
+  }, [estadoFilter, searchQuery, pageSize]);
 
   const load = useCallback(async (q: string, signal?: AbortSignal) => {
     setLoading(true);
@@ -141,7 +141,7 @@ export default function CrmFaturasPage() {
       setFaturas([]);
       setTotal(0);
     }
-  }, [estadoFilter, page]);
+  }, [estadoFilter, page, pageSize]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -461,11 +461,13 @@ export default function CrmFaturasPage() {
         </CardContent>
       </Card>
 
-      <ListPagination
+      <ListPaginationControls
         page={page}
         pageSize={pageSize}
         total={total}
         onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+        numberedPages
       />
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

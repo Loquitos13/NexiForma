@@ -51,7 +51,8 @@ export function CrmSectionNav() {
 
   return (
     <nav
-      className="mb-6 flex flex-wrap gap-1 rounded-xl border border-slate-700/50 bg-slate-900/40 p-1"
+      data-crm-section-nav
+      className="portal-tab-strip mb-6 flex flex-wrap gap-1 rounded-xl border border-slate-700/50 bg-slate-900/40 p-1"
       aria-label="Secções CRM"
     >
       {tabs.map((tab) => {
@@ -63,7 +64,7 @@ export function CrmSectionNav() {
             href={tab.href}
             prefetch
             className={cn(
-              "relative inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+              "relative inline-flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors sm:py-2",
               active
                 ? "bg-violet-600/25 text-violet-200 ring-1 ring-violet-500/40"
                 : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200",

@@ -14,7 +14,7 @@ import {
   emptyCrmListFilters,
   type CrmListFiltersValue,
 } from "@/components/crm/crm-list-filters";
-import { ListPagination } from "@/components/crm/list-pagination";
+import { ListPaginationControls } from "@/components/crm/list-pagination";
 import { parsePaginatedList } from "@/lib/crm/paginated-list";
 import { withPortalFrom } from "@/lib/ui/portal-back-nav";
 import {
@@ -97,7 +97,7 @@ export default function CrmInteraccoesPage() {
   const [listFilters, setListFilters] = useState<CrmListFiltersValue>(emptyCrmListFilters);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const pageSize = 50;
+  const [pageSize, setPageSize] = useState(10);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -127,11 +127,11 @@ export default function CrmInteraccoesPage() {
       setLeads(leadsData.items);
     }
     if (uRes?.ok) setStaff((await uRes.json()) as UserOpt[]);
-  }, [listFilters, canManage, page]);
+  }, [listFilters, canManage, page, pageSize]);
 
   useEffect(() => {
     setPage(1);
-  }, [listFilters]);
+  }, [listFilters, pageSize]);
 
   useEffect(() => {
     void (async () => {
@@ -314,12 +314,14 @@ export default function CrmInteraccoesPage() {
         )}
       </div>
 
-      <ListPagination
+      <ListPaginationControls
         className="mb-8"
         page={page}
         pageSize={pageSize}
         total={total}
         onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+        numberedPages
       />
 
       <Sheet open={formOpen} onOpenChange={setFormOpen}>

@@ -75,6 +75,7 @@ const TIPO_LABEL: Record<string, string> = {
   LEMBRETE: "Lembrete",
   EVENTO: "Evento",
   PRAZO_LMS: "Prazo LMS",
+  FERIADO: "Feriado",
 };
 
 const TIPO_CHIP: Record<string, string> = {
@@ -83,6 +84,7 @@ const TIPO_CHIP: Record<string, string> = {
   LEMBRETE: "bg-amber-500/15 text-amber-300",
   EVENTO: "bg-emerald-500/15 text-emerald-300",
   PRAZO_LMS: "bg-orange-500/15 text-orange-300",
+  FERIADO: "bg-rose-500/15 text-rose-300",
 };
 
 function defaultHora(data: string): string {

@@ -83,6 +83,8 @@ model PlatformUser {
   passwordHash String   @map("password_hash")
   displayName  String   @map("display_name")
   active       Boolean  @default(true)
+  /// Preferências de UI pessoais (ex.: tema pré-definido).
+  uiPreferences Json?   @map("ui_preferences")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -553,6 +555,8 @@ model User {
   /// Password temporária - obriga redefinição no próximo login.
   mustChangePassword Boolean      @default(false) @map("must_change_password")
   emailVerifiedAt DateTime?     @map("email_verified_at")
+  /// Preferências de UI pessoais (ex.: tema pré-definido). Independente do tenant branding.
+  uiPreferences Json?           @map("ui_preferences")
   createdAt    DateTime         @default(now()) @map("created_at")
   updatedAt    DateTime         @updatedAt @map("updated_at")
 
@@ -1239,6 +1243,8 @@ model PropostaComercial {
   enviadaEm         DateTime?      @map("enviada_em")
   aceiteEm          DateTime?      @map("aceite_em")
   rejeitadaEm       DateTime?      @map("rejeitada_em")
+  /** Nota deixada pelo cliente ao recusar a proposta (visível à equipa comercial). */
+  motivoRejeicao    String?        @map("motivo_rejeicao") @db.Text
   createdAt         DateTime       @default(now()) @map("created_at")
   updatedAt         DateTime       @updatedAt @map("updated_at")
 

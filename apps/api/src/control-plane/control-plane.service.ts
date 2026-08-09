@@ -35,7 +35,9 @@ import {
   newInviteOpaqueToken,
 } from "../common/invite-token.util";
 import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
+import { readTenantLogoStorageKey } from "../auth/tenant-branding.util";
 import { FATURACAO_HISTORICO_IMUTAVEL_MSG } from "../faturas/faturacao-historico.util";
+import { StorageService } from "../storage/storage.service";
 import type {
   CreateSubscriptionKeyDto,
   CreateTenantDto,
@@ -46,6 +48,15 @@ import type {
   UpdateTenantLoginLockoutDto,
 } from "./dto/control-plane.dto";
 
+type TenantBrandingMeta = {
+  branding?: {
+    logoUrl?: string;
+    logoStorageKey?: string;
+    companyName?: string;
+  };
+  [key: string]: unknown;
+};
+
 @Injectable()
 export class ControlPlaneService {
   constructor(
@@ -55,6 +66,7 @@ export class ControlPlaneService {
     private readonly tenantNotificacoes: PlatformTenantNotificacoesService,
     private readonly loginAttempts: LoginAttemptLimiterService,
     private readonly emailConfirmation: EmailConfirmationService,
+    private readonly storage: StorageService,
   ) {}
 
   private invitePepper(): string {
@@ -197,7 +209,91 @@ export class ControlPlaneService {
     if (!tenant) {
       throw new NotFoundException("Tenant não encontrado.");
     }
-    return tenant;
+    const meta = (tenant.metadata ?? {}) as TenantBrandingMeta;
+    const hasLogo = Boolean(readTenantLogoStorageKey(tenant.metadata));
+    return {
+      ...tenant,
+      branding: {
+        ...(meta.branding ?? {}),
+        companyName: meta.branding?.companyName ?? tenant.legalName,
+        logoUrl: hasLogo ? `/api/v1/control-plane/tenants/${id}/logo` : meta.branding?.logoUrl,
+        hasLogo,
+      },
+    };
+  }
+
+  async uploadTenantLogo(
+    actor: RequestUser,
+    tenantId: string,
+    file: Express.Multer.File,
+    actorIp?: string,
+  ) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, legalName: true, metadata: true },
+    });
+    if (!tenant) throw new NotFoundException("Tenant não encontrado.");
+    if (!file?.buffer?.length) {
+      throw new BadRequestException("Ficheiro de logo em falta.");
+    }
+    const allowed = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
+    if (!allowed.includes(file.mimetype)) {
+      throw new BadRequestException("Formato inválido. Use PNG, JPEG, WebP ou SVG.");
+    }
+
+    const ext =
+      file.mimetype === "image/png"
+        ? "png"
+        : file.mimetype === "image/jpeg"
+          ? "jpg"
+          : file.mimetype === "image/webp"
+            ? "webp"
+            : "svg";
+    const key = `tenants/${tenantId}/logo.${ext}`;
+    await this.storage.putObject(key, file.buffer, file.mimetype);
+
+    const meta = (tenant.metadata ?? {}) as TenantBrandingMeta;
+    const next: TenantBrandingMeta = {
+      ...meta,
+      branding: {
+        ...(meta.branding ?? {}),
+        logoStorageKey: key,
+        logoUrl: `/api/v1/portal/tenant/logo`,
+        companyName: meta.branding?.companyName ?? tenant.legalName,
+      },
+    };
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { metadata: next as object },
+    });
+
+    await this.audit.log({
+      actorType: "SUPERADMIN_USER",
+      actorId: actor.sub,
+      actorIp,
+      action: "tenant.logo_upload",
+      resourceType: "tenant",
+      resourceId: tenantId,
+      targetTenantId: tenantId,
+      payload: { logoStorageKey: key, contentType: file.mimetype },
+    });
+
+    return {
+      sucesso: true,
+      logoUrl: `/api/v1/control-plane/tenants/${tenantId}/logo`,
+      logoStorageKey: key,
+    };
+  }
+
+  async streamTenantLogo(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true },
+    });
+    if (!tenant) throw new NotFoundException("Tenant não encontrado.");
+    const key = readTenantLogoStorageKey(tenant.metadata);
+    if (!key) return null;
+    return this.storage.getObject(key);
   }
 
   async getTenantLoginLockout(id: string) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Ban, FileText, Mail, RefreshCw, Save, Send, Upload } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
@@ -21,9 +21,10 @@ import {
   FaturaInlineEditor,
   linhasFromApi,
   type FaturaLinhaEdit,
+  type FaturaTemplateCoresUi,
 } from "@/components/crm/fatura-inline-editor";
 import { AT_MOTIVO_ISENCAO_DEFAULT } from "@nexiforma/shared";
-import { Alert, Button, Dialog, DialogContent, PageHeader, Textarea } from "@/components/ui";
+import { Alert, Button, Dialog, DialogContent, Input, PageHeader, Textarea } from "@/components/ui";
 import { PortalBackButton } from "@/components/ui/portal-back-button";
 
 type FaturaDetalhe = {
@@ -40,7 +41,7 @@ type FaturaDetalhe = {
   destinatarioMorada: string | null;
   moradaCarga?: string | null;
   moradaDescarga?: string | null;
-  entidadeCliente?: { id: string; nome: string; nif: string };
+  entidadeCliente?: { id: string; nome: string; nif: string; email?: string | null };
   valorCentavos: number;
   ivaCentavos: number;
   retencaoCentavos?: number;
@@ -81,6 +82,7 @@ type ConfigFaturacao = {
     consRegCom?: string | null;
     taxaIvaPadrao: number | string;
     softwareCertificadoEfectivo?: string | null;
+    templateCores?: FaturaTemplateCoresUi | null;
   };
 };
 
@@ -113,6 +115,8 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
   const [confirmAction, setConfirmAction] = useState<
     "emitir" | "comunicar" | "reenviar" | "nota-credito" | null
   >(null);
+  const [enviarOpen, setEnviarOpen] = useState(false);
+  const [enviarEmailTo, setEnviarEmailTo] = useState("");
 
   useEffect(() => {
     void params.then((p) => setFaturaId(p.id));
@@ -286,14 +290,26 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
     await load();
   }
 
-  async function enviarEmail() {
+  function abrirEnviarEmail() {
+    const sugerido = fatura?.entidadeCliente?.email?.trim() ?? "";
+    setEnviarEmailTo(sugerido);
+    setEnviarOpen(true);
+  }
+
+  async function enviarEmail(e?: FormEvent) {
+    e?.preventDefault();
     if (!faturaId) return;
+    const email = enviarEmailTo.trim();
+    if (!email) {
+      setError("Indique o email do destinatário.");
+      return;
+    }
     setBusy(true);
     setError(null);
     const res = await bffFetch(`/api/v1/crm/faturas/${faturaId}/enviar-email`, {
       method: "POST",
       headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ email }),
     });
     setBusy(false);
     if (!res.ok) {
@@ -301,7 +317,8 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
       return;
     }
     const body = (await res.json()) as { destinatario?: string };
-    setMsg(`Fatura enviada por email para ${body.destinatario ?? "cliente"}.`);
+    setEnviarOpen(false);
+    setMsg(`Fatura ORIGINAL enviada por email para ${body.destinatario ?? email}.`);
   }
 
   async function downloadPdf() {
@@ -509,7 +526,7 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
                     size="sm"
                     variant="secondary"
                     disabled={mutacaoBloqueada}
-                    onClick={() => void enviarEmail()}
+                    onClick={() => abrirEnviarEmail()}
                   >
                     <Mail className="h-3.5 w-3.5" />
                     Email cliente
@@ -666,7 +683,44 @@ export default function FaturaEditorPage({ params }: { params: Promise<{ id: str
         totais={totais}
         softwareCertificado={config?.softwareCertificadoEfectivo ?? null}
         hashIntegridade={fatura.hashIntegridade}
+        templateCores={config?.templateCores}
       />
+
+      <Dialog open={enviarOpen} onOpenChange={setEnviarOpen}>
+        <DialogContent
+          title="Enviar fatura ao cliente"
+          description={
+            fatura
+              ? `${fmtFaturaRef(fatura.serie, fatura.numero)} - ${fatura.destinatarioNome}`
+              : undefined
+          }
+        >
+          <form onSubmit={(e) => void enviarEmail(e)} className="grid gap-4">
+            <Input
+              label="Email do destinatário *"
+              type="email"
+              required
+              value={enviarEmailTo}
+              onChange={(ev) => setEnviarEmailTo(ev.target.value)}
+              placeholder="cliente@empresa.pt"
+            />
+            <p className="text-xs text-slate-500 flex items-start gap-2">
+              <Mail className="h-4 w-4 shrink-0 mt-0.5" />
+              O cliente recebe o PDF ORIGINAL. O email interno do tenant recebe o DUPLICADO na
+              emissão.
+            </p>
+            <div className="flex gap-2">
+              <Button type="submit" disabled={busy || mutacaoBloqueada}>
+                <Send className="h-4 w-4" />
+                {busy ? "A enviar…" : "Enviar fatura"}
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setEnviarOpen(false)}>
+                Cancelar
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!confirmAction} onOpenChange={(o) => !o && setConfirmAction(null)}>
         <DialogContent

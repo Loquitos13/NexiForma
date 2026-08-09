@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { DgertRequisitoBanner, DgertTarget } from "@/components/portal/dgert-requisito-banner";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
+import { useClientTablePaging } from "@/lib/client/use-client-table-paging";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { ListPaginationControls } from "@/components/crm/list-pagination";
 import {
   Alert, Button, Card, CardContent, CardHeader, CardTitle, Input, PageHeader, Select, TableScroll, Textarea,
 } from "@/components/ui";
@@ -38,6 +40,7 @@ export default function AvaliacoesPage() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const paging = useClientTablePaging(avaliacoes, 10);
 
   useEffect(() => {
     void bffFetch("/api/v1/acoes-formacao", { headers: { accept: "application/json" } }).then(async (r) => {
@@ -142,33 +145,46 @@ export default function AvaliacoesPage() {
         {avaliacoes.length === 0 ? (
           <div className="p-5 text-sm text-slate-500">Sem avaliações registadas.</div>
         ) : (
-          <TableScroll>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-700/30">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Tipo</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Nota</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Observações</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Data</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-700/20">
-                {avaliacoes.map((a) => (
-                  <tr key={a.id} className="hover:bg-slate-800/30 transition-colors">
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-purple-500/10 text-purple-400">{a.tipo}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-lg font-bold ${notaColor(a.nota)}`}>{a.nota}</span>
-                      <span className="text-slate-500 text-xs">/100</span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-400 hidden sm:table-cell max-w-xs truncate">{a.observacoes ?? "–"}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">{formatDatePt(a.createdAt)}</td>
+          <>
+            <TableScroll>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-700/30">
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Tipo</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Nota</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Observações</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Data</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableScroll>
+                </thead>
+                <tbody className="divide-y divide-slate-700/20">
+                  {paging.slice.map((a) => (
+                    <tr key={a.id} className="hover:bg-slate-800/30 transition-colors">
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-purple-500/10 text-purple-400">{a.tipo}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-lg font-bold ${notaColor(a.nota)}`}>{a.nota}</span>
+                        <span className="text-slate-500 text-xs">/100</span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-400 hidden sm:table-cell max-w-xs truncate">{a.observacoes ?? "–"}</td>
+                      <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">{formatDatePt(a.createdAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableScroll>
+            {paging.total > 0 ? (
+              <ListPaginationControls
+                className="border-t border-slate-700/40 px-4 py-3"
+                page={paging.page}
+                pageSize={paging.pageSize}
+                total={paging.total}
+                numberedPages
+                onPageChange={paging.setPage}
+                onPageSizeChange={paging.setPageSize}
+              />
+            ) : null}
+          </>
         )}
       </Card>
     </>

@@ -6,7 +6,10 @@ type SkeletonProps = HTMLAttributes<HTMLDivElement>;
 export function Skeleton({ className, ...props }: SkeletonProps) {
   return (
     <div
-      className={cn("nexi-skeleton rounded-md bg-slate-800/70", className)}
+      className={cn(
+        "nexi-skeleton rounded-md bg-[color:color-mix(in_srgb,var(--ui-muted,#94a3b8)_22%,transparent)]",
+        className,
+      )}
       aria-hidden
       {...props}
     />

@@ -48,16 +48,21 @@ if (result.status === 0) {
 }
 
 if (/EPERM|operation not permitted/i.test(out)) {
+  const apiPort = process.env.API_PORT?.trim() || "3001";
   console.error("");
   console.error("[prisma-generate] O query engine está bloqueado por outro processo Node.");
-  console.error("  1. Para a API: Ctrl+C no terminal do `npm run dev:api`");
-  console.error("  2. Fecha Prisma Studio se estiver aberto");
-  console.error("  3. Volta a correr: npm run db:generate");
+  console.error("  Causa habitual: `npm run dev:api` (nest --watch). Matar só a porta NÃO chega -");
+  console.error("  o watch volta a abrir o processo e o DLL continua bloqueado.");
   console.error("");
-  console.error("Windows (libertar porta API - ajusta 3001 se o teu .env usar outra):");
+  console.error("  1. Ctrl+C no terminal do `npm run dev:api` (preferível)");
+  console.error("  2. Ou no PowerShell (não precisa de admin), para a árvore Nest/API:");
+  console.error("");
   console.error(
-    '  Get-NetTCPConnection -LocalPort 3001 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }',
+    `  Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -match 'nest\\.js|dev:api|@nexiforma/api|apps\\\\api\\\\dist\\\\main' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Get-NetTCPConnection -LocalPort ${apiPort} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }`,
   );
+  console.error("");
+  console.error("  3. Fecha Prisma Studio se estiver aberto");
+  console.error("  4. Volta a correr: npm run db:generate");
 }
 
 process.exit(result.status ?? 1);

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -59,6 +60,8 @@ export class PropostasController {
     @Query("dataFim") dataFim?: string,
     @Query("page") page?: string,
     @Query("pageSize") pageSize?: string,
+    @Query("sortBy") sortBy?: string,
+    @Query("sortDir") sortDir?: string,
   ): Promise<unknown> {
     return this.propostas.list(user, {
       entidadeClienteId,
@@ -69,6 +72,8 @@ export class PropostasController {
       dataFim,
       page,
       pageSize,
+      sortBy,
+      sortDir,
     });
   }
 
@@ -110,6 +115,12 @@ export class PropostasController {
     @Body() dto: UpdatePropostaDto,
   ): Promise<unknown> {
     return this.propostas.update(user, id, dto);
+  }
+
+  @Delete(":id")
+  @Roles("tenant_manager", "coordenador_comercial")
+  remove(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
+    return this.propostas.remove(user, id);
   }
 
   @Post(":id/enviar")

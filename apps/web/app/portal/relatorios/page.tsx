@@ -84,14 +84,14 @@ export default function RelatoriosPage() {
             {enterprise ? " · Plano Enterprise (IA activa)" : " · Plano Business"}
           </p>
 
-          <div className="flex flex-wrap gap-1 rounded-xl border border-slate-800/80 bg-slate-950/50 p-1">
+          <div className="portal-tab-strip flex flex-wrap gap-1 rounded-xl border border-slate-800/80 bg-slate-950/50 p-1">
             {RELATORIO_TABS.map((t) => (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
                 className={cn(
-                  "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+                  "flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors sm:px-4 sm:py-2",
                   tab === t.id
                     ? "bg-blue-600/25 text-blue-300 shadow-sm"
                     : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200",

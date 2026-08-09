@@ -43,6 +43,72 @@ export function linhasPropostaParaApi(linhas: PropostaLinhaForm[]) {
     }));
 }
 
+/** Linha sem produto nem valor relevante (pode ser ignorada no save). */
+export function isLinhaPropostaVazia(l: PropostaLinhaForm): boolean {
+  return (
+    !l.descricao.trim() &&
+    !l.notas.trim() &&
+    parseEurosInput(l.precoEuros) <= 0
+  );
+}
+
+/** Valida investimento: cada linha útil precisa de produto / serviço. */
+export function validarLinhasProposta(linhas: PropostaLinhaForm[]): string | null {
+  const uteis = linhas.filter((l) => !isLinhaPropostaVazia(l));
+  if (uteis.length === 0) {
+    return "Indique pelo menos um produto / serviço com descrição.";
+  }
+  if (uteis.some((l) => !l.descricao.trim())) {
+    return "Preencha o produto / serviço em todas as linhas com valor.";
+  }
+  return null;
+}
+
+/**
+ * Constrói linhas para criar proposta: usa itens do editor, ou sintetiza
+ * uma linha a partir do valor global + título (para a personalização herdar).
+ */
+export function buildLinhasCreateFromModal(opts: {
+  linhas: PropostaLinhaForm[];
+  valorEuros: string;
+  titulo: string;
+  taxaPadrao?: number;
+}): { linhas: ReturnType<typeof linhasPropostaParaApi>; error: string | null } {
+  const taxa = opts.taxaPadrao ?? 23;
+  const preenchidas = opts.linhas.filter((l) => !isLinhaPropostaVazia(l));
+  const semDescricao = preenchidas.filter((l) => !l.descricao.trim());
+  if (semDescricao.length > 0) {
+    return {
+      linhas: [],
+      error: "Preencha o produto / serviço em todas as linhas com valor.",
+    };
+  }
+
+  const fromEditor = linhasPropostaParaApi(opts.linhas);
+  if (fromEditor.length > 0) {
+    return { linhas: fromEditor, error: null };
+  }
+
+  const euros = Number(opts.valorEuros.replace(",", ".")) || 0;
+  if (euros > 0) {
+    const descricao = opts.titulo.trim() || "Serviço";
+    return {
+      linhas: [
+        {
+          descricao,
+          notas: null,
+          quantidade: 1,
+          precoUnitCentavos: Math.round(euros * 100),
+          taxaIva: taxa,
+        },
+      ],
+      error: null,
+    };
+  }
+
+  return { linhas: [], error: null };
+}
+
 type Props = {
   linhas: PropostaLinhaForm[];
   onChange: (linhas: PropostaLinhaForm[]) => void;
@@ -52,6 +118,8 @@ type Props = {
   /** Oculta o cabeçalho interno quando a secção pai já tem título */
   hideHeader?: boolean;
   readOnly?: boolean;
+  /** Marca produto / serviço como obrigatório (personalização). */
+  requireDescricao?: boolean;
 };
 
 function updateLinha(
@@ -71,12 +139,14 @@ export function PropostaLinhasEditor({
   compact = false,
   hideHeader = false,
   readOnly = false,
+  requireDescricao = false,
 }: Props) {
   const linhasVisiveis = readOnly ? linhas.filter((l) => l.descricao.trim()) : linhas;
   const parsed = linhasPropostaParaApi(linhasVisiveis);
   const totais = parsed.length ? calcularTotaisLinhas(parsed) : { valorCentavos: 0, ivaCentavos: 0 };
   const totalComIva = totais.valorCentavos + totais.ivaCentavos;
   const mostrarNotas = !readOnly || linhasVisiveis.some((l) => l.notas.trim());
+  const descLabel = requireDescricao ? "Produto / serviço *" : "Produto / serviço";
 
   if (readOnly && linhasVisiveis.length === 0) {
     return null;
@@ -86,7 +156,9 @@ export function PropostaLinhasEditor({
     <div className="min-w-0 w-full max-w-full space-y-3">
       {!hideHeader && !readOnly ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-medium text-slate-200">Itens (opcional)</p>
+          <p className="text-sm font-medium text-slate-200">
+            {requireDescricao ? "Itens" : "Itens (opcional)"}
+          </p>
           <p className="text-xs text-slate-500">Preço s/ IVA + IVA por linha</p>
         </div>
       ) : null}
@@ -116,11 +188,12 @@ export function PropostaLinhasEditor({
                       </div>
                     ) : (
                       <Textarea
-                        label="Produto / serviço"
+                        label={descLabel}
                         value={linha.descricao}
                         onChange={(e) => onChange(updateLinha(linhas, linhaIdx, { descricao: e.target.value }))}
                         placeholder="Ex.: Formação presencial (7h)"
                         rows={2}
+                        required={requireDescricao}
                         className="text-base leading-snug min-h-[3.25rem]"
                       />
                     )}
@@ -214,7 +287,9 @@ export function PropostaLinhasEditor({
           <table className="w-full min-w-[760px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-slate-700/40 bg-slate-800/40 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-2 py-2 font-semibold min-w-[220px]">Produto / serviço</th>
+                <th className="px-2 py-2 font-semibold min-w-[220px]">
+                  {requireDescricao ? "Produto / serviço *" : "Produto / serviço"}
+                </th>
                 {mostrarNotas ? (
                   <th className="px-2 py-2 font-semibold min-w-[160px]">Notas</th>
                 ) : null}
@@ -248,6 +323,8 @@ export function PropostaLinhasEditor({
                           onChange={(e) => onChange(updateLinha(linhas, linhaIdx, { descricao: e.target.value }))}
                           placeholder="Ex.: Subscrição Mensal Bronze"
                           rows={2}
+                          required={requireDescricao}
+                          aria-label={descLabel}
                           className="text-base leading-snug min-h-[3.25rem] w-full min-w-[200px]"
                         />
                       )}

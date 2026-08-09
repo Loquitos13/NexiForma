@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import type { BillingPlanCode } from "@nexiforma/shared";
 import { BILLING_ADDON_LABELS, MODULAR_PLAN_CODE } from "@nexiforma/shared";
@@ -15,6 +15,7 @@ import {
   parseCustomAddons,
   type TenantSubscriptionFormValue,
 } from "@/components/plataforma/tenant-subscription-form";
+import { SocialLoginSettings } from "@/components/settings/social-login-settings";
 
 type TenantDetail = {
   id: string; slug: string; legalName: string; nif: string; status: string;
@@ -25,6 +26,11 @@ type TenantDetail = {
     plan: { name: string; code: string };
   }[];
   subscriptionKeys: { id: string; keyPrefix: string; status: string; expiresAt: string | null }[];
+  branding?: {
+    logoUrl?: string;
+    hasLogo?: boolean;
+    companyName?: string;
+  };
 };
 
 type TenantUser = { id: string; email: string; displayName: string | null; role: string };
@@ -80,6 +86,9 @@ export default function TenantDetailPage() {
   const [lockoutHasCustom, setLockoutHasCustom] = useState(false);
   const [lockoutClearEmail, setLockoutClearEmail] = useState("");
   const [lockoutBusy, setLockoutBusy] = useState(false);
+  const logoRef = useRef<HTMLInputElement>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoBust, setLogoBust] = useState(0);
 
   const loadLockout = useCallback(async () => {
     const r = await bffFetch(`/api/v1/control-plane/tenants/${id}/login-lockout`, {
@@ -239,6 +248,29 @@ export default function TenantDetailPage() {
     }
     setMsg("Dados do tenant actualizados.");
     await load();
+  }
+
+  async function uploadLogo(file: File) {
+    setLogoBusy(true);
+    setError(null);
+    setMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await bffFetch(`/api/v1/control-plane/tenants/${id}/logo`, {
+        method: "POST",
+        body: fd,
+      });
+      if (!r.ok) {
+        setError(await parseApiError(r));
+        return;
+      }
+      setLogoBust(Date.now());
+      setMsg("Logótipo do tenant actualizado. Aparece nos documentos gerados pela entidade.");
+      await load();
+    } finally {
+      setLogoBusy(false);
+    }
   }
 
   async function guardarLockout(e: FormEvent) {
@@ -425,6 +457,12 @@ export default function TenantDetailPage() {
           >
             Centro de suporte do tenant
           </Link>
+          <Link
+            href={`/plataforma/tenantes/${id}/faturacao`}
+            className="rounded-lg border border-purple-500/35 bg-purple-500/10 px-3 py-1.5 text-sm font-medium text-purple-200 hover:bg-purple-500/20"
+          >
+            Faturação AT
+          </Link>
         </div>
       </div>
 
@@ -477,6 +515,51 @@ export default function TenantDetailPage() {
               </div>
             </form>
           </div>
+
+          {/* Logótipo da entidade */}
+          <div className="rounded-2xl bg-[#0c0a14]/80 border border-purple-500/10 p-5">
+            <h2 className="text-sm font-semibold text-purple-200 mb-1">Logótipo da entidade</h2>
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+              Cada tenant tem o seu logo. Aparece em faturas, propostas, cronogramas, presenças,
+              sumários, certificados e outros documentos gerados.
+            </p>
+            <div className="flex flex-wrap items-center gap-4">
+              {tenant.branding?.hasLogo || tenant.branding?.logoUrl ? (
+                <img
+                  src={`/api/v1/control-plane/tenants/${id}/logo${logoBust ? `?t=${logoBust}` : ""}`}
+                  alt="Logótipo do tenant"
+                  className="h-14 max-w-[180px] object-contain rounded-lg bg-white/95 px-2 py-1"
+                />
+              ) : (
+                <div className="h-14 w-32 rounded-lg border border-dashed border-purple-500/25 flex items-center justify-center text-xs text-slate-500">
+                  Sem logo
+                </div>
+              )}
+              <div>
+                <input
+                  ref={logoRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void uploadLogo(f);
+                    e.target.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={logoBusy}
+                  onClick={() => logoRef.current?.click()}
+                  className={btnSecondaryClass}
+                >
+                  {logoBusy ? "A carregar…" : "Carregar logo"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <SocialLoginSettings endpoint={`/api/v1/control-plane/tenants/${id}/social-login`} />
 
           {/* Lockout de login */}
           <div className="rounded-2xl bg-[#0c0a14]/80 border border-amber-500/15 p-5">

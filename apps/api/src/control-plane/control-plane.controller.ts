@@ -9,10 +9,13 @@ import {
   Query,
   Req,
   Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
   BadRequestException,
   ParseUUIDPipe,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import type { Request, Response } from "express";
 import type { TenantIntegracao } from "@nexiforma/database";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -24,6 +27,9 @@ import { ControlPlaneService } from "./control-plane.service";
 import { ImpersonationService } from "./impersonation.service";
 import { IntegracoesService } from "../integracoes/integracoes.service";
 import { UpsertIntegracaoDto } from "../integracoes/dto/integracoes.dto";
+import { FaturasService } from "../faturas/faturas.service";
+import { UpdateConfigFaturacaoDto } from "../faturas/dto/fatura.dto";
+import { SocialAuthService } from "../auth/social-auth.service";
 import {
   CreateSubscriptionKeyDto,
   CreateTenantDto,
@@ -45,6 +51,8 @@ export class ControlPlaneController {
     private readonly cp: ControlPlaneService,
     private readonly impersonation: ImpersonationService,
     private readonly integracoes: IntegracoesService,
+    private readonly faturas: FaturasService,
+    private readonly socialAuth: SocialAuthService,
   ) {}
 
   @Get("metrics")
@@ -100,6 +108,68 @@ export class ControlPlaneController {
   @Get("tenants/:id")
   getTenant(@Param("id", ParseUUIDPipe) id: string): Promise<Record<string, unknown>> {
     return this.cp.getTenant(id);
+  }
+
+  @Post("tenants/:id/logo")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 2 * 1024 * 1024 } }))
+  uploadTenantLogo(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request,
+  ) {
+    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    return this.cp.uploadTenantLogo(user, id, file, ip);
+  }
+
+  @Get("tenants/:id/logo")
+  async streamTenantLogo(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ) {
+    const obj = await this.cp.streamTenantLogo(id);
+    if (!obj) {
+      res.status(404).send("Logo não configurado.");
+      return;
+    }
+    res.setHeader("Content-Type", obj.contentType);
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.send(obj.body);
+  }
+
+  @Get("tenants/:id/faturacao")
+  getTenantFaturacao(@Param("id", ParseUUIDPipe) id: string) {
+    return this.faturas.getConfigForTenant(id);
+  }
+
+  @Patch("tenants/:id/faturacao")
+  updateTenantFaturacao(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: UpdateConfigFaturacaoDto,
+  ) {
+    return this.faturas.updateConfigForTenantAsPlatform(user, id, dto);
+  }
+
+  @Post("tenants/:id/faturacao/testar-at")
+  testarTenantLigacaoAt(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return this.faturas.testarLigacaoAtAsPlatform(user, id);
+  }
+
+  @Get("tenants/:id/social-login")
+  getTenantSocialLogin(@Param("id", ParseUUIDPipe) id: string) {
+    return this.socialAuth.getSocialLoginConfigForTenant(id);
+  }
+
+  @Patch("tenants/:id/social-login")
+  updateTenantSocialLogin(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() body: { google?: boolean; microsoft?: boolean },
+  ) {
+    return this.socialAuth.updateSocialLoginConfigForTenant(id, body);
   }
 
   @Get("tenants/:id/login-lockout")

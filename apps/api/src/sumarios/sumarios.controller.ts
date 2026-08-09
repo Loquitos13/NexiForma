@@ -96,4 +96,21 @@ export class SumariosController {
     res.setHeader("Cache-Control", "private, no-store");
     res.send(file.body);
   }
+
+  @Get(":id/export.html")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
+  async exportHtml(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ) {
+    const pkg = await this.sumarios.buildPrintableHtml(user, id);
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${encodeURIComponent(pkg.filename)}"`,
+    );
+    res.setHeader("Cache-Control", "private, no-store");
+    res.send(pkg.html);
+  }
 }

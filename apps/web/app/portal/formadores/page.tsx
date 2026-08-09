@@ -15,7 +15,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  DataTable,
+  PaginatedDataTable,
   PageHeader,
   type Column,
 } from "@/components/ui";
@@ -187,7 +187,7 @@ export default function FormadoresPage() {
       <DgertTarget id="formadores_lista">
         <Card>
           <CardContent className="p-0">
-            <DataTable
+            <PaginatedDataTable
               columns={COLS}
               data={formadores}
               keyField="id"

@@ -2,13 +2,14 @@ import {
   BadRequestException,
   Injectable,
   Logger,
+  NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import * as argon2 from "argon2";
 import type { Request, Response } from "express";
-import type { TenantUserRole } from "@nexiforma/database";
+import type { Prisma, TenantUserRole } from "@nexiforma/database";
 import type { JwtKind, JwtRole, MfaAppCode } from "@nexiforma/shared";
 import { mfaAppDisplayLabel } from "@nexiforma/shared";
 import { PrismaService } from "../prisma/prisma.service";
@@ -1121,31 +1122,108 @@ export class AuthService {
   }
 
   async meProfile(user: AccessTokenPayload): Promise<
-    AccessTokenPayload & { displayName?: string | null }
+    AccessTokenPayload & { displayName?: string | null; uiTheme?: string | null }
   > {
     if (user.kind === "platform") {
-      const pu = await this.prisma.platformUser.findUnique({
+      const pu = (await this.prisma.platformUser.findUnique({
         where: { id: user.sub },
-        select: { email: true, displayName: true },
-      });
+        select: { email: true, displayName: true, uiPreferences: true } as {
+          email: true;
+          displayName: true;
+          uiPreferences: true;
+        },
+      })) as { email: string; displayName: string; uiPreferences?: unknown } | null;
       return {
         ...user,
         email: pu?.email ?? user.email,
         displayName: pu?.displayName ?? null,
+        uiTheme: this.readUiTheme(pu?.uiPreferences),
       };
     }
 
     const tenantUser = user.tenantId
-      ? await this.prisma.user.findFirst({
+      ? ((await this.prisma.user.findFirst({
           where: { id: user.sub, tenantId: user.tenantId },
-          select: { email: true, displayName: true },
-        })
+          select: { email: true, displayName: true, uiPreferences: true } as {
+            email: true;
+            displayName: true;
+            uiPreferences: true;
+          },
+        })) as { email: string; displayName: string; uiPreferences?: unknown } | null)
       : null;
 
     return {
       ...user,
       email: tenantUser?.email ?? user.email,
       displayName: tenantUser?.displayName ?? null,
+      uiTheme: this.readUiTheme(tenantUser?.uiPreferences),
     };
+  }
+
+  private readUiTheme(prefs: unknown): string | null {
+    if (!prefs || typeof prefs !== "object" || Array.isArray(prefs)) return null;
+    const theme = (prefs as { uiTheme?: unknown }).uiTheme;
+    return typeof theme === "string" && theme.trim() ? theme.trim() : null;
+  }
+
+  private static readonly UI_THEMES = new Set([
+    "midnight",
+    "graphite",
+    "violet-night",
+    "ocean",
+    "forest",
+    "snow-azure",
+    "snow-rose",
+    "snow-emerald",
+    "snow-amber",
+    "snow-violet",
+  ]);
+
+  async updateUiPreferences(
+    user: AccessTokenPayload,
+    dto: { uiTheme?: string },
+  ): Promise<{ uiTheme: string | null }> {
+    const theme =
+      typeof dto.uiTheme === "string" && AuthService.UI_THEMES.has(dto.uiTheme)
+        ? dto.uiTheme
+        : null;
+    if (dto.uiTheme !== undefined && !theme) {
+      throw new BadRequestException("Tema inválido.");
+    }
+
+    if (user.kind === "platform") {
+      const pu = (await this.prisma.platformUser.findUnique({
+        where: { id: user.sub },
+        select: { uiPreferences: true } as { uiPreferences: true },
+      })) as { uiPreferences?: unknown } | null;
+      if (!pu) throw new NotFoundException("Utilizador não encontrado.");
+      const prev =
+        pu.uiPreferences && typeof pu.uiPreferences === "object" && !Array.isArray(pu.uiPreferences)
+          ? (pu.uiPreferences as Record<string, unknown>)
+          : {};
+      const next = { ...prev, ...(theme ? { uiTheme: theme } : {}) };
+      await this.prisma.platformUser.update({
+        where: { id: user.sub },
+        data: { uiPreferences: next } as unknown as Prisma.PlatformUserUpdateInput,
+      });
+      return { uiTheme: theme ?? this.readUiTheme(next) };
+    }
+
+    if (!user.tenantId) throw new BadRequestException("Sessão sem tenant.");
+    const tu = (await this.prisma.user.findFirst({
+      where: { id: user.sub, tenantId: user.tenantId },
+      select: { id: true, uiPreferences: true } as { id: true; uiPreferences: true },
+    })) as { id: string; uiPreferences?: unknown } | null;
+    if (!tu) throw new NotFoundException("Utilizador não encontrado.");
+    const prev =
+      tu.uiPreferences && typeof tu.uiPreferences === "object" && !Array.isArray(tu.uiPreferences)
+        ? (tu.uiPreferences as Record<string, unknown>)
+        : {};
+    const next = { ...prev, ...(theme ? { uiTheme: theme } : {}) };
+    await this.prisma.user.update({
+      where: { id: tu.id },
+      data: { uiPreferences: next } as unknown as Prisma.UserUpdateInput,
+    });
+    return { uiTheme: theme ?? this.readUiTheme(next) };
   }
 }

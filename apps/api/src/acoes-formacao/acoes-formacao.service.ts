@@ -29,6 +29,10 @@ import {
   type MatriculaDocCategoria,
 } from "../formandos/matricula-documentos.util";
 import { defaultTemplateHtml } from "./acao-template-html.util";
+import {
+  injectTenantLogoIntoHtml,
+  resolveTenantLogoDataUri,
+} from "../common/tenant-logo-embed.util";
 import { assertAllowedUpload } from "../common/upload-mime.util";
 import { pautaTipo } from "../avaliacoes/pauta.util";
 import { avaliarDocumentosObrigatorios } from "../formandos/formando-documentos.util";
@@ -892,23 +896,31 @@ export class AcoesFormacaoService {
       throw new BadRequestException("Categoria inválida.");
     }
     const cat = body.categoria as MatriculaDocCategoria;
-    const acao = await this.prisma.acaoFormacao.findFirst({
-      where: { id: acaoId, tenantId },
-      select: {
-        id: true,
-        titulo: true,
-        codigoInterno: true,
-        configuracaoMatricula: true,
-        curso: { select: { cargaHoras: true } },
-      },
-    });
+    const [acao, tenantMeta] = await Promise.all([
+      this.prisma.acaoFormacao.findFirst({
+        where: { id: acaoId, tenantId },
+        select: {
+          id: true,
+          titulo: true,
+          codigoInterno: true,
+          configuracaoMatricula: true,
+          curso: { select: { cargaHoras: true } },
+        },
+      }),
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { metadata: true },
+      }),
+    ]);
     if (!acao) throw new NotFoundException("Acção de formação não encontrada.");
 
     const cfg = parseConfiguracaoMatriculaDocs(acao.configuracaoMatricula) ?? {
       version: 1 as const,
       inscricaoObrigatorios: [...MATRICULA_DOC_CATEGORIAS],
     };
-    const html =
+    const logoSrc = await resolveTenantLogoDataUri(this.storage, tenantMeta?.metadata);
+    // Template persistido sem data-URI (evita base64 enorme / logo desatualizado).
+    const templateHtml =
       body.html?.trim() ||
       cfg.templatesConteudo?.[cat] ||
       defaultTemplateHtml(cat, {
@@ -917,11 +929,12 @@ export class AcoesFormacaoService {
         cargaHoras: acao.curso.cargaHoras,
         notas: cfg.notas,
       });
+    const html = injectTenantLogoIntoHtml(templateHtml, logoSrc);
 
     const pdf = await this.htmlPdf.htmlToPdfBuffer(html);
     const nextCfg = normalizeConfiguracaoMatriculaDocs({
       ...cfg,
-      templatesConteudo: { ...(cfg.templatesConteudo ?? {}), [cat]: html },
+      templatesConteudo: { ...(cfg.templatesConteudo ?? {}), [cat]: templateHtml },
     });
     await this.prisma.acaoFormacao.update({
       where: { id: acaoId },

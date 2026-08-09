@@ -50,7 +50,7 @@ import {
 } from "@/components/crm/crm-list-filters";
 import { withPortalFrom } from "@/lib/ui/portal-back-nav";
 import { CrmContextInsights, useSugestoesPendentesPorLead } from "@/components/crm/entidade-crm-insights";
-import { ListPagination } from "@/components/crm/list-pagination";
+import { ListPaginationControls } from "@/components/crm/list-pagination";
 import { parsePaginatedList } from "@/lib/crm/paginated-list";
 import { KanbanHelpLink, LeadsKanbanBoard } from "@/components/crm/leads-kanban";
 import { CrmCustomFieldsForm } from "@/components/crm/crm-custom-fields-form";
@@ -165,7 +165,8 @@ export default function CrmLeadsPage() {
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState<Record<string, number>>({ TODAS: 0 });
   const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
-  const pageSize = viewMode === "kanban" ? 200 : 50;
+  const [listPageSize, setListPageSize] = useState(10);
+  const pageSize = viewMode === "kanban" ? 200 : listPageSize;
   const [createOpen, setCreateOpen] = useState(false);
   const [perdidoOpen, setPerdidoOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
@@ -263,11 +264,11 @@ export default function CrmLeadsPage() {
     setLeads(data.items);
     setTotal(data.total);
     if (data.countsByEstado) setCounts(data.countsByEstado);
-  }, [estadoFilter, listFilters, canManage, page, viewMode]);
+  }, [estadoFilter, listFilters, canManage, page, pageSize]);
 
   useEffect(() => {
     setPage(1);
-  }, [estadoFilter, listFilters]);
+  }, [estadoFilter, listFilters, listPageSize]);
 
   useEffect(() => {
     void load();
@@ -690,12 +691,14 @@ export default function CrmLeadsPage() {
               </div>
             )}
           />
-          <ListPagination
+          <ListPaginationControls
             className="border-t border-slate-700/40 px-4 py-3"
             page={page}
             pageSize={pageSize}
             total={total}
             onPageChange={setPage}
+            onPageSizeChange={setListPageSize}
+            numberedPages
           />
         </CardContent>
       </Card>

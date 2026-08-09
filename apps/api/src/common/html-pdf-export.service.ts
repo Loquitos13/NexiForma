@@ -30,7 +30,13 @@ export class HtmlPdfExportService implements OnModuleDestroy {
     return this.launching;
   }
 
-  async htmlToPdfBuffer(html: string): Promise<Buffer> {
+  async htmlToPdfBuffer(
+    html: string,
+    opts?: {
+      margin?: { top?: string; right?: string; bottom?: string; left?: string };
+      preferCSSPageSize?: boolean;
+    },
+  ): Promise<Buffer> {
     const browser = await this.getBrowser();
     const page = await browser.newPage();
     try {
@@ -38,7 +44,8 @@ export class HtmlPdfExportService implements OnModuleDestroy {
       const pdf = await page.pdf({
         format: "A4",
         printBackground: true,
-        margin: { top: "8mm", right: "8mm", bottom: "8mm", left: "8mm" },
+        preferCSSPageSize: opts?.preferCSSPageSize ?? false,
+        margin: opts?.margin ?? { top: "8mm", right: "8mm", bottom: "8mm", left: "8mm" },
       });
       return Buffer.from(pdf);
     } catch (err) {

@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/ui/cn";
+import { usePinnedPortalScroll } from "@/lib/client/use-pinned-portal-scroll";
 
 export const DEFAULT_PAGE_SIZE_OPTIONS = [5, 10, 20, 50] as const;
 
@@ -14,9 +15,32 @@ type Props = {
   pageSizeOptions?: readonly number[];
   numberedPages?: boolean;
   className?: string;
+  /**
+   * Se true (default), ao mudar página/tamanho mantém o scroll do portal
+   * na posição actual (a view não salta para o topo).
+   */
+  preserveScroll?: boolean;
 };
 
-export function ListPagination({ page, pageSize, total, onPageChange, className }: Props) {
+function usePaginationScrollPin(
+  page: number,
+  pageSize: number,
+  preserveScroll: boolean,
+) {
+  const { pin } = usePinnedPortalScroll([page, pageSize]);
+  return preserveScroll ? pin : () => undefined;
+}
+
+export function ListPagination({
+  page,
+  pageSize,
+  total,
+  onPageChange,
+  className,
+  preserveScroll = true,
+}: Props) {
+  const pin = usePaginationScrollPin(page, pageSize, preserveScroll);
+
   if (total <= pageSize) return null;
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -33,7 +57,10 @@ export function ListPagination({ page, pageSize, total, onPageChange, className 
           size="sm"
           variant="secondary"
           disabled={page <= 1}
-          onClick={() => onPageChange(page - 1)}
+          onClick={() => {
+            pin();
+            onPageChange(page - 1);
+          }}
           aria-label="Página anterior"
         >
           Anterior
@@ -45,7 +72,10 @@ export function ListPagination({ page, pageSize, total, onPageChange, className 
           size="sm"
           variant="secondary"
           disabled={page >= totalPages}
-          onClick={() => onPageChange(page + 1)}
+          onClick={() => {
+            pin();
+            onPageChange(page + 1);
+          }}
           aria-label="Página seguinte"
         >
           Seguinte
@@ -65,7 +95,9 @@ export function ListPaginationControls({
   pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
   numberedPages = false,
   className,
+  preserveScroll = true,
 }: Props) {
+  const pin = usePaginationScrollPin(page, pageSize, preserveScroll);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
@@ -85,7 +117,10 @@ export function ListPaginationControls({
         <span className="text-xs text-slate-500">Por página</span>
         <select
           value={pageSize}
-          onChange={(e) => onPageSizeChange?.(Number(e.target.value))}
+          onChange={(e) => {
+            pin();
+            onPageSizeChange?.(Number(e.target.value));
+          }}
           className="h-8 min-w-[3rem] rounded-md border border-slate-600/60 bg-slate-900/80 px-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
           aria-label="Elementos por página"
         >
@@ -107,7 +142,10 @@ export function ListPaginationControls({
             <button
               type="button"
               disabled={page <= 1}
-              onClick={() => onPageChange(page - 1)}
+              onClick={() => {
+                pin();
+                onPageChange(page - 1);
+              }}
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-700/60 bg-slate-900/60 text-slate-400 transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Página anterior"
             >
@@ -118,7 +156,10 @@ export function ListPaginationControls({
                 <button
                   key={n}
                   type="button"
-                  onClick={() => onPageChange(n)}
+                  onClick={() => {
+                    pin();
+                    onPageChange(n);
+                  }}
                   className={cn(
                     "inline-flex h-8 min-w-[2rem] items-center justify-center rounded-md border px-2 text-xs tabular-nums transition-colors",
                     n === page
@@ -137,7 +178,10 @@ export function ListPaginationControls({
             <button
               type="button"
               disabled={page >= totalPages}
-              onClick={() => onPageChange(page + 1)}
+              onClick={() => {
+                pin();
+                onPageChange(page + 1);
+              }}
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-700/60 bg-slate-900/60 text-slate-400 transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Página seguinte"
             >

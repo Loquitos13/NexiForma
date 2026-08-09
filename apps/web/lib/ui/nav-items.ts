@@ -273,7 +273,6 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/portal/clientes", label: "Clientes", icon: "Building2" },
       { href: "/portal/parceiros", label: "Parceiros", icon: "Handshake" },
       { href: "/portal/propostas", label: "Propostas", icon: "FileText" },
-      { href: "/portal/propostas/config", label: "Modelo propostas", icon: "Settings", minRole: "coordenador_comercial" },
       { href: "/portal/contratos", label: "Contratos", icon: "FileCheck", minRole: "coordenador_comercial" },
     ],
     minRole: "coordenador_comercial",
@@ -318,9 +317,6 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/portal/matriculas", label: "Inscrições", icon: "UserPlus", minRole: "coordenador_pedagogico" },
       { href: "/portal/formandos", label: "Formandos", icon: "Users", minRole: "coordenador_pedagogico" },
       { href: "/portal/formadores", label: "Formadores", icon: "UserCheck", minRole: "coordenador_pedagogico" },
-      { href: "/portal/avaliacoes", label: "Avaliações", icon: "ClipboardCheck", minRole: "coordenador_pedagogico" },
-      { href: "/portal/progresso-lms", label: "Progresso LMS", icon: "BarChart3" },
-      { href: "/portal/conteudos", label: "Conteúdos LMS", icon: "Package" },
       { href: "/portal/compliance", label: "Compliance DGERT", icon: "ShieldCheck", minRole: "coordenador_pedagogico" },
       { href: "/portal/dossie", label: "Dossiê & Exports", icon: "FolderOpen", minRole: "coordenador_pedagogico" },
       { href: "/portal/certificados", label: "Certificados", icon: "Award", minRole: "coordenador_pedagogico" },
@@ -363,17 +359,62 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Administracao",
+    moduleLabel: "Configurações",
     collapsible: true,
     icon: "Settings",
     items: [
-      { href: "/portal/configuracoes", label: "Configuracoes", icon: "Settings" },
+      { href: "/portal/configuracoes", label: "Geral", icon: "Settings" },
       { href: "/portal/utilizadores", label: "Utilizadores", icon: "UserCog" },
       { href: "/portal/integracoes", label: "Plugins", icon: "Plug" },
-      { href: "/portal/enterprise", label: "Enterprise", icon: "Key" },
-      { href: "/portal/billing", label: "Subscricao", icon: "CreditCard" },
+      { href: "/portal/billing", label: "Subscrição", icon: "CreditCard" },
     ],
     minRole: "tenant_manager",
   },
 ];
 
 export const NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
+
+/** Hrefs que no mobile vivem no menu do avatar (não na bottom nav). */
+const MOBILE_AVATAR_NAV_HREFS = new Set(["/portal/notificacoes", "/portal/rgpd"]);
+
+/** Grupos para a bottom nav mobile - sem notificações/RGPD (vão para o avatar). */
+export function filterGroupsForMobileBottomNav(
+  groups: NavGroup[],
+  role: JwtRole | null | undefined,
+  entitlements?: TenantEntitlements | null,
+): NavGroup[] {
+  return filterGroups(groups, role ?? null, entitlements)
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((item) => !MOBILE_AVATAR_NAV_HREFS.has(item.href)),
+    }))
+    .filter((g) => g.items.length > 0);
+}
+
+export type PortalBreadcrumb = { group: string; item: string };
+
+/** Resolve "Grupo > Item" a partir do pathname actual. */
+export function resolvePortalBreadcrumb(
+  pathname: string,
+  role: JwtRole | null | undefined,
+  entitlements?: TenantEntitlements | null,
+): PortalBreadcrumb | null {
+  const groups = filterGroups(NAV_GROUPS, role ?? null, entitlements);
+  let best: { group: string; item: string; len: number } | null = null;
+
+  for (const group of groups) {
+    for (const item of group.items) {
+      const match =
+        item.href === "/portal"
+          ? pathname === "/portal"
+          : pathname === item.href || pathname.startsWith(`${item.href}/`);
+      if (!match) continue;
+      const len = item.href.length;
+      if (!best || len > best.len) {
+        best = { group: navGroupTitle(group), item: item.label, len };
+      }
+    }
+  }
+
+  return best ? { group: best.group, item: best.item } : null;
+}

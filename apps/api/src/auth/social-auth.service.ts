@@ -157,7 +157,10 @@ export class SocialAuthService {
   }
 
   async getManagerConfig(user: RequestUser) {
-    const tenantId = requireTenantId(user);
+    return this.getSocialLoginConfigForTenant(requireTenantId(user));
+  }
+
+  async getSocialLoginConfigForTenant(tenantId: string) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { slug: true, metadata: true },
@@ -174,7 +177,11 @@ export class SocialAuthService {
       },
       microsoft: {
         platformConfigured: this.isProviderConfigured("microsoft"),
-        enabled: isSocialProviderEnabled("microsoft", tenant.metadata, this.isProviderConfigured("microsoft")),
+        enabled: isSocialProviderEnabled(
+          "microsoft",
+          tenant.metadata,
+          this.isProviderConfigured("microsoft"),
+        ),
         tenantEnabled: cfg.microsoft !== false,
       },
       redirectUri: `${this.apiPublicUrl()}/v1/auth/oauth/callback`,
@@ -185,7 +192,13 @@ export class SocialAuthService {
     user: RequestUser,
     payload: { google?: boolean; microsoft?: boolean },
   ) {
-    const tenantId = requireTenantId(user);
+    return this.updateSocialLoginConfigForTenant(requireTenantId(user), payload);
+  }
+
+  async updateSocialLoginConfigForTenant(
+    tenantId: string,
+    payload: { google?: boolean; microsoft?: boolean },
+  ) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { metadata: true },
@@ -208,7 +221,7 @@ export class SocialAuthService {
       data: { metadata: next as object },
     });
 
-    return this.getManagerConfig(user);
+    return this.getSocialLoginConfigForTenant(tenantId);
   }
 
   async startLogin(

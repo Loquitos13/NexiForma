@@ -30,6 +30,7 @@ import {
   type TenantAuthPickOption,
 } from "@/components/auth/tenant-auth-pick-modal";
 import type { OAuthProviders } from "@/lib/client/oauth-login-url";
+import { syncUiThemeFromServer } from "@/lib/client/ui-theme-sync";
 import {
   parseTenantAmbiguousResponse,
   normalizeTenantPickList,
@@ -105,12 +106,12 @@ function LoginForm() {
           return;
         }
         if (!cancelled) {
-          await purgeStaleAuthSession();
+          await purgeStaleAuthSession({ resetThemePaint: true });
           clearPersistedTenantContext();
         }
       } catch {
         if (!cancelled) {
-          await purgeStaleAuthSession();
+          await purgeStaleAuthSession({ resetThemePaint: true });
           clearPersistedTenantContext();
         }
       } finally {
@@ -129,6 +130,9 @@ function LoginForm() {
     clearPersistedTenantContext();
     const nextRaw = sessionStorage.getItem("nexiforma_login_next");
     sessionStorage.removeItem("nexiforma_login_next");
+
+    // Tema do utilizador ANTES de navegar → skeleton já com as cores certas.
+    await syncUiThemeFromServer().catch(() => undefined);
 
     let entitlements: TenantEntitlements | null = null;
     const payload = decodeJwtPayload(accessToken);
@@ -855,9 +859,11 @@ function LoginForm() {
             <button
               type="submit"
               disabled={busy}
-              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold text-sm disabled:opacity-60"
+              className="ui-holographic-btn ui-holographic-btn--solid w-full py-2.5 rounded-xl font-semibold text-sm disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent,#2563eb)]/50"
             >
-              {busy ? "A verificar credenciais…" : "Entrar"}
+              <span className="ui-holographic-label">
+                {busy ? "A verificar credenciais…" : "Entrar"}
+              </span>
             </button>
 
             {!platformMode ? (

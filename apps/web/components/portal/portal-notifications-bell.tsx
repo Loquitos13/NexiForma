@@ -220,7 +220,7 @@ export function PortalNotificationsBell() {
             ) : null}
           </div>
 
-          <div className="max-h-[min(18rem,50vh)] overflow-y-auto overscroll-contain">
+          <div className="portal-nav-scroll max-h-[min(18rem,50vh)] overscroll-contain">
             {loading ? (
               <p className="px-4 py-6 text-center text-xs text-slate-500">A carregar…</p>
             ) : items.length === 0 ? (

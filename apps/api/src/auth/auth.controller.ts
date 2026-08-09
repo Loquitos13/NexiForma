@@ -3,11 +3,13 @@ import {
   Controller,
   Get,
   HttpCode,
+  Patch,
   Post,
   Req,
   Res,
   UseGuards,
 } from "@nestjs/common";
+import { IsIn, IsOptional, IsString } from "class-validator";
 import type { Request, Response } from "express";
 import { SkipThrottle, Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import { Public } from "./decorators/public.decorator";
@@ -34,6 +36,24 @@ import {
 } from "./dto/email-confirmation.dto";
 import { SkipMustChangePassword } from "./decorators/skip-must-change-password.decorator";
 import { EmailConfirmationService } from "./email-confirmation.service";
+
+class UpdateUiPreferencesDto {
+  @IsOptional()
+  @IsString()
+  @IsIn([
+    "midnight",
+    "graphite",
+    "violet-night",
+    "ocean",
+    "forest",
+    "snow-azure",
+    "snow-rose",
+    "snow-emerald",
+    "snow-amber",
+    "snow-violet",
+  ])
+  uiTheme?: string;
+}
 
 @UseGuards(ThrottlerGuard)
 @Controller("auth")
@@ -151,6 +171,17 @@ export class AuthController {
   @SkipMustChangePassword()
   me(@CurrentUser() user: RequestUser) {
     return this.auth.meProfile(user);
+  }
+
+  @SkipThrottle()
+  @Patch("preferences")
+  @UseGuards(JwtAuthGuard)
+  @SkipMustChangePassword()
+  updatePreferences(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: UpdateUiPreferencesDto,
+  ) {
+    return this.auth.updateUiPreferences(user, dto);
   }
 
   @Post("tenant/change-required-password")

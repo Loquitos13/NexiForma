@@ -6,8 +6,6 @@ import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { Alert, Button, Card, CardContent, CardHeader, CardTitle, PageHeader } from "@/components/ui";
-import { SocialLoginSettings } from "@/components/settings/social-login-settings";
-
 type ApiKeyRow = {
   id: string;
   status: string;
@@ -207,8 +205,6 @@ export default function EnterprisePage() {
           </Button>
         </CardContent>
       </Card>
-
-      <SocialLoginSettings />
 
       <Card>
         <CardHeader>

@@ -1,15 +1,60 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { ArrowLeft, CheckCircle2, Circle, ExternalLink, Save, Shield } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { ArrowLeft, Save } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
 import { canAccessFaturacaoPortal } from "@nexiforma/shared";
 import { parseApiError } from "@/lib/ui/backoffice";
-import { AT_DOC_LINKS } from "@/lib/crm/at-doc-links";
-import { Alert, Badge, Button, Dialog, DialogContent, Input, PageHeader, Textarea } from "@/components/ui";
+import { FaturaTemplatePreview } from "@/components/crm/fatura-template-preview";
+import { Alert, Button, Dialog, DialogContent, Input, PageHeader, Textarea } from "@/components/ui";
+import { publicTenantLogoUrl } from "@/lib/client/tenant-logo-url";
+
+type TemplateCores = {
+  headerMode: "solid" | "gradient";
+  headerFrom: string;
+  headerVia: string;
+  headerTo: string;
+  accent: string;
+  surface: string;
+  border: string;
+};
+
+const TEMPLATE_CORES_DEFAULT: TemplateCores = {
+  headerMode: "gradient",
+  headerFrom: "#6d28d9",
+  headerVia: "#9333ea",
+  headerTo: "#6366f1",
+  accent: "#7c3aed",
+  surface: "#f5f3ff",
+  border: "#ddd6fe",
+};
+
+function normalizeTemplateCores(raw?: Partial<TemplateCores> | null): TemplateCores {
+  return {
+    headerFrom: raw?.headerFrom?.trim() || TEMPLATE_CORES_DEFAULT.headerFrom,
+    headerVia: raw?.headerVia?.trim() || TEMPLATE_CORES_DEFAULT.headerVia,
+    headerTo: raw?.headerTo?.trim() || TEMPLATE_CORES_DEFAULT.headerTo,
+    accent: raw?.accent?.trim() || TEMPLATE_CORES_DEFAULT.accent,
+    surface: raw?.surface?.trim() || TEMPLATE_CORES_DEFAULT.surface,
+    border: raw?.border?.trim() || TEMPLATE_CORES_DEFAULT.border,
+    headerMode: raw?.headerMode === "solid" ? "solid" : "gradient",
+  };
+}
+
+function templateCoresKey(c: TemplateCores): string {
+  return [
+    c.headerMode,
+    c.headerFrom,
+    c.headerVia,
+    c.headerTo,
+    c.accent,
+    c.surface,
+    c.border,
+  ].join("|");
+}
 
 type Config = {
   nomeEmpresa: string;
@@ -23,22 +68,7 @@ type Config = {
   regimeIva: string;
   seriePadraoCodigo: string;
   taxaIvaPadrao: number | string;
-  atSubutilizador: string | null;
-  atWfaPasswordConfigured?: boolean;
-  atCertificadoRef: string | null;
-  softwareCertificado: string | null;
-  softwareCertificadoEfectivo?: string | null;
-  comunicacaoAtiva: boolean;
-  comunicacaoAutomatica?: boolean;
-  atLicencaAceiteEm?: string | null;
-  atLicencaVersao?: string | null;
-};
-
-type LicencaAt = {
-  versao: string;
-  texto: string;
-  aceite: boolean;
-  aceiteEm: string | null;
+  templateCores?: TemplateCores | null;
 };
 
 type Serie = {
@@ -51,33 +81,6 @@ type Serie = {
   mensagemAtSerie?: string | null;
 };
 
-type CertItem = {
-  id: string;
-  label: string;
-  ok: boolean;
-  detalhe?: string;
-  bloqueante?: boolean;
-};
-
-type Certificacao = {
-  prontaProducao: boolean;
-  prontaSandbox?: boolean;
-  softwareCertificado: string | null;
-  softwareCertificadoOrigem: "tenant" | "plataforma" | null;
-  modoServidor: string;
-  items: CertItem[];
-  avisoLegal: string;
-};
-
-type Integracao = {
-  mode: string;
-  configured: boolean;
-  softwareCertificado: string | null;
-  sandboxSimulado?: boolean;
-  sandboxReal?: boolean;
-  endpoint?: string | null;
-};
-
 /** Exemplos válidos para sandbox / demonstração (formato PT). */
 const EXEMPLO_IBAN = "PT50000201231234567890154";
 const EXEMPLO_BIC = "BBPIPTPL";
@@ -88,8 +91,6 @@ export default function CrmFaturacaoConfigPage() {
   const canAccessFaturacao = canAccessFaturacaoPortal(role, entitlements);
   const [config, setConfig] = useState<Config | null>(null);
   const [series, setSeries] = useState<Serie[]>([]);
-  const [certificacao, setCertificacao] = useState<Certificacao | null>(null);
-  const [integracao, setIntegracao] = useState<Integracao | null>(null);
   const [nomeEmpresa, setNomeEmpresa] = useState("");
   const [moradaFiscal, setMoradaFiscal] = useState("");
   const [nifEmitente, setNifEmitente] = useState("");
@@ -100,30 +101,23 @@ export default function CrmFaturacaoConfigPage() {
   const [consRegCom, setConsRegCom] = useState("");
   const [taxaIvaPadrao, setTaxaIvaPadrao] = useState("23");
   const [seriePadrao, setSeriePadrao] = useState("");
-  const [atSubutilizador, setAtSubutilizador] = useState("");
-  const [atWfaPassword, setAtWfaPassword] = useState("");
-  const [atWfaPasswordConfigured, setAtWfaPasswordConfigured] = useState(false);
-  const [atCertificadoRef, setAtCertificadoRef] = useState("");
-  const [softwareCertificado, setSoftwareCertificado] = useState("");
-  const [comunicacaoAtiva, setComunicacaoAtiva] = useState(false);
-  const [comunicacaoAutomatica, setComunicacaoAutomatica] = useState(false);
-  const [licencaAt, setLicencaAt] = useState<LicencaAt | null>(null);
-  const [aceitarLicenca, setAceitarLicenca] = useState(false);
   const [serieCodigos, setSerieCodigos] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [comunicarTodasOpen, setComunicarTodasOpen] = useState(false);
+  const [templateCores, setTemplateCores] = useState<TemplateCores>(TEMPLATE_CORES_DEFAULT);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [coresReady, setCoresReady] = useState(false);
+  const coresReadyRef = useRef(false);
+  const savedCoresKeyRef = useRef<string>("");
+  const coresPersistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const templateCoresRef = useRef(templateCores);
+  templateCoresRef.current = templateCores;
 
   const applyPayload = useCallback(
-    (data: {
-      config: Config;
-      series?: Serie[];
-      certificacao?: Certificacao;
-      integracao?: Integracao;
-      licencaAt?: LicencaAt;
-    }) => {
+    (data: { config: Config; series?: Serie[] }) => {
       const c = data.config;
       setConfig(c);
       setNomeEmpresa(c.nomeEmpresa);
@@ -136,17 +130,11 @@ export default function CrmFaturacaoConfigPage() {
       setConsRegCom(c.consRegCom ?? "");
       setTaxaIvaPadrao(String(Number(c.taxaIvaPadrao)));
       setSeriePadrao(c.seriePadraoCodigo);
-      setAtSubutilizador(c.atSubutilizador ?? "");
-      setAtWfaPassword("");
-      setAtWfaPasswordConfigured(!!c.atWfaPasswordConfigured);
-      setAtCertificadoRef(c.atCertificadoRef ?? "");
-      setSoftwareCertificado(c.softwareCertificado ?? "");
-      setComunicacaoAtiva(c.comunicacaoAtiva);
-      setComunicacaoAutomatica(!!c.comunicacaoAutomatica);
-      if (data.licencaAt) {
-        setLicencaAt(data.licencaAt);
-        setAceitarLicenca(false);
-      }
+      const cores = normalizeTemplateCores(c.templateCores);
+      setTemplateCores(cores);
+      savedCoresKeyRef.current = templateCoresKey(cores);
+      coresReadyRef.current = true;
+      setCoresReady(true);
       if (data.series) {
         setSeries(data.series);
         setSerieCodigos(
@@ -155,18 +143,46 @@ export default function CrmFaturacaoConfigPage() {
           ),
         );
       }
-      if (data.certificacao) setCertificacao(data.certificacao);
-      if (data.integracao) setIntegracao(data.integracao);
     },
     [],
+  );
+
+  const persistTemplateCores = useCallback(
+    async (cores: TemplateCores) => {
+      if (writeDisabled) return;
+      const payload = normalizeTemplateCores(cores);
+      const key = templateCoresKey(payload);
+      if (key === savedCoresKeyRef.current) return;
+
+      const res = await bffFetch("/api/v1/crm/config/faturacao", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ templateCores: payload }),
+      });
+      if (!res.ok) {
+        setError(await parseApiError(res));
+        return;
+      }
+      const body = (await res.json()) as { config?: Config };
+      const saved = normalizeTemplateCores(body.config?.templateCores ?? payload);
+      savedCoresKeyRef.current = templateCoresKey(saved);
+      setTemplateCores(saved);
+      setConfig((prev) => (prev ? { ...prev, templateCores: saved } : prev));
+      setMsg("Cores do template guardadas.");
+    },
+    [writeDisabled],
   );
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const res = await bffFetch("/api/v1/crm/config/faturacao", {
-      headers: { accept: "application/json" },
-    });
+    const [res, tenantRes, brandingRes] = await Promise.all([
+      bffFetch("/api/v1/crm/config/faturacao", {
+        headers: { accept: "application/json" },
+      }),
+      bffFetch("/api/v1/portal/tenant-info", { headers: { accept: "application/json" } }),
+      bffFetch("/api/v1/portal/tenant/branding", { headers: { accept: "application/json" } }),
+    ]);
     setLoading(false);
     if (!res.ok) {
       setError(await parseApiError(res));
@@ -175,10 +191,19 @@ export default function CrmFaturacaoConfigPage() {
     const body = (await res.json()) as {
       config: Config;
       series: Serie[];
-      certificacao: Certificacao;
-      integracao: Integracao;
     };
     applyPayload(body);
+    const tenant = tenantRes.ok
+      ? ((await tenantRes.json()) as { slug?: string })
+      : null;
+    const branding = brandingRes.ok
+      ? ((await brandingRes.json()) as { logoUrl?: string })
+      : null;
+    setLogoUrl(
+      tenant?.slug?.trim() && branding?.logoUrl
+        ? publicTenantLogoUrl(tenant.slug, Date.now())
+        : null,
+    );
 
     if (!body.config.emailGestor?.trim()) {
       const meRes = await bffFetch("/api/auth/me", { headers: { accept: "application/json" } });
@@ -195,11 +220,48 @@ export default function CrmFaturacaoConfigPage() {
     void load();
   }, [load]);
 
+  // Persiste modo (sólido/gradiente) e cores ao alterar - não depende só do «Guardar».
+  useEffect(() => {
+    if (!coresReady || writeDisabled || loading) return;
+    const key = templateCoresKey(templateCores);
+    if (key === savedCoresKeyRef.current) return;
+    if (coresPersistTimer.current) clearTimeout(coresPersistTimer.current);
+    coresPersistTimer.current = setTimeout(() => {
+      void persistTemplateCores(templateCoresRef.current);
+    }, 450);
+    return () => {
+      if (coresPersistTimer.current) {
+        clearTimeout(coresPersistTimer.current);
+        coresPersistTimer.current = null;
+      }
+    };
+  }, [templateCores, coresReady, writeDisabled, loading, persistTemplateCores]);
+
+  // Flush pendente ao sair da página (só depois do load inicial).
+  useEffect(() => {
+    return () => {
+      if (coresPersistTimer.current) {
+        clearTimeout(coresPersistTimer.current);
+        coresPersistTimer.current = null;
+      }
+      if (!coresReadyRef.current || writeDisabled) return;
+      const latest = templateCoresRef.current;
+      if (templateCoresKey(latest) !== savedCoresKeyRef.current) {
+        void persistTemplateCores(latest);
+      }
+    };
+  }, [persistTemplateCores, writeDisabled]);
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (coresPersistTimer.current) {
+      clearTimeout(coresPersistTimer.current);
+      coresPersistTimer.current = null;
+    }
     setBusy(true);
     setError(null);
     setMsg(null);
+    const coresPayload = normalizeTemplateCores(templateCores);
     const payload = {
       nomeEmpresa: nomeEmpresa.trim(),
       moradaFiscal: moradaFiscal.trim() || null,
@@ -211,13 +273,7 @@ export default function CrmFaturacaoConfigPage() {
       consRegCom: consRegCom.trim() || null,
       taxaIvaPadrao: Number.parseFloat(taxaIvaPadrao.replace(",", ".")),
       seriePadraoCodigo: seriePadrao.trim(),
-      atSubutilizador: atSubutilizador.trim() || null,
-      ...(atWfaPassword.trim() ? { atWfaPassword: atWfaPassword.trim() } : {}),
-      atCertificadoRef: atCertificadoRef.trim() || null,
-      softwareCertificado: softwareCertificado.trim() || null,
-      comunicacaoAtiva,
-      comunicacaoAutomatica,
-      ...(aceitarLicenca && !licencaAt?.aceite ? { aceitarLicencaAtWs: true } : {}),
+      templateCores: coresPayload,
     };
     const res = await bffFetch("/api/v1/crm/config/faturacao", {
       method: "PATCH",
@@ -248,11 +304,10 @@ export default function CrmFaturacaoConfigPage() {
       setError(await parseApiError(res));
       return;
     }
-    const body = (await res.json()) as { certificacao?: Certificacao; serie?: Serie };
+    const body = (await res.json()) as { serie?: Serie };
     if (body.serie) {
       setSeries((prev) => prev.map((s) => (s.id === serieId ? body.serie! : s)));
     }
-    if (body.certificacao) setCertificacao(body.certificacao);
     setMsg("Código de validação AT actualizado.");
   }
 
@@ -299,79 +354,6 @@ export default function CrmFaturacaoConfigPage() {
     void load();
   }
 
-  async function testarAt() {
-    setBusy(true);
-    setError(null);
-    setMsg(null);
-
-    if (!atSubutilizador.trim()) {
-      setBusy(false);
-      setError("Preencha o subutilizador WFA antes de testar.");
-      return;
-    }
-    if (!atWfaPassword.trim() && !atWfaPasswordConfigured) {
-      setBusy(false);
-      setError("Preencha a password WFA antes de testar (ou guarde-a primeiro).");
-      return;
-    }
-
-    const saveRes = await bffFetch("/api/v1/crm/config/faturacao", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({
-        nomeEmpresa: nomeEmpresa.trim(),
-        moradaFiscal: moradaFiscal.trim() || null,
-        nifEmitente: nifEmitente.trim(),
-        iban: iban.trim() || null,
-        bicSwift: bicSwift.trim() || null,
-        emailGestor: emailGestor.trim() || null,
-        capitalSocial: capitalSocial.trim() || null,
-        consRegCom: consRegCom.trim() || null,
-        taxaIvaPadrao: Number.parseFloat(taxaIvaPadrao.replace(",", ".")),
-        seriePadraoCodigo: seriePadrao.trim(),
-        atSubutilizador: atSubutilizador.trim() || null,
-        ...(atWfaPassword.trim() ? { atWfaPassword: atWfaPassword.trim() } : {}),
-        atCertificadoRef: atCertificadoRef.trim() || null,
-        softwareCertificado: softwareCertificado.trim() || null,
-        comunicacaoAtiva,
-        comunicacaoAutomatica,
-      }),
-    });
-    if (!saveRes.ok) {
-      setBusy(false);
-      setError(await parseApiError(saveRes));
-      return;
-    }
-    applyPayload(await saveRes.json());
-
-    const res = await bffFetch("/api/v1/crm/config/faturacao/testar-at", {
-      method: "POST",
-      headers: { accept: "application/json" },
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setError(await parseApiError(res));
-      return;
-    }
-    const body = (await res.json()) as {
-      sucesso: boolean;
-      mensagemAt: string | null;
-      mode: string;
-    };
-    if (body.sucesso) {
-      setMsg(body.mensagemAt ?? `Ligação AT OK (modo ${body.mode}).`);
-    } else {
-      setError(body.mensagemAt ?? "Teste AT falhou.");
-    }
-  }
-
-  const modoSandbox = integracao?.mode === "sandbox";
-  const sandboxMock = integracao?.sandboxSimulado === true;
-  const sandboxReal = integracao?.sandboxReal === true;
-  const producaoBloqueada =
-    integracao?.mode === "production" && !certificacao?.prontaProducao;
-  const comunicacaoBloqueada = producaoBloqueada && !modoSandbox;
-
   if (!canAccessFaturacao) {
     return (
       <div className="max-w-3xl space-y-4">
@@ -385,10 +367,10 @@ export default function CrmFaturacaoConfigPage() {
   }
 
   return (
-    <div className="max-w-2xl space-y-5">
+    <div className="max-w-3xl space-y-5">
       <PageHeader
         title="Dados de faturação"
-        description="Emitente legal, integração AT e certificação do software."
+        description="Emitente legal, séries, IVA e aparência do documento. A integração AT é configurada pelo superadmin."
         actions={
           <Link href="/portal/crm/faturas">
             <Button size="sm" variant="secondary">
@@ -406,63 +388,6 @@ export default function CrmFaturacaoConfigPage() {
         <p className="text-sm text-slate-400">A carregar…</p>
       ) : (
         <form onSubmit={onSubmit} className="space-y-6">
-          {certificacao ? (
-            <section className="rounded-xl border border-blue-500/25 bg-blue-500/5 p-5 space-y-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <Shield className="h-5 w-5 text-blue-400" />
-                  <h2 className="text-sm font-semibold text-slate-200">Certificação software AT</h2>
-                </div>
-                <Badge variant={certificacao.prontaProducao || certificacao.prontaSandbox ? "green" : "default"}>
-                  {modoSandbox
-                    ? certificacao.prontaSandbox
-                      ? "Sandbox pronto"
-                      : "Sandbox em preparação"
-                    : certificacao.prontaProducao
-                      ? "Pronto produção"
-                      : "Em preparação"}
-                </Badge>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">{certificacao.avisoLegal}</p>
-              <ul className="space-y-2">
-                {certificacao.items.map((item) => (
-                  <li key={item.id} className="flex gap-2 text-sm">
-                    {item.ok ? (
-                      <CheckCircle2 className="h-4 w-4 text-teal-400 shrink-0 mt-0.5" />
-                    ) : (
-                      <Circle className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
-                    )}
-                    <div>
-                      <p className={item.ok ? "text-slate-200" : "text-slate-400"}>{item.label}</p>
-                      {item.detalhe ? (
-                        <p className="text-xs text-slate-500 mt-0.5">{item.detalhe}</p>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              <p className="text-xs text-slate-500">
-                Modo servidor: <span className="font-mono text-slate-300">{integracao?.mode ?? "-"}</span>
-                {certificacao.softwareCertificado ? (
-                  <>
-                    {" "}
-                    · Certificado efectivo:{" "}
-                    <span className="font-mono text-slate-300">{certificacao.softwareCertificado}</span>
-                  </>
-                ) : null}
-              </p>
-              <a
-                href={AT_DOC_LINKS.programaCertificacao}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
-              >
-                Programa de faturação certificada (gov.pt)
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            </section>
-          ) : null}
-
           <section className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-5 space-y-4">
             <h2 className="text-sm font-semibold text-slate-200">Emitente (obrigatório)</h2>
             <div>
@@ -545,6 +470,109 @@ export default function CrmFaturacaoConfigPage() {
           </section>
 
           <section className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-5 space-y-4">
+            <h2 className="text-sm font-semibold text-slate-200">Cores do template da fatura</h2>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Aplicam-se ao PDF/HTML da fatura e à pré-visualização abaixo. O modo (sólido ou
+              gradiente) e as cores são guardados automaticamente ao alterar.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-xs text-slate-400">Cabeçalho</span>
+              <div className="inline-flex rounded-lg border border-slate-600/60 p-0.5 bg-slate-950/50">
+                <button
+                  type="button"
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    templateCores.headerMode === "solid"
+                      ? "bg-slate-700 text-slate-100"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                  onClick={() => setTemplateCores((c) => ({ ...c, headerMode: "solid" }))}
+                >
+                  Cor sólida
+                </button>
+                <button
+                  type="button"
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    templateCores.headerMode === "gradient"
+                      ? "bg-slate-700 text-slate-100"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                  onClick={() => setTemplateCores((c) => ({ ...c, headerMode: "gradient" }))}
+                >
+                  Gradiente
+                </button>
+              </div>
+            </div>
+
+            <div
+              className="h-14 border border-slate-700/40"
+              style={{
+                background:
+                  templateCores.headerMode === "solid"
+                    ? templateCores.headerFrom
+                    : `linear-gradient(135deg, ${templateCores.headerFrom} 0%, ${templateCores.headerVia} 45%, ${templateCores.headerTo} 100%)`,
+              }}
+              aria-hidden
+            />
+            <div className="grid gap-3 sm:grid-cols-3">
+              {(
+                templateCores.headerMode === "solid"
+                  ? ([
+                      ["headerFrom", "Cor do cabeçalho"],
+                      ["accent", "Cor de destaque"],
+                      ["surface", "Fundos suaves"],
+                      ["border", "Bordas"],
+                    ] as const)
+                  : ([
+                      ["headerFrom", "Gradiente (início)"],
+                      ["headerVia", "Gradiente (meio)"],
+                      ["headerTo", "Gradiente (fim)"],
+                      ["accent", "Cor de destaque"],
+                      ["surface", "Fundos suaves"],
+                      ["border", "Bordas"],
+                    ] as const)
+              ).map(([key, label]) => (
+                <label key={key} className="grid gap-1 text-xs text-slate-400">
+                  {label}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={templateCores[key]}
+                      onChange={(e) =>
+                        setTemplateCores((c) => ({ ...c, [key]: e.target.value }))
+                      }
+                      className="h-9 w-12 cursor-pointer rounded border border-slate-600 bg-transparent"
+                    />
+                    <Input
+                      value={templateCores[key]}
+                      onChange={(e) =>
+                        setTemplateCores((c) => ({ ...c, [key]: e.target.value }))
+                      }
+                      className="font-mono text-xs"
+                      maxLength={7}
+                    />
+                  </div>
+                </label>
+              ))}
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => setTemplateCores(TEMPLATE_CORES_DEFAULT)}
+            >
+              Repor cores padrão
+            </Button>
+
+            <FaturaTemplatePreview
+              cores={templateCores}
+              emitenteNome={nomeEmpresa.trim() || "A sua empresa"}
+              emitenteNif={nifEmitente.trim() || "500000000"}
+              logoUrl={logoUrl}
+            />
+          </section>
+
+          <section className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-5 space-y-4">
             <h2 className="text-sm font-semibold text-slate-200">Série e IVA</h2>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
@@ -616,277 +644,11 @@ export default function CrmFaturacaoConfigPage() {
             ) : null}
           </section>
 
-          <section className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-5 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-slate-200">Integração AT</h2>
-              {integracao ? (
-                <Badge variant={modoSandbox ? "default" : integracao.configured ? "green" : "default"}>
-                  Modo: {integracao.mode}
-                  {sandboxMock ? " (mock local)" : sandboxReal ? " (AT real)" : ""}
-                </Badge>
-              ) : null}
-            </div>
-            {sandboxMock ? (
-              <p className="text-xs text-amber-400/90 leading-relaxed">
-                Sandbox mock (offline): respostas simuladas localmente. Remova{" "}
-                <code className="text-amber-200">AT_FATURAS_SANDBOX_MOCK=1</code> para usar a sandbox
-                real da AT.
-              </p>
-            ) : sandboxReal ? (
-              <p className="text-xs text-teal-400/90 leading-relaxed">
-                Sandbox AT real: comunicação via webservice de testes (
-                {integracao.endpoint ?? "porta 700/722"}). Requer certificado TesteWebservices.pfx e
-                credenciais WFA/WSE válidas.
-              </p>
-            ) : null}
-            <div>
-              <label className="mb-1 block text-xs text-slate-400">N.º certificação software AT</label>
-              <Input
-                value={softwareCertificado}
-                onChange={(e) => setSoftwareCertificado(e.target.value)}
-                placeholder={
-                  config?.softwareCertificadoEfectivo && !config.softwareCertificado
-                    ? `Plataforma: ${config.softwareCertificadoEfectivo}`
-                    : "Após aprovação no programa AT"
-                }
-              />
-              {config?.softwareCertificadoEfectivo && !softwareCertificado ? (
-                <p className="text-xs text-slate-500 mt-1">
-                  A plataforma usa certificado global: {config.softwareCertificadoEfectivo}
-                </p>
-              ) : null}
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-slate-400">Referência certificado SSL AT</label>
-              <Input
-                value={atCertificadoRef}
-                onChange={(e) => setAtCertificadoRef(e.target.value)}
-                placeholder="Identificador do certificado de adesão"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-slate-400">Subutilizador WFA</label>
-              <Input
-                value={atSubutilizador}
-                onChange={(e) => setAtSubutilizador(e.target.value)}
-                placeholder="Ex.: 1 ou 123456789/1"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-slate-400">Password WFA</label>
-              <Input
-                type="password"
-                value={atWfaPassword}
-                onChange={(e) => setAtWfaPassword(e.target.value)}
-                placeholder={
-                  atWfaPasswordConfigured
-                    ? "•••••••• (configurada - deixe vazio para manter)"
-                    : "Password do subutilizador AT"
-                }
-                autoComplete="new-password"
-              />
-              {atWfaPasswordConfigured ? (
-                <p className="text-xs text-slate-500 mt-1">Password guardada de forma encriptada.</p>
-              ) : null}
-            </div>
-            <div className="rounded-lg border border-amber-500/25 bg-amber-950/20 p-3 space-y-3">
-              <p className="text-xs font-medium text-amber-200">
-                Licença Anexo II - Serviços web AT
-              </p>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                O Contrato de adesão exige que o contribuinte aceite expressamente a licença de
-                utilização antes de invocar os webservices de comunicação de faturas.
-              </p>
-              {licencaAt?.texto ? (
-                <Textarea
-                  readOnly
-                  value={licencaAt.texto}
-                  className="min-h-[180px] text-[11px] font-mono leading-relaxed text-slate-300"
-                />
-              ) : (
-                <p className="text-xs text-slate-500">A carregar texto da licença…</p>
-              )}
-              {licencaAt?.aceite ? (
-                <p className="text-xs text-emerald-400">
-                  Licença aceite
-                  {licencaAt.aceiteEm
-                    ? ` em ${new Date(licencaAt.aceiteEm).toLocaleString("pt-PT")}`
-                    : ""}
-                  {licencaAt.versao ? ` · versão ${licencaAt.versao}` : ""}.
-                </p>
-              ) : (
-                <label className="flex items-start gap-2 text-sm text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={aceitarLicenca}
-                    onChange={(e) => setAceitarLicenca(e.target.checked)}
-                    disabled={writeDisabled || busy}
-                    className="mt-1 rounded border-slate-600"
-                  />
-                  <span>
-                    Li e aceito a Licença de utilização dos serviços web da AT (Anexo II). Sem este
-                    aceite não é possível activar a comunicação nem testar a ligação.
-                  </span>
-                </label>
-              )}
-            </div>
-            <label className="flex items-center gap-2 text-sm text-slate-300">
-              <input
-                type="checkbox"
-                checked={comunicacaoAtiva}
-                onChange={(e) => setComunicacaoAtiva(e.target.checked)}
-                disabled={
-                  comunicacaoBloqueada ||
-                  (!licencaAt?.aceite && !aceitarLicenca)
-                }
-                className="rounded border-slate-600"
-              />
-              Comunicação AT activa{modoSandbox ? " (sandbox)" : " (produção)"}
-            </label>
-            <label className="flex items-center gap-2 text-sm text-slate-300">
-              <input
-                type="checkbox"
-                checked={comunicacaoAutomatica}
-                onChange={(e) => setComunicacaoAutomatica(e.target.checked)}
-                disabled={!comunicacaoAtiva || comunicacaoBloqueada}
-                className="rounded border-slate-600"
-              />
-              Comunicar automaticamente ao emitir fatura
-            </label>
-            {!licencaAt?.aceite && !aceitarLicenca ? (
-              <p className="text-xs text-amber-400/90">
-                Aceite a Licença Anexo II acima antes de activar a comunicação AT.
-              </p>
-            ) : null}
-            {producaoBloqueada ? (
-              <p className="text-xs text-amber-400/90">
-                Complete a checklist de certificação antes de activar comunicação em produção.
-              </p>
-            ) : null}
-            {(modoSandbox || integracao?.configured) && !comunicacaoBloqueada ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled={busy || writeDisabled || !licencaAt?.aceite}
-                onClick={() => void testarAt()}
-              >
-                Testar ligação AT
-              </Button>
-            ) : null}
-            <div className="rounded-lg border border-slate-700/40 bg-slate-950/30 p-3 space-y-2">
-              <p className="text-xs font-medium text-slate-300">Documentação oficial AT</p>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Links antigos do Portal das Finanças (ex. <span className="font-mono">/faturas/Pages/faqs-…</span>)
-                podem responder «página não encontrada». Use estes endereços actualizados:
-              </p>
-              <ul className="space-y-1.5 text-xs">
-                <li>
-                  <a
-                    href={AT_DOC_LINKS.comunicacao2022}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
-                  >
-                    Webservice faturas 2022+ (WSDL e manuais)
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href={AT_DOC_LINKS.seriesAtcud}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
-                  >
-                    Comunicação de séries e ATCUD
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href={AT_DOC_LINKS.qrCode}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
-                  >
-                    Código QR (Portaria 195/2020)
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href={AT_DOC_LINKS.safTpt}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
-                  >
-                    SAF-T (PT) 1.04_01 - estrutura e validadores XSD
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href={AT_DOC_LINKS.certificacaoSoftware}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
-                  >
-                    Certificação de software de faturação
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href={AT_DOC_LINKS.svat}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
-                  >
-                    SVAT - selo de validação (programas de contabilidade)
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href={AT_DOC_LINKS.programasCertificados}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
-                  >
-                    Lista de programas certificados (Modelo 24)
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href={AT_DOC_LINKS.faqsWebservice}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
-                  >
-                    FAQs webservice e multidocumento
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href={AT_DOC_LINKS.portalFinancas}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
-                  >
-                    Portal das Finanças (subutilizador WFA e séries)
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </li>
-              </ul>
-              <p className="text-xs text-slate-600">
-                O endpoint WSDL (<span className="font-mono">servicos.portaldasfinancas.gov.pt:400</span>) só responde
-                com certificado SSL de produtor - não abre num browser normal.
-              </p>
-            </div>
-          </section>
+          <Alert variant="info">
+            A certificação do software e as credenciais AT (WFA, licença Anexo II, comunicação) são
+            configuradas pelo superadmin na plataforma NexiForma. Preencha o emitente e as séries;
+            quando a integração estiver activa poderá emitir e comunicar faturas.
+          </Alert>
 
           <Button type="submit" disabled={busy || writeDisabled}>
             <Save className="h-3.5 w-3.5" />
@@ -894,10 +656,8 @@ export default function CrmFaturacaoConfigPage() {
           </Button>
           {config ? (
             <p className="text-xs text-slate-500">
-              Faturas emitidas incluem assinatura RSA-SHA1 (com chave AT), ATCUD e QR conforme Portaria 195/2020.
-              {modoSandbox
-                ? " Em sandbox a comunicação AT é simulada."
-                : " Comunicação real só após certificação AT."}
+              Faturas emitidas incluem assinatura RSA-SHA1 (com chave AT), ATCUD e QR conforme Portaria
+              195/2020.
             </p>
           ) : null}
         </form>

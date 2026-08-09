@@ -2,8 +2,10 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { useClientTablePaging } from "@/lib/client/use-client-table-paging";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parsePaginatedList } from "@/lib/crm/paginated-list";
+import { ListPaginationControls } from "@/components/crm/list-pagination";
 
 type Contrato = {
   id: string;
@@ -33,6 +35,7 @@ export default function ContratosPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ entidadeId: "", codigo: "", titulo: "", valor: "", dataInicio: new Date().toISOString().split("T")[0], dataFim: "" });
+  const paging = useClientTablePaging(contratos, 10);
 
   useEffect(() => {
     void bffFetch("/api/v1/entidades-cliente", { headers: { accept: "application/json" } }).then(async (r) => {
@@ -163,32 +166,45 @@ export default function ContratosPage() {
             <p className="text-sm text-slate-500">Sem contratos. Cria uma proposta e aceita-a para gerar um contrato.</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-700/30">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Codigo</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Entidade</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Valor</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Periodo</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Estado</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-700/20">
-              {contratos.map((c) => (
-                <tr key={c.id} className="hover:bg-slate-800/30 transition-colors">
-                  <td className="px-4 py-3 text-xs font-mono text-purple-300">{c.codigo}</td>
-                  <td className="px-4 py-3 text-slate-200 text-xs">{c.entidade}</td>
-                  <td className="px-4 py-3 text-xs text-slate-400 hidden sm:table-cell">{c.valor}</td>
-                  <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">{c.dataInicio}{c.dataFim ? ` – ${c.dataFim}` : ""}</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${estadoBadge[c.estado] ?? estadoBadge.VIGENTE}`}>
-                      {c.estado}
-                    </span>
-                  </td>
+          <>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-700/30">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Codigo</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Entidade</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Valor</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Periodo</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Estado</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-700/20">
+                {paging.slice.map((c) => (
+                  <tr key={c.id} className="hover:bg-slate-800/30 transition-colors">
+                    <td className="px-4 py-3 text-xs font-mono text-purple-300">{c.codigo}</td>
+                    <td className="px-4 py-3 text-slate-200 text-xs">{c.entidade}</td>
+                    <td className="px-4 py-3 text-xs text-slate-400 hidden sm:table-cell">{c.valor}</td>
+                    <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">{c.dataInicio}{c.dataFim ? ` – ${c.dataFim}` : ""}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${estadoBadge[c.estado] ?? estadoBadge.VIGENTE}`}>
+                        {c.estado}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {paging.total > 0 ? (
+              <ListPaginationControls
+                className="border-t border-slate-700/40 px-4 py-3"
+                page={paging.page}
+                pageSize={paging.pageSize}
+                total={paging.total}
+                numberedPages
+                onPageChange={paging.setPage}
+                onPageSizeChange={paging.setPageSize}
+              />
+            ) : null}
+          </>
         )}
       </div>
     </div>

@@ -16,7 +16,36 @@ import {
   NEXI_GUIA_ASK_EVENT,
   type NexiGuiaAskDetail,
 } from "@/lib/client/nexi-guia-events";
+import {
+  MOBILE_NAV_EVENT,
+  readMobileNavOpen,
+  type MobileNavDetail,
+} from "@/lib/client/mobile-nav";
 import { Button } from "@/components/ui/button";
+
+const NEXIGUIA_HIDDEN_KEY = "nexiguia-fab-hidden";
+/** Desktop: círculo. Mobile: tab colada à direita (mais compacta). */
+const FAB_SIZE = 56;
+const FAB_MARGIN = 20;
+const FAB_TAB_SIZE = 44;
+const FAB_TAB_WIDTH = 40;
+
+function rectsOverlap(a: DOMRect, b: DOMRect, pad = 8) {
+  return !(
+    a.right + pad < b.left ||
+    a.left - pad > b.right ||
+    a.bottom + pad < b.top ||
+    a.top - pad > b.bottom
+  );
+}
+
+function readFabHidden(): boolean {
+  try {
+    return window.localStorage.getItem(NEXIGUIA_HIDDEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 type ChatMessage = {
   id: string;
@@ -153,10 +182,105 @@ export function NexiGuia() {
     typeof window !== "undefined" ? decodeJwtRole(getAccessToken()) : null,
   );
   const [open, setOpen] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [fabShiftY, setFabShiftY] = useState(0);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
   const listRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    setHidden(readFabHidden());
+    setMobileNavOpen(readMobileNavOpen());
+    const onNav = (ev: Event) => {
+      const detail = (ev as CustomEvent<MobileNavDetail>).detail;
+      setMobileNavOpen(Boolean(detail?.open));
+      if (detail?.open) setOpen(false);
+    };
+    window.addEventListener(MOBILE_NAV_EVENT, onNav);
+    return () => window.removeEventListener(MOBILE_NAV_EVENT, onNav);
+  }, []);
+
+  const persistHidden = useCallback((next: boolean) => {
+    setHidden(next);
+    try {
+      window.localStorage.setItem(NEXIGUIA_HIDDEN_KEY, next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+    if (next) setOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (hidden || open || mobileNavOpen) {
+      setFabShiftY(0);
+      return;
+    }
+
+    const measure = () => {
+      const nodes = document.querySelectorAll<HTMLElement>(
+        "button, a[href], [role='button'], input, select, textarea",
+      );
+      const isMobile = window.matchMedia("(max-width: 1023px)").matches;
+      const fabW = isMobile ? FAB_TAB_WIDTH : FAB_SIZE;
+      const fabH = isMobile ? FAB_TAB_SIZE : FAB_SIZE;
+      const fabRight = isMobile ? 0 : FAB_MARGIN;
+      const maxShift = Math.max(0, window.innerHeight - fabH - FAB_MARGIN * 2 - 48);
+      let shift = 0;
+
+      for (let pass = 0; pass < 8; pass++) {
+        const fabRect = new DOMRect(
+          window.innerWidth - fabRight - fabW,
+          window.innerHeight - FAB_MARGIN - fabH - shift,
+          fabW,
+          fabH,
+        );
+        let bumped = false;
+        for (const el of nodes) {
+          if (el.closest("[data-nexiguia-root]")) continue;
+          const style = window.getComputedStyle(el);
+          if (
+            style.visibility === "hidden" ||
+            style.display === "none" ||
+            style.pointerEvents === "none"
+          ) {
+            continue;
+          }
+          const r = el.getBoundingClientRect();
+          if (r.width < 8 || r.height < 8) continue;
+          if (!rectsOverlap(fabRect, r)) continue;
+          // Empurrar o FAB para cima até deixar o controlo livre.
+          shift = Math.min(maxShift, shift + (fabRect.bottom - r.top + 16));
+          bumped = true;
+          break;
+        }
+        if (!bumped) break;
+      }
+
+      setFabShiftY((prev) => (prev === shift ? prev : shift));
+    };
+
+    let raf = 0;
+    const schedule = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        measure();
+      });
+    };
+
+    measure();
+    window.addEventListener("resize", schedule);
+    window.addEventListener("scroll", schedule, true);
+    const mo = new MutationObserver(schedule);
+    mo.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("scroll", schedule, true);
+      mo.disconnect();
+      if (raf) window.cancelAnimationFrame(raf);
+    };
+  }, [hidden, open, mobileNavOpen, pathname]);
 
   useEffect(() => {
     setRole(decodeJwtRole(getAccessToken()));
@@ -264,6 +388,7 @@ export function NexiGuia() {
       const detail = (ev as CustomEvent<NexiGuiaAskDetail>).detail;
       const prompt = detail?.prompt?.trim();
       if (!prompt) return;
+      persistHidden(false);
       setOpen(true);
       if (detail.autoSend === false) {
         setInput(prompt);
@@ -273,28 +398,91 @@ export function NexiGuia() {
     };
     window.addEventListener(NEXI_GUIA_ASK_EVENT, onAsk);
     return () => window.removeEventListener(NEXI_GUIA_ASK_EVENT, onAsk);
-  }, [submit]);
+  }, [submit, persistHidden]);
+
+  const fabSuppressed = mobileNavOpen;
+  /** Semi-pill fica visível com o chat aberto (fecha ao tocar); só some se hidden. */
+  const showPill = !fabSuppressed && !hidden;
+  const showChat = open && !fabSuppressed;
+
+  function toggleChat() {
+    setOpen((v) => !v);
+  }
+
+  function closeChat() {
+    setOpen(false);
+  }
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title="NexiGuia"
-        className="fixed bottom-5 right-5 z-[100] flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-teal-600 text-white shadow-lg shadow-blue-900/50 ring-2 ring-white/10 hover:scale-105 hover:brightness-110 transition-all"
-        aria-label={open ? "Fechar NexiGuia" : "Abrir NexiGuia"}
-      >
-        {open ? <X className="h-5 w-5" /> : <Compass className="h-6 w-6" />}
-      </button>
+    <div data-nexiguia-root className={showChat ? "nexiguia-root-open" : undefined}>
+      {/* Chat aberto: blur no fundo (z-index: 0 no stacking context do root) */}
+      {showChat ? (
+        <button
+          type="button"
+          className="nexiguia-backdrop"
+          aria-label="Fechar NexiGuia"
+          onClick={closeChat}
+        />
+      ) : null}
 
-      {open ? (
-        <div className="fixed bottom-[5.25rem] right-5 z-[100] flex w-[min(100vw-2.5rem,24rem)] flex-col overflow-hidden rounded-2xl border border-slate-700/50 bg-[#0c1220]/97 shadow-2xl backdrop-blur-md">
-          <div className="flex items-center gap-2 border-b border-slate-700/40 px-4 py-3">
-            <MessageCircle className="h-4 w-4 shrink-0 text-teal-400" />
+      {/* Semi-pill: abre/fecha o chat; com chat aberto fica no mesmo z-index da janela */}
+      {showPill ? (
+        <button
+          type="button"
+          onClick={toggleChat}
+          title="NexiGuia - clica com o botão direito para esconder"
+          onContextMenu={(e) => {
+            e.preventDefault();
+            persistHidden(true);
+          }}
+          className="nexiguia-fab fixed flex items-center justify-center transition-all duration-300"
+          style={{
+            bottom: `calc(${FAB_MARGIN + fabShiftY}px + env(safe-area-inset-bottom, 0px))`,
+            color: "var(--ui-accent)",
+            borderColor: "var(--ui-accent)",
+            background:
+              "linear-gradient(145deg, color-mix(in srgb, var(--ui-panel, var(--ui-bg)) 88%, var(--ui-accent-soft)) 0%, color-mix(in srgb, var(--ui-bg) 92%, var(--ui-accent-soft)) 100%)",
+            boxShadow:
+              "0 0 0 1px color-mix(in srgb, var(--ui-accent) 25%, transparent), 0 0 18px color-mix(in srgb, var(--ui-accent) 40%, transparent)",
+          }}
+          aria-label={open ? "Fechar NexiGuia" : "Abrir NexiGuia"}
+          aria-expanded={open}
+        >
+          {open ? (
+            <X className="nexiguia-fab-icon" style={{ color: "var(--ui-accent)" }} />
+          ) : (
+            <Compass className="nexiguia-fab-icon" style={{ color: "var(--ui-accent)" }} />
+          )}
+        </button>
+      ) : null}
+
+      {showChat ? (
+        <div
+          className="nexiguia-panel fixed flex w-[min(100vw-2.5rem,24rem)] flex-col overflow-hidden rounded-2xl border shadow-2xl"
+          style={{
+            bottom: `calc(${FAB_MARGIN + 12 + fabShiftY}px + env(safe-area-inset-bottom, 0px) + var(--nexiguia-fab-h, 2.75rem))`,
+            borderColor: "color-mix(in srgb, var(--ui-border, #334155) 80%, transparent)",
+            background: "color-mix(in srgb, var(--ui-panel, #0c1220) 97%, transparent)",
+          }}
+        >
+          <div className="flex items-center gap-2 border-b border-[color:color-mix(in_srgb,var(--ui-border,#334155)_55%,transparent)] px-4 py-3">
+            <MessageCircle className="h-4 w-4 shrink-0" style={{ color: "var(--ui-accent)" }} />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-slate-100">NexiGuia</p>
-              <p className="text-[10px] text-slate-500 truncate">Assistente NexiForma</p>
+              <p className="text-sm font-semibold text-[color:var(--ui-fg,#f1f5f9)]">NexiGuia</p>
+              <p className="truncate text-[10px] text-[color:var(--ui-muted,#64748b)]">
+                Assistente NexiForma
+              </p>
             </div>
+            {/* Desktop: X no header. Mobile: fecha pela semi-pill. */}
+            <button
+              type="button"
+              onClick={closeChat}
+              title="Fechar"
+              aria-label="Fechar NexiGuia"
+              className="nexiguia-panel-close hidden rounded-md p-1.5 text-[color:var(--ui-muted,#64748b)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--ui-accent)_12%,transparent)] hover:text-[color:var(--ui-fg,#f1f5f9)] lg:inline-flex"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
 
           <div ref={listRef} className="flex max-h-80 flex-col gap-3 overflow-y-auto px-4 py-3">
@@ -341,6 +529,6 @@ export function NexiGuia() {
           </form>
         </div>
       ) : null}
-    </>
+    </div>
   );
 }

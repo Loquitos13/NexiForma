@@ -191,17 +191,18 @@ export class TenantSettingsService {
     const tenantId = requireTenantId(user);
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { legalName: true, metadata: true },
+      select: { legalName: true, slug: true, metadata: true },
     });
     if (!tenant) throw new BadRequestException("Tenant não encontrado.");
     const meta = (tenant.metadata ?? {}) as TenantMetadata;
     const branding = meta.branding ?? {};
+    const publicLogo = branding.logoStorageKey
+      ? `/api/v1/auth/public/tenant-logo?slug=${encodeURIComponent(tenant.slug)}`
+      : branding.logoUrl;
     return {
       ...branding,
       companyName: branding.companyName ?? tenant.legalName,
-      logoUrl: branding.logoStorageKey
-        ? `/api/v1/portal/tenant/logo`
-        : branding.logoUrl,
+      logoUrl: publicLogo,
       cronograma: meta.cronograma ?? {},
     };
   }
@@ -258,15 +259,18 @@ export class TenantSettingsService {
 
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { metadata: true, legalName: true },
+      select: { metadata: true, legalName: true, slug: true },
     });
     const meta = (tenant?.metadata ?? {}) as TenantMetadata;
+    const logoUrl = tenant?.slug
+      ? `/api/v1/auth/public/tenant-logo?slug=${encodeURIComponent(tenant.slug)}`
+      : `/api/v1/portal/tenant/logo`;
     const next: TenantMetadata = {
       ...meta,
       branding: {
         ...(meta.branding ?? {}),
         logoStorageKey: key,
-        logoUrl: `/api/v1/portal/tenant/logo`,
+        logoUrl,
         companyName: meta.branding?.companyName ?? tenant?.legalName,
       },
     };
@@ -275,7 +279,7 @@ export class TenantSettingsService {
       data: { metadata: next as Prisma.InputJsonValue },
     });
 
-    return { sucesso: true, logoUrl: `/api/v1/portal/tenant/logo`, logoStorageKey: key };
+    return { sucesso: true, logoUrl, logoStorageKey: key };
   }
 
   async getDocumentosPolitica(user: RequestUser) {

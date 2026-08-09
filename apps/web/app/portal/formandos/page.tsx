@@ -10,7 +10,7 @@ import { parseApiError } from "@/lib/ui/backoffice";
 import { NifStatusField, type NifStatus } from "@/components/crm/nif-status-field";
 import {
   Alert, Badge, Button, Card,
-  DataTable, Dialog, DialogContent, Input, PageHeader, type Column,
+  PaginatedDataTable, Dialog, DialogContent, Input, PageHeader, type Column,
 } from "@/components/ui";
 
 type Formando = {
@@ -333,7 +333,7 @@ export default function FormandosPage() {
           {canManage && <Button className="mt-4" onClick={openCreate}><PlusCircle className="h-4 w-4" />Registar primeiro formando</Button>}
         </Card>
       ) : (
-        <DataTable
+        <PaginatedDataTable
           columns={COLUMNS}
           data={formandos}
           keyField="id"

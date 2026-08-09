@@ -165,21 +165,21 @@ export function PortalGlobalSearch({ pathname, className }: Props) {
           type="button"
           role="option"
           aria-selected={index === activeIndex}
-          className={`flex w-full flex-col gap-1 px-4 py-2.5 text-left transition-colors ${
-            index === activeIndex ? "bg-violet-500/15" : "hover:bg-slate-800/60"
+          className={`ui-search-hit flex w-full flex-col gap-1 px-4 py-2.5 text-left transition-colors ${
+            index === activeIndex ? "ui-search-hit-active" : ""
           }`}
           onMouseEnter={() => setActiveIndex(index)}
           onClick={() => navigate(hit.href)}
         >
           <span className="flex items-center gap-2">
             {hit.category ? (
-              <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              <span className="ui-search-chip rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
                 {hit.category}
               </span>
             ) : null}
-            <span className="text-sm font-medium text-slate-100">{hit.label}</span>
+            <span className="ui-search-title text-sm font-medium">{hit.label}</span>
           </span>
-          <span className="text-xs leading-snug text-slate-400">{hit.description}</span>
+          <span className="ui-search-desc text-xs leading-snug">{hit.description}</span>
         </button>
       </li>
     );
@@ -188,7 +188,7 @@ export function PortalGlobalSearch({ pathname, className }: Props) {
   return (
     <div ref={rootRef} className={`relative ${className ?? ""}`}>
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+        <Search className="ui-search-icon pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
         <input
           ref={inputRef}
           type="search"
@@ -205,9 +205,9 @@ export function PortalGlobalSearch({ pathname, className }: Props) {
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          className="h-9 w-full rounded-xl border border-slate-700/60 bg-slate-900/80 pl-9 pr-16 text-sm text-slate-100 placeholder:text-slate-500 focus:border-violet-500/50 focus:outline-none focus:ring-2 focus:ring-violet-500/25"
+          className="ui-search-input h-11 w-full rounded-xl border pl-9 pr-16 text-base sm:h-9 sm:text-sm focus:outline-none focus:ring-2"
         />
-        <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border border-slate-700/80 bg-slate-950/80 px-1.5 py-0.5 text-[10px] text-slate-500 sm:inline">
+        <kbd className="ui-search-kbd pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border px-1.5 py-0.5 text-[10px] sm:inline">
           Ctrl K
         </kbd>
       </div>
@@ -216,12 +216,12 @@ export function PortalGlobalSearch({ pathname, className }: Props) {
         <div
           id={listId}
           role="listbox"
-          className="absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-slate-700/70 bg-slate-950/95 shadow-2xl backdrop-blur-md"
+          className="ui-search-panel absolute z-50 mt-2 w-full overflow-hidden rounded-xl border shadow-2xl backdrop-blur-md"
         >
           {loading ? (
-            <p className="px-4 py-3 text-xs text-slate-500">A pesquisar…</p>
+            <p className="ui-search-empty px-4 py-3 text-xs">A pesquisar…</p>
           ) : orderedHits.length === 0 ? (
-            <p className="px-4 py-3 text-xs text-slate-500">
+            <p className="ui-search-empty px-4 py-3 text-xs">
               Sem resultados. Experimente um código de proposta (ex. PROP-…), NIF, nome de cliente
               ou «leads».
             </p>
