@@ -29,6 +29,7 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
     env_file:
       - .env
     environment:
@@ -51,6 +52,18 @@ services:
       - api_storage:/app/storage
     ports:
       - "4000:4000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000/v1').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
 
   api-docs:
     build:
@@ -72,11 +85,13 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         API_URL: http://api:4000
+    restart: unless-stopped
     environment:
       API_URL: http://api:4000
       NODE_ENV: production
     depends_on:
-      - api
+      api:
+        condition: service_started
     ports:
       - "3000:3000"
 

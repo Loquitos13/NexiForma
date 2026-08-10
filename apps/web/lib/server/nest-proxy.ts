@@ -173,7 +173,10 @@ export async function proxyV1ToNest(req: Request, pathSegments: string[]): Promi
     const base = getNexiBackendBaseUrl();
     return new Response(
       JSON.stringify({
-        message: `API indisponível em ${base} (${reason}). Confirma que a API está a correr (npm run dev:api).`,
+        message:
+          process.env.NODE_ENV === "production"
+            ? `API indisponível em ${base} (${reason}). Verifica o contentor da API e os logs.`
+            : `API indisponível em ${base} (${reason}). Confirma que a API está a correr (npm run dev:api).`,
         statusCode: 503,
       }),
       { status: 503, headers: { "content-type": "application/json; charset=utf-8" } },

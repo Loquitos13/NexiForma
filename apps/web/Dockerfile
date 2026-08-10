@@ -17,9 +17,10 @@ RUN npm run build -w @nexiforma/shared && npm run build -w @nexiforma/web
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+ENV API_URL=http://api:4000
+ENV PORT=3000
 COPY --from=build /app/apps/web/.next/standalone ./
 COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build /app/apps/web/public ./apps/web/public
 EXPOSE 3000
-ENV PORT=3000
 CMD ["node", "apps/web/server.js"]

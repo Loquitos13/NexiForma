@@ -203,8 +203,9 @@ export async function proxyAuthToNest(opts: ProxyAuthOptions): Promise<NextRespo
     return NextResponse.json(
       {
         message:
-          "API indisponível. Confirma que `npm run dev:api` está a correr em " +
-          `${base} (${reason}).`,
+          process.env.NODE_ENV === "production"
+            ? `API indisponível em ${base} (${reason}). Verifica o contentor da API e os logs.`
+            : `API indisponível. Confirma que \`npm run dev:api\` está a correr em ${base} (${reason}).`,
         statusCode: 503,
       },
       { status: 503 },
