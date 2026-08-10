@@ -83,8 +83,6 @@ export default function TenantDetailPage() {
     temporaryPassword: string;
   } | null>(null);
   const [copiedTempPassword, setCopiedTempPassword] = useState(false);
-  const [inviteForm, setInviteForm] = useState({ email: "", displayName: "" });
-  const [inviteBusy, setInviteBusy] = useState(false);
   const [lockoutForm, setLockoutForm] = useState({
     enabled: true,
     maxAttempts: 5,
@@ -225,34 +223,6 @@ export default function TenantDetailPage() {
       setManagerBusy(false);
       setError("Falha de rede ao nomear gestor.");
     }
-  }
-
-  async function enviarConviteGestor(e: FormEvent) {
-    e.preventDefault();
-    if (!inviteForm.email.trim()) return;
-    setInviteBusy(true);
-    setError(null);
-    const r = await bffFetch(`/api/v1/control-plane/tenants/${id}/manager-invite`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({
-        email: inviteForm.email.trim(),
-        displayName: inviteForm.displayName.trim() || undefined,
-      }),
-    });
-    setInviteBusy(false);
-    if (!r.ok) {
-      setError(await parseApiError(r));
-      return;
-    }
-    const data = (await r.json()) as { inviteUrl?: string };
-    setMsg(
-      data.inviteUrl
-        ? `Convite enviado (dev: ${data.inviteUrl})`
-        : "Convite enviado por email ao gestor.",
-    );
-    setInviteForm({ email: "", displayName: "" });
-    await load();
   }
 
   async function guardarSubscricao(e: FormEvent) {
