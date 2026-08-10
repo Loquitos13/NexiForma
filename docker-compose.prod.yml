@@ -40,7 +40,7 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       TRUST_PROXY: ${TRUST_PROXY:-true}
       RLS_ENABLED: ${RLS_ENABLED:-true}
-      STORAGE_BACKEND: ${STORAGE_BACKEND:-s3}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
       MFA_REQUIRED_MANAGERS: ${MFA_REQUIRED_MANAGERS:-true}
     depends_on:
       - redis
