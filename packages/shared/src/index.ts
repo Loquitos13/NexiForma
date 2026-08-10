@@ -313,6 +313,7 @@ export {
   podeExecutarAcaoSigo,
   avaliarProntidaoSigoTenant,
   labelSigoRole,
+  type TenantUserRole,
   SIGO_TIPOS_DOCUMENTO,
   SIGO_TIPO_DOC_ALIASES,
   normalizarTipoDocumentoSigo,

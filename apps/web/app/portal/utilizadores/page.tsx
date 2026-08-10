@@ -6,8 +6,7 @@ import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
-import type { TenantUserRole } from "@nexiforma/database";
-import { labelSigoRole, mfaAppDisplayLabel } from "@nexiforma/shared";
+import { labelSigoRole, mfaAppDisplayLabel, type TenantUserRole } from "@nexiforma/shared";
 import { NifStatusField, type NifStatus } from "@/components/crm/nif-status-field";
 import {
   Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle,

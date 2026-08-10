@@ -57,6 +57,7 @@ export {
   podeExecutarAcaoSigo,
   avaliarProntidaoSigoTenant,
   labelSigoRole,
+  type TenantUserRole,
   type SigoAcaoAcesso,
   type SigoPerfisAcesso,
   type SigoConfigPublica,

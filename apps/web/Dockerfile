@@ -11,6 +11,7 @@ FROM deps AS build
 COPY . .
 ARG API_URL=http://api:4000
 ENV API_URL=$API_URL
+# Web não depende do Prisma; só shared + Next.
 RUN npm run build -w @nexiforma/shared && npm run build -w @nexiforma/web
 
 FROM node:20-alpine AS runner
