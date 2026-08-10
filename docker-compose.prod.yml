@@ -42,6 +42,8 @@ services:
       RLS_ENABLED: ${RLS_ENABLED:-true}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
       MFA_REQUIRED_MANAGERS: ${MFA_REQUIRED_MANAGERS:-true}
+      NEXIGUIA_LLM_URL: ${NEXIGUIA_LLM_URL:-http://ollama:11434}
+      NEXIGUIA_LLM_ENABLED: ${NEXIGUIA_LLM_ENABLED:-true}
     depends_on:
       - redis
     volumes:

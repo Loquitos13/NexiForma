@@ -1,5 +1,30 @@
 import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
+import { existsSync } from "node:fs";
 import type { Browser } from "puppeteer";
+
+function findSystemChrome(): string | undefined {
+  if (process.env.PUPPETEER_EXECUTABLE_PATH && existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+  const candidates = [
+    "/usr/bin/chromium-browser",
+    "/usr/bin/chromium",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/google-chrome",
+    "/usr/lib/chromium/chromium-browser",
+    "/snap/bin/chromium",
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+  ];
+  for (const c of candidates) {
+    try {
+      if (existsSync(c)) return c;
+    } catch {
+      // ignore
+    }
+  }
+  return undefined;
+}
 
 @Injectable()
 export class HtmlPdfExportService implements OnModuleDestroy {
@@ -18,9 +43,26 @@ export class HtmlPdfExportService implements OnModuleDestroy {
 
     this.launching = (async () => {
       const puppeteer = await import("puppeteer");
+      const executablePath = findSystemChrome();
+
+      if (executablePath) {
+        this.logger.log(`A iniciar Puppeteer com: ${executablePath}`);
+      } else {
+        this.logger.warn("Aviso: executável Chromium do sistema não detetado, a tentar resolver por defeito.");
+      }
+
       const browser = await puppeteer.default.launch({
         headless: true,
-        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+        ...(executablePath ? { executablePath } : {}),
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+        ],
+      });
+      browser.on("disconnected", () => {
+        this.browser = null;
       });
       this.browser = browser;
       this.launching = null;
@@ -52,6 +94,7 @@ export class HtmlPdfExportService implements OnModuleDestroy {
       this.logger.warn(
         `Falha ao gerar PDF: ${err instanceof Error ? err.message : String(err)}`,
       );
+      this.browser = null;
       throw err;
     } finally {
       await page.close().catch(() => undefined);
