@@ -377,7 +377,7 @@ export const NAV_GROUPS: NavGroup[] = [
     minRole: "coordenador_pedagogico",
     items: [
       { href: "/portal/cursos", label: "Cursos", icon: "BookOpen" },
-      { href: "/portal/formacoes", label: "Formações website", icon: "Globe", minRole: "coordenador_comercial" },
+      { href: "/portal/formacoes", label: "Formações website", icon: "Globe", minRole: "coordenador_pedagogico" },
       { href: "/portal/acoes", label: "Acções", icon: "GraduationCap" },
       { href: "/portal/catalogo-ufcd", label: "Catálogo UFCD", icon: "Library" },
       { href: "/portal/matriculas", label: "Inscrições", icon: "UserPlus", minRole: "coordenador_pedagogico" },

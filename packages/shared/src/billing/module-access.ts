@@ -342,6 +342,17 @@ export function defaultPortalHome(ent: TenantEntitlements, role: JwtRole | null)
   if (role === "comercial") {
     return ent.canAccessCrm ? "/portal/crm/leads" : "/acesso-negado";
   }
+  if (role === "coordenador_comercial") {
+    return ent.canAccessCrm ? "/portal/crm" : "/acesso-negado";
+  }
+  if (role === "coordenador_financeiro") {
+    return ent.canAccessFaturacao ? "/portal/crm/faturas" : "/acesso-negado";
+  }
+  if (role === "coordenador_pedagogico") {
+    return ent.canAccessCoreFormation || ent.canAccessFormacaoTeams
+      ? "/portal"
+      : "/acesso-negado";
+  }
   if (ent.isModularSubscription) {
     if (ent.canAccessCrm) return "/portal/crm";
     if (ent.canAccessFaturacao) return "/portal/crm/faturas";

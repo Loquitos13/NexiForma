@@ -183,9 +183,12 @@ function LoginForm() {
     const sso = params.get("sso");
     const token = params.get("token");
     const exchange = params.get("x");
-    const ssoError = params.get("message");
-    if (sso === "error" && ssoError) {
-      setError(decodeURIComponent(ssoError));
+    const ssoError =
+      params.get("message") ||
+      params.get("error_description") ||
+      params.get("error");
+    if (sso === "error" || ssoError) {
+      setError(ssoError ? decodeURIComponent(ssoError) : "Falha no login social.");
       const slugParam = params.get("slug");
       if (slugParam) setTenantSlug(slugParam);
       window.history.replaceState({}, "", window.location.pathname);
