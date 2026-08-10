@@ -732,7 +732,11 @@ export default function DossiePedagogicoPage() {
                         <span className="text-slate-500">
                           {" · "}
                           Presenças {folha.presentes}/{folha.totalPresencas}{" "}
-                          {folhaEstado === "validada" ? "(validada)" : "(em edição)"}
+                          {folhaEstado === "aprovada"
+                            ? "(aprovada)"
+                            : folhaEstado === "validada (aberta)"
+                              ? "(validada)"
+                              : "(em edição)"}
                         </span>
                       ) : (
                         <span className="text-slate-600"> · Sem folha de presença</span>
