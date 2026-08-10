@@ -4,7 +4,7 @@
  * Não requer OpenSSL - usa node-forge.
  *
  * Uso:
- *   npm run generate:at-pfx -- --nif 515834963 --crt ./certs/adesao/515834963.crt --passphrase "sua-password"
+ *   npm run generate:at-pfx -- --nif 123456789 --crt ./certs/adesao/123456789.crt --passphrase "sua-password"
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";

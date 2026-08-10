@@ -52,7 +52,7 @@ A API **recusa arrancar** em `NODE_ENV=production` se detectar `mock`, `sandbox`
 
 | Integração | Variável modo | Valores permitidos | Credenciais |
 |------------|---------------|------------------|-------------|
-| **AT Faturas** | `AT_FATURAS_MODE` | `production` \| `disabled` | Ver [CREDENCIAIS_AT.md](./CREDENCIAIS_AT.md) |
+| **AT Faturas** | `AT_FATURAS_MODE` | `production` \| `disabled` | Credenciais WFA + PFX/chave em secret store (ver secção abaixo) |
 | **SIGO DGEEC** | `SIGO_API_MODE` | `disabled` \| `http` \| `soap` | Go-live: `disabled` (export manual). `http`/`soap` só com contrato DGEEC |
 | **Zoom/Teams** | Por tenant | `OAUTH` | Control Plane / portal integrações |
 
@@ -187,7 +187,6 @@ Validar num tenant piloto (com módulo formação activo):
 
 ## 7. Documentação relacionada
 
-- [CREDENCIAIS_AT.md](./CREDENCIAIS_AT.md)
-- [CERTIFICACAO_SOFTWARE_AT.md](./CERTIFICACAO_SOFTWARE_AT.md)
-- [FASE_12_SIGO_API.md](./FASE_12_SIGO_API.md)
+- [EMAIL_SMTP_SETUP.md](./EMAIL_SMTP_SETUP.md)
+- [CANAIS_MENSAGENS.md](./CANAIS_MENSAGENS.md)
 - [deploy/aws/README.md](../deploy/aws/README.md)

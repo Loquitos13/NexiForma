@@ -4,9 +4,8 @@
  * Não requer OpenSSL instalado - usa node-forge.
  *
  * Uso:
- *   npm run generate:at-csr -- --nif 515834963 --st Lisboa --city Lisboa \
- *     --org "Espiraleducada - Formacao e Consultoria Unipessoal Lda" \
- *     --ou "Forma Futuro" --email admin@formafuturoportugal.pt
+ *   npm run generate:at-csr -- --nif 123456789 --st Lisboa --city Lisboa \
+ *     --org "A Sua Empresa Lda" --ou "Formacao" --email admin@exemplo.pt
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -54,12 +53,12 @@ function usage() {
 Gera chave privada RSA 4096 + CSR para o portal AT (Produtores de Software).
 
 npm run generate:at-csr -- \\
-  --nif 515834963 \\
+  --nif 123456789 \\
   --st Lisboa \\
   --city Lisboa \\
-  --org "Espiraleducada - Formacao e Consultoria Unipessoal Lda" \\
-  --ou "Forma Futuro" \\
-  --email admin@formafuturoportugal.pt \\
+  --org "A Sua Empresa Lda" \\
+  --ou "Formacao" \\
+  --email admin@exemplo.pt \\
   [--out ./certs/adesao]
 
 Campos obrigatórios: --nif --st --city --org --ou --email

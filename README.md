@@ -264,8 +264,6 @@ Middleware Next protege `/portal/*` (cookie `nexiforma_refresh`).
 - **Alertas** – `GET /v1/compliance/alertas` (inspecção iminente, cronograma por aprovar, sessões próximas).
 - **Certificados** – `GET /v1/certificados/acoes-formacao/:id`, `GET .../matricula/:id/certificado.html` (PDF via browser).
 - **UI** – widget alertas no dashboard; `/portal/certificados`.
-- **Roadmap** – `docs/product-roadmap-pt.md` (gaps para liderar mercado PT).
-
 | Browser (BFF) | Nest | Papéis |
 |---------------|------|--------|
 | `GET /api/v1/compliance/alertas` | alertas operacionais | manager, formador |
@@ -498,9 +496,9 @@ npm run db:migrate:deploy
 
 | Documento | Conteúdo |
 |-----------|----------|
-| [`docs/product-roadmap-pt.md`](docs/product-roadmap-pt.md) | Roadmap mercado PT / fases 8–13 |
-| [`docs/architecture-mvp.md`](docs/architecture-mvp.md) | Arquitectura MVP |
-| [`PROXIMAS_TAREFAS.md`](PROXIMAS_TAREFAS.md) | Tarefas em aberto por fase |
+| [`docs/DEPLOY_PRODUCAO.md`](docs/DEPLOY_PRODUCAO.md) | Checklist e variáveis de produção |
+| [`docs/EMAIL_SMTP_SETUP.md`](docs/EMAIL_SMTP_SETUP.md) | Configuração de email |
+| [`docs/CANAIS_MENSAGENS.md`](docs/CANAIS_MENSAGENS.md) | Canais de mensagens |
 
 ## Licença
 

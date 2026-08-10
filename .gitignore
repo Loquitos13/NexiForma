@@ -48,14 +48,19 @@ packages/database/generated/
 apps/api/storage/
 storage/
 
-# Chaves privadas AT / certificação (nunca commitar)
+# Chaves / certificados AT (nunca commitar)
 chaveprivada.txt
+chavepublica.txt
 **/chaveprivada.txt
+**/chavepublica.txt
 certs/*.pfx
 certs/*.pem
+certs/*.cer
 certs/*.zip
+certs/*.pdf
 certs/certificados/
 certs/adesao/
 certs/eskiso/
 apps/api/certs/*.pem
 apps/api/certs/*.pfx
+apps/api/certs/*.cer

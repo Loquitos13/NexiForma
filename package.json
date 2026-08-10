@@ -14,7 +14,7 @@
     "db:seed": "npm run seed -w @nexiforma/database",
     "db:studio": "npm run studio -w @nexiforma/database",
     "db:backup": "node scripts/db-backup.mjs",
-    "build:packages": "npm run db:generate && npm run build -w @nexiforma/shared && npm run build -w @nexiforma/database",
+    "build:packages": "npm run db:generate && npm run build -w @nexiforma/database && npm run build -w @nexiforma/shared",
     "predev:api": "npm run build:packages",
     "dev:api": "npm run start:dev -w @nexiforma/api",
     "dev:docs": "npm run start:docs:dev -w @nexiforma/api",

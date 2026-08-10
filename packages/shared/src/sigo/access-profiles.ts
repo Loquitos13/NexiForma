@@ -1,5 +1,16 @@
-import type { TenantUserRole } from "@nexiforma/database";
 import type { SigoProtocolo, SigoRegiaoPortal } from "./soap";
+
+/** Alinhado com o enum Prisma `TenantUserRole` (sem depender do pacote database no build). */
+export type TenantUserRole =
+  | "ADMIN"
+  | "COORDENADOR"
+  | "COORDENADOR_COMERCIAL"
+  | "COORDENADOR_PEDAGOGICO"
+  | "COORDENADOR_FINANCEIRO"
+  | "FORMADOR"
+  | "FORMANDO"
+  | "FINANCEIRO"
+  | "COMERCIAL";
 
 /** Acções SIGO / certificação com controlo de acesso por role. */
 export type SigoAcaoAcesso =
