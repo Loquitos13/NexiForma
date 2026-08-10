@@ -76,3 +76,13 @@ ALTER TABLE "public"."sugestoes_ia_comerciais" ADD CONSTRAINT "sugestoes_ia_come
 ALTER TABLE "public"."sugestoes_ia_comerciais" ADD CONSTRAINT "sugestoes_ia_comerciais_entidade_cliente_id_fkey" FOREIGN KEY ("entidade_cliente_id") REFERENCES "public"."entidades_cliente"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "public"."sugestoes_ia_comerciais" ADD CONSTRAINT "sugestoes_ia_comerciais_lead_comercial_id_fkey" FOREIGN KEY ("lead_comercial_id") REFERENCES "public"."leads_comerciais"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "public"."sugestoes_ia_comerciais" ADD CONSTRAINT "sugestoes_ia_comerciais_validado_por_user_id_fkey" FOREIGN KEY ("validado_por_user_id") REFERENCES "public"."users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- Colunas de calendário/reunião (migrations 2026070815/0816 correm antes desta CREATE em installs fresh)
+ALTER TABLE "public"."interaccoes_comerciais"
+  ADD COLUMN IF NOT EXISTS "agendado_para" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "agendado_fim" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "participantes_ids" JSONB DEFAULT '[]',
+  ADD COLUMN IF NOT EXISTS "audiencia_roles" JSONB DEFAULT '[]';
+
+CREATE INDEX IF NOT EXISTS "interaccoes_comerciais_tenant_id_agendado_para_idx"
+  ON "public"."interaccoes_comerciais"("tenant_id", "agendado_para");
