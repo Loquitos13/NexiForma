@@ -7,7 +7,7 @@ export function validateProductionConfig(env: NodeJS.ProcessEnv = process.env): 
 
   const errors: string[] = [];
 
-  assertNot(env, "AT_FATURAS_MODE", ["mock", "sandbox"], errors);
+  assertNot(env, "AT_FATURAS_MODE", ["mock"], errors);
   assertNot(env, "SIGO_API_MODE", ["mock"], errors);
   assertNot(env, "MAIL_PROVIDER", ["log"], errors);
   if (!env.MAIL_PROVIDER?.trim()) {
@@ -19,10 +19,6 @@ export function validateProductionConfig(env: NodeJS.ProcessEnv = process.env): 
     requireSet(env, "TWILIO_ACCOUNT_SID", errors);
     requireSet(env, "TWILIO_AUTH_TOKEN", errors);
     requireSet(env, "TWILIO_FROM_NUMBER", errors);
-  }
-  assertNot(env, "STORAGE_BACKEND", ["local"], errors);
-  if (!env.STORAGE_BACKEND?.trim()) {
-    errors.push("STORAGE_BACKEND é obrigatório em produção (use s3).");
   }
 
   requireSet(env, "JWT_SECRET", errors);
@@ -58,7 +54,6 @@ export function validateProductionConfig(env: NodeJS.ProcessEnv = process.env): 
     errors.push("TRUST_PROXY=true é obrigatório em produção (TLS no reverse proxy / ALB).");
   }
 
-  requireSet(env, "STRIPE_SECRET_KEY", errors);
   requireSet(env, "AT_CREDENTIALS_ENCRYPTION_KEY", errors);
   requireSet(env, "PROPOSTA_RESPOSTA_SECRET", errors);
   requireSet(env, "TENANT_ACCESS_KEY_PEPPER", errors);

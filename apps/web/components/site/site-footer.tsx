@@ -11,9 +11,9 @@ export function SiteFooter() {
             <p className="text-xs text-slate-500">Gestão formativa certificada para entidades DGERT</p>
           </div>
           <div className="flex flex-col gap-1.5 text-sm">
-            <Link href="/login" className="text-slate-400 hover:text-slate-200 transition-colors">
+            <a href="https://app.nexiforma.pt/login" className="text-slate-400 hover:text-slate-200 transition-colors">
               Entrar
-            </Link>
+            </a>
           </div>
         </div>
         <div className="pt-4 border-t border-slate-700/20 text-xs text-slate-600">

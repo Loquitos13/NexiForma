@@ -125,15 +125,15 @@ export function WelcomePageContent() {
             certificados verificáveis e documentos fiscais num só sistema.
           </p>
           <div className="flex flex-wrap gap-3">
-            <Link
-              href="/login"
+            <a
+              href="https://app.nexiforma.pt/login"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold text-sm hover:shadow-lg hover:shadow-blue-500/20 hover:brightness-110 transition-all"
             >
               Entrar no portal
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
               </svg>
-            </Link>
+            </a>
             <a
               href="#planos"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-slate-600/60 text-slate-300 font-semibold text-sm hover:border-slate-500 hover:text-slate-100 transition-all"
@@ -322,12 +322,12 @@ export function WelcomePageContent() {
             <p className="text-xs text-slate-600 mb-6 max-w-md mx-auto">
               Suporte a MFA, SSO enterprise, chaves API e ambiente multi-tenant desde o primeiro dia.
             </p>
-            <Link
-              href="/login"
+            <a
+              href="https://app.nexiforma.pt/login"
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold text-sm hover:shadow-lg hover:shadow-blue-500/20 transition-all"
             >
               Aceder ao portal
-            </Link>
+            </a>
           </div>
         </ScrollReveal>
       </div>

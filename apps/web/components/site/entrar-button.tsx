@@ -50,6 +50,13 @@ export function EntrarButton() {
       }, animMs);
 
       window.setTimeout(() => {
+        if (typeof window !== "undefined") {
+          const host = window.location.hostname;
+          if (host === "nexiforma.pt" || host === "www.nexiforma.pt") {
+            window.location.href = "https://app.nexiforma.pt/login";
+            return;
+          }
+        }
         router.push("/login");
       }, animMs + postDelay);
     },
