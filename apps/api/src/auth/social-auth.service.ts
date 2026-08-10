@@ -516,7 +516,7 @@ export class SocialAuthService {
     const user = await this.prisma.user.findFirst({
       where: {
         id: option.userId,
-        email: payload.email,
+        email: { equals: payload.email, mode: "insensitive" },
         active: true,
         tenant: { slug: option.slug, status: { notIn: ["SUSPENDED", "ARCHIVED"] } },
       },
@@ -593,13 +593,12 @@ export class SocialAuthService {
     }
   }
 
-  private async resolveOAuthUser(emailRaw: string, sub: string, hintSlug: string) {
+  private async resolveOAuthUser(emailRaw: string, sub: string, _hintSlug?: string) {
     const email = normalizeAuthEmail(emailRaw);
-    const hinted = hintSlug.trim();
 
     const candidates = await this.prisma.user.findMany({
       where: {
-        email,
+        email: { equals: email, mode: "insensitive" },
         active: true,
         tenant: { status: { notIn: ["SUSPENDED", "ARCHIVED"] } },
       },
@@ -621,14 +620,6 @@ export class SocialAuthService {
         message: buildTenantAmbiguousPayload(tenants).message,
         tenants,
       };
-    }
-
-    if (hinted) {
-      const tenant = await this.findTenantBySlug(hinted);
-      if (tenant && isTenantOperational(tenant.status)) {
-        const user = candidates.find((row) => row.tenantId === tenant.id);
-        if (user) return { user, tenant: user.tenant };
-      }
     }
 
     if (candidates.length === 1) {
