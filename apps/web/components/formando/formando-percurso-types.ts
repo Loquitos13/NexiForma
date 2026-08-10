@@ -26,6 +26,8 @@ export type UnidadePercurso = {
   desbloqueado: boolean;
   notaMinimaAnterior: number | null;
   tituloModuloAnterior: string | null;
+  prazoConclusaoLms?: string | null;
+  prazoEmAtraso?: boolean;
 };
 
 export type PercursoFormando = {
