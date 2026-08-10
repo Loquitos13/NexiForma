@@ -312,7 +312,7 @@ Regras: usa SOMENTE os valores do snapshot; não inventes dados; português de P
     const snapshotJson = JSON.stringify(snapshot, null, 0);
     const user = `Secção: ${secao}\nSnapshot JSON:\n${snapshotJson}`;
 
-    const timeoutMs = extended ? Math.max(this.timeoutMs, 120_000) : this.timeoutMs;
+    const timeoutMs = extended ? Math.min(this.timeoutMs, 25_000) : Math.min(this.timeoutMs, 18_000);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -325,8 +325,8 @@ Regras: usa SOMENTE os valores do snapshot; não inventes dados; português de P
           stream: false,
           format: "json",
           options: {
-            num_predict: extended ? 16_384 : 4_096,
-            temperature: extended ? 0.35 : 0.3,
+            num_predict: extended ? 2_048 : 1_024,
+            temperature: 0.3,
           },
           messages: [
             { role: "system", content: system },

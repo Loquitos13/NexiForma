@@ -82,10 +82,13 @@ export class HtmlPdfExportService implements OnModuleDestroy {
     const browser = await this.getBrowser();
     const page = await browser.newPage();
     try {
-      await page.setContent(html, { waitUntil: "load" });
+      page.setDefaultTimeout(15_000);
+      page.setDefaultNavigationTimeout(15_000);
+      await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 15_000 });
       const pdf = await page.pdf({
         format: "A4",
         printBackground: true,
+        timeout: 15_000,
         preferCSSPageSize: opts?.preferCSSPageSize ?? false,
         margin: opts?.margin ?? { top: "8mm", right: "8mm", bottom: "8mm", left: "8mm" },
       });
