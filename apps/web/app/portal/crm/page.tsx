@@ -70,7 +70,7 @@ const PIPELINE: PropostaEstado[] = ["RASCUNHO", "ENVIADA", "ACEITE", "REJEITADA"
 
 export default function CrmDashboardPage() {
   const router = useRouter();
-  const { role, canManage, loading: roleLoading } = useTenantRole();
+  const { role, canManageCrm, loading: roleLoading } = useTenantRole();
   const { entitlements } = useTenantEntitlements();
   const canAccessFaturacao = canAccessFaturacaoPortal(role, entitlements);
   const [stats, setStats] = useState<Estatisticas | null>(null);
@@ -81,8 +81,8 @@ export default function CrmDashboardPage() {
 
   useEffect(() => {
     if (roleLoading) return;
-    if (!canManage) router.replace("/portal/crm/leads");
-  }, [canManage, roleLoading, router]);
+    if (!canManageCrm) router.replace("/portal/crm/leads");
+  }, [canManageCrm, roleLoading, router]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -150,7 +150,7 @@ export default function CrmDashboardPage() {
     },
   ];
 
-  if (roleLoading || !canManage) {
+  if (roleLoading || !canManageCrm) {
     return null;
   }
 

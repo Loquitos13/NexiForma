@@ -1640,7 +1640,6 @@ textarea:focus-visible,
   transition:
     border-color 160ms ease,
     background-color 160ms ease,
-    filter 160ms ease,
     opacity 160ms ease;
 }
 
@@ -1648,13 +1647,11 @@ textarea:focus-visible,
   border-color: color-mix(in srgb, var(--ui-accent) 55%, transparent);
   background: color-mix(in srgb, var(--ui-accent) 18%, transparent);
   color: var(--ui-fg);
-  filter: none;
   opacity: 1;
 }
 
 .portal-mobile-bottom-card.is-dim {
-  filter: blur(0.6px);
-  opacity: 0.72;
+  opacity: 0.85;
 }
 
 .portal-mobile-bottom-card-dot {

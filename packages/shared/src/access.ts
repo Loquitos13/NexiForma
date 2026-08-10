@@ -215,7 +215,8 @@ export function roleLandingPath(
 ): string {
   if (isSuperAdmin(role, kind)) return "/plataforma";
   if (isFormando(role)) return "/portal/formando";
-  if (isComercial(role) || isCoordenadorComercial(role)) return "/portal/crm/leads";
+  if (isCoordenadorComercial(role)) return "/portal/crm";
+  if (isComercial(role)) return "/portal/crm/leads";
   if (isCoordenadorFinanceiro(role)) return "/portal/crm/faturas";
   if (isFormador(role) || isTenantManager(role) || isCoordenadorPedagogico(role)) return "/portal";
   return "/portal";
@@ -292,27 +293,7 @@ export function isPortalPathAllowedByRole(
 
   if (isCoordenadorComercial(role)) {
     if (isFormandoPortalPath(path)) return false;
-    return (
-      path.startsWith("/portal/rgpd") ||
-      path.startsWith("/portal/notificacoes") ||
-      isCrmPortalPath(path)
-    );
-  }
-
-  if (isCoordenadorFinanceiro(role)) {
-    if (isFormandoPortalPath(path)) return false;
-    return (
-      path.startsWith("/portal/rgpd") ||
-      path.startsWith("/portal/notificacoes") ||
-      isCrmFaturacaoPortalPath(path) ||
-      path === "/portal/crm" ||
-      path.startsWith("/portal/crm/")
-    );
-  }
-
-  if (isCoordenadorPedagogico(role)) {
-    if (isFormandoPortalPath(path)) return false;
-    if (path === "/portal") return true;
+    if (isCrmFaturacaoPortalPath(path)) return false;
     if (
       path.startsWith("/portal/utilizadores") ||
       path.startsWith("/portal/billing") ||
@@ -322,7 +303,56 @@ export function isPortalPathAllowedByRole(
       return false;
     }
     return (
+      path.startsWith("/portal/rgpd") ||
       path.startsWith("/portal/notificacoes") ||
+      isCrmPortalPath(path)
+    );
+  }
+
+  if (isCoordenadorFinanceiro(role)) {
+    if (isFormandoPortalPath(path)) return false;
+    if (
+      path.startsWith("/portal/utilizadores") ||
+      path.startsWith("/portal/billing") ||
+      path.startsWith("/portal/configuracoes") ||
+      path.startsWith("/portal/enterprise") ||
+      path.startsWith("/portal/crm/leads") ||
+      path.startsWith("/portal/crm/interaccoes") ||
+      path.startsWith("/portal/crm/sugestoes-ia") ||
+      path.startsWith("/portal/propostas") ||
+      path.startsWith("/portal/contratos")
+    ) {
+      return false;
+    }
+    return (
+      path.startsWith("/portal/rgpd") ||
+      path.startsWith("/portal/notificacoes") ||
+      isCrmFaturacaoPortalPath(path) ||
+      path === "/portal/clientes" ||
+      path.startsWith("/portal/clientes/")
+    );
+  }
+
+  if (isCoordenadorPedagogico(role)) {
+    if (isFormandoPortalPath(path)) return false;
+    if (
+      path.startsWith("/portal/crm") ||
+      path.startsWith("/portal/propostas") ||
+      path.startsWith("/portal/contratos") ||
+      path.startsWith("/portal/clientes") ||
+      path.startsWith("/portal/parceiros") ||
+      path.startsWith("/portal/utilizadores") ||
+      path.startsWith("/portal/billing") ||
+      path.startsWith("/portal/configuracoes") ||
+      path.startsWith("/portal/enterprise")
+    ) {
+      return false;
+    }
+    if (path === "/portal") return true;
+    return (
+      path.startsWith("/portal/notificacoes") ||
+      path.startsWith("/portal/suporte") ||
+      path.startsWith("/portal/rgpd") ||
       pathMatchesPrefixes(path, FORMACAO_PORTAL_PREFIXES)
     );
   }

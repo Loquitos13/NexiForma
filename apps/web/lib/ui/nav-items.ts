@@ -134,6 +134,32 @@ export function filterGroups(
     return byRole.filter((i) => navHrefAllowedByEntitlements(i.href, entitlements));
   };
 
+  const privacyGroup: NavGroup = {
+    label: "Conta",
+    collapsible: false,
+    items: [{ href: "/portal/rgpd", label: "RGPD", icon: "Lock" }],
+  };
+  const comunicacaoGroup = groups.find((g) => g.label === "Comunicacao");
+
+  // Coordenador Comercial: Apenas departamento comercial (CRM) + RGPD + Notificações
+  if (isCoordenadorComercial(role)) {
+    const crmModule = groups.find((g) => g.module === "crm");
+    if (!entitlements?.canAccessCrm || !crmModule) {
+      return [privacyGroup].filter((g) => g.items.length > 0);
+    }
+    return dedupeNavGroupsByHref(
+      [
+        {
+          ...crmModule,
+          items: byEntitlements(crmModule.items),
+        },
+        comunicacaoGroup ? { ...comunicacaoGroup, items: byEntitlements(comunicacaoGroup.items) } : null,
+        privacyGroup,
+      ].filter((g): g is NavGroup => Boolean(g && g.items.length > 0)),
+    );
+  }
+
+  // Agente Comercial: Apenas CRM básico + Fluxo + RGPD
   if (isComercial(role)) {
     const crmModule = groups.find((g) => g.module === "crm");
     const fluxo: NavGroup = {
@@ -141,28 +167,67 @@ export function filterGroups(
       collapsible: false,
       items: [{ href: "/portal/fluxo", label: "Fluxo guiado", icon: "Workflow" }],
     };
-    const privacy: NavGroup = {
-      label: "Conta",
-      collapsible: false,
-      items: [{ href: "/portal/rgpd", label: "RGPD", icon: "Lock" }],
-    };
     const filteredFluxo = { ...fluxo, items: byEntitlements(fluxo.items) };
-    const filteredPrivacy = { ...privacy, items: byEntitlements(privacy.items) };
-    if (!entitlements?.canAccessCrm) {
+    const filteredPrivacy = { ...privacyGroup, items: byEntitlements(privacyGroup.items) };
+    if (!entitlements?.canAccessCrm || !crmModule) {
       return [filteredFluxo, filteredPrivacy].filter((g) => g.items.length > 0);
     }
     return dedupeNavGroupsByHref(
       [
         filteredFluxo,
-        crmModule
+        {
+          ...crmModule,
+          items: byEntitlements(
+            crmModule.items.filter((i) => i.minRole !== "tenant_manager" && i.minRole !== "coordenador_comercial"),
+          ),
+        },
+        filteredPrivacy,
+      ].filter((g): g is NavGroup => Boolean(g && g.items.length > 0)),
+    );
+  }
+
+  // Coordenador Financeiro: Apenas departamento financeiro (Faturação + Clientes) + RGPD + Notificações
+  if (isCoordenadorFinanceiro(role)) {
+    const faturacaoModule = groups.find((g) => g.module === "faturacao");
+    if (!entitlements?.canAccessFaturacao || !faturacaoModule) {
+      return [privacyGroup].filter((g) => g.items.length > 0);
+    }
+    const enriched = enrichFaturacaoGroup(faturacaoModule, entitlements);
+    return dedupeNavGroupsByHref(
+      [
+        {
+          ...enriched,
+          items: byEntitlements(enriched.items),
+        },
+        comunicacaoGroup ? { ...comunicacaoGroup, items: byEntitlements(comunicacaoGroup.items) } : null,
+        privacyGroup,
+      ].filter((g): g is NavGroup => Boolean(g && g.items.length > 0)),
+    );
+  }
+
+  // Coordenador Pedagógico: Apenas Formação Core + Geral + RGPD + Notificações
+  if (isCoordenadorPedagogico(role)) {
+    const geralModule = groups.find((g) => g.label === "Geral");
+    const formacaoModule = groups.find((g) => g.module === "formacao_core");
+    const teamsModule = groups.find((g) => g.module === "formacao_teams");
+    const activeFormacaoModule =
+      formacaoModule && isNavModuleVisible(formacaoModule.module, entitlements)
+        ? formacaoModule
+        : teamsModule && isNavModuleVisible(teamsModule.module, entitlements)
+          ? teamsModule
+          : null;
+
+    return dedupeNavGroupsByHref(
+      [
+        geralModule ? { ...geralModule, items: byEntitlements(geralModule.items) } : null,
+        activeFormacaoModule
           ? {
-              ...crmModule,
-              items: byEntitlements(
-                crmModule.items.filter((i) => i.minRole !== "tenant_manager"),
-              ),
+              ...activeFormacaoModule,
+              items: byEntitlements(activeFormacaoModule.items),
             }
           : null,
-        filteredPrivacy,
+        comunicacaoGroup ? { ...comunicacaoGroup, items: byEntitlements(comunicacaoGroup.items) } : null,
+        privacyGroup,
       ].filter((g): g is NavGroup => Boolean(g && g.items.length > 0)),
     );
   }
@@ -309,6 +374,7 @@ export const NAV_GROUPS: NavGroup[] = [
     module: "formacao_core",
     moduleLabel: BILLING_ADDON_LABELS.formacao_core,
     icon: "GraduationCap",
+    minRole: "coordenador_pedagogico",
     items: [
       { href: "/portal/cursos", label: "Cursos", icon: "BookOpen" },
       { href: "/portal/formacoes", label: "Formações website", icon: "Globe", minRole: "coordenador_comercial" },
@@ -329,6 +395,7 @@ export const NAV_GROUPS: NavGroup[] = [
     module: "formacao_teams",
     moduleLabel: BILLING_ADDON_LABELS.formacao_teams,
     icon: "Video",
+    minRole: "coordenador_pedagogico",
     items: [
       { href: "/portal/acoes", label: "Acções", icon: "GraduationCap" },
       { href: "/portal/calendario", label: "Calendário", icon: "Calendar" },

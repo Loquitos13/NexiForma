@@ -159,23 +159,25 @@ export default function AcceptInvitePage() {
       subtitle="Defina a sua palavra-passe para confirmar o endereço de email e começar a usar a plataforma."
     >
       {inviteInfo ? (
-        <div className="mb-5 rounded-xl bg-slate-900/90 border border-blue-500/20 p-3.5 space-y-2 text-xs">
-          <div className="flex items-center gap-2 text-slate-300">
-            <Building2 className="h-4 w-4 text-blue-400 shrink-0" />
-            <span className="text-slate-400">Entidade:</span>
-            <strong className="text-slate-100 font-semibold">
-              {inviteInfo.tenantLegalName || inviteInfo.tenantSlug}
-            </strong>
-          </div>
-          <div className="flex items-center gap-2 text-slate-300">
-            <User className="h-4 w-4 text-indigo-400 shrink-0" />
-            <span className="text-slate-400">Conta:</span>
-            <span className="text-slate-200 font-mono">{inviteInfo.email}</span>
+        <div className="mb-5 rounded-xl bg-slate-900/90 border border-blue-500/20 p-3.5 space-y-2 text-xs w-full overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-slate-800/80 pb-2">
+            <div className="flex items-center gap-2 text-slate-300 min-w-0">
+              <Building2 className="h-4 w-4 text-blue-400 shrink-0" />
+              <span className="text-slate-400 shrink-0">Entidade:</span>
+              <strong className="text-slate-100 font-semibold truncate">
+                {inviteInfo.tenantLegalName || inviteInfo.tenantSlug}
+              </strong>
+            </div>
             {inviteInfo.role ? (
-              <span className="ml-auto px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/25 text-blue-300 text-[11px] font-sans">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-500/10 border border-blue-500/25 text-blue-300 text-[11px] font-medium shrink-0">
                 {ROLE_LABELS[inviteInfo.role] ?? inviteInfo.role}
               </span>
             ) : null}
+          </div>
+          <div className="flex items-center gap-2 text-slate-300 min-w-0 pt-0.5">
+            <User className="h-4 w-4 text-indigo-400 shrink-0" />
+            <span className="text-slate-400 shrink-0">Conta:</span>
+            <span className="text-slate-200 font-mono break-all truncate">{inviteInfo.email}</span>
           </div>
         </div>
       ) : null}
