@@ -310,22 +310,21 @@ export default function PlataformaTenantsPage() {
                 inputClass={inputClass}
               />
               <div className="border-t border-purple-500/10 pt-3 mt-1">
-                <p className="text-xs text-slate-500 mb-2">Gestor inicial (opcional)</p>
+                <p className="text-xs text-slate-400 font-medium mb-1">Gestor inicial (opcional)</p>
                 <p className="text-xs text-teal-400/80 mb-2">
-                  Indica o email - enviamos convite para activar a conta. Password só se quiseres criar a conta
-                  directamente (sem email).
+                  Indica o email do gestor. Se omitires a password, o sistema gera credenciais temporárias e envia por email para redefinição no primeiro login.
                 </p>
                 <div className="grid gap-2">
                   <input
                     type="email"
-                    placeholder="Email gestor"
+                    placeholder="Email do gestor"
                     className={inputClass}
                     value={createForm.managerEmail}
                     onChange={(e) => setCreateForm((f) => ({ ...f, managerEmail: e.target.value }))}
                   />
                   <input
                     type="password"
-                    placeholder="Password (opcional - omitir para enviar convite)"
+                    placeholder="Password (opcional - omitir para gerar temporária)"
                     className={inputClass}
                     value={createForm.managerPassword}
                     onChange={(e) => setCreateForm((f) => ({ ...f, managerPassword: e.target.value }))}

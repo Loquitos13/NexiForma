@@ -167,6 +167,25 @@ export class InviteManagerDto {
   displayName?: string;
 }
 
+export class SetTenantManagerDto {
+  @IsEmail()
+  email!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(2, 120)
+  displayName?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(8, 128)
+  temporaryPassword?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  notifyEmail?: boolean;
+}
+
 export class ImpersonateDto {
   @IsUUID()
   targetUserId!: string;

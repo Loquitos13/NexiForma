@@ -919,6 +919,56 @@ export class EmailTemplates {
     };
   }
 
+  static tenantGestorCredenciaisTemporarias(params: {
+    nomeGestor: string;
+    entidadeFormadora: string;
+    slug: string;
+    email: string;
+    temporaryPassword: string;
+    loginUrl: string;
+  }): EmailTemplate {
+    return {
+      subject: `Credenciais de acesso de gestor – ${params.entidadeFormadora}`,
+      text:
+        `Caro(a) ${params.nomeGestor},\n\n` +
+        `Foi nomeado(a) gestor da entidade formadora «${params.entidadeFormadora}» no NexiForma.\n\n` +
+        `As suas credenciais temporárias de acesso são:\n` +
+        `• Identificador (slug): ${params.slug}\n` +
+        `• Email: ${params.email}\n` +
+        `• Palavra-passe temporária: ${params.temporaryPassword}\n\n` +
+        `Aceda ao login:\n${params.loginUrl}\n\n` +
+        `No primeiro acesso, ser-lhe-á solicitado que defina a sua palavra-passe definitiva.\n\n` +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
+      html:
+        cumprimento(params.nomeGestor) +
+        emailParagraph(
+          `Foi nomeado(a) <strong>gestor</strong> da entidade formadora ` +
+            `<strong>${escapeHtml(params.entidadeFormadora)}</strong> no NexiForma.`,
+        ) +
+        emailParagraph(
+          "Foram geradas as seguintes credenciais temporárias para o seu primeiro acesso:",
+        ) +
+        emailInfoBox(
+          emailDataTable(
+            emailDataRow("Identificador (slug)", `<code>${escapeHtml(params.slug)}</code>`) +
+              emailDataRow("Email", `<strong>${escapeHtml(params.email)}</strong>`) +
+              emailDataRow(
+                "Password temporária",
+                `<code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-weight:bold;color:#0f172a;">${escapeHtml(params.temporaryPassword)}</code>`,
+              ),
+          ),
+        ) +
+        emailParagraph(
+          "<strong>Importante:</strong> no primeiro login, ser-lhe-á solicitado que introduza uma nova palavra-passe definitiva para a sua conta.",
+        ) +
+        emailButtonRow(emailButton("Iniciar sessão agora", params.loginUrl, "primary")) +
+        emailMuted(
+          "Guarde o identificador (slug) da sua entidade. Caso necessite de ajuda, contacte a equipa de suporte.",
+        ) +
+        assinatura(),
+    };
+  }
+
   static erroPlataforma(params: {
     modulo: string;
     tenantLabel: string;

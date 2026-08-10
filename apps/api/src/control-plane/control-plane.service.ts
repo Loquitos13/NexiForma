@@ -42,6 +42,7 @@ import type {
   CreateSubscriptionKeyDto,
   CreateTenantDto,
   InviteManagerDto,
+  SetTenantManagerDto,
   UpdateTenantDto,
   UpdateTenantSubscriptionDto,
   UpdatePlatformMeDto,
@@ -56,6 +57,16 @@ type TenantBrandingMeta = {
   };
   [key: string]: unknown;
 };
+
+function generateTempManagerPassword(): string {
+  const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  let pwd = "";
+  const bytes = randomBytes(10);
+  for (let i = 0; i < 10; i++) {
+    pwd += chars[bytes[i] % chars.length];
+  }
+  return pwd + "!9A";
+}
 
 @Injectable()
 export class ControlPlaneService {
@@ -459,7 +470,8 @@ export class ControlPlaneService {
 
     const managerEmail = dto.managerEmail?.trim().toLowerCase();
     const managerDisplayName = dto.managerDisplayName?.trim() || "Gestor";
-    const sendManagerInvite = Boolean(managerEmail && !dto.managerPassword);
+    const managerTempPassword =
+      managerEmail && !dto.managerPassword ? generateTempManagerPassword() : undefined;
     const now = new Date();
     const periodEnd = new Date(now);
     periodEnd.setMonth(periodEnd.getMonth() + 1);
@@ -486,42 +498,26 @@ export class ControlPlaneService {
         },
       });
 
-      if (managerEmail && dto.managerPassword) {
+      if (managerEmail) {
+        const rawPassword = dto.managerPassword || managerTempPassword!;
+        const passwordHash = await argon2.hash(rawPassword, { type: argon2.argon2id });
         await tx.user.create({
           data: {
             tenantId: row.id,
             email: managerEmail,
-            passwordHash: await argon2.hash(dto.managerPassword),
+            passwordHash,
             displayName: managerDisplayName,
             role: "ADMIN",
             active: true,
-            emailVerifiedAt: null,
+            mustChangePassword: Boolean(managerTempPassword),
+            emailVerifiedAt: managerTempPassword ? new Date() : null,
           },
         });
       }
 
-      if (sendManagerInvite) {
-        const rawToken = newInviteOpaqueToken();
-        const tokenHash = hashInviteToken(this.invitePepper(), rawToken);
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-        await tx.tenantInvite.create({
-          data: {
-            tenantId: row.id,
-            email: managerEmail!,
-            displayName: managerDisplayName,
-            role: "ADMIN",
-            tokenHash,
-            expiresAt,
-            invitedById: actor.sub,
-          },
-        });
-        return { row, managerInviteToken: rawToken };
-      }
-
-      return { row, managerInviteToken: undefined as string | undefined };
+      return { row };
     });
 
-    const managerInviteToken = tenant.managerInviteToken;
     const tenantRow = tenant.row;
 
     await this.audit.log({
@@ -537,7 +533,7 @@ export class ControlPlaneService {
         planCode,
         customAddons,
         managerEmail: managerEmail ?? null,
-        managerInvite: sendManagerInvite,
+        managerHasTempPassword: Boolean(managerTempPassword),
       },
     });
 
@@ -552,7 +548,7 @@ export class ControlPlaneService {
           status: tenantRow.status,
         },
         actorEmail: actor.email,
-        detalhe: `Plano: ${plan.name} (${planCode})${customAddons.length ? `\nMódulos: ${customAddons.join(", ")}` : ""}${managerEmail ? `\nGestor inicial: ${managerEmail}${sendManagerInvite ? " (convite)" : ""}` : ""}`,
+        detalhe: `Plano: ${plan.name} (${planCode})${customAddons.length ? `\nMódulos: ${customAddons.join(", ")}` : ""}${managerEmail ? `\nGestor inicial: ${managerEmail}${managerTempPassword ? " (credenciais temporárias)" : ""}` : ""}`,
       })
       .catch(() => undefined);
 
@@ -572,21 +568,123 @@ export class ControlPlaneService {
         })
         .then((u) => (u ? this.emailConfirmation.issueForUser(u.id, req) : null))
         .catch(() => undefined);
-    } else if (managerEmail && managerInviteToken) {
-      const appUrl = resolveAppPublicUrlForLinks(this.config, req);
-      const inviteUrl = `${appUrl.replace(/\/$/, "")}/convite/${managerInviteToken}`;
+    } else if (managerEmail && managerTempPassword) {
       void this.tenantNotificacoes
-        .enviarConviteGestor({
+        .enviarCredenciaisTemporariasGestor({
           email: managerEmail,
           displayName: managerDisplayName,
           entidadeFormadora: tenantRow.legalName,
           slug: tenantRow.slug,
-          inviteUrl,
+          temporaryPassword: managerTempPassword,
         })
         .catch(() => undefined);
     }
 
-    return this.getTenant(tenantRow.id);
+    const tenantDetail = await this.getTenant(tenantRow.id);
+    return {
+      ...tenantDetail,
+      ...(managerTempPassword ? { managerTemporaryPassword: managerTempPassword } : {}),
+    };
+  }
+
+  async setTenantManager(
+    actor: RequestUser,
+    tenantId: string,
+    dto: SetTenantManagerDto,
+    actorIp?: string,
+    req?: { headers: Record<string, string | string[] | undefined> },
+  ): Promise<Record<string, unknown>> {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) {
+      throw new NotFoundException("Tenant não encontrado.");
+    }
+
+    const email = dto.email.trim().toLowerCase();
+    const displayName = dto.displayName?.trim() || "Gestor";
+    const tempPassword = dto.temporaryPassword?.trim() || generateTempManagerPassword();
+    if (tempPassword.length < 8) {
+      throw new BadRequestException("Password temporária: mínimo 8 caracteres.");
+    }
+
+    const passwordHash = await argon2.hash(tempPassword, { type: argon2.argon2id });
+
+    const existingUser = await this.prisma.user.findFirst({
+      where: { tenantId, email },
+    });
+
+    let targetUserId: string;
+    if (existingUser) {
+      const updated = await this.prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          role: "ADMIN",
+          passwordHash,
+          mustChangePassword: true,
+          active: true,
+          ...(dto.displayName?.trim() ? { displayName: dto.displayName.trim() } : {}),
+        },
+      });
+      targetUserId = updated.id;
+    } else {
+      const created = await this.prisma.user.create({
+        data: {
+          tenantId,
+          email,
+          displayName,
+          role: "ADMIN",
+          passwordHash,
+          mustChangePassword: true,
+          active: true,
+          emailVerifiedAt: new Date(),
+        },
+      });
+      targetUserId = created.id;
+    }
+
+    // Limpa eventuais convites pendentes para este email
+    await this.prisma.tenantInvite
+      .deleteMany({
+        where: { tenantId, email },
+      })
+      .catch(() => undefined);
+
+    await this.audit.log({
+      actorType: "SUPERADMIN_USER",
+      actorId: actor.sub,
+      actorIp,
+      action: "tenant.set_manager",
+      resourceType: "tenant",
+      resourceId: tenantId,
+      targetTenantId: tenantId,
+      targetUserId,
+      payload: {
+        email,
+        slug: tenant.slug,
+        isNewUser: !existingUser,
+        forceChangeOnLogin: true,
+      },
+    });
+
+    if (dto.notifyEmail !== false) {
+      void this.tenantNotificacoes
+        .enviarCredenciaisTemporariasGestor({
+          email,
+          displayName: dto.displayName?.trim() || existingUser?.displayName || displayName,
+          entidadeFormadora: tenant.legalName,
+          slug: tenant.slug,
+          temporaryPassword: tempPassword,
+        })
+        .catch(() => undefined);
+    }
+
+    return {
+      ok: true,
+      userId: targetUserId,
+      email,
+      displayName: dto.displayName?.trim() || existingUser?.displayName || displayName,
+      slug: tenant.slug,
+      temporaryPassword: tempPassword,
+    };
   }
 
   async inviteTenantManager(

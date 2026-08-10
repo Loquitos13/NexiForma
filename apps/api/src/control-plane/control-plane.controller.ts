@@ -35,6 +35,7 @@ import {
   CreateTenantDto,
   ImpersonateDto,
   InviteManagerDto,
+  SetTenantManagerDto,
   UpdateTenantDto,
   UpdateTenantStatusDto,
   UpdateTenantSubscriptionDto,
@@ -246,6 +247,17 @@ export class ControlPlaneController {
   ): Promise<Record<string, unknown>> {
     const ip = typeof req.ip === "string" ? req.ip : undefined;
     return this.cp.updateTenantSubscription(user, id, dto, ip);
+  }
+
+  @Post("tenants/:id/manager")
+  setManager(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: SetTenantManagerDto,
+    @Req() req: Request,
+  ): Promise<Record<string, unknown>> {
+    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    return this.cp.setTenantManager(user, id, dto, ip, req);
   }
 
   @Post("tenants/:id/manager-invite")

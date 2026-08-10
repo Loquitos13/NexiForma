@@ -617,6 +617,26 @@ export class UsersService {
     return matricula.id;
   }
 
+  async inspectInvite(token: string) {
+    const tokenHash = hashInviteToken(this.invitePepper(), token);
+    const invite = await this.prisma.tenantInvite.findUnique({
+      where: { tokenHash },
+      include: { tenant: { select: { slug: true, legalName: true } } },
+    });
+
+    if (!invite || invite.acceptedAt || invite.expiresAt <= new Date()) {
+      throw new BadRequestException("Convite inválido ou expirado.");
+    }
+
+    return {
+      email: invite.email,
+      displayName: invite.displayName,
+      role: invite.role,
+      tenantSlug: invite.tenant.slug,
+      tenantLegalName: invite.tenant.legalName,
+    };
+  }
+
   async acceptInvite(dto: AcceptInviteDto) {
     const tokenHash = hashInviteToken(this.invitePepper(), dto.token);
     const invite = await this.prisma.tenantInvite.findUnique({

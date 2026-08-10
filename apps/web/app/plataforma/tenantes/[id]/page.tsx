@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { Copy, Check, Key, ShieldCheck } from "lucide-react";
 import type { BillingPlanCode } from "@nexiforma/shared";
 import { BILLING_ADDON_LABELS, MODULAR_PLAN_CODE } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
@@ -69,6 +70,19 @@ export default function TenantDetailPage() {
     customAddons: [],
   });
   const [subBusy, setSubBusy] = useState(false);
+  const [managerForm, setManagerForm] = useState({
+    email: "",
+    displayName: "",
+    temporaryPassword: "",
+    notifyEmail: true,
+  });
+  const [managerBusy, setManagerBusy] = useState(false);
+  const [createdCredentials, setCreatedCredentials] = useState<{
+    email: string;
+    slug: string;
+    temporaryPassword: string;
+  } | null>(null);
+  const [copiedTempPassword, setCopiedTempPassword] = useState(false);
   const [inviteForm, setInviteForm] = useState({ email: "", displayName: "" });
   const [inviteBusy, setInviteBusy] = useState(false);
   const [lockoutForm, setLockoutForm] = useState({
@@ -170,6 +184,47 @@ export default function TenantDetailPage() {
     if (!r.ok) { setError(`HTTP ${r.status}`); return; }
     setMsg(`Estado actualizado para ${status}.`);
     await load();
+  }
+
+  async function guardarGestor(e: FormEvent) {
+    e.preventDefault();
+    if (!managerForm.email.trim()) return;
+    setManagerBusy(true);
+    setError(null);
+    setMsg(null);
+    try {
+      const r = await bffFetch(`/api/v1/control-plane/tenants/${id}/manager`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", accept: "application/json" },
+        body: JSON.stringify({
+          email: managerForm.email.trim(),
+          displayName: managerForm.displayName.trim() || undefined,
+          temporaryPassword: managerForm.temporaryPassword.trim() || undefined,
+          notifyEmail: managerForm.notifyEmail,
+        }),
+      });
+      setManagerBusy(false);
+      if (!r.ok) {
+        setError(await parseApiError(r));
+        return;
+      }
+      const data = (await r.json()) as {
+        temporaryPassword?: string;
+        email: string;
+        slug: string;
+      };
+      setCreatedCredentials({
+        email: data.email,
+        slug: data.slug,
+        temporaryPassword: data.temporaryPassword ?? managerForm.temporaryPassword.trim(),
+      });
+      setMsg("Gestor configurado com sucesso com credenciais temporárias.");
+      setManagerForm({ email: "", displayName: "", temporaryPassword: "", notifyEmail: true });
+      await load();
+    } catch {
+      setManagerBusy(false);
+      setError("Falha de rede ao nomear gestor.");
+    }
   }
 
   async function enviarConviteGestor(e: FormEvent) {
@@ -691,31 +746,124 @@ export default function TenantDetailPage() {
             </form>
           </div>
 
-          {/* Convite gestor */}
+          {/* Gestor da entidade (Nomear / Sobrepor) */}
           <div className="rounded-2xl bg-[#0c0a14]/80 border border-blue-500/15 p-5">
-            <h2 className="text-sm font-semibold text-blue-200 mb-1">Convite ao gestor</h2>
-            <p className="text-xs text-slate-500 mb-4">
-              Envia email com link de activação. O convite inclui o slug <code className="text-purple-300">{tenant.slug}</code>{" "}
-              para o gestor usar no login.
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <h2 className="text-sm font-semibold text-blue-200 flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-blue-400" />
+                Gestor da entidade (Nomear / Sobrepor)
+              </h2>
+              {users.filter((u) => u.role === "ADMIN").length > 0 ? (
+                <span className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md">
+                  Gestor atual: {users.filter((u) => u.role === "ADMIN").map((u) => u.email).join(", ")}
+                </span>
+              ) : (
+                <span className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
+                  Sem gestor atribuído
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+              Define ou sobrepõe o gestor desta entidade diretamente sem necessidade de link de convite.
+              O sistema gera credenciais temporárias para o gestor aceder em <code className="text-purple-300">/login</code> com o slug <code className="text-purple-300">{tenant.slug}</code>.
+              No primeiro acesso, ser-lhe-á solicitado que defina uma nova palavra-passe definitiva.
             </p>
-            <form onSubmit={(e) => void enviarConviteGestor(e)} className="grid gap-3 max-w-md">
-              <input
-                type="email"
-                required
-                placeholder="Email do gestor"
-                className={inputClass}
-                value={inviteForm.email}
-                onChange={(e) => setInviteForm((f) => ({ ...f, email: e.target.value }))}
-              />
-              <input
-                placeholder="Nome a mostrar (opcional)"
-                className={inputClass}
-                value={inviteForm.displayName}
-                onChange={(e) => setInviteForm((f) => ({ ...f, displayName: e.target.value }))}
-              />
-              <button type="submit" disabled={inviteBusy} className={btnPrimaryClass}>
-                {inviteBusy ? "A enviar…" : "Enviar convite por email"}
-              </button>
+
+            {createdCredentials ? (
+              <div className="mb-5 p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                    <Key className="h-4 w-4" />
+                    Credenciais Temporárias Criadas
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const text = `Slug: ${createdCredentials.slug}\nEmail: ${createdCredentials.email}\nPassword temporária: ${createdCredentials.temporaryPassword}`;
+                      void navigator.clipboard.writeText(text);
+                      setCopiedTempPassword(true);
+                      setTimeout(() => setCopiedTempPassword(false), 2500);
+                    }}
+                    className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-100 transition-colors"
+                  >
+                    {copiedTempPassword ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 text-emerald-300" />
+                        Copiado!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5" />
+                        Copiar credenciais
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-mono">
+                  <div className="p-2 rounded bg-black/40 border border-emerald-500/20">
+                    <span className="block text-[10px] text-emerald-400/70 font-sans">Slug</span>
+                    <span className="text-emerald-100">{createdCredentials.slug}</span>
+                  </div>
+                  <div className="p-2 rounded bg-black/40 border border-emerald-500/20">
+                    <span className="block text-[10px] text-emerald-400/70 font-sans">Email</span>
+                    <span className="text-emerald-100">{createdCredentials.email}</span>
+                  </div>
+                  <div className="p-2 rounded bg-black/40 border border-emerald-500/20">
+                    <span className="block text-[10px] text-emerald-400/70 font-sans">Password temporária</span>
+                    <span className="text-emerald-300 font-bold">{createdCredentials.temporaryPassword}</span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-emerald-400/80">
+                  O gestor já pode entrar no sistema com estas credenciais. No primeiro login, terá de definir a palavra-passe permanente.
+                </p>
+              </div>
+            ) : null}
+
+            <form onSubmit={(e) => void guardarGestor(e)} className="grid gap-3 max-w-md">
+              <label className="grid gap-1 text-xs text-slate-400">
+                Email do gestor *
+                <input
+                  type="email"
+                  required
+                  placeholder="gestor@empresa.pt"
+                  className={inputClass}
+                  value={managerForm.email}
+                  onChange={(e) => setManagerForm((f) => ({ ...f, email: e.target.value }))}
+                />
+              </label>
+              <label className="grid gap-1 text-xs text-slate-400">
+                Nome a mostrar (opcional)
+                <input
+                  placeholder="Nome do gestor"
+                  className={inputClass}
+                  value={managerForm.displayName}
+                  onChange={(e) => setManagerForm((f) => ({ ...f, displayName: e.target.value }))}
+                />
+              </label>
+              <label className="grid gap-1 text-xs text-slate-400">
+                Palavra-passe temporária personalizada (opcional)
+                <input
+                  type="password"
+                  placeholder="Deixar vazio para gerar automaticamente"
+                  className={inputClass}
+                  value={managerForm.temporaryPassword}
+                  onChange={(e) => setManagerForm((f) => ({ ...f, temporaryPassword: e.target.value }))}
+                />
+              </label>
+              <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={managerForm.notifyEmail}
+                  onChange={(e) => setManagerForm((f) => ({ ...f, notifyEmail: e.target.checked }))}
+                  className="rounded border-purple-500/30 bg-[#0c0a14] accent-blue-600"
+                />
+                Enviar email ao gestor com as credenciais temporárias
+              </label>
+              <div className="pt-2">
+                <button type="submit" disabled={managerBusy} className={btnPrimaryClass}>
+                  {managerBusy ? "A configurar…" : "Nomear / Sobrepor Gestor"}
+                </button>
+              </div>
             </form>
           </div>
 

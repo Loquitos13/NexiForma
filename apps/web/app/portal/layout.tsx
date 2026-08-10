@@ -27,6 +27,7 @@ import { PageContentSkeleton } from "@/components/ui/page-skeleton";
 import { markSessionExpired } from "@/lib/client/session-lifecycle";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { PortalPriorityCompanion } from "@/components/portal/portal-priority-companion";
+import { MustChangePasswordModal } from "@/components/portal/must-change-password-modal";
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -155,6 +156,7 @@ function PortalLayoutInner({ children }: { children: React.ReactNode }) {
         <ConsentGate>
           <DocumentosObrigatoriosGate>{children}</DocumentosObrigatoriosGate>
         </ConsentGate>
+        <MustChangePasswordModal />
       </FormandoShell>
     );
   }
@@ -171,6 +173,7 @@ function PortalLayoutInner({ children }: { children: React.ReactNode }) {
         <DocumentosObrigatoriosGate>{children}</DocumentosObrigatoriosGate>
       </ConsentGate>
       <PortalPriorityCompanion />
+      <MustChangePasswordModal />
     </BackofficeShell>
   );
 }

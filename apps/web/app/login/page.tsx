@@ -57,6 +57,11 @@ function LoginForm() {
   const [mfaApp, setMfaApp] = useState<MfaAppCode>("microsoft_authenticator");
   const [credSuccess, setCredSuccess] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState(false);
+  const [mustChangePasswordMode, setMustChangePasswordMode] = useState(false);
+  const [currentTempPassword, setCurrentTempPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [tempAccessToken, setTempAccessToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [emailNotVerified, setEmailNotVerified] = useState<{
     email: string;
@@ -347,6 +352,69 @@ function LoginForm() {
     setError(null);
   }
 
+  function resetMustChangePasswordFlow() {
+    setMustChangePasswordMode(false);
+    setTempAccessToken(null);
+    setCurrentTempPassword("");
+    setNewPassword("");
+    setConfirmNewPassword("");
+    setCredSuccess(false);
+    setError(null);
+  }
+
+  async function onSubmitChangeRequiredPassword(e: FormEvent) {
+    e.preventDefault();
+    if (!newPassword || newPassword.length < 8) {
+      setError("A nova palavra-passe deve ter pelo menos 8 caracteres.");
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setError("As palavras-passe introduzidas não coincidem.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const authHeaders: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (tempAccessToken) {
+        authHeaders["Authorization"] = `Bearer ${tempAccessToken}`;
+      }
+      const res = await fetch("/api/auth/tenant/change-required-password", {
+        method: "POST",
+        credentials: "include",
+        headers: authHeaders,
+        body: JSON.stringify({
+          currentPassword: currentTempPassword || password,
+          newPassword,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        message?: string | string[];
+        accessToken?: string;
+      };
+      if (!res.ok) {
+        const msg = Array.isArray(data.message)
+          ? data.message.join(", ")
+          : typeof data.message === "string"
+            ? data.message
+            : "Não foi possível alterar a palavra-passe.";
+        setError(msg);
+        return;
+      }
+      setMustChangePasswordMode(false);
+      setLoginSuccess(true);
+      saveLoginPreferences();
+      await new Promise((r) => setTimeout(r, 700));
+      await finishLogin(data.accessToken);
+    } catch {
+      setError("Falha de rede ao gravar nova palavra-passe.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function onTenantPickChange(slug: string) {
     setTenantSlug(slug);
     setPickedTenantSlug(slug);
@@ -408,6 +476,7 @@ function LoginForm() {
         email?: string;
         tenantSlug?: string;
         accessToken?: string;
+        passwordChangeRequired?: boolean;
         mfaRequired?: boolean;
         mfaEnrollmentRequired?: boolean;
         mfaToken?: string;
@@ -460,6 +529,26 @@ function LoginForm() {
 
       setTenantPickModalOpen(false);
       setTenantPickMode(null);
+
+      const payload = decodeJwtPayload(data.accessToken);
+      const isPasswordChangeRequired = Boolean(
+        data.passwordChangeRequired || payload?.mustChangePassword,
+      );
+
+      if (isPasswordChangeRequired && data.accessToken) {
+        setCredSuccess(true);
+        setTempAccessToken(data.accessToken);
+        setCurrentTempPassword(password);
+        setNewPassword("");
+        setConfirmNewPassword("");
+        setMustChangePasswordMode(true);
+        if (data.user?.tenantSlug) {
+          setTenantSlug(data.user.tenantSlug);
+          setPickedTenantSlug(data.user.tenantSlug);
+        }
+        return;
+      }
+
       setLoginSuccess(true);
       if (data.user?.tenantSlug) {
         setTenantSlug(data.user.tenantSlug);
@@ -556,6 +645,17 @@ function LoginForm() {
         setError(typeof data.message === "string" ? data.message : "Código MFA inválido.");
         return;
       }
+      const payload = decodeJwtPayload(data.accessToken);
+      if (payload?.mustChangePassword && data.accessToken) {
+        setCredSuccess(true);
+        setTempAccessToken(data.accessToken);
+        setCurrentTempPassword(password);
+        setNewPassword("");
+        setConfirmNewPassword("");
+        setMustChangePasswordMode(true);
+        setMfaToken(null);
+        return;
+      }
       setLoginSuccess(true);
       saveLoginPreferences();
       await new Promise((r) => setTimeout(r, 700));
@@ -582,6 +682,18 @@ function LoginForm() {
       const data = (await res.json().catch(() => ({}))) as { message?: string; accessToken?: string };
       if (!res.ok) {
         setError(typeof data.message === "string" ? data.message : "Código MFA inválido.");
+        return;
+      }
+      const payload = decodeJwtPayload(data.accessToken);
+      if (payload?.mustChangePassword && data.accessToken) {
+        setCredSuccess(true);
+        setTempAccessToken(data.accessToken);
+        setCurrentTempPassword(password);
+        setNewPassword("");
+        setConfirmNewPassword("");
+        setMustChangePasswordMode(true);
+        setMfaToken(null);
+        setMfaEnrollmentMode(false);
         return;
       }
       setLoginSuccess(true);
@@ -631,16 +743,89 @@ function LoginForm() {
   return (
     <>
     <AuthShell
-      title={mfaEnrollmentMode ? "Configurar verificação" : mfaToken ? "Verificação em dois passos" : "Entrar"}
+      title={
+        mustChangePasswordMode
+          ? "Definir nova palavra-passe"
+          : mfaEnrollmentMode
+            ? "Configurar verificação"
+            : mfaToken
+              ? "Verificação em dois passos"
+              : "Entrar"
+      }
       subtitle={
-        mfaEnrollmentMode
-          ? "A tua conta exige autenticação em dois passos. Configura a app no telemóvel para continuar."
-          : mfaToken
-            ? mfaVerificationSubtitle(mfaAppLabel)
-            : "Acede à plataforma NexiForma com as tuas credenciais."
+        mustChangePasswordMode
+          ? "Credenciais temporárias validadas. Por segurança, introduza a sua nova palavra-passe definitiva."
+          : mfaEnrollmentMode
+            ? "A tua conta exige autenticação em dois passos. Configura a app no telemóvel para continuar."
+            : mfaToken
+              ? mfaVerificationSubtitle(mfaAppLabel)
+              : "Acede à plataforma NexiForma com as tuas credenciais."
       }
     >
-      {mfaEnrollmentMode && mfaToken ? (
+      {mustChangePasswordMode ? (
+        <form onSubmit={onSubmitChangeRequiredPassword} className="space-y-4">
+          <div className="rounded-xl bg-blue-950/30 border border-blue-500/25 px-4 py-3 flex items-start gap-2.5">
+            <Shield className="h-4 w-4 text-blue-400 mt-0.5 shrink-0" />
+            <p className="text-sm text-blue-200 leading-relaxed">
+              Conta configurada com <strong>credenciais temporárias</strong>. Por motivos de segurança, defina agora a sua nova palavra-passe definitiva para aceder à plataforma.
+            </p>
+          </div>
+
+          <div>
+            <label htmlFor="login-new-password" className={labelClass}>
+              Nova palavra-passe
+            </label>
+            <PasswordInput
+              id="login-new-password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              minLength={8}
+              placeholder="Mínimo 8 caracteres"
+              className={inputClass}
+              autoComplete="new-password"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="login-confirm-password" className={labelClass}>
+              Confirmar nova palavra-passe
+            </label>
+            <PasswordInput
+              id="login-confirm-password"
+              value={confirmNewPassword}
+              onChange={(e) => setConfirmNewPassword(e.target.value)}
+              required
+              minLength={8}
+              placeholder="Repita a nova palavra-passe"
+              className={inputClass}
+              autoComplete="new-password"
+            />
+          </div>
+
+          {error ? (
+            <div role="alert" className="rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3">
+              <p className="text-sm text-red-300">{error}</p>
+            </div>
+          ) : null}
+
+          <button
+            type="submit"
+            disabled={busy || newPassword.length < 8 || newPassword !== confirmNewPassword}
+            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold text-sm disabled:opacity-60 transition-all hover:brightness-110 shadow-lg shadow-blue-600/20"
+          >
+            {busy ? "A gravar nova palavra-passe…" : "Gravar nova palavra-passe e entrar"}
+          </button>
+
+          <button
+            type="button"
+            onClick={resetMustChangePasswordFlow}
+            className="w-full text-sm text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            Cancelar e voltar ao login
+          </button>
+        </form>
+      ) : mfaEnrollmentMode && mfaToken ? (
         <form onSubmit={onMfaEnrollSubmit} className="space-y-5">
           {credSuccess ? (
             <div className="rounded-xl bg-emerald-950/30 border border-emerald-500/25 px-4 py-3 flex items-start gap-2.5">

@@ -11,6 +11,7 @@ export type JwtPayloadSlice = {
   impersonating?: boolean;
   tenantSlug?: string | null;
   email?: string;
+  mustChangePassword?: boolean;
 };
 
 export function decodeJwtPayload(accessToken: string | null | undefined): JwtPayloadSlice | null {

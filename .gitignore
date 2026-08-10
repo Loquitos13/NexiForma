@@ -44,7 +44,7 @@ coverage/
 # Prisma cliente gerado
 packages/database/generated/
 
-# Storage local (documentos formando, LMS, exports) — não ignorar apps/api/src/storage/ (código Nest)
+# Storage local (documentos formando, LMS, exports) - não ignorar apps/api/src/storage/ (código Nest)
 apps/api/storage/
 /storage/
 

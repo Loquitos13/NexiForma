@@ -10,10 +10,12 @@ import {
   Req,
   UseGuards,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/decorators/roles.decorator";
+import { Public } from "../auth/decorators/public.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { AcceptInviteDto, EnforceMfaDto, InviteUserDto, UpdateUserDto } from "./dto/users.dto";
@@ -48,6 +50,15 @@ export class UsersController {
     return this.users.invite(user, dto, req);
   }
 
+  @Public()
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Get("invite-info/:token")
+  inspectInvite(@Param("token") token: string) {
+    return this.users.inspectInvite(token);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post("accept-invite")
   acceptInvite(@Body() dto: AcceptInviteDto) {
     return this.users.acceptInvite(dto);

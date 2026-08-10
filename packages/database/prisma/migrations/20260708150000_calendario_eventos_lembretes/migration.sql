@@ -1,4 +1,4 @@
--- Colunas de agendamento em interações CRM (só se a tabela já existir —
+-- Colunas de agendamento em interações CRM (só se a tabela já existir -
 -- em installs fresh a tabela só é criada em 20260709180000).
 DO $$
 BEGIN

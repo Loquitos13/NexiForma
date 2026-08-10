@@ -128,4 +128,35 @@ export class PlatformTenantNotificacoesService {
     this.logger.log(`Convite gestor enviado: ${input.email} (${input.slug})`);
     return { ok: true };
   }
+
+  async enviarCredenciaisTemporariasGestor(input: {
+    email: string;
+    displayName: string;
+    entidadeFormadora: string;
+    slug: string;
+    temporaryPassword: string;
+  }) {
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
+    const base = appUrl.replace(/\/$/, "");
+    const loginUrl = `${base}/login?slug=${encodeURIComponent(input.slug)}&email=${encodeURIComponent(input.email)}`;
+
+    const tpl = EmailTemplates.tenantGestorCredenciaisTemporarias({
+      nomeGestor: input.displayName,
+      entidadeFormadora: input.entidadeFormadora,
+      slug: input.slug,
+      email: input.email,
+      temporaryPassword: input.temporaryPassword,
+      loginUrl,
+    });
+
+    await this.mail.send({
+      to: input.email,
+      subject: tpl.subject,
+      text: tpl.text,
+      html: tpl.html,
+    });
+
+    this.logger.log(`Credenciais temporárias de gestor enviadas: ${input.email} (${input.slug})`);
+    return { ok: true };
+  }
 }
