@@ -16,7 +16,7 @@ export class CrmLlmService {
       "",
     );
     this.model = this.config.get<string>("NEXIGUIA_LLM_MODEL") ?? "qwen2.5:3b-instruct";
-    this.timeoutMs = Number(this.config.get<string>("NEXIGUIA_LLM_TIMEOUT_MS") ?? "25000");
+    this.timeoutMs = Number(this.config.get<string>("NEXIGUIA_LLM_TIMEOUT_MS") ?? "120000");
   }
 
   isEnabled(): boolean {
@@ -37,6 +37,11 @@ export class CrmLlmService {
           model: this.model,
           stream: false,
           format: "json",
+          options: {
+            num_ctx: 1024,
+            num_predict: 512,
+            temperature: 0.2,
+          },
           messages: [
             { role: "system", content: system },
             { role: "user", content: user },

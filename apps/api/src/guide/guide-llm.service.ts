@@ -28,7 +28,7 @@ export class GuideLlmService {
       "",
     );
     this.model = this.config.get<string>("NEXIGUIA_LLM_MODEL") ?? "qwen2.5:3b-instruct";
-    this.timeoutMs = Number(this.config.get<string>("NEXIGUIA_LLM_TIMEOUT_MS") ?? "15000");
+    this.timeoutMs = Number(this.config.get<string>("NEXIGUIA_LLM_TIMEOUT_MS") ?? "120000");
   }
 
   isEnabled(): boolean {
@@ -55,6 +55,11 @@ export class GuideLlmService {
           model: this.model,
           stream: false,
           format: "json",
+          options: {
+            num_ctx: 1024,
+            num_predict: 256,
+            temperature: 0.2,
+          },
           messages: [
             { role: "system", content: buildGuideLlmSystemPrompt() },
             { role: "user", content: buildGuideLlmUserPrompt(message, ctx, history) },

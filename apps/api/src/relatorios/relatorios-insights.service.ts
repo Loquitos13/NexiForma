@@ -325,6 +325,7 @@ Regras: usa SOMENTE os valores do snapshot; não inventes dados; português de P
           stream: false,
           format: "json",
           options: {
+            num_ctx: extended ? 2_048 : 1_024,
             num_predict: extended ? 2_048 : 1_024,
             temperature: 0.3,
           },

@@ -72,7 +72,8 @@ function resolveUpstreamTimeoutMs(path: string): number {
 
   const isInsights = /^relatorios\/insights/i.test(path);
   const isCronogramaImportIa = /^cronogramas\/[^/]+\/importar-ia\/analisar$/i.test(path);
-  if (!isInsights && !isCronogramaImportIa) {
+  const isGuideChat = /^guide\/chat/i.test(path);
+  if (!isInsights && !isCronogramaImportIa && !isGuideChat) {
     return defaultMs;
   }
 
