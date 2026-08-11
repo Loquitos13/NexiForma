@@ -53,12 +53,26 @@ export class HtmlPdfExportService implements OnModuleDestroy {
 
       const browser = await puppeteer.default.launch({
         headless: true,
+        pipe: true,
+        timeout: 30_000,
         ...(executablePath ? { executablePath } : {}),
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
           "--disable-dev-shm-usage",
           "--disable-gpu",
+          "--no-zygote",
+          "--single-process",
+          "--disable-software-rasterizer",
+          "--disable-extensions",
+          "--disable-background-networking",
+          "--disable-default-apps",
+          "--disable-sync",
+          "--disable-translate",
+          "--metrics-recording-only",
+          "--mute-audio",
+          "--no-first-run",
+          "--safebrowsing-disable-auto-update",
         ],
       });
       browser.on("disconnected", () => {
