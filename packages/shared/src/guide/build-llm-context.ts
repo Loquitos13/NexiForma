@@ -32,6 +32,53 @@ function relevantKnowledge(query: string, limit = 4): string[] {
   return scored.map((x) => x.entry.answer);
 }
 
+function relevantRoutes(
+  query: string,
+  role: JwtRole | null,
+  limit = 8,
+): Array<{ href: string; label: string; description: string }> {
+  const allowed = getAllowedDestinations(role).filter((d) => !d.href.includes("#"));
+  const nq = normalize(query);
+  const isGeneric =
+    !nq ||
+    nq === "ola" ||
+    nq === "oi" ||
+    nq === "bom dia" ||
+    nq === "boa tarde" ||
+    nq === "ajuda" ||
+    nq.length < 4;
+
+  if (isGeneric) {
+    return allowed.slice(0, limit).map((d) => ({
+      href: d.href,
+      label: d.label,
+      description: d.description,
+    }));
+  }
+
+  const queryTokens = nq.split(" ").filter((t) => t.length > 2);
+  const scored = allowed.map((d) => {
+    let score = 0;
+    const nl = normalize(d.label);
+    const nd = normalize(d.description);
+    const nh = normalize(d.href);
+    for (const t of queryTokens) {
+      if (nl.includes(t)) score += 6;
+      if (nd.includes(t)) score += 2;
+      if (nh.includes(t)) score += 4;
+    }
+    return { d, score };
+  })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  return scored.map((x) => ({
+    href: x.d.href,
+    label: x.d.label,
+    description: x.d.description,
+  }));
+}
+
 export type GuideLlmContext = {
   role: JwtRole | null;
   pathname: string;
@@ -46,20 +93,13 @@ export function buildGuideLlmContext(
   pathname: string,
 ): GuideLlmContext {
   const view = resolveViewContext(pathname);
-  const allowed = getAllowedDestinations(role)
-    .filter((d) => !d.href.includes("#"))
-    .slice(0, 40);
 
   return {
     role,
     pathname,
     viewLabel: view.label,
-    allowedRoutes: allowed.map((d) => ({
-      href: d.href,
-      label: d.label,
-      description: d.description,
-    })),
-    knowledgeSnippets: relevantKnowledge(query),
+    allowedRoutes: relevantRoutes(query, role, 8),
+    knowledgeSnippets: relevantKnowledge(query, 3),
   };
 }
 
