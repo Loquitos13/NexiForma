@@ -42,45 +42,53 @@ export class HtmlPdfExportService implements OnModuleDestroy {
     if (this.launching) return this.launching;
 
     this.launching = (async () => {
-      const puppeteer = await import("puppeteer");
-      const executablePath = findSystemChrome();
+      try {
+        const puppeteer = await import("puppeteer");
+        const executablePath = findSystemChrome();
 
-      if (executablePath) {
-        this.logger.log(`A iniciar Puppeteer com: ${executablePath}`);
-      } else {
-        this.logger.warn("Aviso: executável Chromium do sistema não detetado, a tentar resolver por defeito.");
-      }
+        if (executablePath) {
+          this.logger.log(`A iniciar Puppeteer com: ${executablePath}`);
+        } else {
+          this.logger.warn("Aviso: executável Chromium do sistema não detetado, a tentar resolver por defeito.");
+        }
 
-      const browser = await puppeteer.default.launch({
-        headless: true,
-        pipe: true,
-        timeout: 30_000,
-        ...(executablePath ? { executablePath } : {}),
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-          "--no-zygote",
-          "--single-process",
-          "--disable-software-rasterizer",
-          "--disable-extensions",
-          "--disable-background-networking",
-          "--disable-default-apps",
-          "--disable-sync",
-          "--disable-translate",
-          "--metrics-recording-only",
-          "--mute-audio",
-          "--no-first-run",
-          "--safebrowsing-disable-auto-update",
-        ],
-      });
-      browser.on("disconnected", () => {
+        const browser = await puppeteer.default.launch({
+          headless: true,
+          protocolTimeout: 120_000,
+          timeout: 60_000,
+          ...(executablePath ? { executablePath } : {}),
+          args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-software-rasterizer",
+            "--disable-extensions",
+            "--disable-background-networking",
+            "--disable-default-apps",
+            "--disable-sync",
+            "--disable-translate",
+            "--metrics-recording-only",
+            "--mute-audio",
+            "--no-first-run",
+            "--safebrowsing-disable-auto-update",
+            "--font-render-hinting=none",
+          ],
+        });
+        browser.on("disconnected", () => {
+          this.browser = null;
+        });
+        this.browser = browser;
+        return browser;
+      } catch (err) {
         this.browser = null;
-      });
-      this.browser = browser;
-      this.launching = null;
-      return browser;
+        this.logger.error(
+          `Erro ao inicializar Chromium/Puppeteer: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        throw err;
+      } finally {
+        this.launching = null;
+      }
     })();
 
     return this.launching;
@@ -96,13 +104,13 @@ export class HtmlPdfExportService implements OnModuleDestroy {
     const browser = await this.getBrowser();
     const page = await browser.newPage();
     try {
-      page.setDefaultTimeout(15_000);
-      page.setDefaultNavigationTimeout(15_000);
-      await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 15_000 });
+      page.setDefaultTimeout(30_000);
+      page.setDefaultNavigationTimeout(30_000);
+      await page.setContent(html, { waitUntil: ["load", "domcontentloaded"], timeout: 30_000 });
       const pdf = await page.pdf({
         format: "A4",
         printBackground: true,
-        timeout: 15_000,
+        timeout: 30_000,
         preferCSSPageSize: opts?.preferCSSPageSize ?? false,
         margin: opts?.margin ?? { top: "8mm", right: "8mm", bottom: "8mm", left: "8mm" },
       });
@@ -111,7 +119,9 @@ export class HtmlPdfExportService implements OnModuleDestroy {
       this.logger.warn(
         `Falha ao gerar PDF: ${err instanceof Error ? err.message : String(err)}`,
       );
-      this.browser = null;
+      if (!browser.connected) {
+        this.browser = null;
+      }
       throw err;
     } finally {
       await page.close().catch(() => undefined);
