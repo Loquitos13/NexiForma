@@ -30,15 +30,12 @@ import { formatDatePt } from "@/lib/calendar-date";
 import { openHtmlForPrint } from "@/lib/client/open-html-for-print";
 import { openMeetingUrl } from "@/lib/client/open-meeting-url";
 import { terminarSessaoFormacaoComConfirmacao } from "@/lib/client/terminar-sessao-formacao";
-import { usePendenciasDocumentacaoConfirm } from "@/components/portal/pendencias-documentacao-dialog";
 import {
   getDgertRequisitoGuide,
   readDgertRequisitoFromSearch,
 } from "@/lib/dossie/dgert-requisito";
 import {
-  buildPendenciaSessaoHref,
   readPendenciaFocusFromSearch,
-  resolvePendenciaItemFocus,
   type PendenciaFocus,
 } from "@/lib/client/pendencias-documentacao-href";
 import { resolveSalaOnline, isModalidadeOnline, providerParaModalidade, ESTADOS_PRESENCA, ESTADO_PRESENCA_LABELS, isEstadoPresenca, labelOrigemPresenca, origemPresencaBadgeVariant, ALERTA_PRESENCA_LABELS, formatarDuracaoHhMmSs, type EstadoPresenca, type AlertaPresencaCodigo } from "@nexiforma/shared";
@@ -384,8 +381,6 @@ export function PortalScheduleSection({
   cursoId,
   formadorProfileId = null,
 }: Props) {
-  const { dialog: pendenciasDialog, confirm: confirmPendenciasDoc } =
-    usePendenciasDocumentacaoConfirm();
   const searchParams = useSearchParams();
   const [selectedAcaoId, setSelectedAcaoId] = useState(fixedAcaoId ?? "");
   const [cronogramas, setCronogramas] = useState<CronogramaRow[]>([]);
@@ -1322,49 +1317,7 @@ export function PortalScheduleSection({
     setErr(null);
     setMsg(null);
     try {
-      const result = await terminarSessaoFormacaoComConfirmacao(selectedSessaoId, {
-        confirmPendencias: async (pendencias) => {
-          const canLink = Boolean(acaoId && selectedSessaoId);
-          return confirmPendenciasDoc({
-            title: "Terminar sessão com pendências?",
-            question: "Tens a certeza que queres terminar a sessão na mesma?",
-            hint:
-              "Podes abrir cada pendência abaixo. Se terminares na mesma, o departamento pedagógico será notificado por email.",
-            sessoes: [
-              {
-                acaoLabel: acaoLabel
-                  ? `${acaoLabel.codigoInterno} – ${acaoLabel.titulo}`
-                  : "Sessão actual",
-                numeroSessao: sessaoAtiva?.numeroSessao,
-                href: canLink
-                  ? buildPendenciaSessaoHref({
-                      acaoId,
-                      sessaoId: selectedSessaoId,
-                      focus:
-                        pendencias.folhaPendente && pendencias.sumarioPendente
-                          ? "pendencias"
-                          : pendencias.folhaPendente
-                            ? "folha"
-                            : "sumario",
-                    })
-                  : undefined,
-                itens: pendencias.itens.map((label) => ({
-                  label,
-                  href: canLink
-                    ? buildPendenciaSessaoHref({
-                        acaoId,
-                        sessaoId: selectedSessaoId,
-                        focus: resolvePendenciaItemFocus(label),
-                      })
-                    : undefined,
-                })),
-              },
-            ],
-            confirmLabel: "Terminar na mesma",
-            cancelLabel: "Voltar à sessão",
-          });
-        },
-      });
+      const result = await terminarSessaoFormacaoComConfirmacao(selectedSessaoId);
       if (!result.ok) {
         if (!result.cancelled) setErr(result.error);
         return;
@@ -2593,28 +2546,48 @@ export function PortalScheduleSection({
                             </div>
                             {showMarcarPresencas ? (
                               <div className="mt-3 pt-3 border-t border-slate-700/40">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="teal"
-                                  className="w-full sm:w-auto"
-                                  disabled={busy}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    void (async () => {
-                                      await abrirFolha();
-                                      requestAnimationFrame(() => {
-                                        presencasWorkspaceRef.current?.scrollIntoView({
-                                          behavior: "smooth",
-                                          block: "start",
-                                        });
-                                      });
-                                    })();
-                                  }}
-                                >
-                                  <ClipboardList className="h-4 w-4" />
-                                  Marcar Presenças
-                                </Button>
+                                {(() => {
+                                  const folhaSessaoAguardaAprovacao = folhas.some(
+                                    (f) =>
+                                      f.sessaoId === s.id &&
+                                      f.validadaFormadorEm &&
+                                      !f.aprovadaGestorEm,
+                                  );
+                                  const isAprovar =
+                                    canApprovePresencasFolha && folhaSessaoAguardaAprovacao;
+                                  return (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant={isAprovar ? "secondary" : "teal"}
+                                      className={cn(
+                                        "w-full sm:w-auto",
+                                        isAprovar &&
+                                          "border-amber-500/50 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30",
+                                      )}
+                                      disabled={busy}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void (async () => {
+                                          await abrirFolha();
+                                          requestAnimationFrame(() => {
+                                            presencasWorkspaceRef.current?.scrollIntoView({
+                                              behavior: "smooth",
+                                              block: "start",
+                                            });
+                                          });
+                                        })();
+                                      }}
+                                    >
+                                      {isAprovar ? (
+                                        <CheckCircle2 className="h-4 w-4" />
+                                      ) : (
+                                        <ClipboardList className="h-4 w-4" />
+                                      )}
+                                      {isAprovar ? "Aprovar Presenças" : "Marcar Presenças"}
+                                    </Button>
+                                  );
+                                })()}
                               </div>
                             ) : null}
                           </div>
@@ -3018,7 +2991,7 @@ export function PortalScheduleSection({
                         )}
                       </CardHeader>
                       <CardContent>
-                        {(folhaDetalhe.validadaPor || folhaDetalhe.aprovadaPor) ? (
+                        {(folhaDetalhe.validadaPor || (canApprovePresencasFolha && folhaDetalhe.aprovadaPor)) ? (
                           <div className="mb-4 rounded-lg border border-slate-700/50 bg-slate-950/40 px-3 py-2.5 space-y-1.5 text-xs text-slate-300">
                             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                               Assinaturas
@@ -3039,7 +3012,7 @@ export function PortalScheduleSection({
                                 </span>
                               </p>
                             ) : null}
-                            {folhaDetalhe.aprovadaPor ? (
+                            {canApprovePresencasFolha && folhaDetalhe.aprovadaPor ? (
                               <p>
                                 <span className="text-slate-500">Aprovada por </span>
                                 <span className="font-medium text-slate-100">
@@ -3054,7 +3027,7 @@ export function PortalScheduleSection({
                                     : ""}
                                 </span>
                               </p>
-                            ) : folhaDetalhe.validadaFormadorEm ? (
+                            ) : folhaDetalhe.validadaFormadorEm && canApprovePresencasFolha ? (
                               <p className="text-amber-200/90">
                                 Aguarda aprovação do gestor ou coordenador pedagógico.
                               </p>
@@ -3511,31 +3484,57 @@ export function PortalScheduleSection({
                       canOperateSessaoAtiva &&
                       sessaoAtiva?.iniciadaEm &&
                       !folhaTurmaFechada ? (
-                        <Button
-                          type="button"
-                          className="w-full"
-                          disabled={busy}
-                          onClick={() => {
-                            void (async () => {
-                              await abrirFolha();
-                              requestAnimationFrame(() => {
-                                presencasWorkspaceRef.current?.scrollIntoView({
-                                  behavior: "smooth",
-                                  block: "start",
-                                });
-                              });
-                            })();
-                          }}
-                        >
-                          {sessaoAtiva.terminadaEm || sessaoAtiva.estado === "REALIZADA" ? (
-                            <ClipboardList className="h-4 w-4" />
-                          ) : (
-                            <QrCode className="h-4 w-4" />
-                          )}
-                          {sessaoAtiva.terminadaEm || sessaoAtiva.estado === "REALIZADA"
-                            ? "Marcar Presenças"
-                            : "Presenças"}
-                        </Button>
+                        (() => {
+                          const folhaAtivaAguardaAprovacao =
+                            folhas.some(
+                              (f) =>
+                                f.sessaoId === sessaoAtiva.id &&
+                                f.validadaFormadorEm &&
+                                !f.aprovadaGestorEm,
+                            ) ||
+                            Boolean(
+                              folhaDetalhe?.validadaFormadorEm &&
+                                !folhaDetalhe?.aprovadaGestorEm,
+                            );
+                          const isAprovar =
+                            canApprovePresencasFolha && folhaAtivaAguardaAprovacao;
+                          return (
+                            <Button
+                              type="button"
+                              className={cn(
+                                "w-full",
+                                isAprovar &&
+                                  "border-amber-500/50 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30",
+                              )}
+                              variant={isAprovar ? "secondary" : "default"}
+                              disabled={busy}
+                              onClick={() => {
+                                void (async () => {
+                                  await abrirFolha();
+                                  requestAnimationFrame(() => {
+                                    presencasWorkspaceRef.current?.scrollIntoView({
+                                      behavior: "smooth",
+                                      block: "start",
+                                    });
+                                  });
+                                })();
+                              }}
+                            >
+                              {isAprovar ? (
+                                <CheckCircle2 className="h-4 w-4" />
+                              ) : sessaoAtiva.terminadaEm || sessaoAtiva.estado === "REALIZADA" ? (
+                                <ClipboardList className="h-4 w-4" />
+                              ) : (
+                                <QrCode className="h-4 w-4" />
+                              )}
+                              {isAprovar
+                                ? "Aprovar Presenças"
+                                : sessaoAtiva.terminadaEm || sessaoAtiva.estado === "REALIZADA"
+                                  ? "Marcar Presenças"
+                                  : "Presenças"}
+                            </Button>
+                          );
+                        })()
                       ) : null}
                       {canIniciarSessao &&
                       canOperateSessaoAtiva &&
@@ -3948,7 +3947,6 @@ export function PortalScheduleSection({
           }}
         />
       ) : null}
-      {pendenciasDialog}
     </div>
   );
 }

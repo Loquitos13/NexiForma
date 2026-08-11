@@ -829,15 +829,6 @@ export class SessoesFormacaoService {
         ? await this.getPendenciasFecho(tenantId, id)
         : null;
 
-    if (pendencias?.temPendencias && !dto.confirmarPendencias) {
-      throw new ConflictException({
-        code: "PENDENCIAS_FECHO",
-        message:
-          "Há documentação pedagógica por concluir (folha e/ou sumário). Confirma que queres terminar a sessão na mesma?",
-        pendencias,
-      });
-    }
-
     const terminadaEm = alreadyEnded ? sessao.terminadaEm! : new Date();
 
     let presencasFechadas = 0;

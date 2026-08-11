@@ -119,10 +119,12 @@ export class FolhasPresencaService {
       }
     };
 
+    const isFormador = user.role === "formador";
+
     return {
       ...folha,
       validacaoFormadorAssinaturaNome: folha.validacaoFormadorAssinaturaNome,
-      aprovacaoAssinaturaNome: folha.aprovacaoAssinaturaNome,
+      aprovacaoAssinaturaNome: isFormador ? null : folha.aprovacaoAssinaturaNome,
       validadaPor: folha.validadaFormadorPor
         ? (() => {
             const u = byId.get(folha.validadaFormadorPor);
@@ -145,7 +147,7 @@ export class FolhasPresencaService {
                 };
           })()
         : null,
-      aprovadaPor: folha.aprovadaGestorPor
+      aprovadaPor: !isFormador && folha.aprovadaGestorPor
         ? (() => {
             const u = byId.get(folha.aprovadaGestorPor);
             return u

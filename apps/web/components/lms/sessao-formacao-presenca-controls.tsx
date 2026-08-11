@@ -7,7 +7,6 @@ import { formatarDuracaoHhMmSs } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { openMeetingUrl } from "@/lib/client/open-meeting-url";
 import { terminarSessaoFormacaoComConfirmacao } from "@/lib/client/terminar-sessao-formacao";
-import { usePendenciasDocumentacaoConfirm } from "@/components/portal/pendencias-documentacao-dialog";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { TempoPresencaAoVivo } from "@/components/lms/tempo-presenca-ao-vivo";
 import { Button } from "@/components/ui";
@@ -46,8 +45,6 @@ export function SessaoFormacaoPresencaControls({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const { dialog: pendenciasDialog, confirm: confirmPendenciasDoc } =
-    usePendenciasDocumentacaoConfirm();
 
   const emCurso = !!sessao.iniciadaEm && !sessao.terminadaEm;
   const concluida = !!sessao.terminadaEm;
@@ -137,18 +134,7 @@ export function SessaoFormacaoPresencaControls({
     setError(null);
     setMsg(null);
     try {
-      const result = await terminarSessaoFormacaoComConfirmacao(sessao.fonteId, {
-        confirmPendencias: async (pendencias) =>
-          confirmPendenciasDoc({
-            title: "Terminar sessão com pendências?",
-            question: "Tens a certeza que queres terminar a sessão na mesma?",
-            hint:
-              "Se terminares agora, o departamento pedagógico será notificado por email do que ficou por validar/aprovar.",
-            sessoes: [{ itens: pendencias.itens }],
-            confirmLabel: "Terminar na mesma",
-            cancelLabel: "Voltar à sessão",
-          }),
-      });
+      const result = await terminarSessaoFormacaoComConfirmacao(sessao.fonteId);
       if (!result.ok) {
         if (!result.cancelled) setError(result.error);
         return;
@@ -245,7 +231,6 @@ export function SessaoFormacaoPresencaControls({
           </Button>
         ) : null}
       </div>
-      {pendenciasDialog}
     </div>
   );
 }

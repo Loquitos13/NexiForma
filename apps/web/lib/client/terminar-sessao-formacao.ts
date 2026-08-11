@@ -74,31 +74,7 @@ export async function terminarSessaoFormacaoComConfirmacao(
     });
   }
 
-  let res = await post(false);
-
-  if (res.status === 409) {
-    const body = (await res.json().catch(() => null)) as ConflictBody | null;
-    const parsed = extractPendenciasConflict(body);
-    if (parsed.code === "PENDENCIAS_FECHO" || parsed.pendencias?.temPendencias) {
-      const pendencias = parsed.pendencias ?? {
-        temPendencias: true,
-        folhaPendente: true,
-        sumarioPendente: true,
-        folhasTotal: 0,
-        folhasSemValidacao: 0,
-        itens: ["Documentação pedagógica por concluir"],
-      };
-      if (!opts?.confirmPendencias) {
-        return {
-          ok: false,
-          error: "É necessário confirmar as pendências da sessão no portal.",
-        };
-      }
-      const ok = await opts.confirmPendencias(pendencias);
-      if (!ok) return { ok: false, cancelled: true };
-      res = await post(true);
-    }
-  }
+  const res = await post(true);
 
   if (!res.ok) {
     return { ok: false, error: await parseApiError(res) };
