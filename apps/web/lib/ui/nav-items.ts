@@ -5,6 +5,7 @@ import {
   isCoordenadorComercial,
   isCoordenadorFinanceiro,
   isCoordenadorPedagogico,
+  isFormador,
   isFormandoPortalPath,
   isPortalPathAllowedByEntitlements,
   navHrefAllowedByEntitlements,
@@ -228,6 +229,48 @@ export function filterGroups(
           : null,
         comunicacaoGroup ? { ...comunicacaoGroup, items: byEntitlements(comunicacaoGroup.items) } : null,
         privacyGroup,
+      ].filter((g): g is NavGroup => Boolean(g && g.items.length > 0)),
+    );
+  }
+
+  // Formador: Apenas Formação (Cursos + Acções) + Geral + Comunicação + Conta (RGPD + O meu perfil)
+  if (isFormador(role)) {
+    const geralModule = groups.find((g) => g.label === "Geral");
+    const formacaoModule = groups.find((g) => g.module === "formacao_core");
+    const teamsModule = groups.find((g) => g.module === "formacao_teams");
+    const activeFormacaoModule =
+      formacaoModule && isNavModuleVisible(formacaoModule.module, entitlements)
+        ? formacaoModule
+        : teamsModule && isNavModuleVisible(teamsModule.module, entitlements)
+          ? teamsModule
+          : null;
+
+    const formadorFormacaoItems = activeFormacaoModule
+      ? activeFormacaoModule.items.filter(
+          (i) => i.href === "/portal/cursos" || i.href === "/portal/acoes",
+        )
+      : [];
+
+    const formadorContaGroup: NavGroup = {
+      label: "Conta",
+      collapsible: false,
+      items: [
+        { href: "/portal/rgpd", label: "RGPD", icon: "Lock" },
+        { href: "/portal/formador/perfil", label: "O meu perfil", icon: "UserCheck" },
+      ],
+    };
+
+    return dedupeNavGroupsByHref(
+      [
+        geralModule ? { ...geralModule, items: byEntitlements(geralModule.items) } : null,
+        activeFormacaoModule && formadorFormacaoItems.length > 0
+          ? {
+              ...activeFormacaoModule,
+              items: byEntitlements(formadorFormacaoItems),
+            }
+          : null,
+        comunicacaoGroup ? { ...comunicacaoGroup, items: byEntitlements(comunicacaoGroup.items) } : null,
+        formadorContaGroup,
       ].filter((g): g is NavGroup => Boolean(g && g.items.length > 0)),
     );
   }
