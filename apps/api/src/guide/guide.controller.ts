@@ -24,6 +24,7 @@ export class GuideController {
     return this.entitlements.forTenant(user.tenantId);
   }
 
+  @Public()
   @Post("chat")
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @UseGuards(OptionalJwtAuthGuard)
@@ -33,6 +34,7 @@ export class GuideController {
     return this.guide.chat(dto.message.trim(), dto.pathname, role, dto.history, ent);
   }
 
+  @Public()
   @Get("search")
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @UseGuards(OptionalJwtAuthGuard)

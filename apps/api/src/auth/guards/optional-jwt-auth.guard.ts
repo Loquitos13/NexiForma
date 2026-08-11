@@ -12,7 +12,8 @@ export class OptionalJwtAuthGuard extends AuthGuard("jwt") {
       return true;
     }
     try {
-      return (await super.canActivate(context)) as boolean;
+      await super.canActivate(context);
+      return true;
     } catch {
       req.user = null;
       return true;
@@ -22,7 +23,7 @@ export class OptionalJwtAuthGuard extends AuthGuard("jwt") {
   handleRequest<TUser = RequestUser>(
     err: unknown,
     user: TUser | false,
-  ): TUser | null {
+  ): any {
     if (err || !user) return null;
     return user;
   }

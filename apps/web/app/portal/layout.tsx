@@ -28,11 +28,14 @@ import { markSessionExpired } from "@/lib/client/session-lifecycle";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { PortalPriorityCompanion } from "@/components/portal/portal-priority-companion";
 import { MustChangePasswordModal } from "@/components/portal/must-change-password-modal";
+import { RelatorioJobsProvider } from "@/lib/relatorios/relatorio-jobs-context";
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   return (
     <TenantEntitlementsProvider>
-      <PortalLayoutInner>{children}</PortalLayoutInner>
+      <RelatorioJobsProvider>
+        <PortalLayoutInner>{children}</PortalLayoutInner>
+      </RelatorioJobsProvider>
     </TenantEntitlementsProvider>
   );
 }

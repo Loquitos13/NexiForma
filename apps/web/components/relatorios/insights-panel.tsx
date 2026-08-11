@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { FileDown, Loader2, Sparkles } from "lucide-react";
+import { FileDown, FileText, Loader2, Sparkles } from "lucide-react";
 import type { RelatorioInsightsRequest, RelatorioInsightsResponse } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { persistChartInsightsCache } from "@/components/relatorios/chart-insights-cache";
-import { downloadResponseAsFile } from "@/lib/client/download-response";
 import { parseApiError } from "@/lib/ui/backoffice";
+import { useRelatorioJobs } from "@/lib/relatorios/relatorio-jobs-context";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { cn } from "@/lib/ui/cn";
 
@@ -16,10 +16,15 @@ type Props = {
 };
 
 export function ReportInsightsPanel({ secao, className }: Props) {
+  const { gerarRelatorio, isGerando, getJobForSecao, descarregarRelatorio } =
+    useRelatorioJobs();
   const [loading, setLoading] = useState(false);
-  const [pdfLoading, setPdfLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<RelatorioInsightsResponse | null>(null);
+
+  const job = getJobForSecao(secao);
+  const pdfGenerating = isGerando(secao);
+  const isReady = job?.status === "PRONTO";
 
   async function gerar() {
     setLoading(true);
@@ -45,27 +50,6 @@ export function ReportInsightsPanel({ secao, className }: Props) {
     }
   }
 
-  async function exportarPdf() {
-    setPdfLoading(true);
-    setError(null);
-    try {
-      const res = await bffFetch("/api/v1/relatorios/insights/pdf", {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/pdf" },
-        body: JSON.stringify({ secao } satisfies RelatorioInsightsRequest),
-      });
-      if (!res.ok) {
-        setError(await parseApiError(res));
-        return;
-      }
-      await downloadResponseAsFile(res, `relatorio-${secao}.pdf`);
-    } catch {
-      setError("Não foi possível gerar o PDF.");
-    } finally {
-      setPdfLoading(false);
-    }
-  }
-
   return (
     <Card className={cn("border-violet-500/20", className)}>
       <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
@@ -75,31 +59,44 @@ export function ReportInsightsPanel({ secao, className }: Props) {
             Análise inteligente
           </CardTitle>
           <p className="text-xs text-slate-500 mt-1">
-            Interpretação automática dos dados. Exportar PDF com KPIs, gráficos e recomendações.
+            Interpretação automática dos dados. Gerar relatório com KPIs, gráficos e recomendações.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => void exportarPdf()}
-            disabled={pdfLoading || loading}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-600/60 bg-slate-800/80 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-50"
-          >
-            {pdfLoading ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" /> PDF…
-              </>
-            ) : (
-              <>
-                <FileDown className="h-3.5 w-3.5" /> Exportar PDF
-              </>
-            )}
-          </button>
+          {isReady && job ? (
+            <button
+              type="button"
+              onClick={() => descarregarRelatorio(job.id)}
+              className="flex items-center gap-1.5 rounded-lg border border-emerald-500/50 bg-emerald-950/40 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-900/50 transition-colors shadow-sm"
+              title="Descarregar relatório gerado"
+            >
+              <FileDown className="h-3.5 w-3.5 text-emerald-400" /> Descarregar relatório
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void gerarRelatorio(secao)}
+              disabled={pdfGenerating}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-600/60 bg-slate-800/80 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60 transition-colors shadow-sm"
+              title="Gerar relatório em background com IA e gráficos"
+            >
+              {pdfGenerating ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-400" /> A gerar em background…
+                </>
+              ) : (
+                <>
+                  <FileText className="h-3.5 w-3.5 text-violet-300" /> Gerar relatório
+                </>
+              )}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => void gerar()}
-            disabled={loading || pdfLoading}
-            className="rounded-lg bg-violet-600/90 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-500 disabled:opacity-50"
+            disabled={loading}
+            className="rounded-lg bg-violet-600/90 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-500 disabled:opacity-50 transition-colors"
           >
             {loading ? (
               <span className="flex items-center gap-1.5">
