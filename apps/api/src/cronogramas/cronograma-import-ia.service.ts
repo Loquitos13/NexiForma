@@ -150,7 +150,7 @@ export class CronogramaImportIaService {
       /\/$/,
       "",
     );
-    this.model = this.config.get<string>("NEXIGUIA_LLM_MODEL") ?? "qwen2.5:3b-instruct";
+    this.model = this.config.get<string>("NEXIGUIA_LLM_MODEL") ?? "qwen2.5:1.5b-instruct";
     const rawTimeout = Number(this.config.get<string>("NEXIGUIA_LLM_IMPORT_TIMEOUT_MS") ?? "180000");
     this.timeoutMs = Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : 180_000;
   }

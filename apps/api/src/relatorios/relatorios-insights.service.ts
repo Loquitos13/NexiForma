@@ -35,9 +35,9 @@ export class RelatoriosInsightsService {
       /\/$/,
       "",
     );
-    this.model = this.config.get<string>("NEXIGUIA_LLM_MODEL") ?? "qwen2.5:3b-instruct";
+    this.model = this.config.get<string>("NEXIGUIA_LLM_MODEL") ?? "qwen2.5:1.5b-instruct";
     this.timeoutMs = Math.min(
-      Number(this.config.get<string>("NEXIGUIA_LLM_TIMEOUT_MS") ?? "20000") || 20_000,
+      Number(this.config.get<string>("NEXIGUIA_LLM_TIMEOUT_MS") ?? "120000") || 120_000,
       600_000,
     );
   }

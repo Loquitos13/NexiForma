@@ -15,7 +15,7 @@ export class CrmLlmService {
       /\/$/,
       "",
     );
-    this.model = this.config.get<string>("NEXIGUIA_LLM_MODEL") ?? "qwen2.5:3b-instruct";
+    this.model = this.config.get<string>("NEXIGUIA_LLM_MODEL") ?? "qwen2.5:1.5b-instruct";
     this.timeoutMs = Number(this.config.get<string>("NEXIGUIA_LLM_TIMEOUT_MS") ?? "120000");
   }
 
