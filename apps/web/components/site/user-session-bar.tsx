@@ -4,8 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { PortalNotificationsBell } from "@/components/portal/portal-notifications-bell";
-import { CronogramaImportIaJobsChip } from "@/components/portal/cronograma-import-ia-jobs-chip";
-import { RelatorioJobsChip } from "@/components/portal/relatorio-jobs-chip";
+import { PortalBackgroundJobsCenter } from "@/components/portal/portal-background-jobs-center";
 import { usePendenciasDocumentacaoConfirm } from "@/components/portal/pendencias-documentacao-dialog";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { logoutSession } from "@/lib/client/logout";
@@ -235,8 +234,9 @@ export function UserSessionBar({
         </div>
 
         <div className="portal-action-row ui-header-collapsible-target flex-shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
-          {area === "portal" ? <RelatorioJobsChip /> : null}
-          {showImportIaJobsChip ? <CronogramaImportIaJobsChip /> : null}
+          {area === "portal" ? (
+            <PortalBackgroundJobsCenter allowCronogramaJobs={Boolean(showImportIaJobsChip)} />
+          ) : null}
           {showStaffPortalTools ? <PortalNotificationsBell /> : null}
           {uiTheme ? (
             <button
