@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ShieldCheck, Bell, Clock, CheckCircle, XCircle } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { parseApiError } from "@/lib/ui/backoffice";
+import { COMPLIANCE_UPDATE_EVENT } from "@/lib/client/use-portal-notifications";
 import { Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle, PaginatedDataTable, PageHeader, type Column } from "@/components/ui";
 import { cn } from "@/lib/ui/cn";
 
@@ -82,6 +83,14 @@ export default function CompliancePage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const handleUpdate = () => { void load(); };
+    window.addEventListener(COMPLIANCE_UPDATE_EVENT, handleUpdate);
+    return () => {
+      window.removeEventListener(COMPLIANCE_UPDATE_EVENT, handleUpdate);
+    };
+  }, [load]);
 
   async function enviarDigest() {
     setBusy(true); setError(null); setMsg(null);

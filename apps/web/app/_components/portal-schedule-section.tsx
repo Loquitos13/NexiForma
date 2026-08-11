@@ -38,6 +38,7 @@ import {
   readPendenciaFocusFromSearch,
   type PendenciaFocus,
 } from "@/lib/client/pendencias-documentacao-href";
+import { notifyComplianceUpdated } from "@/lib/client/use-portal-notifications";
 import { resolveSalaOnline, isModalidadeOnline, providerParaModalidade, ESTADOS_PRESENCA, ESTADO_PRESENCA_LABELS, isEstadoPresenca, labelOrigemPresenca, origemPresencaBadgeVariant, ALERTA_PRESENCA_LABELS, formatarDuracaoHhMmSs, type EstadoPresenca, type AlertaPresencaCodigo } from "@nexiforma/shared";
 import { TempoPresencaAoVivo } from "@/components/lms/tempo-presenca-ao-vivo";
 import { Alert } from "@/components/ui/page-header";
@@ -271,6 +272,8 @@ type Props = {
   cursoId?: string;
   /** Perfil do formador autenticado (para restringir operação à sessão atribuída). */
   formadorProfileId?: string | null;
+  /** Callback para sincronizar compliance/estado da acção no ecrã pai. */
+  onUpdated?: () => void | Promise<void>;
 };
 
 const MODALIDADES = [
@@ -381,6 +384,7 @@ export function PortalScheduleSection({
   embedded = false,
   cursoId,
   formadorProfileId = null,
+  onUpdated,
 }: Props) {
   const searchParams = useSearchParams();
   const [selectedAcaoId, setSelectedAcaoId] = useState(fixedAcaoId ?? "");
@@ -1296,6 +1300,8 @@ export function PortalScheduleSection({
               : "Sessão iniciada - contador do formador activo.",
         );
         await loadSessoes(selectedCronogramaId, selectedTurmaId || undefined);
+        void onUpdated?.();
+        notifyComplianceUpdated(acaoId);
         const joinUrl = data.salaOnline?.joinUrl ?? sala?.joinUrl;
         if (joinUrl) {
           const opened = openMeetingUrl(joinUrl);
@@ -1338,6 +1344,8 @@ export function PortalScheduleSection({
       if (selectedTurmaId && sessaoAtiva?.lmsAtivo) {
         await importarLms();
       }
+      void onUpdated?.();
+      notifyComplianceUpdated(acaoId);
     } finally {
       setBusy(false);
     }
@@ -1485,6 +1493,8 @@ export function PortalScheduleSection({
       if (res.ok && selectedFolhaId) {
         setFolhaValidacaoErr(null);
         await loadFolhaDetalhe(selectedFolhaId);
+        void onUpdated?.();
+        notifyComplianceUpdated(acaoId);
       } else if (!res.ok) setErr(await parseErr(res));
     } finally {
       setBusy(false);
@@ -1500,8 +1510,11 @@ export function PortalScheduleSection({
         headers: { "Content-Type": "application/json", accept: "application/json" },
         body: JSON.stringify({ estado: null }),
       });
-      if (res.ok && selectedFolhaId) await loadFolhaDetalhe(selectedFolhaId);
-      else if (!res.ok) setErr(await parseErr(res));
+      if (res.ok && selectedFolhaId) {
+        await loadFolhaDetalhe(selectedFolhaId);
+        void onUpdated?.();
+        notifyComplianceUpdated(acaoId);
+      } else if (!res.ok) setErr(await parseErr(res));
     } finally {
       setBusy(false);
     }
@@ -1585,6 +1598,8 @@ export function PortalScheduleSection({
       );
       await loadFolhaDetalhe(selectedFolhaId);
       await loadFolhas(selectedSessaoId, selectedTurmaId);
+      void onUpdated?.();
+      notifyComplianceUpdated(acaoId);
     } finally {
       setBusy(false);
     }
@@ -1608,6 +1623,8 @@ export function PortalScheduleSection({
       setMsg("Folha de presenças aprovada e assinada pelo gestor.");
       await loadFolhaDetalhe(selectedFolhaId);
       await loadFolhas(selectedSessaoId, selectedTurmaId);
+      void onUpdated?.();
+      notifyComplianceUpdated(acaoId);
     } finally {
       setBusy(false);
     }
@@ -1688,6 +1705,8 @@ export function PortalScheduleSection({
         await loadCronogramas(acaoId);
         await loadArquivosCronograma(acaoId);
       }
+      void onUpdated?.();
+      notifyComplianceUpdated(acaoId);
     } finally {
       setBusy(false);
     }
@@ -1803,6 +1822,8 @@ export function PortalScheduleSection({
       setSumarioModalOpen(false);
       setMsg("Sumário registado e assinado.");
       await loadSumario(selectedSessaoId);
+      void onUpdated?.();
+      notifyComplianceUpdated(acaoId);
     } finally {
       setBusy(false);
     }
@@ -1841,6 +1862,8 @@ export function PortalScheduleSection({
       }
       setMsg("PDF assinado carregado. Sumário fechado.");
       await loadSumario(selectedSessaoId);
+      void onUpdated?.();
+      notifyComplianceUpdated(acaoId);
     } finally {
       setBusy(false);
     }

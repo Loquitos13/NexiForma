@@ -16,6 +16,7 @@ import {
 import { PageContentSkeleton } from "@/components/ui/page-skeleton";
 import { GestorRelatoriosDashboardBlock } from "@/components/dashboard/gestor-relatorios-block";
 import { FormadorLmsProgressoBlock } from "@/components/dashboard/formador-lms-progresso-block";
+import { CoordenadorFinanceiroDashboard } from "@/components/dashboard/coordenador-financeiro-dashboard";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
@@ -87,7 +88,7 @@ function StatCard({ icon: Icon, label, value, color = "text-slate-100" }: {
 }
 
 export default function PortalDashboardPage() {
-  const { canManage } = useTenantRole();
+  const { canManage, isCoordenadorFinanceiro } = useTenantRole();
   const { entitlements } = useTenantEntitlements();
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [compliance, setCompliance] = useState<ComplianceResumo | null>(null);
@@ -156,6 +157,10 @@ export default function PortalDashboardPage() {
   }
 
   const agg = dashboard?.aggregates;
+
+  if (isCoordenadorFinanceiro) {
+    return <CoordenadorFinanceiroDashboard legalName={dashboard?.tenant?.legalName} />;
+  }
 
   if (loading && !dashboard) {
     return <PageContentSkeleton variant="dashboard" />;

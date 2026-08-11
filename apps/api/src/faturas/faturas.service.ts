@@ -192,6 +192,139 @@ export class FaturasService {
     };
   }
 
+  async getDashboardFinanceiro(user: RequestUser) {
+    const tenantId = requireTenantId(user);
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    const [
+      faturasEmitidasTotalCount,
+      faturasEmitidasMesAtualRows,
+      faturasTotalMesAtualCount,
+      todasFaturasEmitidasRows,
+      propostasAceites,
+      ultimasFaturas,
+    ] = await Promise.all([
+      // 1. Total faturas emitidas históricas
+      this.prisma.faturaComercial.count({
+        where: {
+          tenantId,
+          estado: { in: ["EMITIDA", "COMUNICADA_AT"] },
+        },
+      }),
+      // 2. Faturas emitidas no mês atual
+      this.prisma.faturaComercial.findMany({
+        where: {
+          tenantId,
+          estado: { in: ["EMITIDA", "COMUNICADA_AT"] },
+          dataEmissao: {
+            gte: startOfMonth,
+            lte: endOfMonth,
+          },
+        },
+        select: {
+          id: true,
+          valorCentavos: true,
+          ivaCentavos: true,
+          retencaoCentavos: true,
+        },
+      }),
+      // 3. Número total de faturas no mês atual (qualquer estado)
+      this.prisma.faturaComercial.count({
+        where: {
+          tenantId,
+          createdAt: {
+            gte: startOfMonth,
+            lte: endOfMonth,
+          },
+        },
+      }),
+      // 4. Todas as faturas emitidas para cálculo de receita total
+      this.prisma.faturaComercial.aggregate({
+        where: {
+          tenantId,
+          estado: { in: ["EMITIDA", "COMUNICADA_AT"] },
+        },
+        _sum: {
+          valorCentavos: true,
+          ivaCentavos: true,
+        },
+      }),
+      // 5. Propostas aceites no CRM a aguardar faturação
+      this.prisma.propostaComercial.findMany({
+        where: {
+          tenantId,
+          estado: "ACEITE",
+          OR: [
+            { fatura: null },
+            { fatura: { estado: "RASCUNHO" } },
+          ],
+        },
+        orderBy: [{ aceiteEm: "desc" }, { updatedAt: "desc" }],
+        take: 50,
+        select: {
+          id: true,
+          codigo: true,
+          titulo: true,
+          valorCentavos: true,
+          moeda: true,
+          aceiteEm: true,
+          updatedAt: true,
+          entidadeCliente: {
+            select: {
+              id: true,
+              nome: true,
+              nif: true,
+              email: true,
+            },
+          },
+          fatura: {
+            select: {
+              id: true,
+              numero: true,
+              estado: true,
+            },
+          },
+        },
+      }),
+      // 6. Últimas faturas
+      this.prisma.faturaComercial.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+        take: 8,
+        include: FATURA_INCLUDE,
+      }),
+    ]);
+
+    const faturasEmitidasMesAtualCount = faturasEmitidasMesAtualRows.length;
+    const ivaAcumuladoMesAtualCentavos = faturasEmitidasMesAtualRows.reduce(
+      (acc, f) => acc + (f.ivaCentavos || 0),
+      0,
+    );
+    const receitaMesAtualCentavos = faturasEmitidasMesAtualRows.reduce(
+      (acc, f) => acc + (f.valorCentavos || 0),
+      0,
+    );
+    const totalFaturadoMesAtualCentavos = receitaMesAtualCentavos + ivaAcumuladoMesAtualCentavos;
+    const receitaTotalCentavos = todasFaturasEmitidasRows._sum.valorCentavos ?? 0;
+    const ivaTotalCentavos = todasFaturasEmitidasRows._sum.ivaCentavos ?? 0;
+
+    return {
+      faturasEmitidasTotal: faturasEmitidasTotalCount,
+      faturasEmitidasMesAtual: faturasEmitidasMesAtualCount,
+      faturasTotalMesAtual: faturasTotalMesAtualCount,
+      ivaAcumuladoMesAtualCentavos,
+      receitaMesAtualCentavos,
+      totalFaturadoMesAtualCentavos,
+      receitaTotalCentavos,
+      ivaTotalCentavos,
+      mesAtualLabel: now.toLocaleDateString("pt-PT", { month: "long", year: "numeric" }),
+      faturasAEmitir: propostasAceites,
+      ultimasFaturas,
+    };
+  }
+
   async getOne(user: RequestUser, id: string) {
     const tenantId = requireTenantId(user);
     const row = await this.prisma.faturaComercial.findFirst({

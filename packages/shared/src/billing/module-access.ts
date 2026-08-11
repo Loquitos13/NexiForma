@@ -346,7 +346,7 @@ export function defaultPortalHome(ent: TenantEntitlements, role: JwtRole | null)
     return ent.canAccessCrm ? "/portal/crm" : "/acesso-negado";
   }
   if (role === "coordenador_financeiro") {
-    return ent.canAccessFaturacao ? "/portal/crm/faturas" : "/acesso-negado";
+    return ent.canAccessFaturacao ? "/portal" : "/acesso-negado";
   }
   if (role === "coordenador_pedagogico") {
     return ent.canAccessCoreFormation || ent.canAccessFormacaoTeams

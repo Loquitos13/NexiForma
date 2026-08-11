@@ -184,7 +184,7 @@ export function NexiGuia() {
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [fabShiftY, setFabShiftY] = useState(0);
+  const [overlapped, setOverlapped] = useState(false);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
@@ -212,52 +212,58 @@ export function NexiGuia() {
   }, []);
 
   useEffect(() => {
-    if (hidden || open || mobileNavOpen) {
-      setFabShiftY(0);
+    if (hidden || mobileNavOpen) {
+      setOverlapped(false);
       return;
     }
 
     const measure = () => {
       const nodes = document.querySelectorAll<HTMLElement>(
-        "button, a[href], [role='button'], input, select, textarea",
+        "button, a[href], [role='button'], input, select, textarea, [role='link'], [role='tab']",
       );
       const isMobile = window.matchMedia("(max-width: 1023px)").matches;
       const fabW = isMobile ? FAB_TAB_WIDTH : FAB_SIZE;
       const fabH = isMobile ? FAB_TAB_SIZE : FAB_SIZE;
       const fabRight = isMobile ? 0 : FAB_MARGIN;
-      const maxShift = Math.max(0, window.innerHeight - fabH - FAB_MARGIN * 2 - 48);
-      let shift = 0;
+      const hasBottomNav = Boolean(document.querySelector(".portal-mobile-bottom-nav"));
+      const bottomOffset = isMobile && hasBottomNav ? 74 : FAB_MARGIN;
 
-      for (let pass = 0; pass < 8; pass++) {
-        const fabRect = new DOMRect(
-          window.innerWidth - fabRight - fabW,
-          window.innerHeight - FAB_MARGIN - fabH - shift,
-          fabW,
-          fabH,
-        );
-        let bumped = false;
-        for (const el of nodes) {
-          if (el.closest("[data-nexiguia-root]")) continue;
-          const style = window.getComputedStyle(el);
-          if (
-            style.visibility === "hidden" ||
-            style.display === "none" ||
-            style.pointerEvents === "none"
-          ) {
-            continue;
-          }
-          const r = el.getBoundingClientRect();
-          if (r.width < 8 || r.height < 8) continue;
-          if (!rectsOverlap(fabRect, r)) continue;
-          // Empurrar o FAB para cima até deixar o controlo livre.
-          shift = Math.min(maxShift, shift + (fabRect.bottom - r.top + 16));
-          bumped = true;
+      const fabRect = new DOMRect(
+        window.innerWidth - fabRight - fabW,
+        window.innerHeight - bottomOffset - fabH,
+        fabW,
+        fabH,
+      );
+
+      let isOverlapping = false;
+      for (const el of nodes) {
+        if (el.closest("[data-nexiguia-root]")) continue;
+        const style = window.getComputedStyle(el);
+        if (
+          style.visibility === "hidden" ||
+          style.display === "none" ||
+          style.pointerEvents === "none" ||
+          style.opacity === "0"
+        ) {
+          continue;
+        }
+        const r = el.getBoundingClientRect();
+        if (r.width < 8 || r.height < 8) continue;
+        if (
+          r.bottom <= 0 ||
+          r.top >= window.innerHeight ||
+          r.right <= 0 ||
+          r.left >= window.innerWidth
+        ) {
+          continue;
+        }
+        if (rectsOverlap(fabRect, r, 6)) {
+          isOverlapping = true;
           break;
         }
-        if (!bumped) break;
       }
 
-      setFabShiftY((prev) => (prev === shift ? prev : shift));
+      setOverlapped((prev) => (prev === isOverlapping ? prev : isOverlapping));
     };
 
     let raf = 0;
@@ -273,14 +279,14 @@ export function NexiGuia() {
     window.addEventListener("resize", schedule);
     window.addEventListener("scroll", schedule, true);
     const mo = new MutationObserver(schedule);
-    mo.observe(document.body, { childList: true, subtree: true });
+    mo.observe(document.body, { childList: true, subtree: true, attributes: true });
     return () => {
       window.removeEventListener("resize", schedule);
       window.removeEventListener("scroll", schedule, true);
       mo.disconnect();
       if (raf) window.cancelAnimationFrame(raf);
     };
-  }, [hidden, open, mobileNavOpen, pathname]);
+  }, [hidden, mobileNavOpen, pathname]);
 
   useEffect(() => {
     setRole(decodeJwtRole(getAccessToken()));
@@ -400,10 +406,10 @@ export function NexiGuia() {
     return () => window.removeEventListener(NEXI_GUIA_ASK_EVENT, onAsk);
   }, [submit, persistHidden]);
 
-  const fabSuppressed = mobileNavOpen;
-  /** Semi-pill fica visível com o chat aberto (fecha ao tocar); só some se hidden. */
+  const fabSuppressed = mobileNavOpen || (overlapped && !open);
+  /** Semi-pill fica visível com o chat aberto (fecha ao tocar); só some se hidden ou se sobreposta com opções. */
   const showPill = !fabSuppressed && !hidden;
-  const showChat = open && !fabSuppressed;
+  const showChat = open && !mobileNavOpen;
 
   function toggleChat() {
     setOpen((v) => !v);
@@ -437,7 +443,7 @@ export function NexiGuia() {
           }}
           className="nexiguia-fab fixed flex items-center justify-center transition-all duration-300"
           style={{
-            bottom: `calc(${FAB_MARGIN + fabShiftY}px + env(safe-area-inset-bottom, 0px))`,
+            bottom: `calc(${FAB_MARGIN}px + env(safe-area-inset-bottom, 0px))`,
             color: "var(--ui-accent)",
             borderColor: "var(--ui-accent)",
             background:
@@ -460,7 +466,7 @@ export function NexiGuia() {
         <div
           className="nexiguia-panel fixed flex w-[min(100vw-2.5rem,24rem)] flex-col overflow-hidden rounded-2xl border shadow-2xl"
           style={{
-            bottom: `calc(${FAB_MARGIN + 12 + fabShiftY}px + env(safe-area-inset-bottom, 0px) + var(--nexiguia-fab-h, 2.75rem))`,
+            bottom: `calc(${FAB_MARGIN + 12}px + env(safe-area-inset-bottom, 0px) + var(--nexiguia-fab-h, 2.75rem))`,
             borderColor: "color-mix(in srgb, var(--ui-border, #334155) 80%, transparent)",
             background: "color-mix(in srgb, var(--ui-panel, #0c1220) 97%, transparent)",
           }}

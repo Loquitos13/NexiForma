@@ -29,6 +29,7 @@ import {
   DGERT_REQUISITO_PARAM,
   resolveDgertRequisitoHref,
 } from "@/lib/dossie/dgert-requisito";
+import { COMPLIANCE_UPDATE_EVENT } from "@/lib/client/use-portal-notifications";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { cn } from "@/lib/ui/cn";
 import {
@@ -40,8 +41,11 @@ import {
   CardTitle,
   estadoBadge,
   PageHeader,
+  Button,
 } from "@/components/ui";
 import { PageContentSkeleton } from "@/components/ui/page-skeleton";
+
+type AcaoOption = { id: string; codigoInterno: string; titulo: string };
 
 type AcaoDetail = {
   id: string;
@@ -51,14 +55,8 @@ type AcaoDetail = {
   dataInicio: string;
   dataFim: string;
   prazoConclusaoLms?: string | null;
+  curso: { id: string; codigo?: string; designacao: string; cargaHoras: number; codigoUfcd?: string | null };
   configuracaoMatricula?: unknown;
-  curso: {
-    id: string;
-    designacao: string;
-    codigoUfcd: string | null;
-    cargaHoras: number;
-    configuracaoMatricula?: unknown;
-  };
   turmas: Array<{ id: string; codigo: string; _count?: { matriculas: number } }>;
   cronogramas: Array<{ id: string; versao: number; aprovadoEm: string | null; _count?: { sessoes: number } }>;
 };
@@ -138,17 +136,14 @@ export default function AcaoDetailPage() {
   const defaultTab: Tab = isFormador ? "cronograma" : "resumo";
   const tabFromUrl = normalizeAcaoTabParam(searchParams.get("tab"));
   const tab: Tab = useMemo(() => {
-    if (tabFromUrl && tabs.some((x) => x.id === tabFromUrl)) return tabFromUrl as Tab;
-    return defaultTab;
+    const candidate = tabs.find((t) => t.id === tabFromUrl);
+    return candidate ? candidate.id : defaultTab;
   }, [tabFromUrl, tabs, defaultTab]);
 
   const setTab = useCallback(
     (next: Tab) => {
       const q = new URLSearchParams(searchParams.toString());
       q.set("tab", next);
-      // Remove deep-link de requisito ao mudar de tab na UI, para não
-      // «bloquear» o painel (ex.: abrir nova sessão) após um salto da checklist.
-      // Mantém sessaoId/focus para o cronograma recuperar o contexto.
       q.delete(DGERT_REQUISITO_PARAM);
       const qs = q.toString();
       router.replace(qs ? `/portal/acoes/${acaoId}?${qs}` : `/portal/acoes/${acaoId}`, {
@@ -158,7 +153,6 @@ export default function AcaoDetailPage() {
     [acaoId, router, searchParams],
   );
 
-  // Se a URL pede uma tab sem permissão, corrige o query param.
   useEffect(() => {
     if (!tabFromUrl) return;
     if (tabs.some((x) => x.id === tabFromUrl)) return;
@@ -167,11 +161,10 @@ export default function AcaoDetailPage() {
 
   const dgertRequisito = useDgertRequisitoId();
 
-  // Destaca e faz scroll ao alvo do deep-link DGERT (checklist → ecrã correcto).
   useEffect(() => {
     if (!dgertRequisito) return;
     const t = window.setTimeout(() => {
-      const el = document.querySelector(`[data-dgert-target="${dgertRequisito}"]`);
+      const el = document.querySelector(`[data-dgert-requisito="${dgertRequisito}"]`);
       if (el instanceof HTMLElement) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
       }
@@ -186,6 +179,22 @@ export default function AcaoDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const refreshCompliance = useCallback(async () => {
+    if (!acaoId || !canManage) return;
+    try {
+      const [compRes, conclRes] = await Promise.all([
+        bffFetch(`/api/v1/compliance/acoes-formacao/${acaoId}`, { headers: { accept: "application/json" } }),
+        bffFetch(`/api/v1/acoes-formacao/${acaoId}/conclusao-prontidao`, {
+          headers: { accept: "application/json" },
+        }),
+      ]);
+      if (compRes.ok) setCompliance((await compRes.json()) as ComplianceDetail);
+      if (conclRes.ok) setConclusao((await conclRes.json()) as ConclusaoProntidao);
+    } catch {
+      /* ignore background refresh errors */
+    }
+  }, [acaoId, canManage]);
 
   const load = useCallback(async () => {
     if (!acaoId) return;
@@ -218,6 +227,25 @@ export default function AcaoDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (tab === "compliance") {
+      void refreshCompliance();
+    }
+  }, [tab, refreshCompliance]);
+
+  useEffect(() => {
+    const onComplianceUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent<{ acaoId?: string }>;
+      if (!customEvent.detail?.acaoId || customEvent.detail.acaoId === acaoId) {
+        void refreshCompliance();
+      }
+    };
+    window.addEventListener(COMPLIANCE_UPDATE_EVENT, onComplianceUpdated);
+    return () => {
+      window.removeEventListener(COMPLIANCE_UPDATE_EVENT, onComplianceUpdated);
+    };
+  }, [acaoId, refreshCompliance]);
 
   useEffect(() => {
     if (!isFormador) {
@@ -461,6 +489,7 @@ export default function AcaoDetailPage() {
           formadorProfileId={formadorProfileId}
           fixedAcaoId={acao.id}
           cursoId={acao.curso.id}
+          onUpdated={refreshCompliance}
           embedded
         />
       ) : null}

@@ -187,15 +187,20 @@ export function filterGroups(
     );
   }
 
-  // Coordenador Financeiro: Apenas departamento financeiro (Faturação + Clientes) + RGPD + Notificações
+  // Coordenador Financeiro: Dashboard + Faturação (Faturação + Clientes) + Notificações + RGPD
   if (isCoordenadorFinanceiro(role)) {
+    const geralModule = groups.find((g) => g.label === "Geral");
     const faturacaoModule = groups.find((g) => g.module === "faturacao");
     if (!entitlements?.canAccessFaturacao || !faturacaoModule) {
-      return [privacyGroup].filter((g) => g.items.length > 0);
+      return [
+        geralModule ? { ...geralModule, items: byEntitlements(geralModule.items) } : null,
+        privacyGroup,
+      ].filter((g): g is NavGroup => Boolean(g && g.items.length > 0));
     }
     const enriched = enrichFaturacaoGroup(faturacaoModule, entitlements);
     return dedupeNavGroupsByHref(
       [
+        geralModule ? { ...geralModule, items: byEntitlements(geralModule.items) } : null,
         {
           ...enriched,
           items: byEntitlements(enriched.items),

@@ -51,6 +51,12 @@ export class FaturasController {
     return this.faturas.list(user, { entidadeClienteId, estado, q, page, pageSize });
   }
 
+  @Get("faturas/dashboard-financeiro")
+  @Roles("tenant_manager", "coordenador_financeiro")
+  getDashboardFinanceiro(@CurrentUser() user: RequestUser): Promise<unknown> {
+    return this.faturas.getDashboardFinanceiro(user);
+  }
+
   @Get("faturas/export/saft")
   @Roles("tenant_manager", "coordenador_financeiro")
   async exportSaft(

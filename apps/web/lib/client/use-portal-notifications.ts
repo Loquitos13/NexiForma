@@ -16,9 +16,17 @@ export type ComplianceAlerta = {
 
 const DISMISS_KEY = "nexiforma-priority-companion-dismissed";
 export const NOTIF_UPDATE_EVENT = "nexiforma-notif-updated";
+export const COMPLIANCE_UPDATE_EVENT = "nexiforma-compliance-updated";
 
 export function notifyNotificationsUpdated() {
   if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(NOTIF_UPDATE_EVENT));
+  }
+}
+
+export function notifyComplianceUpdated(acaoId?: string) {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(COMPLIANCE_UPDATE_EVENT, { detail: { acaoId } }));
     window.dispatchEvent(new Event(NOTIF_UPDATE_EVENT));
   }
 }
