@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Bell, BellCheck } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { cn } from "@/lib/ui/cn";
+import { notifyNotificationsUpdated } from "@/lib/client/use-portal-notifications";
 
 type Notif = {
   id: string;
@@ -181,6 +182,7 @@ export function PortalNotificationsBell() {
         method: "PATCH",
         headers: { accept: "application/json" },
       });
+      notifyNotificationsUpdated();
       await refresh();
     } finally {
       markingRef.current.delete(id);

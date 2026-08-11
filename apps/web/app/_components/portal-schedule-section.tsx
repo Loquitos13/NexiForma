@@ -168,6 +168,7 @@ type SumarioRow = {
 };
 type FolhaRow = {
   id: string;
+  sessaoId?: string | null;
   fechadaEm: string | null;
   validadaFormadorEm: string | null;
   aprovadaGestorEm: string | null;

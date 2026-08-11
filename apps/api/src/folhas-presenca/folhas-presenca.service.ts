@@ -39,6 +39,7 @@ export class FolhasPresencaService {
       take: 20,
       select: {
         id: true,
+        sessaoId: true,
         turmaId: true,
         origem: true,
         fechadaEm: true,

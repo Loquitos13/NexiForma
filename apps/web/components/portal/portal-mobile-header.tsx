@@ -9,6 +9,7 @@ import {
 } from "@/components/portal/portal-user-menu";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { subscribeSessionExpired } from "@/lib/client/session-lifecycle";
+import { usePortalNotifications } from "@/lib/client/use-portal-notifications";
 import { resolvePortalBreadcrumb } from "@/lib/ui/nav-items";
 import { cn } from "@/lib/ui/cn";
 import type { JwtRole, TenantEntitlements } from "@nexiforma/shared";
@@ -35,6 +36,7 @@ export function PortalMobileHeader({
 }: Props) {
   const [user, setUser] = useState<MeUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { hasActivity, totalBadgeCount } = usePortalNotifications();
 
   const loadMe = useCallback(async () => {
     const res = await bffFetch("/api/auth/me", { headers: { accept: "application/json" } });
@@ -86,12 +88,21 @@ export function PortalMobileHeader({
 
         <button
           type="button"
-          className="portal-user-avatar shrink-0 text-xs font-bold"
+          className="portal-user-avatar relative shrink-0 text-xs font-bold transition-transform active:scale-95"
           aria-label="Abrir menu da conta"
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen(true)}
         >
           {portalUserInitials(user)}
+          {hasActivity ? (
+            <span
+              className="pointer-events-none absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center"
+              title={`${totalBadgeCount} notificações / alertas por ver`}
+            >
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-pink-400 opacity-80 duration-1000" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-gradient-to-tr from-pink-600 to-rose-400 ring-2 ring-[var(--ui-panel,#0f172a)] shadow-[0_0_10px_rgba(244,63,94,0.9)]" />
+            </span>
+          ) : null}
         </button>
       </header>
 
