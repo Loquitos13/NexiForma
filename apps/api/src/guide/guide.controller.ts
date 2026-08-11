@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, Query, Req, UseGuards } from "@nestjs/comm
 import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import type { JwtRole } from "@nexiforma/shared";
+import { Public } from "../auth/decorators/public.decorator";
 import { OptionalJwtAuthGuard } from "../auth/guards/optional-jwt-auth.guard";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { BillingEntitlementsService } from "../billing/billing-entitlements.service";
@@ -10,6 +11,7 @@ import { GuideService } from "./guide.service";
 
 type ReqWithUser = Request & { user?: RequestUser | null };
 
+@Public()
 @Controller("guide")
 export class GuideController {
   constructor(
