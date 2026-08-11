@@ -21,7 +21,10 @@ import {
   readMobileNavOpen,
   type MobileNavDetail,
 } from "@/lib/client/mobile-nav";
+import { useActiveGuidedFlow } from "@/lib/client/active-guided-flow-context";
+import { NexiGuiaSpeechBubble } from "./nexi-guia-speech-bubble";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/ui/cn";
 
 const NEXIGUIA_HIDDEN_KEY = "nexiguia-fab-hidden";
 /** Desktop: círculo. Mobile: tab colada à direita (mais compacta). */
@@ -177,6 +180,7 @@ const WELCOME: ChatMessage = {
 export function NexiGuia() {
   const router = useRouter();
   const pathname = usePathname();
+  const { activeModule, isBubbleOpen, toggleBubble } = useActiveGuidedFlow();
 
   const [role, setRole] = useState<JwtRole | null>(() =>
     typeof window !== "undefined" ? decodeJwtRole(getAccessToken()) : null,
@@ -421,6 +425,9 @@ export function NexiGuia() {
 
   return (
     <div data-nexiguia-root className={showChat ? "nexiguia-root-open" : undefined}>
+      {/* Balão de fala do fluxo guiado */}
+      {!showChat && !mobileNavOpen ? <NexiGuiaSpeechBubble /> : null}
+
       {/* Chat aberto: blur no fundo (z-index: 0 no stacking context do root) */}
       {showChat ? (
         <button
@@ -435,21 +442,35 @@ export function NexiGuia() {
       {showPill ? (
         <button
           type="button"
-          onClick={toggleChat}
-          title="NexiGuia - clica com o botão direito para esconder"
+          onClick={() => {
+            if (activeModule && !open && !isBubbleOpen) {
+              toggleBubble();
+              return;
+            }
+            toggleChat();
+          }}
+          title={
+            activeModule
+              ? `NexiGuia (Fluxo ativo: ${activeModule.title}) - clica para abrir chat ou balão`
+              : "NexiGuia - clica com o botão direito para esconder"
+          }
           onContextMenu={(e) => {
             e.preventDefault();
             persistHidden(true);
           }}
-          className="nexiguia-fab fixed flex items-center justify-center transition-all duration-300"
+          className={cn(
+            "nexiguia-fab fixed flex items-center justify-center transition-all duration-300",
+            activeModule && !open && "ring-2 ring-blue-400 ring-offset-2 ring-offset-slate-950",
+          )}
           style={{
             bottom: `calc(${FAB_MARGIN}px + env(safe-area-inset-bottom, 0px))`,
             color: "var(--ui-accent)",
             borderColor: "var(--ui-accent)",
             background:
               "linear-gradient(145deg, color-mix(in srgb, var(--ui-panel, var(--ui-bg)) 88%, var(--ui-accent-soft)) 0%, color-mix(in srgb, var(--ui-bg) 92%, var(--ui-accent-soft)) 100%)",
-            boxShadow:
-              "0 0 0 1px color-mix(in srgb, var(--ui-accent) 25%, transparent), 0 0 18px color-mix(in srgb, var(--ui-accent) 40%, transparent)",
+            boxShadow: activeModule
+              ? "0 0 0 2px rgba(59, 130, 246, 0.5), 0 0 24px rgba(59, 130, 246, 0.6)"
+              : "0 0 0 1px color-mix(in srgb, var(--ui-accent) 25%, transparent), 0 0 18px color-mix(in srgb, var(--ui-accent) 40%, transparent)",
           }}
           aria-label={open ? "Fechar NexiGuia" : "Abrir NexiGuia"}
           aria-expanded={open}
@@ -457,7 +478,10 @@ export function NexiGuia() {
           {open ? (
             <X className="nexiguia-fab-icon" style={{ color: "var(--ui-accent)" }} />
           ) : (
-            <Compass className="nexiguia-fab-icon" style={{ color: "var(--ui-accent)" }} />
+            <Compass
+              className={cn("nexiguia-fab-icon", activeModule && "animate-spin-slow")}
+              style={{ color: "var(--ui-accent)" }}
+            />
           )}
         </button>
       ) : null}

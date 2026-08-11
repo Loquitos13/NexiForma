@@ -26,6 +26,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { useActiveGuidedFlow } from "@/lib/client/active-guided-flow-context";
 import { Button, Card, CardContent, PageHeader } from "@/components/ui";
 import {
   audienceFromRole,
@@ -182,6 +183,8 @@ export function GuidedFlowHub({ onOpen }: Props) {
     );
   }
 
+  const { activeModule, closeFlow } = useActiveGuidedFlow();
+
   return (
     <div className="space-y-8 p-6 max-w-5xl">
       <PageHeader
@@ -198,6 +201,36 @@ export function GuidedFlowHub({ onOpen }: Props) {
           </div>
         }
       />
+
+      {activeModule ? (
+        <div className="rounded-2xl border border-blue-500/30 bg-gradient-to-r from-blue-950/40 via-slate-900/60 to-teal-950/30 p-4 shadow-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-500/20 text-blue-400">
+              <Sparkles className="h-5 w-5 animate-pulse" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-blue-300">Fluxo em progresso no NexiGuia</p>
+              <p className="text-sm font-semibold text-slate-100">{activeModule.title}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onOpen({ kind: "guide", id: activeModule.id })}
+              className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 transition-colors"
+            >
+              Ver passos
+            </button>
+            <button
+              type="button"
+              onClick={closeFlow}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800 transition-colors"
+            >
+              Parar
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {byCategory.map(({ cat, items }) => (
         <section key={cat}>
