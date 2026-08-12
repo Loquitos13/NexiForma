@@ -275,12 +275,6 @@ export function UserSessionBar({
               Conta
             </Link>
           ) : null}
-          <Link
-            href={isPlatform ? "/plataforma" : "/portal"}
-            className="ui-session-action text-[11px] font-medium transition-colors"
-          >
-            Início
-          </Link>
           <button
             type="button"
             disabled={busy}

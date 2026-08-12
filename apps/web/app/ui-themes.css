@@ -99,40 +99,40 @@ html[data-ui-theme="forest"] {
 
 html[data-ui-theme="snow-azure"] {
   color-scheme: light;
-  --ui-bg: #f1f5f9;
+  --ui-bg: #f8fafc;
   --ui-panel: #ffffff;
   --ui-fg: #0f172a;
-  --ui-muted: #64748b;
+  --ui-muted: #475569;
   --ui-accent: #2563eb;
   --ui-accent-soft: #dbeafe;
   --ui-sidebar: #ffffff;
-  --ui-border: rgba(15, 23, 42, 0.12);
+  --ui-border: rgba(15, 23, 42, 0.14);
   --ui-body-glow: #bfdbfe;
 }
 
 html[data-ui-theme="snow-rose"] {
   color-scheme: light;
-  --ui-bg: #fdf2f8;
+  --ui-bg: #fdf4f8;
   --ui-panel: #ffffff;
-  --ui-fg: #1f1018;
-  --ui-muted: #9d174d;
+  --ui-fg: #1e1119;
+  --ui-muted: #4a3b45;
   --ui-accent: #e11d48;
   --ui-accent-soft: #ffe4e6;
   --ui-sidebar: #ffffff;
-  --ui-border: rgba(31, 16, 24, 0.12);
+  --ui-border: rgba(31, 16, 24, 0.14);
   --ui-body-glow: #fecdd3;
 }
 
 html[data-ui-theme="snow-emerald"] {
   color-scheme: light;
-  --ui-bg: #ecfdf5;
+  --ui-bg: #f0fdf4;
   --ui-panel: #ffffff;
-  --ui-fg: #052e16;
-  --ui-muted: #047857;
+  --ui-fg: #0f2316;
+  --ui-muted: #334f3e;
   --ui-accent: #059669;
   --ui-accent-soft: #d1fae5;
   --ui-sidebar: #ffffff;
-  --ui-border: rgba(5, 46, 22, 0.12);
+  --ui-border: rgba(5, 46, 22, 0.14);
   --ui-body-glow: #a7f3d0;
 }
 
@@ -140,12 +140,12 @@ html[data-ui-theme="snow-amber"] {
   color-scheme: light;
   --ui-bg: #fffbeb;
   --ui-panel: #ffffff;
-  --ui-fg: #1c1917;
-  --ui-muted: #92400e;
+  --ui-fg: #20180f;
+  --ui-muted: #4d3d2c;
   --ui-accent: #d97706;
   --ui-accent-soft: #fef3c7;
   --ui-sidebar: #ffffff;
-  --ui-border: rgba(28, 25, 23, 0.12);
+  --ui-border: rgba(28, 25, 23, 0.14);
   --ui-body-glow: #fde68a;
 }
 
@@ -153,12 +153,12 @@ html[data-ui-theme="snow-violet"] {
   color-scheme: light;
   --ui-bg: #f5f3ff;
   --ui-panel: #ffffff;
-  --ui-fg: #1e1b4b;
-  --ui-muted: #6d28d9;
+  --ui-fg: #16122e;
+  --ui-muted: #3f3957;
   --ui-accent: #7c3aed;
   --ui-accent-soft: #ede9fe;
   --ui-sidebar: #ffffff;
-  --ui-border: rgba(30, 27, 75, 0.12);
+  --ui-border: rgba(30, 27, 75, 0.14);
   --ui-body-glow: #ddd6fe;
 }
 
@@ -370,11 +370,44 @@ html[data-ui-scheme="light"] .portal-app-shell .text-slate-200 {
 }
 
 html[data-ui-scheme="light"] .portal-app-shell .text-slate-300,
-html[data-ui-scheme="light"] .portal-app-shell .text-slate-400,
-html[data-ui-scheme="light"] .portal-app-shell .text-slate-500,
-html[data-ui-scheme="light"] .portal-app-shell .text-slate-600,
-html[data-ui-scheme="light"] .portal-app-shell .text-slate-700 {
+html[data-ui-scheme="light"] .portal-app-shell .text-slate-400 {
   color: var(--ui-muted) !important;
+}
+
+html[data-ui-scheme="light"] .portal-app-shell .text-slate-500,
+html[data-ui-scheme="light"] .portal-app-shell .text-slate-600 {
+  color: #475569 !important;
+}
+
+html[data-ui-scheme="light"] .portal-app-shell .text-slate-700,
+html[data-ui-scheme="light"] .portal-app-shell .text-slate-800,
+html[data-ui-scheme="light"] .portal-app-shell .text-slate-900 {
+  color: #0f172a !important;
+}
+
+html[data-ui-scheme="light"] .portal-app-shell .bg-slate-900,
+html[data-ui-scheme="light"] .portal-app-shell .bg-slate-950,
+html[data-ui-scheme="light"] .portal-app-shell .bg-slate-900\/40,
+html[data-ui-scheme="light"] .portal-app-shell .bg-slate-900\/50,
+html[data-ui-scheme="light"] .portal-app-shell .bg-slate-900\/60,
+html[data-ui-scheme="light"] .portal-app-shell .bg-slate-900\/70,
+html[data-ui-scheme="light"] .portal-app-shell .bg-slate-900\/80,
+html[data-ui-scheme="light"] .portal-app-shell .bg-slate-900\/90,
+html[data-ui-scheme="light"] .portal-app-shell .bg-slate-950\/40,
+html[data-ui-scheme="light"] .portal-app-shell .bg-slate-950\/60,
+html[data-ui-scheme="light"] .portal-app-shell .bg-slate-950\/70,
+html[data-ui-scheme="light"] .portal-app-shell .bg-slate-950\/80,
+html[data-ui-scheme="light"] .portal-app-shell .bg-slate-950\/90 {
+  background-color: var(--ui-panel) !important;
+  border-color: var(--ui-border) !important;
+}
+
+html[data-ui-scheme="light"] .portal-app-shell .border-slate-700,
+html[data-ui-scheme="light"] .portal-app-shell .border-slate-800,
+html[data-ui-scheme="light"] .portal-app-shell .border-slate-800\/80,
+html[data-ui-scheme="light"] .portal-app-shell .border-slate-700\/40,
+html[data-ui-scheme="light"] .portal-app-shell .border-slate-700\/60 {
+  border-color: var(--ui-border) !important;
 }
 
 html[data-ui-scheme="light"] .portal-app-shell .text-blue-200,

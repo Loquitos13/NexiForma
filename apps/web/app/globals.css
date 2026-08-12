@@ -2460,3 +2460,18 @@ input:focus {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Mobile: precalcar e esconder overflows horizontais parasitas */
+@media (max-width: 768px) {
+  html, body {
+    overflow-x: hidden !important;
+    max-width: 100vw !important;
+    position: relative;
+  }
+  .portal-app-shell,
+  .portal-main {
+    overflow-x: hidden !important;
+    max-width: 100vw !important;
+  }
+}
+

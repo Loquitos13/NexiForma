@@ -378,7 +378,7 @@ export const NAV_GROUPS: NavGroup[] = [
     moduleLabel: BILLING_ADDON_LABELS.crm,
     icon: "PieChart",
     items: [
-      { href: "/portal/crm", label: "CRM Dashboard", icon: "PieChart", minRole: "coordenador_comercial" },
+      { href: "/portal/crm", label: "Dashboard", icon: "PieChart", minRole: "coordenador_comercial" },
       { href: "/portal/crm/leads", label: "Leads", icon: "UserPlus" },
       { href: "/portal/crm/interaccoes", label: "Notas comerciais", icon: "MessageSquare" },
       { href: "/portal/calendario", label: "Calendário", icon: "Calendar" },
@@ -451,24 +451,25 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: "Administração",
+    collapsible: true,
+    icon: "Shield",
+    items: [
+      { href: "/portal/utilizadores", label: "Utilizadores", icon: "UserCog" },
+      { href: "/portal/configuracoes", label: "Configurações", icon: "Settings" },
+      { href: "/portal/billing", label: "Subscrição", icon: "CreditCard" },
+      { href: "/portal/enterprise", label: "Enterprise", icon: "Building2" },
+      { href: "/portal/compliance", label: "Auditoria & DGERT", icon: "ShieldAlert" },
+      { href: "/portal/sigo", label: "SIGO & SAF-T", icon: "BookOpen" },
+      { href: "/portal/integracoes", label: "Plugins", icon: "Plug", minRole: "coordenador_pedagogico" },
+    ],
+  },
+  {
     label: "Conta",
     collapsible: false,
     items: [
       { href: "/portal/rgpd", label: "RGPD", icon: "Lock" },
     ],
-  },
-  {
-    label: "Administracao",
-    moduleLabel: "Configurações",
-    collapsible: true,
-    icon: "Settings",
-    items: [
-      { href: "/portal/configuracoes", label: "Geral", icon: "Settings" },
-      { href: "/portal/utilizadores", label: "Utilizadores", icon: "UserCog" },
-      { href: "/portal/integracoes", label: "Plugins", icon: "Plug" },
-      { href: "/portal/billing", label: "Subscrição", icon: "CreditCard" },
-    ],
-    minRole: "tenant_manager",
   },
 ];
 
@@ -511,7 +512,15 @@ export function resolvePortalBreadcrumb(
       if (!match) continue;
       const len = item.href.length;
       if (!best || len > best.len) {
-        best = { group: navGroupTitle(group), item: item.label, len };
+        const groupTitle = navGroupTitle(group);
+        let cleanItem = item.label;
+        // Evita repetição ex: "CRM > CRM Dashboard" -> "CRM > Dashboard"
+        if (cleanItem.toLowerCase().startsWith(`${groupTitle.toLowerCase()} `)) {
+          cleanItem = cleanItem.slice(groupTitle.length).trim();
+        } else if (groupTitle.toLowerCase().includes("crm") && cleanItem.toLowerCase().startsWith("crm ")) {
+          cleanItem = cleanItem.slice(4).trim();
+        }
+        best = { group: groupTitle, item: cleanItem, len };
       }
     }
   }
