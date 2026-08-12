@@ -83,6 +83,15 @@ function LoginForm() {
   const [tenantPickMode, setTenantPickMode] = useState<"password" | "oauth" | null>(null);
   const isDev = isDevEnvironment();
 
+  const hasOAuthCallbackParams =
+    !!searchParams.get("sso") ||
+    !!searchParams.get("token") ||
+    !!searchParams.get("x") ||
+    !!searchParams.get("pick") ||
+    !!searchParams.get("error") ||
+    !!searchParams.get("error_description") ||
+    !!searchParams.get("message");
+
   useEffect(() => {
     clearPersistedTenantContext();
     setRememberMe(getRememberLogin());
@@ -102,6 +111,11 @@ function LoginForm() {
   }, [searchParams, isDev]);
 
   useEffect(() => {
+    if (hasOAuthCallbackParams) {
+      setCheckingSession(false);
+      return;
+    }
+
     let cancelled = false;
     (async () => {
       try {
@@ -126,7 +140,7 @@ function LoginForm() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [hasOAuthCallbackParams]);
 
   async function finishLogin(accessToken?: string) {
     if (accessToken) {

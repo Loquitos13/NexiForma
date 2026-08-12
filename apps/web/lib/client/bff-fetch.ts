@@ -22,12 +22,19 @@ export type BffFetchInit = RequestInit & {
 };
 
 let refreshSingleton: Promise<string | null> | null = null;
+let lastRefreshFailureAt = 0;
+const REFRESH_FAILURE_COOLDOWN_MS = 8_000;
 
 /**
  * Obtém novo access JWT via BFF usando só a cookie de refresh (credentials).
  * Chamadas paralelas durante o refresh partilham o mesmo pedido (`Promise`).
  */
 export function refreshViaBffCookies(): Promise<string | null> {
+  const now = Date.now();
+  if (lastRefreshFailureAt > 0 && now - lastRefreshFailureAt < REFRESH_FAILURE_COOLDOWN_MS) {
+    return Promise.resolve(null);
+  }
+
   if (!refreshSingleton) {
     refreshSingleton = (async (): Promise<string | null> => {
       try {
@@ -37,14 +44,23 @@ export function refreshViaBffCookies(): Promise<string | null> {
           headers: { "Content-Type": "application/json" },
           cache: "no-store",
         });
-        if (!res.ok) return null;
+        if (!res.ok) {
+          lastRefreshFailureAt = Date.now();
+          return null;
+        }
         const data = (await res.json().catch(() => null)) as {
           accessToken?: string;
         } | null;
         const tok = typeof data?.accessToken === "string" ? data.accessToken : null;
-        if (tok) setAccessToken(tok);
+        if (tok) {
+          lastRefreshFailureAt = 0;
+          setAccessToken(tok);
+        } else {
+          lastRefreshFailureAt = Date.now();
+        }
         return tok;
       } catch {
+        lastRefreshFailureAt = Date.now();
         return null;
       } finally {
         refreshSingleton = null;

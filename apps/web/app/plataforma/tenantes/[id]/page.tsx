@@ -754,7 +754,7 @@ export default function TenantDetailPage() {
           </div>
 
           {/* Grid Principal de Componentes */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          <div className="grid grid-cols-1 xl:grid-cols-[1.05fr_1.35fr] gap-6 items-start">
             {/* Coluna Esquerda: Dados, Logo, Estado, Personificação, Chaves */}
             <div className="space-y-6">
               {/* Dados do Tenant */}
@@ -908,37 +908,8 @@ export default function TenantDetailPage() {
 
             {/* Coluna Direita: Plano, Gestor, Lockout, Salas Reais, Login Social */}
             <div className="space-y-6">
-              {/* Plano e módulos */}
-              <div className="rounded-2xl bg-[#0c0a14]/80 border border-teal-500/15 p-5">
-                <h2 className="text-sm font-semibold text-teal-200 mb-1">Plano e módulos</h2>
-                <p className="text-xs text-slate-500 mb-4">
-                  Estado actual: {tenant.subscriptions[0]?.plan.name ?? "–"} ({tenant.subscriptions[0]?.status ?? "–"})
-                  {tenant.subscriptions[0]?.customAddons &&
-                  Array.isArray(tenant.subscriptions[0].customAddons) &&
-                  tenant.subscriptions[0].customAddons.length > 0 ? (
-                    <span className="block mt-1 text-teal-400/90">
-                      Módulos:{" "}
-                      {parseCustomAddons(tenant.subscriptions[0].customAddons)
-                        .map((c) => BILLING_ADDON_LABELS[c])
-                        .join(", ")}
-                    </span>
-                  ) : null}
-                </p>
-                <form onSubmit={(e) => void guardarSubscricao(e)} className="space-y-3">
-                  <TenantSubscriptionForm
-                    value={subscriptionForm}
-                    onChange={setSubscriptionForm}
-                    inputClass={inputClass}
-                    compact
-                  />
-                  <button type="submit" disabled={subBusy} className={btnPrimaryClass}>
-                    {subBusy ? "A guardar…" : "Actualizar plano e módulos"}
-                  </button>
-                </form>
-              </div>
-
               {/* Criar utilizador no tenant sem convite */}
-              <div className="rounded-2xl bg-[#0c0a14]/80 border border-cyan-500/15 p-5">
+              <div className="rounded-2xl bg-[#0c0a14]/80 border border-cyan-500/15 p-5 shadow-lg shadow-cyan-950/10">
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <h2 className="text-sm font-semibold text-cyan-200 flex items-center gap-2">
                     <UserCheck className="h-4 w-4 text-cyan-400" />
@@ -1001,6 +972,35 @@ export default function TenantDetailPage() {
 
                   <button type="submit" disabled={directUserBusy} className={btnPrimaryClass}>
                     {directUserBusy ? "A criar…" : "Criar utilizador"}
+                  </button>
+                </form>
+              </div>
+
+              {/* Plano e módulos */}
+              <div className="rounded-2xl bg-[#0c0a14]/80 border border-teal-500/15 p-5">
+                <h2 className="text-sm font-semibold text-teal-200 mb-1">Plano e módulos</h2>
+                <p className="text-xs text-slate-500 mb-4">
+                  Estado actual: {tenant.subscriptions[0]?.plan.name ?? "–"} ({tenant.subscriptions[0]?.status ?? "–"})
+                  {tenant.subscriptions[0]?.customAddons &&
+                  Array.isArray(tenant.subscriptions[0].customAddons) &&
+                  tenant.subscriptions[0].customAddons.length > 0 ? (
+                    <span className="block mt-1 text-teal-400/90">
+                      Módulos:{" "}
+                      {parseCustomAddons(tenant.subscriptions[0].customAddons)
+                        .map((c) => BILLING_ADDON_LABELS[c])
+                        .join(", ")}
+                    </span>
+                  ) : null}
+                </p>
+                <form onSubmit={(e) => void guardarSubscricao(e)} className="space-y-3">
+                  <TenantSubscriptionForm
+                    value={subscriptionForm}
+                    onChange={setSubscriptionForm}
+                    inputClass={inputClass}
+                    compact
+                  />
+                  <button type="submit" disabled={subBusy} className={btnPrimaryClass}>
+                    {subBusy ? "A guardar…" : "Actualizar plano e módulos"}
                   </button>
                 </form>
               </div>
