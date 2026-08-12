@@ -420,6 +420,34 @@ export class SocialAuthService {
         return;
       }
 
+      if ("platformUser" in resolved && resolved.platformUser) {
+        const pu = resolved.platformUser;
+        const login = await this.auth.completeLoginWithPayload(
+          {
+            sub: pu.id,
+            email: pu.email,
+            kind: "platform",
+            role: "super_admin",
+            tenantId: null,
+            tenantSlug: null,
+          },
+          undefined,
+          { includeRefreshOpaque: true },
+        );
+        if (!login.refreshToken) {
+          this.redirectLoginError("Não foi possível criar sessão OAuth.", res, undefined, returnOrigin);
+          return;
+        }
+        const exchange = await this.signExchange({
+          purpose: OAUTH_EXCHANGE_JWT_PURPOSE,
+          tenantSlug: "",
+          refreshOpaque: login.refreshToken,
+        });
+        const redirectBase = `${returnOrigin}/login?sso=exchange&x=${encodeURIComponent(exchange)}`;
+        res.redirect(redirectBase);
+        return;
+      }
+
       const { user, tenant } = resolved;
       if (!isTenantOperational(tenant.status)) {
         this.redirectLoginError("Entidade indisponível.", res, tenant.slug, returnOrigin);
@@ -631,6 +659,11 @@ export class SocialAuthService {
       include: { tenant: true },
     });
     if (bySub) return { user: bySub, tenant: bySub.tenant };
+
+    const platformUser = await this.prisma.platformUser.findFirst({
+      where: { email: { equals: email, mode: "insensitive" }, active: true },
+    });
+    if (platformUser) return { platformUser };
 
     return null;
   }

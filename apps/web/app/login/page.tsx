@@ -162,14 +162,15 @@ function LoginForm() {
     ) {
       const res = await bffFetch("/api/v1/billing/entitlements", {
         headers: { accept: "application/json" },
+        authRetry401: false,
       });
       if (res.ok) {
         entitlements = (await res.json()) as TenantEntitlements;
       }
     }
 
-    router.push(resolvePostLoginPath(accessToken, nextRaw, entitlements));
-    router.refresh();
+    const dest = resolvePostLoginPath(accessToken, nextRaw, entitlements);
+    window.location.replace(dest);
   }
 
   function saveLoginPreferences(overrideEmail?: string) {
@@ -264,6 +265,7 @@ function LoginForm() {
     if (sso === "exchange" && exchange) {
       void (async () => {
         setBusy(true);
+        setLoginSuccess(true);
         setError(null);
         try {
           const res = await fetch("/api/auth/oauth/complete", {
@@ -277,6 +279,7 @@ function LoginForm() {
             accessToken?: string;
           };
           if (!res.ok) {
+            setLoginSuccess(false);
             const msg = Array.isArray(data.message)
               ? data.message.join(", ")
               : typeof data.message === "string"
@@ -289,6 +292,7 @@ function LoginForm() {
           saveOAuthLoginPreferences(data.accessToken);
           await finishLogin(data.accessToken);
         } catch {
+          setLoginSuccess(false);
           setError("Não foi possível concluir o login social.");
         } finally {
           setBusy(false);
@@ -297,9 +301,10 @@ function LoginForm() {
       return;
     }
     if (sso === "ok" && token) {
+      setLoginSuccess(true);
       saveOAuthLoginPreferences(token);
-      void finishLogin(token);
       window.history.replaceState({}, "", window.location.pathname);
+      void finishLogin(token);
     }
   }, [router]);
 

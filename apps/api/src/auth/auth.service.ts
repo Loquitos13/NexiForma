@@ -955,12 +955,13 @@ export class AuthService {
     );
   }
 
-  /** Login com payload já montado (ex.: personificação super-admin). */
+  /** Login com payload já montado (ex.: personificação super-admin ou SSO plataforma). */
   completeLoginWithPayload(
     payload: AccessTokenPayload,
     res?: Response,
+    opts?: { includeRefreshOpaque?: boolean },
   ): Promise<LoginResponse> {
-    return this.completeLogin(payload, payload.sub, payload.email, payload.kind, res);
+    return this.completeLogin(payload, payload.sub, payload.email, payload.kind, res, false, opts);
   }
 
   /** Termina todas as sessões refresh activas de um utilizador (login único). */
@@ -1046,20 +1047,11 @@ export class AuthService {
     const session = await this.prisma.authRefreshSession.findFirst({
       where: {
         tokenHash,
-        subjectKind: "tenant",
         expiresAt: { gt: new Date() },
       },
     });
     if (!session) {
       throw new UnauthorizedException("Sessão OAuth expirada ou inválida.");
-    }
-
-    const user = await this.prisma.user.findFirst({
-      where: { id: session.subjectId, active: true },
-      include: { tenant: true },
-    });
-    if (!user || user.tenant.slug !== tenantSlug) {
-      throw new UnauthorizedException("Sessão OAuth inválida para esta entidade.");
     }
 
     const refreshSec = Math.max(
@@ -1068,6 +1060,45 @@ export class AuthService {
     );
     if (res) {
       attachRefreshCookie(res, this.config, refreshOpaque, refreshSec);
+    }
+
+    if (session.subjectKind === "platform") {
+      const pu = await this.prisma.platformUser.findFirst({
+        where: { id: session.subjectId, active: true },
+      });
+      if (!pu) {
+        throw new UnauthorizedException("Sessão OAuth inválida para plataforma.");
+      }
+      const payload: AccessTokenPayload = {
+        sub: pu.id,
+        email: pu.email,
+        kind: "platform",
+        role: "super_admin",
+        tenantId: null,
+        tenantSlug: null,
+      };
+      return {
+        accessToken: this.signAccessToken(payload),
+        tokenType: "Bearer",
+        expiresIn: this.accessExpiresSeconds,
+        refreshExpiresIn: refreshSec,
+        user: {
+          id: pu.id,
+          email: pu.email,
+          role: "super_admin",
+          kind: "platform",
+          tenantId: null,
+          tenantSlug: null,
+        },
+      };
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: { id: session.subjectId, active: true },
+      include: { tenant: true },
+    });
+    if (!user || (tenantSlug && user.tenant.slug !== tenantSlug)) {
+      throw new UnauthorizedException("Sessão OAuth inválida para esta entidade.");
     }
 
     const payload: AccessTokenPayload = {

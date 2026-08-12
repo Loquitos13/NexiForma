@@ -140,9 +140,11 @@ export async function bffFetch(
 
     const tok = await refreshViaBffCookies();
     if (!tok) {
-      setAccessToken(null);
-      if (typeof window !== "undefined" && isAuthenticatedAppPath(window.location.pathname)) {
-        markSessionExpired({ returnTo: window.location.pathname });
+      if (typeof window !== "undefined") {
+        if (isAuthenticatedAppPath(window.location.pathname)) {
+          setAccessToken(null);
+          markSessionExpired({ returnTo: window.location.pathname });
+        }
       }
       return res;
     }
