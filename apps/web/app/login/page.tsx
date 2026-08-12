@@ -8,7 +8,7 @@ import { mfaAppOpenHint, mfaVerificationSubtitle, MFA_APP_CODES, MFA_APP_LABELS,
 import { AuthShell } from "@/components/site/auth-shell";
 import { TotpInput } from "@/components/auth/totp-input";
 import { PasswordInput } from "@/components/ui/password-input";
-import { setAccessToken } from "@/lib/client/access-token";
+import { getAccessToken, setAccessToken } from "@/lib/client/access-token";
 import { refreshViaBffCookies, bffFetch } from "@/lib/client/bff-fetch";
 import { resolvePostLoginPath, decodeJwtPayload } from "@/lib/client/jwt-role";
 import type { TenantEntitlements } from "@nexiforma/shared";
@@ -143,9 +143,22 @@ function LoginForm() {
   }, [hasOAuthCallbackParams]);
 
   async function finishLogin(accessToken?: string) {
-    if (accessToken) {
-      setAccessToken(accessToken);
+    let activeToken: string | null = accessToken ?? null;
+    if (activeToken) {
+      setAccessToken(activeToken);
+    } else {
+      activeToken = getAccessToken();
     }
+
+    if (!activeToken) {
+      activeToken = await refreshViaBffCookies();
+    }
+
+    if (!activeToken) {
+      setError("Não foi possível concluir a sessão. Tente novamente.");
+      return;
+    }
+
     clearPersistedTenantContext();
     const nextRaw = sessionStorage.getItem("nexiforma_login_next");
     sessionStorage.removeItem("nexiforma_login_next");
@@ -154,7 +167,7 @@ function LoginForm() {
     await syncUiThemeFromServer().catch(() => undefined);
 
     let entitlements: TenantEntitlements | null = null;
-    const payload = decodeJwtPayload(accessToken);
+    const payload = decodeJwtPayload(activeToken);
     if (
       payload?.role &&
       payload.role !== "super_admin" &&
@@ -169,7 +182,7 @@ function LoginForm() {
       }
     }
 
-    const dest = resolvePostLoginPath(accessToken, nextRaw, entitlements);
+    const dest = resolvePostLoginPath(activeToken, nextRaw, entitlements);
     window.location.replace(dest);
   }
 
