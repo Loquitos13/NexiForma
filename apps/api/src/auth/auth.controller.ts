@@ -253,12 +253,11 @@ export class AuthController {
 
   @Post("impersonation/end")
   @UseGuards(JwtAuthGuard)
-  @HttpCode(204)
   async endImpersonation(
     @CurrentUser() user: RequestUser,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-  ): Promise<void> {
-    await this.auth.endImpersonation(user, req, res);
+  ) {
+    return this.auth.endImpersonation(user, req, res);
   }
 }

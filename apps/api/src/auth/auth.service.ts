@@ -839,8 +839,81 @@ export class AuthService {
 
     const now = new Date();
 
-    /** Token de refresh já rotado/revogado reutilizado → possível roubo (MITM). */
+    /** Token de refresh já rotado/revogado reutilizado → possível roubo (MITM) ou corrida concorrente. */
     if (session?.revokedAt) {
+      const revokedSec = (now.getTime() - session.revokedAt.getTime()) / 1000;
+      if (revokedSec <= 30) {
+        // Corrida concorrente de pedidos paralelos: devolver token para a sessão ativa recente
+        const active = await this.prisma.authRefreshSession.findFirst({
+          where: {
+            subjectId: session.subjectId,
+            subjectKind: session.subjectKind,
+            revokedAt: null,
+            expiresAt: { gt: now },
+          },
+          orderBy: { createdAt: "desc" },
+        });
+        if (active) {
+          if (session.subjectKind === "platform") {
+            const pu = await this.prisma.platformUser.findFirst({
+              where: { id: session.subjectId, active: true },
+            });
+            if (pu) {
+              const payload: AccessTokenPayload = {
+                sub: pu.id,
+                email: pu.email,
+                kind: "platform",
+                role: "super_admin",
+                tenantId: null,
+                tenantSlug: null,
+              };
+              return {
+                accessToken: this.signAccessToken(payload),
+                tokenType: "Bearer",
+                expiresIn: this.accessExpiresSeconds,
+                refreshExpiresIn: Math.max(1, Math.floor((active.expiresAt.getTime() - now.getTime()) / 1000)),
+                user: {
+                  id: pu.id,
+                  email: pu.email,
+                  role: "super_admin",
+                  kind: "platform",
+                },
+              };
+            }
+          } else {
+            const user = await this.prisma.user.findFirst({
+              where: { id: session.subjectId, active: true },
+              include: { tenant: true },
+            });
+            if (user) {
+              const payloadTenant: AccessTokenPayload = {
+                sub: user.id,
+                email: user.email,
+                kind: "tenant",
+                role: mapPrismaRoleToJwt(user.role),
+                tenantId: user.tenantId,
+                tenantSlug: user.tenant.slug,
+                ...(user.mustChangePassword ? { mustChangePassword: true } : {}),
+              };
+              return {
+                accessToken: this.signAccessToken(payloadTenant),
+                tokenType: "Bearer",
+                expiresIn: this.accessExpiresSeconds,
+                refreshExpiresIn: Math.max(1, Math.floor((active.expiresAt.getTime() - now.getTime()) / 1000)),
+                user: {
+                  id: user.id,
+                  email: user.email,
+                  role: payloadTenant.role,
+                  kind: "tenant",
+                  tenantId: user.tenantId,
+                  tenantSlug: user.tenant.slug,
+                },
+              };
+            }
+          }
+        }
+      }
+
       await this.prisma.authRefreshSession.updateMany({
         where: {
           subjectId: session.subjectId,
@@ -920,14 +993,39 @@ export class AuthService {
     }
   }
 
-  async endImpersonation(user: AccessTokenPayload, req: Request, res: Response): Promise<void> {
+  async endImpersonation(
+    user: AccessTokenPayload,
+    req: Request,
+    res: Response,
+  ): Promise<LoginResponse | { ok: true }> {
     if (user.impersonationSessionId) {
-      await this.prisma.impersonationSession.updateMany({
-        where: { id: user.impersonationSessionId, revokedAt: null },
-        data: { revokedAt: new Date() },
+      const session = await this.prisma.impersonationSession.findUnique({
+        where: { id: user.impersonationSessionId },
       });
+      if (session) {
+        await this.prisma.impersonationSession.update({
+          where: { id: session.id },
+          data: { revokedAt: new Date() },
+        });
+
+        const pu = await this.prisma.platformUser.findFirst({
+          where: { id: session.superAdminId, active: true },
+        });
+        if (pu) {
+          const payload: AccessTokenPayload = {
+            sub: pu.id,
+            email: pu.email,
+            kind: "platform",
+            role: "super_admin",
+            tenantId: null,
+            tenantSlug: null,
+          };
+          return this.completeLoginWithPayload(payload, res);
+        }
+      }
     }
     await this.logoutFromCookie(req, res);
+    return { ok: true };
   }
 
   private signAccessToken(payload: AccessTokenPayload): string {

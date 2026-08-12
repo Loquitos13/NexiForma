@@ -775,9 +775,9 @@ export class SocialAuthService {
     if (payload.purpose !== OAUTH_EXCHANGE_JWT_PURPOSE) {
       throw new UnauthorizedException("Exchange OAuth inválido.");
     }
-    const tenantSlug = String(payload.tenantSlug ?? "");
-    const refreshOpaque = String(payload.refreshOpaque ?? "");
-    if (!tenantSlug || !refreshOpaque) {
+    const tenantSlug = typeof payload.tenantSlug === "string" ? payload.tenantSlug : "";
+    const refreshOpaque = typeof payload.refreshOpaque === "string" ? payload.refreshOpaque : "";
+    if (!refreshOpaque) {
       throw new UnauthorizedException("Exchange OAuth incompleto.");
     }
     return { purpose: OAUTH_EXCHANGE_JWT_PURPOSE, tenantSlug, refreshOpaque };
