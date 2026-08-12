@@ -52,10 +52,19 @@ const outFile = path.join(outDir, `nexiforma-${stamp}.sql.gz`);
 const tmp = mkdtempSync(path.join(tmpdir(), "nexiforma-db-backup-"));
 const sqlPath = path.join(tmp, "dump.sql");
 
+let cleanDatabaseUrl = databaseUrl;
+try {
+  const u = new URL(databaseUrl);
+  u.searchParams.delete("schema");
+  cleanDatabaseUrl = u.toString();
+} catch {
+  cleanDatabaseUrl = databaseUrl.replace(/([?&])schema=[^&]*(&|$)/g, "$1").replace(/[?&]$/, "");
+}
+
 try {
   const dump = spawnSync(
     process.env.PG_DUMP_PATH || "pg_dump",
-    ["--no-owner", "--no-acl", "--format=plain", `--file=${sqlPath}`, databaseUrl],
+    ["--no-owner", "--no-acl", "--clean", "--if-exists", "--format=plain", `--file=${sqlPath}`, cleanDatabaseUrl],
     { encoding: "utf8", windowsHide: true },
   );
   if (dump.status !== 0) {
