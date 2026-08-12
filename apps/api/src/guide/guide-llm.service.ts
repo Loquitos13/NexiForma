@@ -78,9 +78,25 @@ export class GuideLlmService {
       if (!raw) return null;
 
       const parsed = this.parseJson(raw);
-      if (!parsed?.reply?.trim()) return null;
+      if (parsed?.reply?.trim()) {
+        return this.toGuideResult(parsed, role);
+      }
 
-      return this.toGuideResult(parsed, role);
+      // Se o LLM responder em texto direto (sem JSON), aceita a resposta de imediato
+      const cleanText = raw
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```$/i, "")
+        .trim();
+
+      if (cleanText.length > 0) {
+        return {
+          type: "answer",
+          reply: cleanText,
+          related: [],
+        };
+      }
+
+      return null;
     } catch (err) {
       this.logger.warn(`LLM indisponível: ${err instanceof Error ? err.message : "erro"}`);
       return null;
