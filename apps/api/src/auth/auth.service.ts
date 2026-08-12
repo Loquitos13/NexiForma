@@ -436,7 +436,12 @@ export class AuthService {
       await this.loginAttempts.recordFailure("platform", loginKey);
       throw new UnauthorizedException("Credenciais inválidas.");
     }
-    const ok = await argon2.verify(pu.passwordHash, dto.password);
+    let ok = false;
+    try {
+      ok = await argon2.verify(pu.passwordHash, dto.password);
+    } catch {
+      ok = false;
+    }
     if (!ok) {
       await this.loginAttempts.recordFailure("platform", loginKey);
       throw new UnauthorizedException("Credenciais inválidas.");

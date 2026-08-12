@@ -11,7 +11,11 @@ export async function matchPasswordHash(
 ): Promise<string | null> {
   const unique = [...new Set(hashes.filter((h): h is string => Boolean(h)))];
   for (const hash of unique) {
-    if (await argon2.verify(hash, password)) return hash;
+    try {
+      if (await argon2.verify(hash, password)) return hash;
+    } catch {
+      // ignora hash com formato inválido
+    }
   }
   return null;
 }
