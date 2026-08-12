@@ -498,7 +498,16 @@ a {
   color: #f1f5f9;
 }
 
-/* NexiForma NF - vetor de energia rosa percorre contorno (2s) â†’ fill */
+.nexi-neon-svg,
+.nexi-neon-card,
+.nexi-energy-group,
+.ff-energy-group {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+/* NexiForma NF - vetor de energia rosa percorre contorno (2s) → fill */
 @media (prefers-reduced-motion: no-preference) {
   .nexi-energy-trail,
   .nexi-energy-beam,
@@ -507,6 +516,8 @@ a {
     animation-duration: var(--nexi-trace, 2s);
     animation-timing-function: linear;
     animation-fill-mode: forwards;
+    will-change: stroke-dashoffset, opacity;
+    transform: translateZ(0);
   }
 
   .nexi-fill-traced {
@@ -514,6 +525,7 @@ a {
     animation-duration: var(--nexi-trace, 2s);
     animation-timing-function: ease-out;
     animation-fill-mode: forwards;
+    will-change: opacity;
   }
 
   .nexi-energy-trail--0 {
@@ -799,6 +811,8 @@ a {
     animation-duration: var(--ff-hex-cycle, 2.8s);
     animation-timing-function: linear;
     animation-iteration-count: infinite;
+    will-change: stroke-dashoffset;
+    transform: translateZ(0);
   }
 
   .ff-hex-trail {
@@ -820,6 +834,30 @@ a {
     to {
       stroke-dashoffset: 0;
     }
+  }
+}
+
+/* Otimização de alta performance para mobile (iOS Safari & Android 60/120fps) */
+@media (max-width: 768px) {
+  .nexi-energy-trail,
+  .nexi-energy-beam,
+  .nexi-energy-head,
+  .ff-hex-trail,
+  .ff-hex-beam,
+  .ff-hex-head {
+    filter: none !important;
+  }
+
+  .nexi-neon-svg {
+    filter: none !important;
+  }
+
+  .nexi-energy-beam {
+    stroke-width: 2.2px;
+  }
+
+  .nexi-energy-head {
+    stroke-width: 1.8px;
   }
 }
 
