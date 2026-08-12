@@ -22,6 +22,7 @@ import { ControlPlaneTenantOpsService } from "./control-plane-tenant-ops.service
 import { TenantAccessKeyService } from "./tenant-access-key.service";
 import { SupportTicketsService } from "../support/support-tickets.service";
 import { UpdateSupportTicketDto } from "../support/dto/support.dto";
+import { extractClientIp } from "../common/client-ip.util";
 import {
   CreateTenantAccessKeyDto,
   CreateTenantMatriculaDto,
@@ -72,7 +73,7 @@ export class ControlPlaneSupportController {
     @Body() dto: ResetTenantUserPasswordDto,
     @Req() req: Request,
   ) {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.ops.resetUserPassword(user, id, userId, dto, ip);
   }
 
@@ -84,7 +85,7 @@ export class ControlPlaneSupportController {
     @Body() dto: ResetTenantUserPasswordDto,
     @Req() req: Request,
   ) {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.ops.resetUserPassword(user, id, userId, dto, ip);
   }
 
@@ -108,7 +109,7 @@ export class ControlPlaneSupportController {
     @Body() dto: CreateTenantMatriculaDto,
     @Req() req: Request,
   ) {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.ops.createMatricula(user, id, dto, ip);
   }
 
@@ -129,7 +130,7 @@ export class ControlPlaneSupportController {
     @Body() dto: FixFormandoAccessDto,
     @Req() req: Request,
   ) {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.ops.fixFormandoAccess(user, id, formandoId, dto, ip);
   }
 
@@ -145,7 +146,7 @@ export class ControlPlaneSupportController {
     @Body() dto: CreateTenantAccessKeyDto,
     @Req() req: Request,
   ) {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.accessKeys.createKey(user, id, dto, ip);
   }
 
@@ -156,7 +157,7 @@ export class ControlPlaneSupportController {
     @Param("keyId", ParseUUIDPipe) keyId: string,
     @Req() req: Request,
   ) {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.accessKeys.revokeKey(user, id, keyId, ip);
   }
 
@@ -167,7 +168,7 @@ export class ControlPlaneSupportController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.accessKeys.redeemKey(user, dto.key.trim(), res, ip);
   }
 }

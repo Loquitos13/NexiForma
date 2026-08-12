@@ -38,8 +38,12 @@ async function bootstrap() {
   process.on("uncaughtException", (err) => {
     reportProcessError(platformAlertas, "processo-uncaughtException", err);
   });
-  if (process.env.TRUST_PROXY === "true" || process.env.TRUST_PROXY === "1") {
-    app.set("trust proxy", 1);
+  if (
+    process.env.NODE_ENV === "production" ||
+    process.env.TRUST_PROXY === "true" ||
+    process.env.TRUST_PROXY === "1"
+  ) {
+    app.set("trust proxy", true);
   }
   app.setGlobalPrefix(API_PREFIX);
 

@@ -30,6 +30,7 @@ import { UpsertIntegracaoDto } from "../integracoes/dto/integracoes.dto";
 import { FaturasService } from "../faturas/faturas.service";
 import { UpdateConfigFaturacaoDto } from "../faturas/dto/fatura.dto";
 import { SocialAuthService } from "../auth/social-auth.service";
+import { extractClientIp } from "../common/client-ip.util";
 import {
   CreateSubscriptionKeyDto,
   CreateTenantDto,
@@ -82,7 +83,7 @@ export class ControlPlaneController {
     @Body() dto: UpdatePlatformMeDto,
     @Req() req: Request,
   ) {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.cp.updatePlatformAccount(user, dto, ip);
   }
 
@@ -102,7 +103,7 @@ export class ControlPlaneController {
     @Body() dto: CreateTenantDto,
     @Req() req: Request,
   ): Promise<Record<string, unknown>> {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.cp.createTenant(user, dto, ip, req);
   }
 
@@ -119,7 +120,7 @@ export class ControlPlaneController {
     @UploadedFile() file: Express.Multer.File,
     @Req() req: Request,
   ) {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.cp.uploadTenantLogo(user, id, file, ip);
   }
 
@@ -185,7 +186,7 @@ export class ControlPlaneController {
     @Body() dto: UpdateTenantLoginLockoutDto,
     @Req() req: Request,
   ) {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.cp.updateTenantLoginLockout(user, id, dto, ip);
   }
 
@@ -196,7 +197,7 @@ export class ControlPlaneController {
     @Body() dto: ClearTenantLoginLockoutDto,
     @Req() req: Request,
   ) {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.cp.clearTenantLoginLockout(user, id, dto.email, ip);
   }
 
@@ -207,7 +208,7 @@ export class ControlPlaneController {
     @Body() dto: UpdateTenantDto,
     @Req() req: Request,
   ): Promise<Record<string, unknown>> {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.cp.updateTenant(user, id, dto, ip);
   }
 
@@ -218,7 +219,7 @@ export class ControlPlaneController {
     @Query("permanent") permanent: string | undefined,
     @Req() req: Request,
   ) {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.cp.deleteTenant(user, id, { permanent: permanent === "true" }, ip);
   }
 
@@ -234,7 +235,7 @@ export class ControlPlaneController {
     @Body() dto: UpdateTenantStatusDto,
     @Req() req: Request,
   ): Promise<Record<string, unknown>> {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.cp.updateTenantStatus(user, id, dto.status, ip);
   }
 
@@ -245,7 +246,7 @@ export class ControlPlaneController {
     @Body() dto: UpdateTenantSubscriptionDto,
     @Req() req: Request,
   ): Promise<Record<string, unknown>> {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.cp.updateTenantSubscription(user, id, dto, ip);
   }
 
@@ -256,7 +257,7 @@ export class ControlPlaneController {
     @Body() dto: SetTenantManagerDto,
     @Req() req: Request,
   ): Promise<Record<string, unknown>> {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.cp.setTenantManager(user, id, dto, ip, req);
   }
 
@@ -267,7 +268,7 @@ export class ControlPlaneController {
     @Body() dto: InviteManagerDto,
     @Req() req: Request,
   ): Promise<Record<string, unknown>> {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.cp.inviteTenantManager(user, id, dto, ip, req);
   }
 
@@ -279,7 +280,7 @@ export class ControlPlaneController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.impersonation.startImpersonation(user, id, dto, res, ip);
   }
 
@@ -311,7 +312,7 @@ export class ControlPlaneController {
     @Body() dto: CreateSubscriptionKeyDto,
     @Req() req: Request,
   ) {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.cp.createSubscriptionKey(user, id, dto, ip);
   }
 
@@ -322,7 +323,7 @@ export class ControlPlaneController {
     @Param("keyId") keyId: string,
     @Req() req: Request,
   ) {
-    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    const ip = extractClientIp(req);
     return this.cp.revokeSubscriptionKey(user, tenantId, keyId, ip);
   }
 
