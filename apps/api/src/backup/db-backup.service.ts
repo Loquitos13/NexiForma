@@ -20,6 +20,23 @@ export type DbBackupResult = {
   reason?: string;
 };
 
+function sanitizeDatabaseUrlForPgDump(rawUrl: string): { cleanUrl: string; password?: string } {
+  try {
+    const u = new URL(rawUrl);
+    const password = u.password ? decodeURIComponent(u.password) : undefined;
+    // Remove parâmetros específicos do Prisma (como ?schema=public) que o pg_dump rejeita
+    u.searchParams.delete("schema");
+    return {
+      cleanUrl: u.toString(),
+      password,
+    };
+  } catch {
+    return {
+      cleanUrl: rawUrl.replace(/([?&])schema=[^&]*(&|$)/g, "$1").replace(/[?&]$/, ""),
+    };
+  }
+}
+
 @Injectable()
 export class DbBackupService {
   private readonly logger = new Logger(DbBackupService.name);
@@ -109,12 +126,18 @@ export class DbBackupService {
   }
 
   private async pgDumpToFile(databaseUrl: string, outPath: string): Promise<void> {
+    const { cleanUrl, password } = sanitizeDatabaseUrlForPgDump(databaseUrl);
     const pgDump = this.config.get<string>("PG_DUMP_PATH")?.trim() || "pg_dump";
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      ...(password ? { PGPASSWORD: password } : {}),
+    };
+
     try {
       await execFileAsync(
         pgDump,
-        ["-d", databaseUrl, "--no-owner", "--no-acl", "--format=plain", `--file=${outPath}`],
-        { maxBuffer: 1024 * 1024 * 64, windowsHide: true },
+        ["-d", cleanUrl, "--no-owner", "--no-acl", "--clean", "--if-exists", "--format=plain", `--file=${outPath}`],
+        { env, maxBuffer: 1024 * 1024 * 128, windowsHide: true },
       );
       return;
     } catch (err) {
@@ -139,9 +162,11 @@ export class DbBackupService {
         this.config.get<string>("POSTGRES_DB")?.trim() || "nexiforma",
         "--no-owner",
         "--no-acl",
+        "--clean",
+        "--if-exists",
         "--format=plain",
       ],
-      { maxBuffer: 1024 * 1024 * 64, windowsHide: true, encoding: "utf8" },
+      { maxBuffer: 1024 * 1024 * 128, windowsHide: true, encoding: "utf8" },
     );
     await writeFile(outPath, stdout, "utf8");
   }
