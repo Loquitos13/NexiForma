@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Filter, Trash2, Upload, X } from "lucide-react";
+import { Award, BookOpen, Check, Clock, Copy, Filter, Layers, Search, Trash2, Upload, X } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
@@ -43,7 +43,7 @@ type ImportResult = {
 const CNQ_UFCD_URL = "https://catalogo.anqep.gov.pt/ufcdPesquisa";
 const LIST_LIMIT = 10_000;
 const QNQ_TITLE =
-  "QNQ  Quadro Nacional de Qualificações: níveis 1 a 8 que classificam as qualificações em Portugal (alinhado com o Quadro Europeu).";
+  "QNQ – Quadro Nacional de Qualificações: níveis 1 a 8 que classificam as qualificações em Portugal (alinhado com o Quadro Europeu).";
 
 export default function CatalogoUfcdPage() {
   const { canManageFormacao: canManage, writeDisabled } = useTenantRole();
@@ -56,6 +56,9 @@ export default function CatalogoUfcdPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [areaFilter, setAreaFilter] = useState<string | null>(null);
+  const [selectedAreaModal, setSelectedAreaModal] = useState<string | null>(null);
+  const [modalSearch, setModalSearch] = useState("");
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -81,6 +84,30 @@ export default function CatalogoUfcdPage() {
     () => displayedRows.length > 0 && displayedRows.every((r) => selectedIds.has(r.codigo)),
     [displayedRows, selectedIds],
   );
+
+  const areaModalRows = useMemo(() => {
+    if (!selectedAreaModal) return [];
+    const target = selectedAreaModal.trim().toLowerCase();
+    const areaItems = rows.filter((r) => (r.area?.trim().toLowerCase() ?? "") === target);
+    if (!modalSearch.trim()) return areaItems;
+    const term = modalSearch.trim().toLowerCase();
+    return areaItems.filter(
+      (r) =>
+        r.codigo.toLowerCase().includes(term) ||
+        r.designacao.toLowerCase().includes(term) ||
+        (r.nivelQnq && r.nivelQnq.toLowerCase().includes(term)),
+    );
+  }, [rows, selectedAreaModal, modalSearch]);
+
+  const areaModalTotalHours = useMemo(() => {
+    return areaModalRows.reduce((acc, curr) => acc + (curr.cargaHoras ?? 0), 0);
+  }, [areaModalRows]);
+
+  function copyToClipboard(code: string) {
+    void navigator.clipboard.writeText(code);
+    setCopiedCode(code);
+    setTimeout(() => setCopiedCode(null), 2000);
+  }
 
   const columns: Column<Ufcd>[] = useMemo(() => {
     function cycleAreaFilter() {
@@ -132,20 +159,34 @@ export default function CatalogoUfcdPage() {
         ),
         headerText: areaFilter
           ? `Área filtrada: ${areaFilter}. Clique para a área seguinte.`
-          : "Área  filtrar por área (ordem A–Z)",
+          : "Área – filtrar por área (ordem A–Z)",
         onHeaderClick: cycleAreaFilter,
         headerClassName: "w-[14rem]",
         className: "w-[14rem]",
-        cell: (r) => (
-          <span className="block truncate text-sm text-slate-400" title={r.area ?? undefined}>
-            {r.area ?? "–"}
-          </span>
-        ),
+        cell: (r) => {
+          const areaName = r.area?.trim();
+          if (!areaName) return <span className="text-slate-600">–</span>;
+          return (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedAreaModal(areaName);
+                setModalSearch("");
+              }}
+              className="group/area inline-flex max-w-full items-center gap-1.5 rounded-md px-2 py-0.5 text-left text-xs font-medium text-cyan-300 hover:bg-cyan-950/60 hover:text-cyan-200 border border-cyan-500/20 hover:border-cyan-500/50 transition-all cursor-pointer"
+              title={`Clique para abrir todos os cursos e UFCDs da área «${areaName}»`}
+            >
+              <Layers className="h-3 w-3 shrink-0 text-cyan-400/70 group-hover/area:text-cyan-300" aria-hidden />
+              <span className="truncate">{areaName}</span>
+            </button>
+          );
+        },
       },
       {
         key: "cargaHoras",
         header: "Horas",
-        cell: (r) => <Badge variant="default">{r.cargaHoras ?? "–"}</Badge>,
+        cell: (r) => <Badge variant="default">{r.cargaHoras ? `${r.cargaHoras}h` : "–"}</Badge>,
         className: "w-[5.5rem] text-center",
         headerClassName: "w-[5.5rem] text-center",
       },
@@ -156,12 +197,12 @@ export default function CatalogoUfcdPage() {
             Nível QNQ
           </span>
         ),
-        headerText: "Nível QNQ  Quadro Nacional de Qualificações",
+        headerText: "Nível QNQ – Quadro Nacional de Qualificações",
         headerClassName: "w-[6.5rem]",
         className: "w-[6.5rem]",
         cell: (r) => (
-          <span className="text-slate-500 text-sm" title={QNQ_TITLE}>
-            {r.nivelQnq ?? "–"}
+          <span className="text-slate-400 text-xs font-medium" title={QNQ_TITLE}>
+            {r.nivelQnq ? `Nível ${r.nivelQnq}` : "–"}
           </span>
         ),
       },
@@ -501,6 +542,157 @@ export default function CatalogoUfcdPage() {
 
             <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="ghost" onClick={() => setImportOpen(false)}>
+                Fechar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Cursos e UFCDs da Área com overflow automático */}
+      <Dialog
+        open={Boolean(selectedAreaModal)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedAreaModal(null);
+            setModalSearch("");
+          }
+        }}
+      >
+        <DialogContent
+          title={selectedAreaModal ? `Área: ${selectedAreaModal}` : "Área"}
+          description="Todos os cursos e unidades curriculares UFCD registados e importados nesta área temática."
+          className="max-w-3xl"
+        >
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
+              <div className="flex items-center gap-2">
+                <Badge variant="blue" className="text-xs">
+                  {areaModalRows.length} {areaModalRows.length === 1 ? "módulo/curso" : "módulos/cursos"}
+                </Badge>
+                {areaModalTotalHours > 0 ? (
+                  <Badge variant="default" className="text-xs text-slate-300">
+                    {areaModalTotalHours}h total
+                  </Badge>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden />
+                <Input
+                  value={modalSearch}
+                  onChange={(e) => setModalSearch(e.target.value)}
+                  placeholder="Pesquisar por código ou designação nesta área…"
+                  className="pl-9 text-sm"
+                />
+              </div>
+              {modalSearch ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setModalSearch("")}
+                >
+                  Limpar
+                </Button>
+              ) : null}
+            </div>
+
+            {/* Container com overflow-y automático */}
+            <div className="max-h-[58vh] overflow-y-auto pr-1.5 space-y-2 divide-y divide-slate-800/60 rounded-lg border border-slate-800 bg-slate-950/40 p-2">
+              {areaModalRows.length === 0 ? (
+                <div className="py-8 text-center text-sm text-slate-500">
+                  {modalSearch
+                    ? `Nenhum resultado para «${modalSearch}» nesta área.`
+                    : "Nenhum curso/UFCD associado a esta área."}
+                </div>
+              ) : (
+                areaModalRows.map((item) => (
+                  <div
+                    key={item.codigo}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2.5 first:pt-0 pb-2.5 last:pb-0 px-2 rounded-md hover:bg-slate-900/60 transition-colors"
+                  >
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-cyan-400 bg-cyan-950/70 border border-cyan-500/30 px-2 py-0.5 rounded">
+                          UFCD {item.codigo}
+                        </span>
+                        {item.cargaHoras ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-slate-400 font-medium">
+                            <Clock className="h-3 w-3 text-slate-500" />
+                            {item.cargaHoras}h
+                          </span>
+                        ) : null}
+                        {item.nivelQnq ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-xs text-amber-400/80 bg-amber-950/40 border border-amber-500/20 px-1.5 py-0.5 rounded"
+                            title={QNQ_TITLE}
+                          >
+                            <Award className="h-3 w-3" />
+                            QNQ {item.nivelQnq}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="text-sm font-medium text-slate-200 leading-snug">
+                        {item.designacao}
+                      </p>
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-1.5 self-end sm:self-center">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => copyToClipboard(item.codigo)}
+                        className="text-xs h-8 px-2.5 gap-1"
+                        title="Copiar código UFCD para a área de transferência"
+                      >
+                        {copiedCode === item.codigo ? (
+                          <>
+                            <Check className="h-3.5 w-3.5 text-emerald-400" />
+                            <span className="text-emerald-400">Copiado</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3.5 w-3.5 text-slate-400" />
+                            <span>Copiar</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  if (selectedAreaModal) {
+                    setAreaFilter(selectedAreaModal);
+                    setSelectedAreaModal(null);
+                  }
+                }}
+                className="gap-1.5 text-xs text-violet-300 border-violet-500/30 hover:bg-violet-950/40"
+              >
+                <Filter className="h-3.5 w-3.5" />
+                Filtrar Tabela por esta Área
+              </Button>
+
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setSelectedAreaModal(null);
+                  setModalSearch("");
+                }}
+              >
                 Fechar
               </Button>
             </div>
