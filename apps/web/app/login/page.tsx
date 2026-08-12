@@ -8,7 +8,7 @@ import { mfaAppOpenHint, mfaVerificationSubtitle, MFA_APP_CODES, MFA_APP_LABELS,
 import { AuthShell } from "@/components/site/auth-shell";
 import { TotpInput } from "@/components/auth/totp-input";
 import { PasswordInput } from "@/components/ui/password-input";
-import { getAccessToken, setAccessToken } from "@/lib/client/access-token";
+import { getAccessToken, setAccessToken, prepareAccessTokenHandoff } from "@/lib/client/access-token";
 import { refreshViaBffCookies, bffFetch } from "@/lib/client/bff-fetch";
 import { resolvePostLoginPath, decodeJwtPayload } from "@/lib/client/jwt-role";
 import type { TenantEntitlements } from "@nexiforma/shared";
@@ -182,6 +182,7 @@ function LoginForm() {
       }
     }
 
+    prepareAccessTokenHandoff();
     const dest = resolvePostLoginPath(activeToken, nextRaw, entitlements);
     window.location.replace(dest);
   }

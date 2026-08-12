@@ -4,7 +4,6 @@ import {
   markSessionExpired,
   isAuthenticatedAppPath,
 } from "./session-lifecycle";
-import { tokenKindMismatchForPath } from "./jwt-role";
 import {
   clientRateLimitRemainingSec,
   isClientRateLimitBlocked,
@@ -131,11 +130,6 @@ export async function bffFetch(
   while (true) {
     let token = getAccessToken();
     if (authRetry401 && attempt === 0) {
-      const path = typeof window !== "undefined" ? window.location.pathname : "";
-      if (token && path && tokenKindMismatchForPath(path, token)) {
-        setAccessToken(null);
-        token = null;
-      }
       if (!token || isAccessTokenExpired(token)) {
         token = await refreshViaBffCookies();
       }

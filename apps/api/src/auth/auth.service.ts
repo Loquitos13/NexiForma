@@ -872,8 +872,6 @@ export class AuthService {
       data: { revokedAt: now },
     });
 
-    clearRefreshCookie(res, this.config);
-
     if (subjectKind === "platform") {
       const pu = await this.prisma.platformUser.findFirst({
         where: { id: session.subjectId, active: true },
