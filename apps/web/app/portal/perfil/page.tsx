@@ -428,7 +428,7 @@ export default function PortalPerfilPage() {
             <form onSubmit={(e) => void handleSaveProfile(e)} className="space-y-4 max-w-xl">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-                  Nome de Apresentação
+                  Nome
                 </label>
                 <Input
                   value={displayName}
@@ -458,16 +458,13 @@ export default function PortalPerfilPage() {
 
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-                  Cargo / Papel no Sistema (Não Editável)
+                  Cargo / Papel no Sistema
                 </label>
                 <div className="flex items-start gap-3 rounded-lg border border-slate-800 bg-slate-950/40 p-3.5 text-sm text-slate-300">
                   <ShieldCheck className="h-5 w-5 text-indigo-400 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <div className="flex items-center gap-2">
+                    <div>
                       <span className="font-semibold text-slate-100">{roleLabel(profile?.role)}</span>
-                      <Badge variant={roleBadgeVariant(profile?.role)} className="text-[10px]">
-                        {profile?.role ?? "utilizador"}
-                      </Badge>
                     </div>
                     <p className="mt-1 text-xs text-slate-400 leading-relaxed">
                       O cargo e as permissões operacionais não podem ser alterados pelo próprio utilizador. A atribuição e gestão de papéis são efectuadas exclusivamente pelo <strong>Super Administrador</strong> da plataforma.
