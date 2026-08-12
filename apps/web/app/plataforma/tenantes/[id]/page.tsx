@@ -3,7 +3,23 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Copy, Check, Key, ShieldCheck } from "lucide-react";
+import {
+  Copy,
+  Check,
+  Key,
+  KeyRound,
+  ShieldCheck,
+  ShieldAlert,
+  Shield,
+  UserCheck,
+  Users,
+  Search,
+  Eye,
+  EyeOff,
+  X,
+  AlertTriangle,
+  Loader2,
+} from "lucide-react";
 import type { BillingPlanCode } from "@nexiforma/shared";
 import { BILLING_ADDON_LABELS, MODULAR_PLAN_CODE } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
@@ -34,11 +50,80 @@ type TenantDetail = {
   };
 };
 
-type TenantUser = { id: string; email: string; displayName: string | null; role: string };
+type TenantUser = {
+  id: string;
+  email: string;
+  displayName: string | null;
+  role: string;
+  active?: boolean;
+  mustChangePassword?: boolean;
+  mfaEnabled?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
 
 const inputClass = "w-full px-3 py-2 rounded-lg bg-[#0c0a14] border border-purple-500/15 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-purple-500/40 transition-colors";
-const btnPrimaryClass = "px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-medium transition-colors";
-const btnSecondaryClass = "px-3.5 py-2 rounded-lg border border-purple-500/20 text-purple-300 hover:bg-purple-500/10 disabled:opacity-50 text-sm font-medium transition-colors";
+const btnPrimaryClass = "px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-medium transition-colors cursor-pointer";
+const btnSecondaryClass = "px-3.5 py-2 rounded-lg border border-purple-500/20 text-purple-300 hover:bg-purple-500/10 disabled:opacity-50 text-sm font-medium transition-colors cursor-pointer";
+
+function renderRoleBadge(role: string) {
+  switch (role) {
+    case "super_admin":
+      return (
+        <span className="inline-flex items-center rounded-full bg-red-500/10 border border-red-500/30 px-2 py-0.5 text-[10px] font-semibold text-red-300">
+          Super Admin
+        </span>
+      );
+    case "tenant_manager":
+      return (
+        <span className="inline-flex items-center rounded-full bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 text-[10px] font-semibold text-blue-300">
+          Gestor de Entidade
+        </span>
+      );
+    case "coordenador_pedagogico":
+      return (
+        <span className="inline-flex items-center rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+          Coord. Pedagógico
+        </span>
+      );
+    case "coordenador_comercial":
+      return (
+        <span className="inline-flex items-center rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+          Coord. Comercial
+        </span>
+      );
+    case "coordenador_financeiro":
+      return (
+        <span className="inline-flex items-center rounded-full bg-teal-500/10 border border-teal-500/30 px-2 py-0.5 text-[10px] font-semibold text-teal-300">
+          Coord. Financeiro
+        </span>
+      );
+    case "comercial":
+      return (
+        <span className="inline-flex items-center rounded-full bg-yellow-500/10 border border-yellow-500/30 px-2 py-0.5 text-[10px] font-semibold text-yellow-300">
+          Comercial
+        </span>
+      );
+    case "formador":
+      return (
+        <span className="inline-flex items-center rounded-full bg-indigo-500/10 border border-indigo-500/30 px-2 py-0.5 text-[10px] font-semibold text-indigo-300">
+          Formador
+        </span>
+      );
+    case "formando":
+      return (
+        <span className="inline-flex items-center rounded-full bg-slate-700/50 border border-slate-600/40 px-2 py-0.5 text-[10px] font-medium text-slate-300">
+          Formando
+        </span>
+      );
+    default:
+      return (
+        <span className="inline-flex items-center rounded-full bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 text-[10px] text-purple-300">
+          {role}
+        </span>
+      );
+  }
+}
 
 export default function TenantDetailPage() {
   const params = useParams();
@@ -83,6 +168,26 @@ export default function TenantDetailPage() {
     temporaryPassword: string;
   } | null>(null);
   const [copiedTempPassword, setCopiedTempPassword] = useState(false);
+
+  // Estados para Gestão e Revogação de Utilizadores
+  const [userSearch, setUserSearch] = useState("");
+  const [revokeTargetUser, setRevokeTargetUser] = useState<TenantUser | null>(null);
+  const [revokeModalOpen, setRevokeModalOpen] = useState(false);
+  const [revokeCustomPassword, setRevokeCustomPassword] = useState("");
+  const [revokeNotifyEmail, setRevokeNotifyEmail] = useState(true);
+  const [revokeForceChange, setRevokeForceChange] = useState(true);
+  const [revokeBusy, setRevokeBusy] = useState(false);
+  const [revokedResult, setRevokedResult] = useState<{
+    email: string;
+    displayName: string | null;
+    slug: string;
+    temporaryPassword: string;
+    emailed: boolean;
+  } | null>(null);
+  const [showRevokedPass, setShowRevokedPass] = useState(false);
+  const [copiedRevokedPass, setCopiedRevokedPass] = useState(false);
+  const [copiedAllRevoked, setCopiedAllRevoked] = useState(false);
+
   const [lockoutForm, setLockoutForm] = useState({
     enabled: true,
     maxAttempts: 5,
@@ -388,17 +493,79 @@ export default function TenantDetailPage() {
     router.push("/plataforma/tenantes");
   }
 
-  async function personificar() {
-    if (!impersonateUserId || !impersonateReason.trim()) return;
-    setImpBusy(true); setError(null);
+  async function execRevokePassword(e?: FormEvent) {
+    if (e) e.preventDefault();
+    if (!revokeTargetUser) return;
+    setRevokeBusy(true);
+    setError(null);
+    try {
+      const r = await bffFetch(`/api/v1/control-plane/tenants/${id}/users/${revokeTargetUser.id}/revoke-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", accept: "application/json" },
+        body: JSON.stringify({
+          customPassword: revokeCustomPassword.trim() || undefined,
+          notifyEmail: revokeNotifyEmail,
+          forceChangeOnLogin: revokeForceChange,
+        }),
+      });
+      if (!r.ok) {
+        setError(await parseApiError(r));
+        return;
+      }
+      const data = (await r.json()) as {
+        ok: boolean;
+        email: string;
+        displayName?: string | null;
+        tenantSlug: string;
+        temporaryPassword?: string;
+        emailed: boolean;
+      };
+
+      setRevokeModalOpen(false);
+      setRevokedResult({
+        email: data.email,
+        displayName: data.displayName ?? revokeTargetUser.displayName,
+        slug: data.tenantSlug || tenant?.slug || "",
+        temporaryPassword: data.temporaryPassword || "",
+        emailed: data.emailed,
+      });
+      setRevokeCustomPassword("");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao revogar password.");
+    } finally {
+      setRevokeBusy(false);
+    }
+  }
+
+  async function personificarUser(targetUserId: string) {
+    setImpersonateUserId(targetUserId);
+    setImpBusy(true);
+    setError(null);
     const r = await bffFetch("/api/auth/impersonation/start", {
-      method: "POST", headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ tenantId: id, targetUserId: impersonateUserId, reason: impersonateReason.trim(), readOnly: impersonateReadOnly }),
+      method: "POST",
+      headers: { "Content-Type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        tenantId: id,
+        targetUserId,
+        reason: impersonateReason.trim() || "Suporte tecnico",
+        readOnly: impersonateReadOnly,
+      }),
     });
     setImpBusy(false);
-    if (!r.ok) { const d = (await r.json().catch(() => null)) as { message?: string } | null; setError(d?.message ?? `HTTP ${r.status}`); return; }
+    if (!r.ok) {
+      const d = (await r.json().catch(() => null)) as { message?: string } | null;
+      setError(d?.message ?? `HTTP ${r.status}`);
+      return;
+    }
     await persistAuthFromResponse(r);
-    router.push("/portal"); router.refresh();
+    router.push("/portal");
+    router.refresh();
+  }
+
+  async function personificar() {
+    if (!impersonateUserId || !impersonateReason.trim()) return;
+    await personificarUser(impersonateUserId);
   }
 
   async function saveTeamsIntegracao() {
@@ -868,9 +1035,320 @@ export default function TenantDetailPage() {
             </div>
           </div>
 
+          {/* Utilizadores do Tenant & Revogação de Passwords */}
+          <div className="rounded-2xl bg-[#0c0a14]/80 border border-purple-500/20 p-5 shadow-xl">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-base font-semibold text-purple-200 flex items-center gap-2">
+                  <Users className="h-4.5 w-4.5 text-purple-400" />
+                  Utilizadores do Tenant
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Lista de todos os utilizadores deste inquilino. Pode revogar a palavra-passe, gerar credenciais temporárias ou personificar o utilizador.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-purple-950/60 border border-purple-500/30 px-3 py-1 text-xs font-semibold text-purple-300">
+                  {users.length} {users.length === 1 ? "utilizador registado" : "utilizadores registados"}
+                </span>
+              </div>
+            </div>
+
+            {/* Barra de Pesquisa de Utilizadores */}
+            <div className="mb-4">
+              <div className="relative max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+                <input
+                  type="text"
+                  placeholder="Pesquisar por email, nome ou papel…"
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-[#0c0a14] border border-purple-500/15 text-xs text-slate-200 placeholder:text-slate-600 outline-none focus:border-purple-500/40 transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Tabela de Utilizadores */}
+            {users.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-purple-500/20 p-6 text-center text-xs text-slate-500">
+                Nenhum utilizador registado neste tenant.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-purple-500/15">
+                <table className="w-full text-left text-xs text-slate-300">
+                  <thead className="bg-[#120e24] text-[11px] font-semibold text-slate-400 border-b border-purple-500/15">
+                    <tr>
+                      <th className="px-3.5 py-2.5">Utilizador</th>
+                      <th className="px-3 py-2.5">Papel / Função</th>
+                      <th className="px-3 py-2.5">Estado</th>
+                      <th className="px-3 py-2.5 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-purple-500/10">
+                    {users
+                      .filter((u) => {
+                        if (!userSearch.trim()) return true;
+                        const term = userSearch.toLowerCase();
+                        return (
+                          u.email.toLowerCase().includes(term) ||
+                          (u.displayName && u.displayName.toLowerCase().includes(term)) ||
+                          u.role.toLowerCase().includes(term)
+                        );
+                      })
+                      .map((u) => (
+                        <tr key={u.id} className="hover:bg-purple-950/20 transition-colors">
+                          <td className="px-3.5 py-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="h-7 w-7 rounded-full bg-purple-900/50 border border-purple-500/30 flex items-center justify-center text-[10px] font-bold text-purple-200">
+                                {(u.displayName || u.email).slice(0, 2).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <span className="font-medium text-slate-200 block truncate">
+                                  {u.displayName || "Sem nome"}
+                                </span>
+                                <span className="text-[11px] text-slate-400 font-mono block truncate">
+                                  {u.email}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            {renderRoleBadge(u.role)}
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {u.mustChangePassword ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[10px] text-amber-300 font-medium">
+                                  <KeyRound className="h-2.5 w-2.5" /> A aguardar nova pass
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[10px] text-emerald-300 font-medium">
+                                  <Check className="h-2.5 w-2.5" /> Ativo
+                                </span>
+                              )}
+                              {u.mfaEnabled ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 text-[10px] text-blue-300 font-medium" title="MFA / 2FA Ativo">
+                                  <Shield className="h-2.5 w-2.5" /> 2FA
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRevokeTargetUser(u);
+                                  setRevokeCustomPassword("");
+                                  setRevokeModalOpen(true);
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-red-500/30 bg-red-950/30 hover:bg-red-900/40 text-red-200 text-xs font-medium transition-colors shadow-sm cursor-pointer"
+                                title="Revogar palavra-passe e gerar credenciais temporárias"
+                              >
+                                <KeyRound className="h-3 w-3 text-red-400" />
+                                <span>Revogar Password</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={impBusy}
+                                onClick={() => void personificarUser(u.id)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-yellow-500/30 bg-yellow-950/30 hover:bg-yellow-900/40 text-yellow-200 text-xs font-medium transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+                                title="Personificar utilizador (Entrar como)"
+                              >
+                                <UserCheck className="h-3 w-3 text-yellow-400" />
+                                <span>Entrar</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Modal de Confirmação de Revogação de Password */}
+          {revokeModalOpen && revokeTargetUser ? (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+              <div className="w-full max-w-md rounded-2xl border border-red-500/30 bg-[#0c0a14] p-5 shadow-2xl text-slate-200 ring-1 ring-red-500/20">
+                <div className="flex items-start justify-between gap-3 border-b border-red-500/20 pb-3 mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/20 text-red-400">
+                      <ShieldAlert className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <h3 className="text-sm font-semibold text-red-100">Revogar Palavra-passe</h3>
+                      <p className="text-xs text-slate-400 truncate">{revokeTargetUser.email}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRevokeModalOpen(false)}
+                    className="text-slate-400 hover:text-slate-200 transition-colors p-1"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="rounded-xl bg-red-950/20 border border-red-500/20 p-3 mb-4 text-xs text-red-200/90 leading-relaxed">
+                  <p className="font-semibold flex items-center gap-1.5 text-red-300 mb-1">
+                    <AlertTriangle className="h-3.5 w-3.5" /> Atenção:
+                  </p>
+                  Esta ação irá <strong>revogar a palavra-passe atual</strong> e desconectar todas as sessões ativas deste utilizador. Será gerada uma nova palavra-passe temporária.
+                </div>
+
+                <form onSubmit={(e) => void execRevokePassword(e)} className="space-y-3">
+                  <label className="grid gap-1 text-xs text-slate-400">
+                    Palavra-passe temporária personalizada (opcional)
+                    <input
+                      type="password"
+                      placeholder="Deixar vazio para gerar aleatória segura"
+                      className={inputClass}
+                      value={revokeCustomPassword}
+                      onChange={(e) => setRevokeCustomPassword(e.target.value)}
+                    />
+                  </label>
+
+                  <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
+                    <input
+                      type="checkbox"
+                      checked={revokeForceChange}
+                      onChange={(e) => setRevokeForceChange(e.target.checked)}
+                      className="rounded border-purple-500/30 bg-[#0c0a14] accent-red-600"
+                    />
+                    Obrigar a definir nova palavra-passe no próximo início de sessão
+                  </label>
+
+                  <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={revokeNotifyEmail}
+                      onChange={(e) => setRevokeNotifyEmail(e.target.checked)}
+                      className="rounded border-purple-500/30 bg-[#0c0a14] accent-red-600"
+                    />
+                    Enviar email ao utilizador com a nova password temporária
+                  </label>
+
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-purple-500/15 mt-4">
+                    <button
+                      type="button"
+                      disabled={revokeBusy}
+                      onClick={() => setRevokeModalOpen(false)}
+                      className={btnSecondaryClass}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={revokeBusy}
+                      className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-md"
+                    >
+                      {revokeBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
+                      <span>{revokeBusy ? "A revogar…" : "Confirmar e Revogar"}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Modal de Sucesso: Credenciais Temporárias Desencriptadas */}
+          {revokedResult ? (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+              <div className="w-full max-w-lg rounded-2xl border border-emerald-500/40 bg-[#0c0a14] p-6 shadow-2xl text-slate-200 ring-1 ring-emerald-500/30">
+                <div className="flex items-start justify-between gap-3 border-b border-emerald-500/20 pb-3 mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400">
+                      <ShieldCheck className="h-6 w-6" />
+                    </span>
+                    <div>
+                      <h3 className="text-base font-semibold text-emerald-100">Password Revogada com Sucesso</h3>
+                      <p className="text-xs text-slate-400">Credenciais temporárias geradas</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRevokedResult(null)}
+                    className="text-slate-400 hover:text-slate-200 transition-colors p-1"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <p className="text-xs text-slate-300 mb-4 leading-relaxed">
+                  A palavra-passe do utilizador <strong className="text-emerald-300">{revokedResult.email}</strong> foi revogada com sucesso. Copie as credenciais abaixo para fornecer ao utilizador ou à equipa de suporte:
+                </p>
+
+                <div className="space-y-2.5 bg-black/50 rounded-xl border border-emerald-500/20 p-4 mb-4 font-mono text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 font-sans text-[11px]">Tenant Slug:</span>
+                    <span className="text-emerald-200 font-semibold">{revokedResult.slug}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 font-sans text-[11px]">Email:</span>
+                    <span className="text-emerald-200">{revokedResult.email}</span>
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+                    <span className="text-slate-400 font-sans text-[11px]">Password Temporária:</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-emerald-300 font-bold text-sm tracking-wide">
+                        {showRevokedPass ? revokedResult.temporaryPassword : "••••••••••••"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowRevokedPass((v) => !v)}
+                        className="text-slate-400 hover:text-slate-200 p-1 transition-colors"
+                        title={showRevokedPass ? "Ocultar" : "Mostrar"}
+                      >
+                        {showRevokedPass ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(revokedResult.temporaryPassword);
+                          setCopiedRevokedPass(true);
+                          setTimeout(() => setCopiedRevokedPass(false), 2000);
+                        }}
+                        className="inline-flex items-center gap-1 rounded bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-200 text-[11px] px-2 py-0.5 transition-colors"
+                      >
+                        {copiedRevokedPass ? <Check className="h-3 w-3 text-emerald-300" /> : <Copy className="h-3 w-3" />}
+                        <span>{copiedRevokedPass ? "Copiado!" : "Copiar"}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const text = `Tenant: ${revokedResult.slug}\nEmail: ${revokedResult.email}\nPassword temporária: ${revokedResult.temporaryPassword}\nLogin: https://app.nexiforma.pt/login`;
+                      void navigator.clipboard.writeText(text);
+                      setCopiedAllRevoked(true);
+                      setTimeout(() => setCopiedAllRevoked(false), 2000);
+                    }}
+                    className="inline-flex items-center gap-1.5 text-xs text-purple-300 hover:text-purple-100 transition-colors"
+                  >
+                    {copiedAllRevoked ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                    <span>{copiedAllRevoked ? "Todas as credenciais copiadas!" : "Copiar resumo completo"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRevokedResult(null)}
+                    className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-colors"
+                  >
+                    Concluir
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {/* Impersonation */}
           <div className="rounded-2xl bg-[#0c0a14]/80 border border-yellow-500/15 p-5">
-            <h2 className="text-sm font-semibold text-yellow-200 mb-2">Personificacao</h2>
+            <h2 className="text-sm font-semibold text-yellow-200 mb-2">Personificação Global</h2>
             <p className="text-xs text-slate-500 mb-4">Entrar no portal do tenant como utilizador seleccionado (auditado, read-only por defeito).</p>
             <div className="space-y-3 max-w-md">
               <select value={impersonateUserId} onChange={(e) => setImpersonateUserId(e.target.value)}

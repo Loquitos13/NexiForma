@@ -5,6 +5,7 @@ import { NotificacoesModule } from "../notificacoes/notificacoes.module";
 import { MailModule } from "../mail/mail.module";
 import { SupportModule } from "../support/support.module";
 import { FaturasModule } from "../faturas/faturas.module";
+import { BackupModule } from "../backup/backup.module";
 import { ControlPlaneController } from "./control-plane.controller";
 import { ControlPlaneOpsController } from "./control-plane-ops.controller";
 import { ControlPlaneSupportController } from "./control-plane-support.controller";
@@ -23,6 +24,7 @@ import { TenantAccessKeyService } from "./tenant-access-key.service";
     MailModule,
     SupportModule,
     FaturasModule,
+    BackupModule,
   ],
   controllers: [
     ControlPlaneController,

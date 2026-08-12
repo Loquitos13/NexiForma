@@ -76,6 +76,18 @@ export class ControlPlaneSupportController {
     return this.ops.resetUserPassword(user, id, userId, dto, ip);
   }
 
+  @Post("tenants/:id/users/:userId/revoke-password")
+  revokePassword(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Body() dto: ResetTenantUserPasswordDto,
+    @Req() req: Request,
+  ) {
+    const ip = typeof req.ip === "string" ? req.ip : undefined;
+    return this.ops.resetUserPassword(user, id, userId, dto, ip);
+  }
+
   @Get("tenants/:id/acoes-formacao")
   listAcoes(@Param("id", ParseUUIDPipe) id: string) {
     return this.ops.listAcoes(id);

@@ -393,3 +393,9 @@ export {
   type CrmTenantConfig,
   type CrmWebhookEvent,
 } from "./crm/enterprise-types";
+
+export {
+  type EncryptedCredentialPayload,
+  type DecryptedCredentialData,
+} from "./crypto/encrypted-credentials";
+

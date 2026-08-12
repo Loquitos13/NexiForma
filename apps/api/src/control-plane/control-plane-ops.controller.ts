@@ -1,4 +1,5 @@
-import { Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Header, Param, ParseUUIDPipe, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
+import type { Response } from "express";
 import type { PlatformAlertStatus } from "@nexiforma/database";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
@@ -6,12 +7,16 @@ import { Roles } from "../auth/decorators/roles.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { ControlPlaneOpsService } from "./control-plane-ops.service";
+import { DbBackupService } from "../backup/db-backup.service";
 
 @Controller("control-plane/ops")
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles("super_admin")
 export class ControlPlaneOpsController {
-  constructor(private readonly ops: ControlPlaneOpsService) {}
+  constructor(
+    private readonly ops: ControlPlaneOpsService,
+    private readonly backup: DbBackupService,
+  ) {}
 
   @Get("dashboard")
   dashboard(): Promise<unknown> {
@@ -60,5 +65,19 @@ export class ControlPlaneOpsController {
   @Post("health/run")
   runHealthChecks(@Query("tenantId") tenantId?: string): Promise<unknown> {
     return this.ops.runHealthChecks(tenantId);
+  }
+
+  @Post("backup/run")
+  async runBackup(): Promise<unknown> {
+    return this.backup.createBackup();
+  }
+
+  @Get("backup/download")
+  async downloadBackup(@Res() res: Response): Promise<void> {
+    const { filename, buffer } = await this.backup.generateBackupBuffer();
+    res.setHeader("Content-Type", "application/gzip");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Length", buffer.byteLength);
+    res.end(buffer);
   }
 }

@@ -86,6 +86,28 @@ export class DbBackupService {
     }
   }
 
+  async generateBackupBuffer(): Promise<{ filename: string; buffer: Buffer }> {
+    const databaseUrl = this.config.get<string>("DATABASE_URL")?.trim();
+    if (!databaseUrl) {
+      throw new Error("DATABASE_URL em falta no ambiente.");
+    }
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const filename = `nexiforma_db_backup_${stamp}.sql.gz`;
+
+    const tmp = await mkdtemp(path.join(tmpdir(), "nexiforma-db-dump-"));
+    const sqlPath = path.join(tmp, "dump.sql");
+    const gzPath = path.join(tmp, "dump.sql.gz");
+
+    try {
+      await this.pgDumpToFile(databaseUrl, sqlPath);
+      await pipeline(createReadStream(sqlPath), createGzip({ level: 9 }), createWriteStream(gzPath));
+      const buffer = await readFile(gzPath);
+      return { filename, buffer };
+    } finally {
+      await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
   private async pgDumpToFile(databaseUrl: string, outPath: string): Promise<void> {
     const pgDump = this.config.get<string>("PG_DUMP_PATH")?.trim() || "pg_dump";
     try {

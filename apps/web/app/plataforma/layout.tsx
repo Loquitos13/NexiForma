@@ -15,6 +15,7 @@ import { publishMobileNavOpen } from "@/lib/client/mobile-nav";
 import { cn } from "@/lib/ui/cn";
 import { UserSessionBar } from "@/components/site/user-session-bar";
 import { PlataformaShellSkeleton } from "@/components/plataforma/plataforma-shell-skeleton";
+import { PlataformaSecretBackupModal } from "@/components/plataforma/plataforma-secret-backup-modal";
 
 const NAV = [
   { href: "/plataforma", label: "Dashboard" },
@@ -159,6 +160,9 @@ export default function PlataformaLayout({ children }: { children: React.ReactNo
           </div>
         </main>
       </div>
+
+      {/* Modal e Gatilho Secreto de Backup para Super Admin */}
+      <PlataformaSecretBackupModal />
     </div>
   );
 }

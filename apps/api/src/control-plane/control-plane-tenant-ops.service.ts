@@ -4,10 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import * as argon2 from "argon2";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { MailService } from "../mail/mail.service";
+import { encryptCredentialsWithSecret } from "../common/crypto-envelope.util";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { matriculaDocumentosSeedRows } from "../formandos/matricula-documentos.util";
 
@@ -21,6 +23,7 @@ export class ControlPlaneTenantOpsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly mail: MailService,
+    private readonly config: ConfigService,
   ) {}
 
   async searchUsers(tenantId: string, q: string) {
@@ -87,6 +90,21 @@ export class ControlPlaneTenantOpsService {
       payload: { forceChangeOnLogin: opts.forceChangeOnLogin ?? true },
     });
 
+    const jwtSecret = this.config.get<string>("JWT_SECRET") ?? "nexiforma_default_jwt_secret";
+    const encryptedCredentials = encryptCredentialsWithSecret(
+      {
+        userId,
+        email: user.email,
+        displayName: user.displayName,
+        tenantSlug: user.tenant.slug,
+        temporaryPassword: plain,
+        mustChangePassword: opts.forceChangeOnLogin ?? true,
+        revokedAt: new Date().toISOString(),
+        revokedBy: actor.email,
+      },
+      jwtSecret,
+    );
+
     if (opts.notifyEmail) {
       const body = [
         `A equipa NexiForma redefiniu a sua password temporária.`,
@@ -111,7 +129,9 @@ export class ControlPlaneTenantOpsService {
       ok: true,
       userId,
       email: user.email,
-      temporaryPassword: plain,
+      displayName: user.displayName,
+      tenantSlug: user.tenant.slug,
+      encryptedCredentials,
       forceChangeOnLogin: opts.forceChangeOnLogin ?? true,
       emailed: !!opts.notifyEmail,
     };
