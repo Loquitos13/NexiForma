@@ -16,8 +16,8 @@ export const metadata: Metadata = {
     template: `%s | ${APP_NAME}`,
   },
   description:
-    "Plataforma SaaS para entidades formadoras certificadas DGERT – dossie pedagogico digital, LMS, assiduidade e compliance.",
-  keywords: ["DGERT", "formacao certificada", "dossie pedagogico", "LMS", "SIGO", "Portugal"],
+    "Plataforma SaaS especializada para Departamentos Comerciais, Contabilidade e Gestão de Formação Certificada",
+  keywords: ["DGERT", "formacao certificada", "dossie pedagogico", "LMS", "SIGO", "Portugal", "CRM", "AT", "SAF-T", "Faturação", "Contabilidade"],
   authors: [{ name: APP_NAME }],
   manifest: "/manifest.json",
   appleWebApp: { capable: true, title: APP_NAME },
