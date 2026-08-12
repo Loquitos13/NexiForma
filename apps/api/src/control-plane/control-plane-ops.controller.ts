@@ -1,4 +1,18 @@
-import { Controller, Get, Header, Param, ParseUUIDPipe, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Header,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { Response } from "express";
 import type { PlatformAlertStatus } from "@nexiforma/database";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -8,6 +22,7 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { ControlPlaneOpsService } from "./control-plane-ops.service";
 import { DbBackupService } from "../backup/db-backup.service";
+import { decryptIpWithSecret } from "../common/ip-encryption.util";
 
 @Controller("control-plane/ops")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -16,6 +31,7 @@ export class ControlPlaneOpsController {
   constructor(
     private readonly ops: ControlPlaneOpsService,
     private readonly backup: DbBackupService,
+    private readonly config: ConfigService,
   ) {}
 
   @Get("dashboard")
@@ -79,5 +95,14 @@ export class ControlPlaneOpsController {
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Content-Length", buffer.byteLength);
     res.end(buffer);
+  }
+
+  @Post("unmask-ip")
+  unmaskIp(@Body("encryptedIp") encryptedIp: string) {
+    if (!encryptedIp) throw new BadRequestException("encryptedIp obrigatório");
+    const secret = this.config.get<string>("JWT_SECRET") ?? "nexiforma_default_jwt_secret";
+    const ip = decryptIpWithSecret(encryptedIp, secret);
+    if (!ip) throw new BadRequestException("Não foi possível descodificar o IP.");
+    return { ip };
   }
 }

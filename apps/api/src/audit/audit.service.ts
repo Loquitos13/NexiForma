@@ -1,6 +1,8 @@
 import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { AuditActorType, GlobalAuditLog, Prisma } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
+import { encryptIpWithSecret, isPrivateOrInternalIp, maskPublicIp } from "../common/ip-encryption.util";
 
 export type AuditEntry = {
   actorType: AuditActorType;
@@ -26,13 +28,20 @@ export type AuditListOpts = {
   q?: string;
 };
 
-function serializeAuditRow(row: GlobalAuditLog): Record<string, unknown> {
+function serializeAuditRow(row: GlobalAuditLog, jwtSecret: string): Record<string, unknown> {
+  const rawIp = row.actorIp != null ? String(row.actorIp).trim() : null;
+  const isPrivate = rawIp ? isPrivateOrInternalIp(rawIp) : false;
+  const maskedIp = rawIp ? maskPublicIp(rawIp) : null;
+  const encryptedIp = rawIp && !isPrivate ? encryptIpWithSecret(rawIp, jwtSecret) : null;
+
   return {
     id: row.id.toString(),
     occurredAt: row.occurredAt,
     actorType: row.actorType,
     actorId: row.actorId,
-    actorIp: row.actorIp != null ? String(row.actorIp) : null,
+    actorIp: maskedIp,
+    encryptedActorIp: encryptedIp,
+    isPrivateIp: isPrivate,
     action: row.action,
     resourceType: row.resourceType,
     resourceId: row.resourceId,
@@ -44,7 +53,14 @@ function serializeAuditRow(row: GlobalAuditLog): Record<string, unknown> {
 
 @Injectable()
 export class AuditService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
+
+  private getJwtSecret(): string {
+    return this.config.get<string>("JWT_SECRET") ?? "nexiforma_default_jwt_secret";
+  }
 
   async log(entry: AuditEntry): Promise<Record<string, unknown>> {
     const row = await this.prisma.globalAuditLog.create({
@@ -60,7 +76,7 @@ export class AuditService {
         payload: entry.payload ?? undefined,
       },
     });
-    return serializeAuditRow(row);
+    return serializeAuditRow(row, this.getJwtSecret());
   }
 
   async list(opts: AuditListOpts): Promise<Record<string, unknown>[]> {
@@ -98,6 +114,7 @@ export class AuditService {
       take,
       ...(opts.cursor ? { skip: 1, cursor: { id: opts.cursor } } : {}),
     });
-    return rows.map(serializeAuditRow);
+    const secret = this.getJwtSecret();
+    return rows.map((r) => serializeAuditRow(r, secret));
   }
 }

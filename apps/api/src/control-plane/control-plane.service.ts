@@ -38,6 +38,7 @@ import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 import { readTenantLogoStorageKey } from "../auth/tenant-branding.util";
 import { FATURACAO_HISTORICO_IMUTAVEL_MSG } from "../faturas/faturacao-historico.util";
 import { StorageService } from "../storage/storage.service";
+import { encryptIpWithSecret, isPrivateOrInternalIp, maskPublicIp } from "../common/ip-encryption.util";
 import type {
   CreateSubscriptionKeyDto,
   CreateTenantDto,
@@ -1098,6 +1099,51 @@ export class ControlPlaneService {
 
     const acessos24h = this.buildHourlyAccessSeries(sessions24h);
     const loginsTenant24h = sessions24h.filter((s) => s.subjectKind === "tenant").length;
+    const since15m = new Date(Date.now() - 15 * 60 * 1000);
+
+    const [
+      recentActivity,
+      recentErrors,
+      errors15mCount,
+    ] = await Promise.all([
+      this.prisma.globalAuditLog.findMany({
+        orderBy: { occurredAt: "desc" },
+        take: 12,
+        select: {
+          id: true,
+          occurredAt: true,
+          action: true,
+          resourceType: true,
+          resourceId: true,
+          targetTenantId: true,
+          actorType: true,
+          actorId: true,
+          actorIp: true,
+        },
+      }),
+      this.prisma.platformHttpAlert.findMany({
+        orderBy: { occurredAt: "desc" },
+        take: 8,
+        select: {
+          id: true,
+          statusCode: true,
+          httpMethod: true,
+          httpPath: true,
+          resumo: true,
+          tenantSlug: true,
+          severity: true,
+          status: true,
+          occurredAt: true,
+        },
+      }),
+      this.prisma.platformHttpAlert.count({
+        where: { occurredAt: { gte: since15m } },
+      }),
+    ]);
+
+    const secret = this.config.get<string>("JWT_SECRET") ?? "nexiforma_default_jwt_secret";
+
+    const mem = process.memoryUsage();
 
     return {
       tenantsByStatus: tenants,
@@ -1110,6 +1156,33 @@ export class ControlPlaneService {
         onlinePlataforma: platformOnline,
         logins24h: loginsTenant24h,
         serie24h: acessos24h,
+      },
+      liveTelemetry: {
+        errors15m: errors15mCount,
+        recentErrors,
+        recentActivity: recentActivity.map((r) => {
+          const rawIp = r.actorIp != null ? String(r.actorIp).trim() : null;
+          return {
+            id: r.id.toString(),
+            occurredAt: r.occurredAt,
+            action: r.action,
+            resourceType: r.resourceType,
+            resourceId: r.resourceId,
+            targetTenantId: r.targetTenantId,
+            actorType: r.actorType,
+            actorId: r.actorId,
+            actorIp: rawIp ? maskPublicIp(rawIp) : null,
+            encryptedActorIp: rawIp && !isPrivateOrInternalIp(rawIp) ? encryptIpWithSecret(rawIp, secret) : null,
+          };
+        }),
+        systemHealth: {
+          rssMb: Math.round(mem.rss / (1024 * 1024)),
+          heapUsedMb: Math.round(mem.heapUsed / (1024 * 1024)),
+          heapTotalMb: Math.round(mem.heapTotal / (1024 * 1024)),
+          uptimeSeconds: Math.round(process.uptime()),
+          nodeVersion: process.version,
+          timestamp: now.toISOString(),
+        },
       },
       suporte: {
         porEstado: supportByStatus,

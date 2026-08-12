@@ -3,6 +3,20 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import {
+  Activity,
+  AlertTriangle,
+  Cpu,
+  Eye,
+  Loader2,
+  Lock,
+  Radio,
+  RefreshCw,
+  Server,
+  Shield,
+  ShieldAlert,
+  Zap,
+} from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import {
   Access24hChart,
@@ -22,6 +36,40 @@ type Dashboard = {
     onlinePlataforma: number;
     logins24h: number;
     serie24h: { hour: string; acessos: number; tenant: number; platform: number }[];
+  };
+  liveTelemetry?: {
+    errors15m: number;
+    recentErrors: {
+      id: string;
+      statusCode: number;
+      httpMethod: string;
+      httpPath: string;
+      resumo: string;
+      tenantSlug: string | null;
+      severity: string;
+      status: string;
+      occurredAt: string;
+    }[];
+    recentActivity: {
+      id: string;
+      occurredAt: string;
+      action: string;
+      resourceType: string;
+      resourceId: string;
+      targetTenantId: string | null;
+      actorType: string;
+      actorId: string;
+      actorIp: string | null;
+      encryptedActorIp: string | null;
+    }[];
+    systemHealth: {
+      rssMb: number;
+      heapUsedMb: number;
+      heapTotalMb: number;
+      uptimeSeconds: number;
+      nodeVersion: string;
+      timestamp: string;
+    };
   };
   suporte: { porEstado: { status: string; _count: number }[]; abertos: number };
   crm: {
@@ -65,6 +113,11 @@ export default function PlataformaDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [liveMode, setLiveMode] = useState(true);
+  const [unmaskingId, setUnmaskingId] = useState<string | null>(null);
+  const [revealedIps, setRevealedIps] = useState<Record<string, string>>({});
+
+  const refreshIntervalMs = liveMode ? 5_000 : 30_000;
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -88,9 +141,27 @@ export default function PlataformaDashboardPage() {
 
   useEffect(() => {
     void load();
-    const id = setInterval(() => void load(true), REFRESH_MS);
+    const id = setInterval(() => void load(true), refreshIntervalMs);
     return () => clearInterval(id);
-  }, [load]);
+  }, [load, refreshIntervalMs]);
+
+  async function unmaskIp(id: string, encryptedIp: string) {
+    if (revealedIps[id]) return;
+    setUnmaskingId(id);
+    try {
+      const res = await bffFetch("/api/v1/control-plane/ops/unmask-ip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ encryptedIp }),
+      });
+      if (res.ok) {
+        const d = (await res.json()) as { ip: string };
+        setRevealedIps((p) => ({ ...p, [id]: d.ip }));
+      }
+    } finally {
+      setUnmaskingId(null);
+    }
+  }
 
   const tenantChart = dash?.tenantsByStatus.map((t) => ({ status: t.status, value: t._count })) ?? [];
   const subsChart =
@@ -112,19 +183,98 @@ export default function PlataformaDashboardPage() {
         faturas: t.faturas,
       })) ?? [];
 
+  const formatUptime = (sec?: number) => {
+    if (!sec) return "–";
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    return `${h}h ${m}m`;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-50">Dashboard plataforma</h1>
-          <p className="mt-1 text-sm text-slate-500">Ops center multi-tenant em tempo quasi-real</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-50">Dashboard plataforma</h1>
+            <button
+              type="button"
+              onClick={() => setLiveMode(!liveMode)}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-colors border ${
+                liveMode
+                  ? "bg-emerald-950/60 border-emerald-500/40 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)]"
+                  : "bg-slate-900 border-slate-700 text-slate-400"
+              }`}
+              title="Alternar modo de telemetria em tempo real"
+            >
+              <span className="relative flex h-2 w-2">
+                {liveMode ? (
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                ) : null}
+                <span
+                  className={`relative inline-flex h-2 w-2 rounded-full ${
+                    liveMode ? "bg-emerald-500" : "bg-slate-500"
+                  }`}
+                />
+              </span>
+              <span>{liveMode ? "TEMPO REAL (5s)" : "PAUSADO (30s)"}</span>
+            </button>
+          </div>
+          <p className="mt-1 text-sm text-slate-500">Mission Control e telemetria de segurança multi-tenant</p>
         </div>
-        {lastUpdate ? (
-          <p className="text-xs text-slate-600">
-            Actualizado {lastUpdate.toLocaleTimeString("pt-PT")} · refresh {REFRESH_MS / 1000}s
-          </p>
-        ) : null}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => void load(false)}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-purple-500/20 bg-purple-950/30 text-xs font-medium text-purple-300 hover:bg-purple-900/40 transition-colors"
+          >
+            <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
+            <span>Atualizar Agora</span>
+          </button>
+          {lastUpdate ? (
+            <p className="text-xs text-slate-600">
+              {lastUpdate.toLocaleTimeString("pt-PT")}
+            </p>
+          ) : null}
+        </div>
       </div>
+
+      {/* System Telemetry Pulse */}
+      {dash?.liveTelemetry ? (
+        <div className="rounded-2xl border border-purple-500/15 bg-[#0c0a14]/90 p-4 shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-4 text-xs">
+            <div className="flex items-center gap-2">
+              <Server className="h-4 w-4 text-purple-400" />
+              <span className="text-slate-400 font-medium">Node.js {dash.liveTelemetry.systemHealth.nodeVersion}</span>
+              <span className="text-slate-600">·</span>
+              <span className="text-slate-400">
+                Uptime: <strong className="text-slate-200">{formatUptime(dash.liveTelemetry.systemHealth.uptimeSeconds)}</strong>
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Cpu className="h-4 w-4 text-sky-400" />
+              <span className="text-slate-400">
+                RAM Heap: <strong className="text-sky-300">{dash.liveTelemetry.systemHealth.heapUsedMb} MB</strong> / {dash.liveTelemetry.systemHealth.heapTotalMb} MB
+              </span>
+              <span className="text-slate-600">·</span>
+              <span className="text-slate-400">
+                RSS: <strong className="text-slate-200">{dash.liveTelemetry.systemHealth.rssMb} MB</strong>
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <ShieldAlert className={`h-4 w-4 ${dash.liveTelemetry.errors15m > 0 ? "text-amber-400 animate-pulse" : "text-emerald-400"}`} />
+              <span className="text-slate-400">
+                Erros (15m):{" "}
+                <strong className={dash.liveTelemetry.errors15m > 0 ? "text-amber-300 font-bold" : "text-emerald-400"}>
+                  {dash.liveTelemetry.errors15m}
+                </strong>
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="flex items-start gap-2.5 rounded-xl border border-red-500/25 bg-red-950/40 px-4 py-3">
@@ -210,6 +360,145 @@ export default function PlataformaDashboardPage() {
               <CrmStackedBar data={crmTenantsChart} />
             </ChartCard>
           ) : null}
+
+          {/* Live Radar: Erros em Tempo Real + Pulso de Atividade */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* Live Error Stream */}
+            <div className="rounded-2xl border border-red-500/20 bg-[#0c0a14]/90 p-5 shadow-xl">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                  </span>
+                  <h2 className="text-sm font-semibold text-red-200">Radar de Erros em Tempo Real</h2>
+                </div>
+                <Link
+                  href="/plataforma/operacoes"
+                  className="text-xs text-red-400 hover:text-red-300 transition-colors font-medium"
+                >
+                  Ver Todos &rarr;
+                </Link>
+              </div>
+
+              {dash.liveTelemetry?.recentErrors && dash.liveTelemetry.recentErrors.length > 0 ? (
+                <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                  {dash.liveTelemetry.recentErrors.map((err) => (
+                    <div
+                      key={err.id}
+                      className="rounded-xl border border-red-500/15 bg-red-950/20 p-3 text-xs space-y-1 hover:bg-red-950/30 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-1.5 py-0.5 rounded font-mono font-bold text-[10px] ${
+                              err.statusCode >= 500
+                                ? "bg-red-500/20 text-red-300 border border-red-500/40"
+                                : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                            }`}
+                          >
+                            {err.statusCode}
+                          </span>
+                          <span className="font-mono text-slate-300 font-semibold">{err.httpMethod}</span>
+                          <span className="font-mono text-slate-400 truncate max-w-[200px]" title={err.httpPath}>
+                            {err.httpPath}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 whitespace-nowrap">
+                          {new Date(err.occurredAt).toLocaleTimeString("pt-PT")}
+                        </span>
+                      </div>
+                      <p className="text-slate-300 truncate" title={err.resumo}>
+                        {err.resumo}
+                      </p>
+                      {err.tenantSlug ? (
+                        <span className="inline-block text-[10px] text-purple-400 bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-500/20">
+                          tenant: {err.tenantSlug}
+                        </span>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-8 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
+                  <Shield className="h-6 w-6 text-emerald-500" />
+                  <span>Sem erros recentes no sistema. Plataforma estável!</span>
+                </div>
+              )}
+            </div>
+
+            {/* Live Activity Pulse */}
+            <div className="rounded-2xl border border-purple-500/20 bg-[#0c0a14]/90 p-5 shadow-xl">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-purple-400 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-purple-500" />
+                  </span>
+                  <h2 className="text-sm font-semibold text-purple-200">Pulso de Atividade da Plataforma</h2>
+                </div>
+                <Link
+                  href="/plataforma/auditoria"
+                  className="text-xs text-purple-400 hover:text-purple-300 transition-colors font-medium"
+                >
+                  Auditoria Global &rarr;
+                </Link>
+              </div>
+
+              {dash.liveTelemetry?.recentActivity && dash.liveTelemetry.recentActivity.length > 0 ? (
+                <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                  {dash.liveTelemetry.recentActivity.map((act) => (
+                    <div
+                      key={act.id}
+                      className="rounded-xl border border-purple-500/10 bg-white/[0.02] p-3 text-xs space-y-1 hover:bg-white/[0.04] transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-purple-300 font-medium text-[11px] bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                          {act.action}
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          {new Date(act.occurredAt).toLocaleTimeString("pt-PT")}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-slate-400 text-[11px] pt-0.5">
+                        <span className="truncate max-w-[200px]">
+                          {act.resourceType}/{act.resourceId.slice(0, 8)}…
+                        </span>
+                        {act.encryptedActorIp ? (
+                          revealedIps[act.id] ? (
+                            <span className="text-emerald-400 font-mono text-[10px] font-semibold">
+                              {revealedIps[act.id]}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={unmaskingId === act.id}
+                              onClick={() => void unmaskIp(act.id, act.encryptedActorIp!)}
+                              className="inline-flex items-center gap-1 text-[10px] text-purple-400 hover:text-purple-200 bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-500/30"
+                              title="Revelar IP na sua view"
+                            >
+                              {unmaskingId === act.id ? (
+                                <Loader2 className="h-2 w-2 animate-spin" />
+                              ) : (
+                                <Eye className="h-2 w-2" />
+                              )}
+                              <span>{act.actorIp}</span>
+                            </button>
+                          )
+                        ) : (
+                          <span className="text-slate-500 font-mono text-[10px]">{act.actorIp || "–"}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-8 text-center text-xs text-slate-500">
+                  A aguardar novos eventos em tempo real…
+                </div>
+              )}
+            </div>
+          </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard label="Utilizadores" value={dash.totalUsers} icon="users" />

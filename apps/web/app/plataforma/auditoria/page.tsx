@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Eye, EyeOff, Lock, Shield, ShieldCheck, Loader2, Copy, Check, Unlock } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 
 type AuditRow = {
@@ -15,6 +16,8 @@ type AuditRow = {
   actorType: string;
   actorId: string;
   actorIp?: string | null;
+  encryptedActorIp?: string | null;
+  isPrivateIp?: boolean;
   payload?: unknown;
 };
 
@@ -73,6 +76,51 @@ export default function PlataformaAuditoriaPage() {
   const [tenantId, setTenantId] = useState("");
   const [sinceDays, setSinceDays] = useState("30");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [revealedIps, setRevealedIps] = useState<Record<string, string>>({});
+  const [unmaskingIds, setUnmaskingIds] = useState<Record<string, boolean>>({});
+  const [unmaskAllBusy, setUnmaskAllBusy] = useState(false);
+  const [copiedIpId, setCopiedIpId] = useState<string | null>(null);
+
+  async function unmaskRowIp(row: AuditRow, e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
+    if (!row.encryptedActorIp || revealedIps[row.id]) return;
+    setUnmaskingIds((p) => ({ ...p, [row.id]: true }));
+    try {
+      const res = await bffFetch("/api/v1/control-plane/ops/unmask-ip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ encryptedIp: row.encryptedActorIp }),
+      });
+      if (res.ok) {
+        const d = (await res.json()) as { ip: string };
+        setRevealedIps((p) => ({ ...p, [row.id]: d.ip }));
+      }
+    } finally {
+      setUnmaskingIds((p) => ({ ...p, [row.id]: false }));
+    }
+  }
+
+  async function unmaskAllIps() {
+    setUnmaskAllBusy(true);
+    const maskedRows = rows.filter((r) => r.encryptedActorIp && !revealedIps[r.id]);
+    try {
+      await Promise.all(
+        maskedRows.map(async (r) => {
+          const res = await bffFetch("/api/v1/control-plane/ops/unmask-ip", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", accept: "application/json" },
+            body: JSON.stringify({ encryptedIp: r.encryptedActorIp }),
+          });
+          if (res.ok) {
+            const d = (await res.json()) as { ip: string };
+            setRevealedIps((p) => ({ ...p, [r.id]: d.ip }));
+          }
+        }),
+      );
+    } finally {
+      setUnmaskAllBusy(false);
+    }
+  }
 
   useEffect(() => {
     const t = window.setTimeout(() => setQDebounced(q), 300);
@@ -291,7 +339,21 @@ export default function PlataformaAuditoriaPage() {
                   Actor
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">
-                  IP
+                  <div className="flex items-center justify-between gap-2">
+                    <span>IP</span>
+                    {rows.some((r) => r.encryptedActorIp && !revealedIps[r.id]) ? (
+                      <button
+                        type="button"
+                        disabled={unmaskAllBusy}
+                        onClick={() => void unmaskAllIps()}
+                        className="inline-flex items-center gap-1 text-[10px] text-purple-400 hover:text-purple-200 normal-case font-normal bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-500/20 cursor-pointer disabled:opacity-50"
+                        title="Descodificar todos os IPs públicos protegidos na sua view"
+                      >
+                        {unmaskAllBusy ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Unlock className="h-2.5 w-2.5" />}
+                        <span>Revelar Todos</span>
+                      </button>
+                    ) : null}
+                  </div>
                 </th>
               </tr>
             </thead>
@@ -337,8 +399,60 @@ export default function PlataformaAuditoriaPage() {
                         </span>
                         <span className="ml-1.5 text-slate-500 font-mono">{shortId(r.actorId)}</span>
                       </td>
-                      <td className="px-4 py-3 text-slate-500 text-xs hidden lg:table-cell font-mono">
-                        {r.actorIp || "–"}
+                      <td className="px-4 py-3 text-slate-400 text-xs hidden lg:table-cell font-mono">
+                        {r.encryptedActorIp ? (
+                          revealedIps[r.id] ? (
+                            <div className="inline-flex items-center gap-1.5">
+                              <span className="text-emerald-300 font-semibold">{revealedIps[r.id]}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void navigator.clipboard.writeText(revealedIps[r.id]);
+                                  setCopiedIpId(r.id);
+                                  setTimeout(() => setCopiedIpId(null), 1500);
+                                }}
+                                className="text-slate-400 hover:text-slate-200 p-0.5"
+                                title="Copiar IP"
+                              >
+                                {copiedIpId === r.id ? (
+                                  <Check className="h-3 w-3 text-emerald-400" />
+                                ) : (
+                                  <Copy className="h-3 w-3" />
+                                )}
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="inline-flex items-center gap-1.5">
+                              <span className="text-slate-500 text-xs font-mono">{r.actorIp || "–"}</span>
+                              <button
+                                type="button"
+                                disabled={unmaskingIds[r.id]}
+                                onClick={(e) => void unmaskRowIp(r, e)}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-950/40 border border-purple-500/30 text-purple-300 hover:text-purple-100 text-[10px] cursor-pointer transition-colors"
+                                title="Descodificar IP público na view do Super Admin"
+                              >
+                                {unmaskingIds[r.id] ? (
+                                  <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                ) : (
+                                  <Eye className="h-2.5 w-2.5" />
+                                )}
+                                <span>Revelar</span>
+                              </button>
+                            </div>
+                          )
+                        ) : r.actorIp ? (
+                          <div className="inline-flex items-center gap-1.5 text-slate-500">
+                            <span>{r.actorIp}</span>
+                            {r.isPrivateIp ? (
+                              <span className="text-[9px] bg-slate-900 border border-slate-800 text-slate-500 px-1 py-0.2 rounded">
+                                Interno
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="text-slate-600">–</span>
+                        )}
                       </td>
                     </tr>
                     {open ? (
