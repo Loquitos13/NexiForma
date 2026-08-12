@@ -32,7 +32,15 @@ export class BillingController {
 
   @Get("entitlements")
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("tenant_manager", "comercial", "formador", "formando")
+  @Roles(
+    "tenant_manager",
+    "coordenador_pedagogico",
+    "coordenador_comercial",
+    "coordenador_financeiro",
+    "comercial",
+    "formador",
+    "formando",
+  )
   async entitlementsMe(@CurrentUser() user: RequestUser) {
     const tenantId = user.tenantId;
     if (!tenantId) {

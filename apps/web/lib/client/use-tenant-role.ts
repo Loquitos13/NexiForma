@@ -48,6 +48,10 @@ export function useTenantRole() {
   const [sessionExpired, setSessionExpired] = useState(false);
 
   const handleSessionDead = useCallback(() => {
+    const currentTok = getAccessToken();
+    if (currentTok && !isAccessTokenExpired(currentTok)) {
+      return;
+    }
     setAccessToken(null);
     setRole(null);
     setImpersonating(false);
@@ -140,6 +144,9 @@ export function useTenantRole() {
   useEffect(() => {
     const token = getAccessToken();
     if (token && !isAccessTokenExpired(token)) {
+      const decodedRole = decodeJwtRole(token);
+      if (decodedRole) setRole(decodedRole);
+      setSessionExpired(false);
       setLoading(false);
       return;
     }

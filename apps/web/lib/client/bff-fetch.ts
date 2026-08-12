@@ -152,7 +152,9 @@ export async function bffFetch(
     const tok = await refreshViaBffCookies();
     if (!tok) {
       if (typeof window !== "undefined") {
+        const cur = getAccessToken();
         if (
+          (!cur || isAccessTokenExpired(cur)) &&
           isAuthenticatedAppPath(window.location.pathname) &&
           shouldExpireSessionOn401(input)
         ) {

@@ -64,14 +64,16 @@ function PortalLayoutInner({ children }: { children: React.ReactNode }) {
   const isPresencaQrRoute = pathname.startsWith("/portal/formador/presenca-qr/");
 
   useEffect(() => {
-    if (authRole) setRole(authRole);
-    else if (sessionExpired) setRole(null);
-    else setRole(decodeJwtRole(getAccessToken()));
+    const token = getAccessToken();
+    const currentRole = authRole ?? (token && !isAccessTokenExpired(token) ? decodeJwtRole(token) : null);
+    if (currentRole) setRole(currentRole);
     setReady(true);
   }, [pathname, authRole, sessionExpired]);
 
   useEffect(() => {
-    if (!authLoading && sessionExpired) {
+    const token = getAccessToken();
+    const hasValidToken = token && !isAccessTokenExpired(token);
+    if (!authLoading && sessionExpired && !hasValidToken) {
       markSessionExpired({ returnTo: pathname });
     }
   }, [authLoading, sessionExpired, pathname]);

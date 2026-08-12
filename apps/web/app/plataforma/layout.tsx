@@ -10,7 +10,7 @@ import { canAccessPlatformArea } from "@nexiforma/shared";
 import { getAccessToken } from "@/lib/client/access-token";
 import { decodeJwtPayload } from "@/lib/client/jwt-role";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
-import { markSessionExpired } from "@/lib/client/session-lifecycle";
+import { markSessionExpired, isAccessTokenExpired } from "@/lib/client/session-lifecycle";
 import { publishMobileNavOpen } from "@/lib/client/mobile-nav";
 import { cn } from "@/lib/ui/cn";
 import { UserSessionBar } from "@/components/site/user-session-bar";
@@ -56,7 +56,9 @@ export default function PlataformaLayout({ children }: { children: React.ReactNo
   }, [pathname, router, sessionExpired]);
 
   useEffect(() => {
-    if (!authLoading && sessionExpired) {
+    const token = getAccessToken();
+    const hasValidToken = token && !isAccessTokenExpired(token);
+    if (!authLoading && sessionExpired && !hasValidToken) {
       markSessionExpired({ returnTo: pathname });
     }
   }, [authLoading, sessionExpired, pathname]);
