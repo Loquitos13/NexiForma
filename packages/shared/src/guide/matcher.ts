@@ -43,7 +43,7 @@ const EXTERNAL_ADMIN =
   /\b(validar|verificar|consultar|como saber|saber se|e valido|é valido|esta valido|está valido)\b[\s\S]{0,40}\b(nif|nipc|niss|iban|cartao cidadao|cc)\b|\b(nif|nipc|niss|iban)\b[\s\S]{0,30}\b(valido|valida|validar|verificar)\b|\b(ine|instituto nacional de estatistica|seguranca social|financas|autoridade tributaria)\b/;
 
 const NEXIFORMA_SCOPE =
-  /\b(nexiforma|nexigui|dgert|sigo|dgeec|lms|scorm|crm|lead|fatura|faturacao|saft|at\b|rgpd|formando|formador|tenant|ufcd|compliance|dossie|dossier|matricula|inscricao|proposta|contrato|certificado|integracao|zoom|teams|portal|accao|acao formativa|curso|turma|sumario|lead|proposta)\b/;
+  /\b(nexiforma|nexigui|dgert|sigo|dgeec|lms|scorm|crm|lead|fatura|faturacao|saft|at\b|rgpd|formando|formandos|formador|formadores|tenant|tenantes|ufcd|compliance|dossie|dossier|matricula|matriculas|inscricao|inscricoes|proposta|propostas|contrato|contratos|certificado|certificados|integracao|integracoes|zoom|teams|portal|accao|accoes|acao|acoes|formacao|formacoes|curso|cursos|turma|turmas|sumario|sumarios|sessao|sessoes|cronograma|cronogramas|modulo|modulos|entidade|entidades|cliente|clientes|utilizador|utilizadores|presenca|presencas|falta|faltas|avaliacao|avaliacoes|relatorio|relatorios|documento|documentos|inspecao|inspecoes|plataforma|login|senha|horario|horarios|sala|salas|criar|adicionar|editar|gerir|consultar)\b/;
 
 const PROFILE_INTENT =
   /\b(perfil|conta|definicoes|configuracoes|settings|preferencias|meus dados|alterar dados|ver perfil)\b/;
@@ -473,8 +473,6 @@ function isOutOfScope(query: string): boolean {
   const n = normalize(query);
   if (OUT_OF_SCOPE.test(n)) return true;
   if (EXTERNAL_ADMIN.test(n) && !NEXIFORMA_SCOPE.test(n)) return true;
-  const isQuestion = QUESTION_INTENT.test(n) || n.includes("?");
-  if (isQuestion && !NEXIFORMA_SCOPE.test(n)) return true;
   return false;
 }
 
