@@ -25,6 +25,23 @@ let refreshSingleton: Promise<string | null> | null = null;
 let lastRefreshFailureAt = 0;
 const REFRESH_FAILURE_COOLDOWN_MS = 8_000;
 
+function requestPathname(input: RequestInfo | URL): string {
+  if (typeof input === "string") {
+    try {
+      return new URL(input, typeof window !== "undefined" ? window.location.origin : "http://localhost").pathname;
+    } catch {
+      return input;
+    }
+  }
+  if (input instanceof URL) return input.pathname;
+  return input.url;
+}
+
+function shouldExpireSessionOn401(input: RequestInfo | URL): boolean {
+  const path = requestPathname(input);
+  return path.startsWith("/api/auth/me");
+}
+
 /**
  * Obtém novo access JWT via BFF usando só a cookie de refresh (credentials).
  * Chamadas paralelas durante o refresh partilham o mesmo pedido (`Promise`).
@@ -141,7 +158,10 @@ export async function bffFetch(
     const tok = await refreshViaBffCookies();
     if (!tok) {
       if (typeof window !== "undefined") {
-        if (isAuthenticatedAppPath(window.location.pathname)) {
+        if (
+          isAuthenticatedAppPath(window.location.pathname) &&
+          shouldExpireSessionOn401(input)
+        ) {
           setAccessToken(null);
           markSessionExpired({ returnTo: window.location.pathname });
         }
