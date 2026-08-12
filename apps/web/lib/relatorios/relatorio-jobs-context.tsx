@@ -45,10 +45,46 @@ type RelatorioJobsContextValue = {
 
 const RelatorioJobsContext = createContext<RelatorioJobsContextValue | null>(null);
 
+const STORAGE_KEY = "nexiforma_relatorio_jobs_v1";
+
 export function RelatorioJobsProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<RelatorioJob[]>([]);
+  const [isHydrated, setIsHydrated] = useState(false);
   const jobsRef = useRef(jobs);
   jobsRef.current = jobs;
+
+  // Carregar do localStorage ao montar
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as RelatorioJob[];
+        // Sanitizar estados: se estava a gerar quando fechou a página, marca como falha ou mantém
+        const sanitized = parsed.map((j) => {
+          if (j.status === "A_GERAR") {
+            return { ...j, status: "FALHA" as const, erro: "Interrompido pelo utilizador" };
+          }
+          return { ...j, pdfBlobUrl: undefined };
+        });
+        setJobs(sanitized);
+      }
+    } catch {
+      // Ignorar erro de parsing
+    } finally {
+      setIsHydrated(true);
+    }
+  }, []);
+
+  // Guardar no localStorage sempre que jobs mudar
+  useEffect(() => {
+    if (!isHydrated) return;
+    try {
+      const toStore = jobs.map(({ pdfBlobUrl: _, ...rest }) => rest);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore));
+    } catch {
+      // Ignorar erro de quota
+    }
+  }, [jobs, isHydrated]);
 
   const descartarRelatorio = useCallback((jobId: string) => {
     setJobs((prev) => {
@@ -60,17 +96,44 @@ export function RelatorioJobsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const descarregarRelatorio = useCallback((jobId: string) => {
-    const job = jobsRef.current.find((j) => j.id === jobId);
-    if (!job || !job.pdfBlobUrl) return;
+  const descarregarRelatorio = useCallback(
+    async (jobId: string) => {
+      const job = jobsRef.current.find((j) => j.id === jobId);
+      if (!job) return;
 
-    const a = document.createElement("a");
-    a.href = job.pdfBlobUrl;
-    a.download = job.filename ?? `relatorio-${job.secao}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  }, []);
+      if (job.pdfBlobUrl) {
+        const a = document.createElement("a");
+        a.href = job.pdfBlobUrl;
+        a.download = job.filename ?? `relatorio-${job.secao}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return;
+      }
+
+      // Se foi recarregado e perdeu o blob em memória, descarrega diretamente do backend
+      try {
+        const res = await bffFetch("/api/v1/relatorios/insights/pdf", {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/pdf" },
+          body: JSON.stringify({ secao: job.secao } satisfies RelatorioInsightsRequest),
+        });
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = job.filename ?? `relatorio-${job.secao}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      } catch {
+        // Silencioso
+      }
+    },
+    [],
+  );
 
   const gerarRelatorio = useCallback(
     async (secao: RelatorioSecao) => {
