@@ -159,11 +159,11 @@ export const bo = {
     pct >= 85 ? "#4ade80" : pct >= 50 ? "#fbbf24" : "#f87171",
 };
 
-export async function parseApiError(res: Response): Promise<string> {
+export async function parseApiError(res: Response, fallback?: string): Promise<string> {
   const d = (await res.json().catch(() => null)) as { message?: string | string[] } | null;
   if (Array.isArray(d?.message)) return d.message.join(", ");
-  if (typeof d?.message === "string") return d.message;
-  return `HTTP ${res.status}`;
+  if (typeof d?.message === "string" && d.message.trim()) return d.message;
+  return fallback ?? `HTTP ${res.status}`;
 }
 
 // NAV_ITEMS is now exported from nav-items.ts (re-exported above)

@@ -36,6 +36,7 @@ import {
 } from "./dto/email-confirmation.dto";
 import { SkipMustChangePassword } from "./decorators/skip-must-change-password.decorator";
 import { EmailConfirmationService } from "./email-confirmation.service";
+import { UpdateOwnProfileDto, ChangeOwnPasswordDto } from "./dto/own-profile.dto";
 
 class UpdateUiPreferencesDto {
   @IsOptional()
@@ -182,6 +183,27 @@ export class AuthController {
     @Body() dto: UpdateUiPreferencesDto,
   ) {
     return this.auth.updateUiPreferences(user, dto);
+  }
+
+  @Patch("profile")
+  @UseGuards(JwtAuthGuard)
+  @SkipMustChangePassword()
+  updateProfile(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: UpdateOwnProfileDto,
+  ) {
+    return this.auth.updateOwnProfile(user, dto);
+  }
+
+  @Post("change-password")
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(200)
+  @SkipMustChangePassword()
+  changePassword(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: ChangeOwnPasswordDto,
+  ) {
+    return this.auth.changeOwnPassword(user, dto);
   }
 
   @Post("tenant/change-required-password")

@@ -28,6 +28,7 @@ import type {
   TenantForgotPasswordDto,
   TenantResetPasswordDto,
 } from "./dto/forgot-password.dto";
+import type { UpdateOwnProfileDto, ChangeOwnPasswordDto } from "./dto/own-profile.dto";
 import { MfaService } from "./mfa.service";
 import { MailService } from "../mail/mail.service";
 import {
@@ -1254,42 +1255,123 @@ export class AuthService {
   }
 
   async meProfile(user: AccessTokenPayload): Promise<
-    AccessTokenPayload & { displayName?: string | null; uiTheme?: string | null }
+    AccessTokenPayload & {
+      displayName?: string | null;
+      uiTheme?: string | null;
+      mfaEnabled?: boolean;
+      mfaRequired?: boolean;
+      mfaApp?: string | null;
+      mfaAppLabel?: string | null;
+      emailVerifiedAt?: Date | null;
+      createdAt?: Date;
+      tenantLegalName?: string | null;
+      tenantLogoUrl?: string | null;
+    }
   > {
     if (user.kind === "platform") {
-      const pu = (await this.prisma.platformUser.findUnique({
+      const pu = await this.prisma.platformUser.findUnique({
         where: { id: user.sub },
-        select: { email: true, displayName: true, uiPreferences: true } as {
-          email: true;
-          displayName: true;
-          uiPreferences: true;
+        select: {
+          email: true,
+          displayName: true,
+          uiPreferences: true,
+          createdAt: true,
         },
-      })) as { email: string; displayName: string; uiPreferences?: unknown } | null;
+      });
       return {
         ...user,
         email: pu?.email ?? user.email,
         displayName: pu?.displayName ?? null,
         uiTheme: this.readUiTheme(pu?.uiPreferences),
+        createdAt: pu?.createdAt,
       };
     }
 
     const tenantUser = user.tenantId
-      ? ((await this.prisma.user.findFirst({
+      ? await this.prisma.user.findFirst({
           where: { id: user.sub, tenantId: user.tenantId },
-          select: { email: true, displayName: true, uiPreferences: true } as {
-            email: true;
-            displayName: true;
-            uiPreferences: true;
+          include: {
+            tenant: true,
           },
-        })) as { email: string; displayName: string; uiPreferences?: unknown } | null)
+        })
       : null;
+
+    const mfaApp = tenantUser?.mfaApp as MfaAppCode | null;
 
     return {
       ...user,
       email: tenantUser?.email ?? user.email,
       displayName: tenantUser?.displayName ?? null,
       uiTheme: this.readUiTheme(tenantUser?.uiPreferences),
+      mfaEnabled: tenantUser?.mfaEnabled ?? false,
+      mfaRequired: tenantUser?.mfaRequired ?? false,
+      mfaApp,
+      mfaAppLabel: mfaAppDisplayLabel(mfaApp),
+      emailVerifiedAt: tenantUser?.emailVerifiedAt,
+      createdAt: tenantUser?.createdAt,
+      tenantLegalName: tenantUser?.tenant?.legalName ?? null,
+      tenantSlug: tenantUser?.tenant?.slug ?? user.tenantSlug,
     };
+  }
+
+  async updateOwnProfile(
+    user: AccessTokenPayload,
+    dto: UpdateOwnProfileDto,
+  ): Promise<{ message: string; displayName: string | null }> {
+    const nextName = dto.displayName?.trim() || null;
+    if (user.kind === "platform") {
+      await this.prisma.platformUser.update({
+        where: { id: user.sub },
+        data: { displayName: nextName ?? undefined },
+      });
+      return { message: "Perfil actualizado.", displayName: nextName };
+    }
+
+    if (!user.tenantId) throw new BadRequestException("Sessão sem tenant.");
+    await this.prisma.user.updateMany({
+      where: { id: user.sub, tenantId: user.tenantId },
+      data: { displayName: nextName ?? undefined },
+    });
+    return { message: "Perfil actualizado.", displayName: nextName };
+  }
+
+  async changeOwnPassword(
+    user: AccessTokenPayload,
+    dto: ChangeOwnPasswordDto,
+  ): Promise<{ message: string }> {
+    if (user.kind === "platform") {
+      const pu = await this.prisma.platformUser.findUnique({
+        where: { id: user.sub },
+      });
+      if (!pu?.passwordHash) {
+        throw new BadRequestException("Conta sem palavra-passe local.");
+      }
+      const ok = await argon2.verify(pu.passwordHash, dto.currentPassword);
+      if (!ok) {
+        throw new UnauthorizedException("Palavra-passe actual incorrecta.");
+      }
+      const passwordHash = await argon2.hash(dto.newPassword, { type: argon2.argon2id });
+      await this.prisma.platformUser.update({
+        where: { id: pu.id },
+        data: { passwordHash },
+      });
+      return { message: "Palavra-passe actualizada com sucesso." };
+    }
+
+    if (!user.tenantId) throw new BadRequestException("Sessão sem tenant.");
+    const tu = await this.prisma.user.findFirst({
+      where: { id: user.sub, tenantId: user.tenantId },
+    });
+    if (!tu?.passwordHash) {
+      throw new BadRequestException("Conta sem palavra-passe local.");
+    }
+    const ok = await argon2.verify(tu.passwordHash, dto.currentPassword);
+    if (!ok) {
+      throw new UnauthorizedException("Palavra-passe actual incorrecta.");
+    }
+    const passwordHash = await argon2.hash(dto.newPassword, { type: argon2.argon2id });
+    await syncPasswordHashByEmail(this.prisma, tu.email, passwordHash);
+    return { message: "Palavra-passe actualizada com sucesso." };
   }
 
   private readUiTheme(prefs: unknown): string | null {

@@ -8,6 +8,7 @@ import { Bell, BellCheck } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { cn } from "@/lib/ui/cn";
 import { notifyNotificationsUpdated } from "@/lib/client/use-portal-notifications";
+import { PortalBackgroundJobsList } from "@/components/portal/portal-background-jobs-center";
 
 type Notif = {
   id: string;
@@ -220,6 +221,11 @@ export function PortalNotificationsBell() {
                 {count} por ler
               </span>
             ) : null}
+          </div>
+
+          {/* Trabalhos em background activos */}
+          <div className="border-b border-slate-800/80 bg-slate-950/60 p-2 empty:hidden">
+            <PortalBackgroundJobsList onAction={() => setOpen(false)} />
           </div>
 
           <div className="portal-nav-scroll max-h-[min(18rem,50vh)] overscroll-contain">

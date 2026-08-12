@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { PortalNotificationsBell } from "@/components/portal/portal-notifications-bell";
+import { PortalBackgroundJobsList } from "@/components/portal/portal-background-jobs-center";
 import { usePendenciasDocumentacaoConfirm } from "@/components/portal/pendencias-documentacao-dialog";
 import { useUiThemeOptional } from "@/components/theme/ui-theme-provider";
 import { usePortalNotifications } from "@/lib/client/use-portal-notifications";
@@ -69,7 +70,7 @@ function formatRole(role?: string): string | null {
 function profileHref(role?: string): string {
   if (role === "formador") return "/portal/formador/perfil";
   if (role === "formando") return "/portal/formando/perfil";
-  return "/portal/configuracoes";
+  return "/portal/perfil";
 }
 
 function initials(user: MeUser | null): string {
@@ -479,6 +480,9 @@ export function PortalUserMenu({ open, onClose, user }: Props) {
                         >
                           Ver todas
                         </Link>
+                      </div>
+                      <div className="mt-2 empty:hidden">
+                        <PortalBackgroundJobsList onAction={requestClose} />
                       </div>
                     </div>
                   </div>

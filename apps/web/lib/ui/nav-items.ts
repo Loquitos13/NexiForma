@@ -454,7 +454,12 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Conta",
     collapsible: false,
     items: [
-      { href: "/portal/rgpd", label: "RGPD", icon: "Lock" },
+      {
+        href: "/portal/perfil",
+        label: "O meu perfil",
+        icon: "UserCircle",
+        excludeRoles: ["formador", "formando"],
+      },
       {
         href: "/portal/formador/perfil",
         label: "O meu perfil",
@@ -470,6 +475,7 @@ export const NAV_GROUPS: NavGroup[] = [
           "formando",
         ],
       },
+      { href: "/portal/rgpd", label: "RGPD", icon: "Lock" },
     ],
   },
   {

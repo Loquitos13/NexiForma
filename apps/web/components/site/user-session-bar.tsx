@@ -235,7 +235,9 @@ export function UserSessionBar({
 
         <div className="portal-action-row ui-header-collapsible-target relative z-50 flex-shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
           {area === "portal" ? (
-            <PortalBackgroundJobsCenter allowCronogramaJobs={Boolean(showImportIaJobsChip)} />
+            <div className="hidden sm:inline-flex items-center">
+              <PortalBackgroundJobsCenter allowCronogramaJobs={Boolean(showImportIaJobsChip)} />
+            </div>
           ) : null}
           {showStaffPortalTools ? <PortalNotificationsBell /> : null}
           {uiTheme ? (
