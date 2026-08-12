@@ -217,20 +217,36 @@ export function UserSessionBar({
         )}
       >
         {embeddedInAtmosphere ? null : <NavAtmosphere />}
-        <div className="ui-session-identity ui-header-collapsible-target flex min-w-0 flex-1 basis-[12rem] items-center gap-2 sm:gap-3">
-          <span className="ui-session-name flex min-w-0 items-center gap-1.5 truncate">
-            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
-            </svg>
-            <span className="truncate">
+        <div className="ui-session-identity ui-header-collapsible-target flex min-w-0 flex-1 basis-[14rem] items-center">
+          <Link
+            href={
+              area === "plataforma" || (user?.role === "super_admin" && user?.kind === "platform")
+                ? "/plataforma/conta"
+                : user?.role === "formador"
+                  ? "/portal/formador/perfil"
+                  : user?.role === "formando"
+                    ? "/portal/formando/perfil"
+                    : "/portal/perfil"
+            }
+            className="group inline-flex min-w-0 max-w-full items-center gap-2 rounded-full border border-slate-700/60 bg-slate-900/60 py-1 pl-1.5 pr-2.5 text-xs text-slate-200 shadow-sm backdrop-blur-md transition-all hover:border-blue-500/50 hover:bg-slate-800/80 hover:text-white hover:shadow-md hover:ring-1 hover:ring-blue-500/20 active:scale-[0.99]"
+            title="Abrir o meu perfil"
+            aria-label="Abrir o meu perfil"
+          >
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-[10px] font-bold text-white shadow-xs ring-1 ring-blue-400/30 group-hover:ring-blue-400/60">
+              {(user?.displayName || user?.email || "U").slice(0, 1).toUpperCase()}
+            </span>
+            <span className="truncate font-medium text-slate-200 group-hover:text-white">
               {user?.displayName || user?.email || "A carregar…"}
             </span>
-          </span>
-          {roleLabel ? (
-            <span className="ui-session-role inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium">
-              {roleLabel}
-            </span>
-          ) : null}
+            {roleLabel ? (
+              <>
+                <span className="h-3 w-px bg-slate-700/80 group-hover:bg-slate-600" aria-hidden />
+                <span className="ui-session-role inline-flex shrink-0 items-center rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-300 border border-blue-500/20 group-hover:border-blue-400/40 group-hover:text-blue-200">
+                  {roleLabel}
+                </span>
+              </>
+            ) : null}
+          </Link>
         </div>
 
         <div className="portal-action-row ui-header-collapsible-target relative z-50 flex-shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-3">

@@ -454,27 +454,6 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Conta",
     collapsible: false,
     items: [
-      {
-        href: "/portal/perfil",
-        label: "O meu perfil",
-        icon: "UserCircle",
-        excludeRoles: ["formador", "formando"],
-      },
-      {
-        href: "/portal/formador/perfil",
-        label: "O meu perfil",
-        icon: "UserCheck",
-        minRole: "formador",
-        // Só o papel formador: coordenadores herdam minRole via roleSatisfies.
-        excludeRoles: [
-          "tenant_manager",
-          "coordenador_pedagogico",
-          "coordenador_comercial",
-          "coordenador_financeiro",
-          "comercial",
-          "formando",
-        ],
-      },
       { href: "/portal/rgpd", label: "RGPD", icon: "Lock" },
     ],
   },
