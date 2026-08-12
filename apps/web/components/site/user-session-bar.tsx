@@ -209,9 +209,9 @@ export function UserSessionBar({
     <>
       <div
         className={cn(
-          "ui-themed-topbar ui-session-bar flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-3 py-2 text-xs backdrop-blur-sm sm:px-5",
+          "ui-themed-topbar ui-session-bar relative z-40 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-3 py-2 text-xs backdrop-blur-sm sm:px-5",
           embeddedInAtmosphere
-            ? "relative z-[1] bg-transparent"
+            ? "bg-transparent"
             : "ui-nav-atmosphere-host ui-surface-breathe",
           className,
         )}
@@ -233,7 +233,7 @@ export function UserSessionBar({
           ) : null}
         </div>
 
-        <div className="portal-action-row ui-header-collapsible-target flex-shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
+        <div className="portal-action-row ui-header-collapsible-target relative z-50 flex-shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
           {area === "portal" ? (
             <PortalBackgroundJobsCenter allowCronogramaJobs={Boolean(showImportIaJobsChip)} />
           ) : null}

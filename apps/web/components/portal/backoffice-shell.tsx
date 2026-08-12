@@ -55,7 +55,7 @@ export function BackofficeShell({
       <div className="flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col overflow-hidden">
         <div
           className={cn(
-            "ui-portal-top-cluster shrink-0",
+            "ui-portal-top-cluster relative z-40 shrink-0",
             headerCollapsed && "is-header-collapsed",
           )}
         >
@@ -69,7 +69,7 @@ export function BackofficeShell({
           </div>
 
           {/* Desktop: session bar; search centrada na mesma fila */}
-          <div className="ui-header-desktop-row relative z-[1] hidden border-b lg:block">
+          <div className="ui-header-desktop-row relative z-40 hidden border-b lg:block">
             <div className="ui-header-collapsible">
               <UserSessionBar area="portal" embeddedInAtmosphere />
             </div>

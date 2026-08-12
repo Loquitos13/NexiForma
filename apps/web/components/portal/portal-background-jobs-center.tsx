@@ -301,7 +301,7 @@ export function PortalBackgroundJobsCenter({ allowCronogramaJobs = true }: Props
       ref={containerRef}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className="relative z-[80] inline-block"
+      className="relative z-[100] inline-block"
     >
       {/* Gatilho / Badge Agrupado */}
       <button
@@ -338,7 +338,7 @@ export function PortalBackgroundJobsCenter({ allowCronogramaJobs = true }: Props
         <div
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
-          className="absolute right-0 top-full mt-2 w-80 sm:w-96 rounded-2xl border border-slate-700/60 bg-slate-950/95 p-3.5 text-xs text-slate-200 shadow-2xl shadow-black/90 backdrop-blur-2xl ring-1 ring-slate-700/40 animate-in fade-in zoom-in-95 duration-150"
+          className="absolute right-0 top-full mt-2 w-80 sm:w-96 rounded-2xl border border-slate-700/60 bg-slate-950/95 p-3.5 text-xs text-slate-200 shadow-2xl shadow-black/90 backdrop-blur-2xl ring-1 ring-slate-700/40 animate-in fade-in zoom-in-95 duration-150 z-[100]"
         >
           {/* Header da Box */}
           <div className="flex items-center justify-between border-b border-slate-800 pb-2.5 mb-2.5">

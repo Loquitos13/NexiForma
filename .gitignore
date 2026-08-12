@@ -16,9 +16,11 @@ build/
 .env.*.local
 !.env.example
 
-# DB dumps (nunca no git)
+# DB dumps e backups (nunca no git)
 *.dump
+*.sql
 *.sql.gz
+*.tar.gz
 nexiforma.dump
 
 # IDE
