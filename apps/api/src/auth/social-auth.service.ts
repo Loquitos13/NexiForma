@@ -478,10 +478,11 @@ export class SocialAuthService {
       const redirectBase = `${returnOrigin}/login?sso=exchange&slug=${encodeURIComponent(tenant.slug)}&x=${encodeURIComponent(exchange)}`;
       res.redirect(redirectBase);
     } catch (err) {
+      const msg = err instanceof Error ? err.message : "Não foi possível concluir o login social.";
       this.logger.warn(
         `OAuth callback error (${payload.provider}): ${err instanceof Error ? err.message : String(err)}`,
       );
-      this.redirectLoginError("Não foi possível concluir o login social.", res, hintSlug, returnOrigin);
+      this.redirectLoginError(msg, res, hintSlug, returnOrigin);
     }
   }
 
@@ -575,10 +576,7 @@ export class SocialAuthService {
       throw new UnauthorizedException("Identidade OAuth inválida.");
     }
 
-    if (user.cognitoSub) {
-      if (user.cognitoSub !== oauthSub) {
-        throw new UnauthorizedException("Conta OAuth já associada a outro utilizador.");
-      }
+    if (user.cognitoSub === oauthSub) {
       return user;
     }
 
