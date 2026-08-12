@@ -24,6 +24,7 @@ import {
   markSessionExpired,
   subscribeSessionExpired,
 } from "@/lib/client/session-lifecycle";
+import { clientRateLimitRemainingSec } from "@/lib/client/rate-limit-client";
 
 let verifyInflight: Promise<void> | null = null;
 let lastFocusVerifyMs = 0;
@@ -90,6 +91,14 @@ export function useTenantRole() {
     if (!token || isAccessTokenExpired(token)) {
       token = await refreshViaBffCookies();
       if (!token) {
+        const retryAfterSec = clientRateLimitRemainingSec();
+        if (retryAfterSec > 0) {
+          setLoading(true);
+          window.setTimeout(() => {
+            void verifySession();
+          }, Math.min(retryAfterSec * 1000, 5_000));
+          return;
+        }
         handleSessionDead();
         return;
       }

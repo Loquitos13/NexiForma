@@ -61,6 +61,9 @@ export function refreshViaBffCookies(): Promise<string | null> {
           cache: "no-store",
         });
         if (!res.ok) {
+          if (res.status === 429) {
+            syncRateLimitFromResponse(res);
+          }
           lastRefreshFailureAt = Date.now();
           return null;
         }
@@ -153,7 +156,9 @@ export async function bffFetch(
     if (!tok) {
       if (typeof window !== "undefined") {
         const cur = getAccessToken();
+        const rlBlocked = isClientRateLimitBlocked() || clientRateLimitRemainingSec() > 0;
         if (
+          !rlBlocked &&
           (!cur || isAccessTokenExpired(cur)) &&
           isAuthenticatedAppPath(window.location.pathname) &&
           shouldExpireSessionOn401(input)
