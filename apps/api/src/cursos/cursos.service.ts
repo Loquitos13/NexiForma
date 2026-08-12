@@ -83,7 +83,7 @@ export class CursosService {
 
   async create(user: RequestUser, dto: CreateCursoDto): Promise<Curso> {
     const tenantId = requireTenantId(user);
-    const codigoUfcd = await this.resolveCodigoUfcd(dto.codigoUfcd);
+    const codigoUfcd = await this.resolveCodigoUfcd(dto.codigoUfcd, dto.designacao);
     const curso = await this.prisma.curso.create({
       data: {
         tenantId,
@@ -105,7 +105,9 @@ export class CursosService {
       throw new NotFoundException("Curso não encontrado.");
     }
     const codigoUfcd =
-      dto.codigoUfcd !== undefined ? await this.resolveCodigoUfcd(dto.codigoUfcd) : undefined;
+      dto.codigoUfcd !== undefined
+        ? await this.resolveCodigoUfcd(dto.codigoUfcd, dto.designacao ?? existing.designacao)
+        : undefined;
     const updated = await this.prisma.curso.update({
       where: { id },
       data: {
@@ -157,20 +159,30 @@ export class CursosService {
     return { ok: true, eliminado: true, id, designacao: existing.designacao };
   }
 
-  /** Código vazio → null; código preenchido tem de existir no catálogo UFCD activo. */
-  private async resolveCodigoUfcd(raw?: string | null): Promise<string | null> {
+  /** Código vazio → null; se existir usa o código, se não existir auto-regista no catálogo. */
+  private async resolveCodigoUfcd(raw?: string | null, designacaoCurso?: string): Promise<string | null> {
     const codigo = normalizeCursoCodigoUfcd(raw);
     if (!codigo) return null;
     try {
       const ufcd = await this.catalogoUfcd.getOne(codigo);
       return ufcd.codigo;
-    } catch (err) {
-      if (err instanceof NotFoundException) {
-        throw new BadRequestException(
-          `Código UFCD «${codigo}» não existe no catálogo (ou está inactivo). Escolha um código válido em Catálogo UFCD.`,
-        );
+    } catch {
+      try {
+        await this.prisma.catalogoUfcd.upsert({
+          where: { codigo },
+          update: { activo: true },
+          create: {
+            codigo,
+            designacao: designacaoCurso ? `UFCD ${codigo} · ${designacaoCurso}` : `UFCD ${codigo}`,
+            area: "Geral",
+            cargaHoras: 25,
+            activo: true,
+          },
+        });
+      } catch {
+        /* ignora falha de upsert */
       }
-      throw err;
+      return codigo;
     }
   }
 }
