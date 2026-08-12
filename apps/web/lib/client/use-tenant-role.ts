@@ -13,10 +13,11 @@ import {
   isFormando,
   isTenantManager,
   isTenantStaff,
+  roleLandingPath,
 } from "@nexiforma/shared";
 import { getAccessToken, setAccessToken } from "@/lib/client/access-token";
 import { bffFetch, refreshViaBffCookies } from "@/lib/client/bff-fetch";
-import { decodeJwtRole, tokenKindMismatchForPath } from "@/lib/client/jwt-role";
+import { decodeJwtPayload, decodeJwtRole, tokenKindMismatchForPath } from "@/lib/client/jwt-role";
 import {
   isAccessTokenExpired,
   isAuthenticatedAppPath,
@@ -82,16 +83,25 @@ export function useTenantRole() {
     }
 
     let token = getAccessToken();
-    if (!token || isAccessTokenExpired(token) || tokenKindMismatchForPath(path, token)) {
-      if (tokenKindMismatchForPath(path, token)) {
-        setAccessToken(null);
-      }
+    if (!token || isAccessTokenExpired(token)) {
       token = await refreshViaBffCookies();
       if (!token) {
         handleSessionDead();
         return;
       }
       setRole(decodeJwtRole(token));
+    }
+
+    if (tokenKindMismatchForPath(path, token)) {
+      const payload = decodeJwtPayload(token);
+      if (payload?.kind === "platform") {
+        window.location.replace("/plataforma");
+        return;
+      }
+      if (payload?.kind === "tenant") {
+        window.location.replace(roleLandingPath(payload?.role, payload?.kind));
+        return;
+      }
     }
 
     const res = await bffFetch("/api/auth/me", {

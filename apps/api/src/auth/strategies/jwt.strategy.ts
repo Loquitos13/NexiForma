@@ -57,13 +57,14 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
     const role = ensureRole(raw["role"]);
 
     if (kind === "platform") {
-      if (raw["tenantId"] !== undefined || raw["tenantSlug"] !== undefined) {
-        throw new UnauthorizedException("Token de plataforma só deve conter identidade global.");
-      }
       return { sub, email, kind, role, tenantId: null, tenantSlug: null };
     }
 
-    const tenantId = ensureString(raw["tenantId"], "tenantId");
+    const rawTenantId = raw["tenantId"];
+    const tenantId = typeof rawTenantId === "string" && rawTenantId.length > 0 ? rawTenantId : "";
+    if (!tenantId) {
+      throw new UnauthorizedException("Token inválido (tenantId).");
+    }
     const tenantSlug = raw["tenantSlug"];
     const slug =
       typeof tenantSlug === "string" && tenantSlug.length > 0
