@@ -19,7 +19,7 @@ import {
   clearPersistedTenantContext,
   setRememberLogin,
 } from "@/lib/client/login-preferences";
-import { purgeStaleAuthSession } from "@/lib/client/logout";
+import { purgeStaleAuthSession, resetDocumentThemeToDefault } from "@/lib/client/logout";
 import {
   isPlatformAuthMode,
   platformAuthHref,
@@ -125,13 +125,15 @@ function LoginForm() {
           return;
         }
         if (!cancelled) {
-          await purgeStaleAuthSession({ resetThemePaint: true });
+          setAccessToken(null);
           clearPersistedTenantContext();
+          resetDocumentThemeToDefault();
         }
       } catch {
         if (!cancelled) {
-          await purgeStaleAuthSession({ resetThemePaint: true });
+          setAccessToken(null);
           clearPersistedTenantContext();
+          resetDocumentThemeToDefault();
         }
       } finally {
         if (!cancelled) setCheckingSession(false);
@@ -302,7 +304,6 @@ function LoginForm() {
             setError(msg);
             return;
           }
-          window.history.replaceState({}, "", window.location.pathname);
           saveOAuthLoginPreferences(data.accessToken);
           await finishLogin(data.accessToken);
         } catch {
@@ -317,7 +318,6 @@ function LoginForm() {
     if (sso === "ok" && token) {
       setLoginSuccess(true);
       saveOAuthLoginPreferences(token);
-      window.history.replaceState({}, "", window.location.pathname);
       void finishLogin(token);
     }
   }, [router]);

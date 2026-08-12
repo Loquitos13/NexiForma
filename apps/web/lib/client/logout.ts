@@ -17,9 +17,11 @@ type PurgeOpts = {
    * No logout normal fica false para não flashar o tema enquanto "A sair…".
    */
   resetThemePaint?: boolean;
+  /** Se true, envia POST /api/auth/logout ao backend para revogar sessão e cookies. */
+  callServerLogout?: boolean;
 };
 
-/** Revoga sessão no servidor e limpa credenciais locais (logout ou login limpo). */
+/** Limpa credenciais locais e opcionalmente revoga sessão no servidor (apenas logout explícito). */
 export async function purgeStaleAuthSession(opts?: PurgeOpts): Promise<void> {
   setAccessToken(null);
   clearClientRateLimitBlock();
@@ -29,22 +31,24 @@ export async function purgeStaleAuthSession(opts?: PurgeOpts): Promise<void> {
   if (opts?.resetThemePaint) {
     resetDocumentThemeToDefault();
   }
-  try {
-    await fetch("/api/auth/logout", {
-      method: "POST",
-      credentials: "include",
-      cache: "no-store",
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch {
-    /* rede indisponível */
+  if (opts?.callServerLogout) {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch {
+      /* rede indisponível */
+    }
   }
 }
 
 /** Logout explícito: mantém o tema visual até a navegação sair do portal. */
 export async function logoutSession(): Promise<void> {
   try {
-    await purgeStaleAuthSession({ resetThemePaint: false });
+    await purgeStaleAuthSession({ resetThemePaint: false, callServerLogout: true });
   } finally {
     setAccessToken(null);
     clearPersistedTenantContext();
