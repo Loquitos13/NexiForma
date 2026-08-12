@@ -28,7 +28,8 @@ RUN apk add --no-cache \
     ttf-freefont \
     font-noto-emoji \
     udev \
-    dbus
+    dbus \
+    postgresql-client
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/api/dist ./apps/api/dist

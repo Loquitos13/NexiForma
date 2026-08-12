@@ -113,7 +113,7 @@ export class DbBackupService {
     try {
       await execFileAsync(
         pgDump,
-        ["--no-owner", "--no-acl", "--format=plain", `--file=${outPath}`, databaseUrl],
+        ["-d", databaseUrl, "--no-owner", "--no-acl", "--format=plain", `--file=${outPath}`],
         { maxBuffer: 1024 * 1024 * 64, windowsHide: true },
       );
       return;
