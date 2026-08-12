@@ -9,7 +9,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { createHash, randomBytes } from "crypto";
 import * as argon2 from "argon2";
-import type { ControlTenantStatus } from "@nexiforma/database";
+import type { ControlTenantStatus, TenantUserRole } from "@nexiforma/database";
 import {
   assertValidTenantSubscription,
   mergeTenantLoginLockoutMetadata,
@@ -436,7 +436,7 @@ export class ControlPlaneService {
     }
 
     const email = dto.email.trim().toLowerCase();
-    const role = dto.role as string;
+    const role: TenantUserRole = dto.role;
     const displayName = dto.displayName?.trim() || email.split("@")[0] || "Utilizador";
     const tempPassword = dto.temporaryPassword?.trim() || randomBytes(12).toString("base64url").slice(0, 12) + "!A1";
 

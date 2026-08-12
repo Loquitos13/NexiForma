@@ -13,6 +13,7 @@ import {
   Max,
   Min,
 } from "class-validator";
+import type { TenantUserRole } from "@nexiforma/database";
 import { BILLING_ADDON_CODES, BILLING_PLAN_CODES } from "@nexiforma/shared";
 
 const STATUSES = ["ACTIVE", "SUSPENDED", "TRIAL", "ARCHIVED"] as const;
@@ -206,7 +207,7 @@ export class CreateTenantUserDto {
     "COORDENADOR",
     "FINANCEIRO",
   ])
-  role!: string;
+  role!: TenantUserRole;
 
   @IsOptional()
   @IsString()
