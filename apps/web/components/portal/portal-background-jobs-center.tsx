@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Calendar,
-  CheckCircle2,
   ChevronDown,
   FileDown,
   FileText,
@@ -15,7 +15,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useRelatorioJobs, type RelatorioJob } from "@/lib/relatorios/relatorio-jobs-context";
+import { useRelatorioJobs } from "@/lib/relatorios/relatorio-jobs-context";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { cn } from "@/lib/ui/cn";
 
@@ -54,6 +54,8 @@ type Props = {
   allowCronogramaJobs?: boolean;
 };
 
+type DropdownPos = { top: number; right: number };
+
 export function PortalBackgroundJobsCenter({ allowCronogramaJobs = true }: Props) {
   const router = useRouter();
   const {
@@ -67,9 +69,14 @@ export function PortalBackgroundJobsCenter({ allowCronogramaJobs = true }: Props
   const [pollEnabled, setPollEnabled] = useState(allowCronogramaJobs);
   const [isOpen, setIsOpen] = useState(false);
   const [busyCronogramaId, setBusyCronogramaId] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState<DropdownPos | null>(null);
 
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerBtnRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setMounted(true), []);
 
   const refreshCronogramas = useCallback(async () => {
     if (!pollEnabled || !allowCronogramaJobs) return;
@@ -124,25 +131,55 @@ export function PortalBackgroundJobsCenter({ allowCronogramaJobs = true }: Props
     relatorioJobs.some((j) => j.status === "FALHA") ||
     activeCronogramas.some((j) => j.status === "FALHA");
 
+  const updatePos = useCallback(() => {
+    if (!triggerBtnRef.current) return;
+    const rect = triggerBtnRef.current.getBoundingClientRect();
+    const panelWidth = Math.min(384, window.innerWidth - 24);
+    let right = window.innerWidth - rect.right;
+    if (right + panelWidth > window.innerWidth - 12) {
+      right = 12;
+    }
+    setDropdownPos({
+      top: rect.bottom + 8,
+      right: Math.max(12, right),
+    });
+  }, []);
+
   const handleMouseEnter = () => {
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
       hoverTimeoutRef.current = null;
     }
+    updatePos();
     setIsOpen(true);
   };
 
   const handleMouseLeave = () => {
     hoverTimeoutRef.current = setTimeout(() => {
       setIsOpen(false);
-    }, 250);
+    }, 280);
   };
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    updatePos();
+    function onReposition() {
+      if (isOpen) updatePos();
+    }
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
+    return () => {
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
+    };
+  }, [isOpen, updatePos]);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
+      const target = e.target as Node;
+      if (triggerBtnRef.current?.contains(target)) return;
+      if (dropdownRef.current?.contains(target)) return;
+      setIsOpen(false);
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
@@ -295,20 +332,21 @@ export function PortalBackgroundJobsCenter({ allowCronogramaJobs = true }: Props
     }
   }
 
-  // CASO 2: Mais do que 1 trabalho em simultâneo -> Box suspensa agrupada com efeito Hover
+  // CASO 2: Mais do que 1 trabalho em simultâneo -> Box suspensa via React Portal (nunca fica cortada pelo overflow)
   return (
-    <div
-      ref={containerRef}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      className="relative z-[100] inline-block"
-    >
+    <>
       {/* Gatilho / Badge Agrupado */}
       <button
+        ref={triggerBtnRef}
         type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        onClick={() => {
+          updatePos();
+          setIsOpen((prev) => !prev);
+        }}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-all shadow-md backdrop-blur-md cursor-pointer",
+          "relative z-40 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-all shadow-md backdrop-blur-md cursor-pointer",
           hasProcessing
             ? "border-violet-400/50 bg-violet-950/50 text-violet-200 ring-1 ring-violet-500/30 hover:bg-violet-900/60"
             : hasFailures
@@ -316,6 +354,7 @@ export function PortalBackgroundJobsCenter({ allowCronogramaJobs = true }: Props
               : "border-emerald-400/50 bg-emerald-950/50 text-emerald-200 ring-1 ring-emerald-500/30 hover:bg-emerald-900/60",
         )}
         title="Ver todos os trabalhos em background"
+        aria-expanded={isOpen}
       >
         {hasProcessing ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-400" />
@@ -333,183 +372,193 @@ export function PortalBackgroundJobsCenter({ allowCronogramaJobs = true }: Props
         />
       </button>
 
-      {/* Box Flutuante Aberta no Hover */}
-      {isOpen ? (
-        <div
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
-          className="absolute right-0 top-full mt-2 w-80 sm:w-96 rounded-2xl border border-slate-700/60 bg-slate-950/95 p-3.5 text-xs text-slate-200 shadow-2xl shadow-black/90 backdrop-blur-2xl ring-1 ring-slate-700/40 animate-in fade-in zoom-in-95 duration-150 z-[100]"
-        >
-          {/* Header da Box */}
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5 mb-2.5">
-            <div className="flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500/20 text-blue-400">
-                <Zap className="h-3 w-3" />
-              </span>
-              <span className="font-semibold text-slate-100">
-                Trabalhos em background
-              </span>
-            </div>
-            <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-400">
-              {totalJobsCount} ativos
-            </span>
-          </div>
-
-          {/* Lista de Trabalhos */}
-          <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
-            {/* Relatórios PDF */}
-            {relatorioJobs.map((job) => (
-              <div
-                key={job.id}
-                className={cn(
-                  "flex items-center justify-between gap-3 rounded-xl border p-2.5 transition-all",
-                  job.status === "A_GERAR"
-                    ? "border-violet-500/30 bg-violet-950/20 hover:bg-violet-950/30"
-                    : job.status === "PRONTO"
-                      ? "border-emerald-500/30 bg-emerald-950/20 hover:bg-emerald-950/30"
-                      : "border-amber-500/30 bg-amber-950/20 hover:bg-amber-950/30",
-                )}
-              >
-                <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                  <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-800/80 text-slate-300">
-                    <FileText className="h-3.5 w-3.5 text-violet-400" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="truncate font-medium text-slate-200">
-                        Relatório {job.secaoLabel}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 truncate">
-                      {job.status === "A_GERAR" && "A gerar análise e PDF…"}
-                      {job.status === "PRONTO" && "Pronto para descarregar"}
-                      {job.status === "FALHA" && (job.erro ?? "Falha ao gerar")}
-                    </p>
-                  </div>
+      {/* Box Flutuante Renderizada no Portal de document.body (Imune a overflow:hidden de qualquer pai) */}
+      {mounted && isOpen && dropdownPos
+        ? createPortal(
+            <div
+              ref={dropdownRef}
+              onMouseEnter={handleMouseEnter}
+              onMouseLeave={handleMouseLeave}
+              style={{
+                position: "fixed",
+                top: `${dropdownPos.top}px`,
+                right: `${dropdownPos.right}px`,
+                zIndex: 99999,
+              }}
+              className="w-80 sm:w-96 rounded-2xl border border-slate-700/80 bg-slate-950/98 p-3.5 text-xs text-slate-200 shadow-[0_20px_60px_rgba(0,0,0,0.85)] backdrop-blur-2xl ring-1 ring-white/10 animate-in fade-in zoom-in-95 duration-150"
+            >
+              {/* Header da Box */}
+              <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5 mb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500/20 text-blue-400">
+                    <Zap className="h-3 w-3" />
+                  </span>
+                  <span className="font-semibold text-slate-100">
+                    Trabalhos em background
+                  </span>
                 </div>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {job.status === "A_GERAR" ? (
-                    <span className="flex items-center gap-1 text-[11px] font-medium text-violet-300">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    </span>
-                  ) : null}
-
-                  {job.status === "PRONTO" ? (
-                    <button
-                      type="button"
-                      onClick={() => descarregarRelatorio(job.id)}
-                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-500 transition-colors shadow-sm"
-                    >
-                      <FileDown className="h-3 w-3" /> Descarregar
-                    </button>
-                  ) : null}
-
-                  {job.status === "FALHA" ? (
-                    <button
-                      type="button"
-                      onClick={() => void gerarRelatorio(job.secao)}
-                      className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-amber-500 transition-colors"
-                    >
-                      <RefreshCw className="h-3 w-3" /> Tentar
-                    </button>
-                  ) : null}
-
-                  <button
-                    type="button"
-                    onClick={() => descartarRelatorio(job.id)}
-                    className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"
-                    title="Descartar"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-300">
+                  {totalJobsCount} ativos
+                </span>
               </div>
-            ))}
 
-            {/* Cronogramas IA */}
-            {activeCronogramas.map((job) => (
-              <div
-                key={job.id}
-                className={cn(
-                  "flex items-center justify-between gap-3 rounded-xl border p-2.5 transition-all",
-                  job.status === "A_PROCESSAR"
-                    ? "border-violet-500/30 bg-violet-950/20 hover:bg-violet-950/30"
-                    : job.status === "RASCUNHO"
-                      ? "border-emerald-500/30 bg-emerald-950/20 hover:bg-emerald-950/30"
-                      : "border-amber-500/30 bg-amber-950/20 hover:bg-amber-950/30",
-                )}
-              >
-                <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                  <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-800/80 text-slate-300">
-                    <Calendar className="h-3.5 w-3.5 text-blue-400" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="truncate font-medium text-slate-200">
-                        {job.acaoFormacao?.codigoInterno ?? "Cronograma"}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 truncate">
-                      {job.status === "A_PROCESSAR" && "A analisar com IA…"}
-                      {job.status === "RASCUNHO" && "Rascunho de IA pronto"}
-                      {job.status === "FALHA" && (job.erro ?? "Falha na análise")}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {job.status === "A_PROCESSAR" ? (
-                    <span className="flex items-center gap-1 text-[11px] font-medium text-violet-300">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    </span>
-                  ) : null}
-
-                  {job.status === "RASCUNHO" ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsOpen(false);
-                        router.push(
-                          `/portal/acoes/${job.acaoFormacaoId}?tab=cronograma&importJob=${job.id}`,
-                        );
-                      }}
-                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-500 transition-colors shadow-sm"
-                    >
-                      <Sparkles className="h-3 w-3" /> Revisar
-                    </button>
-                  ) : null}
-
-                  {job.status === "FALHA" ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsOpen(false);
-                        router.push(
-                          `/portal/acoes/${job.acaoFormacaoId}?tab=cronograma`,
-                        );
-                      }}
-                      className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-amber-500 transition-colors"
-                    >
-                      Ver
-                    </button>
-                  ) : null}
-
-                  <button
-                    type="button"
-                    disabled={busyCronogramaId === job.id}
-                    onClick={() => void descartarCronograma(job.id)}
-                    className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors disabled:opacity-50"
-                    title="Descartar"
+              {/* Lista de Trabalhos */}
+              <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                {/* Relatórios PDF */}
+                {relatorioJobs.map((job) => (
+                  <div
+                    key={job.id}
+                    className={cn(
+                      "flex items-center justify-between gap-3 rounded-xl border p-2.5 transition-all",
+                      job.status === "A_GERAR"
+                        ? "border-violet-500/30 bg-violet-950/20 hover:bg-violet-950/30"
+                        : job.status === "PRONTO"
+                          ? "border-emerald-500/30 bg-emerald-950/20 hover:bg-emerald-950/30"
+                          : "border-amber-500/30 bg-amber-950/20 hover:bg-amber-950/30",
+                    )}
                   >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                      <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-800/80 text-slate-300">
+                        <FileText className="h-3.5 w-3.5 text-violet-400" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate font-medium text-slate-200">
+                            Relatório {job.secaoLabel}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 truncate">
+                          {job.status === "A_GERAR" && "A gerar análise e PDF…"}
+                          {job.status === "PRONTO" && "Pronto para descarregar"}
+                          {job.status === "FALHA" && (job.erro ?? "Falha ao gerar")}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {job.status === "A_GERAR" ? (
+                        <span className="flex items-center gap-1 text-[11px] font-medium text-violet-300">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        </span>
+                      ) : null}
+
+                      {job.status === "PRONTO" ? (
+                        <button
+                          type="button"
+                          onClick={() => descarregarRelatorio(job.id)}
+                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-500 transition-colors shadow-sm"
+                        >
+                          <FileDown className="h-3 w-3" /> Descarregar
+                        </button>
+                      ) : null}
+
+                      {job.status === "FALHA" ? (
+                        <button
+                          type="button"
+                          onClick={() => void gerarRelatorio(job.secao)}
+                          className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-amber-500 transition-colors"
+                        >
+                          <RefreshCw className="h-3 w-3" /> Tentar
+                        </button>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        onClick={() => descartarRelatorio(job.id)}
+                        className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"
+                        title="Descartar"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Cronogramas IA */}
+                {activeCronogramas.map((job) => (
+                  <div
+                    key={job.id}
+                    className={cn(
+                      "flex items-center justify-between gap-3 rounded-xl border p-2.5 transition-all",
+                      job.status === "A_PROCESSAR"
+                        ? "border-violet-500/30 bg-violet-950/20 hover:bg-violet-950/30"
+                        : job.status === "RASCUNHO"
+                          ? "border-emerald-500/30 bg-emerald-950/20 hover:bg-emerald-950/30"
+                          : "border-amber-500/30 bg-amber-950/20 hover:bg-amber-950/30",
+                    )}
+                  >
+                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                      <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-800/80 text-slate-300">
+                        <Calendar className="h-3.5 w-3.5 text-blue-400" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate font-medium text-slate-200">
+                            {job.acaoFormacao?.codigoInterno ?? "Cronograma"}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 truncate">
+                          {job.status === "A_PROCESSAR" && "A analisar com IA…"}
+                          {job.status === "RASCUNHO" && "Rascunho de IA pronto"}
+                          {job.status === "FALHA" && (job.erro ?? "Falha na análise")}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {job.status === "A_PROCESSAR" ? (
+                        <span className="flex items-center gap-1 text-[11px] font-medium text-violet-300">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        </span>
+                      ) : null}
+
+                      {job.status === "RASCUNHO" ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsOpen(false);
+                            router.push(
+                              `/portal/acoes/${job.acaoFormacaoId}?tab=cronograma&importJob=${job.id}`,
+                            );
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-500 transition-colors shadow-sm"
+                        >
+                          <Sparkles className="h-3 w-3" /> Revisar
+                        </button>
+                      ) : null}
+
+                      {job.status === "FALHA" ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsOpen(false);
+                            router.push(
+                              `/portal/acoes/${job.acaoFormacaoId}?tab=cronograma`,
+                            );
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-amber-500 transition-colors"
+                        >
+                          Ver
+                        </button>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        disabled={busyCronogramaId === job.id}
+                        onClick={() => void descartarCronograma(job.id)}
+                        className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors disabled:opacity-50"
+                        title="Descartar"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
