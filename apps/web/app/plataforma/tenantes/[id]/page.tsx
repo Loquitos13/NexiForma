@@ -162,6 +162,16 @@ export default function TenantDetailPage() {
     notifyEmail: true,
   });
   const [managerBusy, setManagerBusy] = useState(false);
+  const [directUserForm, setDirectUserForm] = useState({
+    email: "",
+    displayName: "",
+    role: "FORMADOR",
+    temporaryPassword: "",
+    notifyEmail: true,
+    nif: "",
+    telefone: "",
+  });
+  const [directUserBusy, setDirectUserBusy] = useState(false);
   const [createdCredentials, setCreatedCredentials] = useState<{
     email: string;
     slug: string;
@@ -328,6 +338,64 @@ export default function TenantDetailPage() {
     } catch {
       setManagerBusy(false);
       setError("Falha de rede ao nomear gestor.");
+    }
+  }
+
+  async function criarUtilizadorTenant(e: FormEvent) {
+    e.preventDefault();
+    const body: Record<string, string | boolean> = {
+      email: directUserForm.email.trim(),
+      displayName: directUserForm.displayName.trim() || directUserForm.email.trim().split("@")[0] || "Utilizador",
+      role: directUserForm.role,
+      notifyEmail: directUserForm.notifyEmail,
+    };
+    if (directUserForm.temporaryPassword.trim()) {
+      body.temporaryPassword = directUserForm.temporaryPassword.trim();
+    }
+    if (directUserForm.role === "FORMANDO" || directUserForm.role === "FORMADOR") {
+      if (!/^\d{9}$/.test(directUserForm.nif.trim())) {
+        setError("NIF obrigatório com 9 dígitos para formador ou formando.");
+        return;
+      }
+      body.nif = directUserForm.nif.trim();
+    }
+    if (directUserForm.role === "FORMANDO" && directUserForm.telefone.trim()) {
+      body.telefone = directUserForm.telefone.trim();
+    }
+
+    setDirectUserBusy(true);
+    setError(null);
+    setMsg(null);
+
+    try {
+      const r = await bffFetch(`/api/v1/control-plane/tenants/${id}/users`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", accept: "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        setError(await parseApiError(r));
+        return;
+      }
+      const data = (await r.json()) as { email: string; displayName: string; temporaryPassword?: string; role: string; tenantSlug: string; emailed?: boolean };
+      setMsg(`Utilizador criado com sucesso em ${data.tenantSlug}.`);
+      setDirectUserForm({
+        email: "",
+        displayName: "",
+        role: "FORMADOR",
+        temporaryPassword: "",
+        notifyEmail: true,
+        nif: "",
+        telefone: "",
+      });
+      await load();
+      if (data.temporaryPassword) {
+        setMsg(`Utilizador criado. Password temporária: ${data.temporaryPassword}`);
+      }
+    } catch {
+      setError("Falha de rede ao criar utilizador.");
+    } finally {
+      setDirectUserBusy(false);
     }
   }
 
@@ -865,6 +933,74 @@ export default function TenantDetailPage() {
                   />
                   <button type="submit" disabled={subBusy} className={btnPrimaryClass}>
                     {subBusy ? "A guardar…" : "Actualizar plano e módulos"}
+                  </button>
+                </form>
+              </div>
+
+              {/* Criar utilizador no tenant sem convite */}
+              <div className="rounded-2xl bg-[#0c0a14]/80 border border-cyan-500/15 p-5">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <h2 className="text-sm font-semibold text-cyan-200 flex items-center gap-2">
+                    <UserCheck className="h-4 w-4 text-cyan-400" />
+                    Criar utilizador diretamente
+                  </h2>
+                </div>
+                <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                  Cria uma conta activa dentro do tenant sem exigir convite e aceitação do link. A password pode ser definida manualmente ou gerada automaticamente.
+                </p>
+                <form onSubmit={(e) => void criarUtilizadorTenant(e)} className="grid gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="grid gap-1 text-xs text-slate-500">
+                      Email *
+                      <input type="email" required placeholder="nome@empresa.pt" className={inputClass} value={directUserForm.email} onChange={(e) => setDirectUserForm((f) => ({ ...f, email: e.target.value }))} />
+                    </label>
+                    <label className="grid gap-1 text-xs text-slate-500">
+                      Nome completo
+                      <input type="text" placeholder="Nome do utilizador" className={inputClass} value={directUserForm.displayName} onChange={(e) => setDirectUserForm((f) => ({ ...f, displayName: e.target.value }))} />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="grid gap-1 text-xs text-slate-500">
+                      Cargo
+                      <select className={inputClass} value={directUserForm.role} onChange={(e) => setDirectUserForm((f) => ({ ...f, role: e.target.value }))}>
+                        <option value="ADMIN">Admin</option>
+                        <option value="COORDENADOR_PEDAGOGICO">Coordenador Pedagógico</option>
+                        <option value="COORDENADOR_COMERCIAL">Coordenador Comercial</option>
+                        <option value="COORDENADOR_FINANCEIRO">Coordenador Financeiro</option>
+                        <option value="FORMADOR">Formador</option>
+                        <option value="FORMANDO">Formando</option>
+                        <option value="COMERCIAL">Comercial</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-1 text-xs text-slate-500">
+                      Password temporária (opcional)
+                      <input type="text" placeholder="Se vazio, gera automaticamente" className={inputClass} value={directUserForm.temporaryPassword} onChange={(e) => setDirectUserForm((f) => ({ ...f, temporaryPassword: e.target.value }))} />
+                    </label>
+                  </div>
+
+                  {(directUserForm.role === "FORMADOR" || directUserForm.role === "FORMANDO") ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <label className="grid gap-1 text-xs text-slate-500">
+                        NIF
+                        <input type="text" inputMode="numeric" maxLength={9} placeholder="123456789" className={inputClass} value={directUserForm.nif} onChange={(e) => setDirectUserForm((f) => ({ ...f, nif: e.target.value.replace(/\D/g, "").slice(0, 9) }))} />
+                      </label>
+                      {directUserForm.role === "FORMANDO" ? (
+                        <label className="grid gap-1 text-xs text-slate-500">
+                          Telemóvel
+                          <input type="text" placeholder="912345678" className={inputClass} value={directUserForm.telefone} onChange={(e) => setDirectUserForm((f) => ({ ...f, telefone: e.target.value }))} />
+                        </label>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
+                    <input type="checkbox" checked={directUserForm.notifyEmail} onChange={(e) => setDirectUserForm((f) => ({ ...f, notifyEmail: e.target.checked }))} className="rounded border-cyan-500/30 bg-[#0c0a14] accent-cyan-500" />
+                    Enviar email com credenciais temporárias
+                  </label>
+
+                  <button type="submit" disabled={directUserBusy} className={btnPrimaryClass}>
+                    {directUserBusy ? "A criar…" : "Criar utilizador"}
                   </button>
                 </form>
               </div>

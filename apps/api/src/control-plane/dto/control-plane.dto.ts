@@ -186,6 +186,49 @@ export class SetTenantManagerDto {
   notifyEmail?: boolean;
 }
 
+export class CreateTenantUserDto {
+  @IsEmail()
+  email!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(2, 120)
+  displayName?: string;
+
+  @IsIn([
+    "ADMIN",
+    "COORDENADOR_COMERCIAL",
+    "COORDENADOR_PEDAGOGICO",
+    "COORDENADOR_FINANCEIRO",
+    "FORMADOR",
+    "FORMANDO",
+    "COMERCIAL",
+    "COORDENADOR",
+    "FINANCEIRO",
+  ])
+  role!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(8, 128)
+  temporaryPassword?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  notifyEmail?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @Length(9, 9)
+  @Matches(/^\d{9}$/, { message: "NIF inválido: 9 dígitos." })
+  nif?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 48)
+  telefone?: string;
+}
+
 export class ImpersonateDto {
   @IsUUID()
   targetUserId!: string;

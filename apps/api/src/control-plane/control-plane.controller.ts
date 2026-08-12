@@ -34,6 +34,7 @@ import { extractClientIp } from "../common/client-ip.util";
 import {
   CreateSubscriptionKeyDto,
   CreateTenantDto,
+  CreateTenantUserDto,
   ImpersonateDto,
   InviteManagerDto,
   SetTenantManagerDto,
@@ -226,6 +227,17 @@ export class ControlPlaneController {
   @Get("tenants/:id/users")
   listTenantUsers(@Param("id", ParseUUIDPipe) id: string) {
     return this.cp.listTenantUsers(id);
+  }
+
+  @Post("tenants/:id/users")
+  createTenantUser(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: CreateTenantUserDto,
+    @Req() req: Request,
+  ): Promise<Record<string, unknown>> {
+    const ip = extractClientIp(req);
+    return this.cp.createTenantUser(user, id, dto, ip, req);
   }
 
   @Patch("tenants/:id/status")

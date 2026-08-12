@@ -35,6 +35,7 @@ import {
   newInviteOpaqueToken,
 } from "../common/invite-token.util";
 import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
+import { upsertFormandoProfileForInvite } from "../common/formando-user-link.util";
 import { readTenantLogoStorageKey } from "../auth/tenant-branding.util";
 import { FATURACAO_HISTORICO_IMUTAVEL_MSG } from "../faturas/faturacao-historico.util";
 import { StorageService } from "../storage/storage.service";
@@ -42,6 +43,7 @@ import { encryptIpWithSecret, isPrivateOrInternalIp, maskPublicIp } from "../com
 import type {
   CreateSubscriptionKeyDto,
   CreateTenantDto,
+  CreateTenantUserDto,
   InviteManagerDto,
   SetTenantManagerDto,
   UpdateTenantDto,
@@ -419,6 +421,142 @@ export class ControlPlaneService {
         role: true,
       },
     });
+  }
+
+  async createTenantUser(
+    actor: RequestUser,
+    tenantId: string,
+    dto: CreateTenantUserDto,
+    actorIp?: string,
+    req?: { headers: Record<string, string | string[] | undefined> },
+  ): Promise<Record<string, unknown>> {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, slug: true, legalName: true } });
+    if (!tenant) {
+      throw new NotFoundException("Tenant não encontrado.");
+    }
+
+    const email = dto.email.trim().toLowerCase();
+    const role = dto.role as string;
+    const displayName = dto.displayName?.trim() || email.split("@")[0] || "Utilizador";
+    const tempPassword = dto.temporaryPassword?.trim() || randomBytes(12).toString("base64url").slice(0, 12) + "!A1";
+
+    if (tempPassword.length < 8) {
+      throw new BadRequestException("Password temporária: mínimo 8 caracteres.");
+    }
+
+    if (role === "FORMANDO" || role === "FORMADOR") {
+      const nif = (dto.nif ?? "").trim();
+      if (!/^\d{9}$/.test(nif)) {
+        throw new BadRequestException("NIF obrigatório (9 dígitos) para este cargo.");
+      }
+    }
+
+    let existing = await this.prisma.user.findFirst({ where: { tenantId, email } });
+
+    if (existing?.active) {
+      throw new ConflictException("Já existe utilizador activo com este email no tenant.");
+    }
+
+    const passwordHash = await argon2.hash(tempPassword, { type: argon2.argon2id });
+
+    if (existing) {
+      existing = await this.prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          displayName,
+          role,
+          passwordHash,
+          active: true,
+          mustChangePassword: true,
+          emailVerifiedAt: new Date(),
+        },
+      });
+    } else {
+      existing = await this.prisma.user.create({
+        data: {
+          tenantId,
+          email,
+          displayName,
+          role,
+          passwordHash,
+          active: true,
+          mustChangePassword: true,
+          emailVerifiedAt: new Date(),
+        },
+      });
+    }
+
+    await this.prisma.tenantInvite.deleteMany({ where: { tenantId, email } }).catch(() => undefined);
+
+    if (role === "FORMANDO") {
+      const nif = (dto.nif ?? "").trim();
+      await upsertFormandoProfileForInvite(this.prisma, tenantId, {
+        email,
+        displayName,
+        nif,
+        telefone: dto.telefone?.trim() || undefined,
+        userId: existing.id,
+      });
+    }
+
+    if (role === "FORMADOR") {
+      const nif = (dto.nif ?? "").trim();
+      const existingProfile = await this.prisma.formadorProfile.findFirst({ where: { tenantId, userId: existing.id } });
+      if (existingProfile) {
+        await this.prisma.formadorProfile.update({
+          where: { id: existingProfile.id },
+          data: { nif, email, nomeCompleto: displayName },
+        });
+      } else {
+        const duplicate = await this.prisma.formadorProfile.findFirst({ where: { tenantId, nif } });
+        if (duplicate) {
+          throw new ConflictException("Já existe formador com este NIF no tenant.");
+        }
+        await this.prisma.formadorProfile.create({
+          data: { tenantId, userId: existing.id, nif, email, nomeCompleto: displayName },
+        });
+      }
+    }
+
+    await this.audit.log({
+      actorType: "SUPERADMIN_USER",
+      actorId: actor.sub,
+      actorIp,
+      action: "tenant.user_create_direct",
+      resourceType: "user",
+      resourceId: existing.id,
+      targetTenantId: tenantId,
+      targetUserId: existing.id,
+      payload: {
+        email,
+        displayName,
+        role,
+        createdWithoutInvite: true,
+      },
+    });
+
+    if (dto.notifyEmail !== false) {
+      void this.tenantNotificacoes
+        .enviarCredenciaisTemporariasGestor({
+          email,
+          displayName,
+          entidadeFormadora: tenant.legalName,
+          slug: tenant.slug,
+          temporaryPassword: tempPassword,
+        })
+        .catch(() => undefined);
+    }
+
+    return {
+      ok: true,
+      userId: existing.id,
+      email,
+      displayName,
+      role,
+      tenantSlug: tenant.slug,
+      temporaryPassword: tempPassword,
+      emailed: dto.notifyEmail !== false,
+    };
   }
 
   async updateTenantStatus(
