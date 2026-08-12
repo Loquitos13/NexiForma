@@ -2,7 +2,9 @@ import {
   APP_PUBLIC_URL_HEADER,
   getNexiBackendBaseUrl,
   resolveIncomingAppPublicUrl,
+  resolveUpstreamAuthDetails,
   resolveUpstreamAuthorization,
+  rewriteSetCookieForBff,
 } from "./auth-bff";
 
 /** Não faz proxy das rotas de auth (cookies BFF apenas em `/api/auth/*`). OAuth social passa por aqui. */
@@ -135,9 +137,13 @@ export async function proxyV1ToNest(req: Request, pathSegments: string[]): Promi
   const headers = new Headers();
   copyIngressHeaders(req.headers, headers);
 
+  const extraSetCookies: string[] = [];
   if (!headers.get("authorization")) {
-    const authz = await resolveUpstreamAuthorization(req);
-    if (authz) headers.set("authorization", authz);
+    const resolved = await resolveUpstreamAuthDetails(req);
+    if (resolved?.authz) {
+      headers.set("authorization", resolved.authz);
+      extraSetCookies.push(...resolved.setCookies);
+    }
   }
 
   const appPublicUrl = resolveIncomingAppPublicUrl(req);
@@ -199,6 +205,9 @@ export async function proxyV1ToNest(req: Request, pathSegments: string[]): Promi
 
   for (const c of getAllSetCookies(upstream)) {
     outHeaders.append("set-cookie", rewriteSetCookiePathForBff(c));
+  }
+  for (const c of extraSetCookies) {
+    outHeaders.append("set-cookie", rewriteSetCookieForBff(c));
   }
 
   const buf = await upstream.arrayBuffer();

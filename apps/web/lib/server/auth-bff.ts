@@ -95,9 +95,16 @@ const REFRESH_COOKIE = "nexiforma_refresh";
  * Se o browser não enviou Bearer (token só em sessionStorage), obtém access JWT
  * via refresh cookie HttpOnly - uploads multipart dependem disto.
  */
-export async function resolveUpstreamAuthorization(incoming: Request): Promise<string | undefined> {
+export type ResolvedUpstreamAuth = {
+  authz: string;
+  setCookies: string[];
+};
+
+export async function resolveUpstreamAuthDetails(
+  incoming: Request,
+): Promise<ResolvedUpstreamAuth | undefined> {
   const existing = incoming.headers.get("authorization")?.trim();
-  if (existing) return existing;
+  if (existing) return { authz: existing, setCookies: [] };
 
   const cookie = incoming.headers.get("cookie");
   if (!cookie?.includes(REFRESH_COOKIE)) return undefined;
@@ -111,14 +118,23 @@ export async function resolveUpstreamAuthorization(incoming: Request): Promise<s
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) return undefined;
+    const setCookies = getAllSetCookies(res);
     const data = (await res.json()) as { accessToken?: string };
     if (typeof data.accessToken === "string" && data.accessToken.length > 0) {
-      return `Bearer ${data.accessToken}`;
+      return {
+        authz: `Bearer ${data.accessToken}`,
+        setCookies,
+      };
     }
   } catch {
     /* refresh indisponível */
   }
   return undefined;
+}
+
+export async function resolveUpstreamAuthorization(incoming: Request): Promise<string | undefined> {
+  const resolved = await resolveUpstreamAuthDetails(incoming);
+  return resolved?.authz;
 }
 
 export type ProxyAuthOptions = {
@@ -166,9 +182,26 @@ export async function proxyAuthToNest(opts: ProxyAuthOptions): Promise<NextRespo
   if (cookie) {
     headers.set("cookie", cookie);
   }
-  const authz =
-    opts.incoming.headers.get("authorization") ??
-    (await resolveUpstreamAuthorization(opts.incoming));
+
+  const isAuthEndpoint =
+    opts.nestPath.includes("/auth/refresh") ||
+    opts.nestPath.includes("/auth/login") ||
+    opts.nestPath.includes("/auth/oauth") ||
+    opts.nestPath.includes("/auth/pick") ||
+    opts.nestPath.includes("/auth/logout");
+
+  const incomingAuthz = opts.incoming.headers.get("authorization");
+  let authz = incomingAuthz ?? undefined;
+  const extraSetCookies: string[] = [];
+
+  if (!authz && !isAuthEndpoint) {
+    const resolved = await resolveUpstreamAuthDetails(opts.incoming);
+    if (resolved?.authz) {
+      authz = resolved.authz;
+      extraSetCookies.push(...resolved.setCookies);
+    }
+  }
+
   if (authz) {
     headers.set("authorization", authz);
   }
@@ -215,6 +248,9 @@ export async function proxyAuthToNest(opts: ProxyAuthOptions): Promise<NextRespo
   const responseHeaders = forwardJsonHeaders(upstream.headers);
   const setCookies = getAllSetCookies(upstream);
   for (const c of setCookies) {
+    responseHeaders.append("set-cookie", rewriteSetCookieForBff(c));
+  }
+  for (const c of extraSetCookies) {
     responseHeaders.append("set-cookie", rewriteSetCookieForBff(c));
   }
 
