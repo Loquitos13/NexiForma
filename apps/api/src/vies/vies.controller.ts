@@ -17,7 +17,7 @@ export class ViesController {
   constructor(private readonly vies: ViesService) {}
 
   @Post("validar")
-  @Roles("tenant_manager", "comercial", "formador")
+  @Roles("tenant_manager", "comercial", "formador", "coordenador_pedagogico")
   @Throttle({ default: { limit: 40, ttl: DDOS_WINDOW_MS } })
   async validar(@Body() dto: ValidarNifDto): Promise<{ valido: boolean }> {
     try {

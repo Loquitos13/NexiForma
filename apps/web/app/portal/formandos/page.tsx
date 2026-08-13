@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PlusCircle, Pencil, Trash2, UserRound, Users } from "lucide-react";
 import { SIGO_HABILITACOES_QNQ, normalizarHabilitacaoQnq } from "@nexiforma/shared";
@@ -169,19 +170,25 @@ export default function FormandosPage() {
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
-  const openCreate = useCallback(() => {
+  const openCreate = useCallback((clienteId?: string) => {
     setEditId(null);
     setForm(EMPTY);
     setSigoForm(EMPTY_SIGO);
     setNifStatus("idle");
-    setEntidadeClienteId("");
+    setEntidadeClienteId(clienteId ?? "");
     setFormandoDocs([]);
     setDialogOpen(true);
   }, []);
 
   useEffect(() => {
     if (!canManage) return;
+    const clienteId = searchParams.get("cliente");
     const novo = searchParams.get("novo");
+    if (clienteId) {
+      openCreate(clienteId);
+      router.replace("/portal/formandos", { scroll: false });
+      return;
+    }
     if (novo !== "1" && novo !== "true") return;
     openCreate();
     router.replace("/portal/formandos", { scroll: false });
@@ -380,7 +387,7 @@ export default function FormandosPage() {
       <PageHeader
         title="Formandos"
         description="Registo de participantes – NIF e dados SIGO (documento, nascimento, nacionalidade, habilitações) para export/submissão DGERT."
-        actions={canManage ? <Button onClick={openCreate}><PlusCircle className="h-4 w-4" />Novo formando</Button> : null}
+        actions={canManage ? <Button onClick={() => openCreate()}><PlusCircle className="h-4 w-4" />Novo formando</Button> : null}
       />
 
       {error && <Alert variant="error" className="mb-4">{error}</Alert>}
@@ -397,7 +404,7 @@ export default function FormandosPage() {
         <Card className="py-16 text-center">
           <Users className="mx-auto mb-3 h-10 w-10 text-slate-600" />
           <p className="text-slate-400">Ainda não há formandos registados.</p>
-          {canManage && <Button className="mt-4" onClick={openCreate}><PlusCircle className="h-4 w-4" />Registar primeiro formando</Button>}
+          {canManage && <Button className="mt-4" onClick={() => openCreate()}><PlusCircle className="h-4 w-4" />Registar primeiro formando</Button>}
         </Card>
       ) : (
         <PaginatedDataTable
@@ -469,7 +476,10 @@ export default function FormandosPage() {
             />
             {entidades.length === 0 ? (
               <p className="-mt-2 text-[11px] text-slate-500">
-                Ainda não há clientes CRM registados.
+                Ainda não há clientes registados.{" "}
+                <Link href="/portal/formandos/registo-cliente" className="text-blue-400 hover:underline">
+                  Criar cliente
+                </Link>
               </p>
             ) : null}
             <Input label="Nome *" required value={form.nome} onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))} />

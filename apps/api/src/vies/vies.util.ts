@@ -157,18 +157,21 @@ export function mapNifPtResponse(
 ): ViesVerificacaoResult {
   const result = (body.result ?? "").toLowerCase();
   if (result && result !== "success") {
+    const rawMsg = (body.message || body.error || "").trim();
+    const rateLimited =
+      /limit per minute|buy credits|rate.?limit|quota/i.test(rawMsg) ||
+      result.includes("limit");
     return buildViesResult({
       countryCode: "PT",
       vatNumber,
       formatoValido,
       disponivel: false,
       validoRegisto: null,
-      userError: result.toUpperCase(),
+      userError: rateLimited ? "RATE_LIMIT" : result.toUpperCase(),
       fonte: "nif_pt",
-      mensagem:
-        body.message ||
-        body.error ||
-        "Serviço NIF.PT temporariamente indisponível ou sem créditos.",
+      mensagem: rateLimited
+        ? "Limite de consultas ao NIF.PT atingido. Aguarde cerca de 1 minuto e tente novamente, ou contacte o administrador para renovar créditos."
+        : rawMsg || "Serviço NIF.PT temporariamente indisponível ou sem créditos.",
     });
   }
 

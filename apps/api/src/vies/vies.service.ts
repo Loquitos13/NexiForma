@@ -16,6 +16,9 @@ import {
 @Injectable()
 export class ViesService {
   private readonly logger = new Logger(ViesService.name);
+  /** Evita consultas duplicadas ao NIF.PT (ex.: validação no formulário + submit). */
+  private readonly nifPtCache = new Map<string, { expiresAt: number; result: ViesVerificacaoResult }>();
+  private readonly nifPtCacheTtlMs = Number(process.env.NIF_PT_CACHE_TTL_MS ?? 600_000);
 
   constructor(private readonly sigoNif: SigoNifValidationService) {}
 
@@ -126,6 +129,11 @@ export class ViesService {
       });
     }
 
+    const cached = this.nifPtCache.get(vatNumber);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.result;
+    }
+
     const url = nifPtUrl(vatNumber, apiKey);
     const timeoutMs = Number(process.env.NIF_PT_TIMEOUT_MS ?? 12_000);
 
@@ -151,7 +159,14 @@ export class ViesService {
       }
 
       const body = (await res.json()) as NifPtApiResponse;
-      return mapNifPtResponse(vatNumber, true, body);
+      const mapped = mapNifPtResponse(vatNumber, true, body);
+      if (mapped.disponivel && mapped.validoRegisto === true) {
+        this.nifPtCache.set(vatNumber, {
+          expiresAt: Date.now() + this.nifPtCacheTtlMs,
+          result: mapped,
+        });
+      }
+      return mapped;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(`NIF.PT indisponível: ${msg}`);

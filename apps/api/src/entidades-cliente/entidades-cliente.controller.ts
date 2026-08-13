@@ -14,7 +14,7 @@ export class EntidadesClienteController {
   constructor(private readonly entidades: EntidadesClienteService) {}
 
   @Get()
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager", "comercial", "coordenador_pedagogico")
   list(
     @CurrentUser() user: RequestUser,
     @Query("parceiro") parceiro?: string,
@@ -37,7 +37,7 @@ export class EntidadesClienteController {
   }
 
   @Post()
-  @Roles("tenant_manager", "comercial")
+  @Roles("tenant_manager", "comercial", "coordenador_pedagogico")
   create(
     @CurrentUser() user: RequestUser,
     @Body() dto: CreateEntidadeClienteDto,
