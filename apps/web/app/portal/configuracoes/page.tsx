@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
-import { DocumentosPoliticaSettings } from "@/components/settings/documentos-politica-settings";
 import { DgertRequisitoBanner, DgertTarget } from "@/components/portal/dgert-requisito-banner";
 import { publicTenantLogoUrl } from "@/lib/client/tenant-logo-url";
 
@@ -172,6 +171,26 @@ export default function ConfiguracoesPage() {
         <p className="max-w-2xl text-sm leading-relaxed text-slate-500">
           Identidade da entidade, logótipo nos documentos e preferências operacionais.
         </p>
+        {canManage ? (
+          <nav
+            aria-label="Secções de configuração"
+            className="flex flex-wrap gap-2 pt-2"
+          >
+            {[
+              { href: "#entidade", label: "Entidade" },
+              { href: "#branding", label: "Branding" },
+              { href: "#cnaef", label: "CNAEF" },
+            ].map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                className="rounded-full border border-slate-700/50 bg-slate-900/60 px-3 py-1 text-xs font-medium text-slate-300 hover:border-blue-500/40 hover:text-slate-100 transition-colors"
+              >
+                {item.label}
+              </a>
+            ))}
+          </nav>
+        ) : null}
       </header>
 
       {error ? (
@@ -188,7 +207,7 @@ export default function ConfiguracoesPage() {
       <DgertRequisitoBanner backHref="/portal/dossie" />
 
       {tenant ? (
-        <DgertTarget id="entidade_nif" className="ui-settings-card rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
+        <DgertTarget id="entidade" className="ui-settings-card scroll-mt-24 rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
           <h2 className="ui-settings-card-title text-sm font-semibold mb-1">Entidade formadora</h2>
           <p className="ui-settings-card-desc text-xs mb-4">
             Nome legal e NIF usados em DGERT, dossiê e faturação. Alterações ficam na base de dados
@@ -274,7 +293,7 @@ export default function ConfiguracoesPage() {
       ) : null}
 
       {canManage ? (
-        <div className="ui-settings-card rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5 space-y-4">
+        <div id="branding" className="ui-settings-card scroll-mt-24 rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5 space-y-4">
           <h2 className="ui-settings-card-title text-sm font-semibold">Branding e logótipo</h2>
           <p className="ui-settings-card-desc text-xs">
             O logótipo desta entidade aparece em faturas, propostas, cronogramas, folhas de presença,
@@ -365,7 +384,7 @@ export default function ConfiguracoesPage() {
       ) : null}
 
       {canManage ? (
-        <div className="ui-settings-card rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
+        <div id="cnaef" className="ui-settings-card scroll-mt-24 rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
           <h2 className="ui-settings-card-title text-sm font-semibold mb-3">Áreas de formação (CNAEF)</h2>
           <p className="ui-settings-card-desc text-xs mb-3">
             Áreas de educação e formação da tabela oficial CNAEF em que a entidade está certificada.
@@ -412,8 +431,6 @@ export default function ConfiguracoesPage() {
           </div>
         </div>
       ) : null}
-
-      {canManage ? <DocumentosPoliticaSettings /> : null}
     </div>
   );
 }

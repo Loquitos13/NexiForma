@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, Circle, FileText, GraduationCap, Users } from "lucide-react";
 import { AcaoDocumentosConfig } from "@/components/portal/acao-documentos-config";
+import { DocumentosPoliticaSettings } from "@/components/settings/documentos-politica-settings";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { Alert, Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
@@ -59,6 +60,8 @@ type Props = {
   cargaHoras?: number;
   initial?: unknown;
   onSaved?: (cfg: unknown) => void;
+  /** Política documental global do tenant (antes nas configurações). */
+  showPoliticaTenant?: boolean;
 };
 
 function StatusDot({ ok }: { ok: boolean }) {
@@ -69,7 +72,13 @@ function StatusDot({ ok }: { ok: boolean }) {
   );
 }
 
-export function AcaoDocumentosOverview({ acaoId, cargaHoras, initial, onSaved }: Props) {
+export function AcaoDocumentosOverview({
+  acaoId,
+  cargaHoras,
+  initial,
+  onSaved,
+  showPoliticaTenant = false,
+}: Props) {
   const [resumo, setResumo] = useState<DocsResumo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,6 +123,10 @@ export function AcaoDocumentosOverview({ acaoId, cargaHoras, initial, onSaved }:
           />
         </CardContent>
       </Card>
+
+      {showPoliticaTenant ? (
+        <DocumentosPoliticaSettings variant="acao" />
+      ) : null}
 
       {error ? <Alert variant="error">{error}</Alert> : null}
       {loading && !resumo ? (

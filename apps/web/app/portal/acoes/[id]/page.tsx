@@ -469,6 +469,7 @@ export default function AcaoDetailPage() {
           acaoId={acao.id}
           cargaHoras={acao.curso.cargaHoras}
           initial={acao.configuracaoMatricula}
+          showPoliticaTenant
           onSaved={(cfg) =>
             setAcao((a) => (a ? { ...a, configuracaoMatricula: cfg } : a))
           }

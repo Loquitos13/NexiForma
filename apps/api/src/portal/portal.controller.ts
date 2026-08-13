@@ -104,14 +104,14 @@ export class PortalController {
 
   @Get("tenant/documentos-politica")
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   documentosPolitica(@CurrentUser() user: RequestUser) {
     return this.tenantSettings.getDocumentosPolitica(user);
   }
 
   @Put("tenant/documentos-politica")
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("tenant_manager")
+  @Roles("tenant_manager", "coordenador_pedagogico")
   updateDocumentosPolitica(
     @CurrentUser() user: RequestUser,
     @Body() body: { universaisObrigatorios?: string[] },
