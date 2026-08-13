@@ -3,9 +3,9 @@ import {
   getNexiBackendBaseUrl,
   resolveIncomingAppPublicUrl,
   resolveUpstreamAuthDetails,
-  resolveUpstreamAuthorization,
   rewriteSetCookieForBff,
 } from "./auth-bff";
+import { isAnonymousV1ProxyPath } from "./public-v1-proxy.util";
 
 /** Não faz proxy das rotas de auth (cookies BFF apenas em `/api/auth/*`). OAuth social passa por aqui. */
 export function shouldBlockV1AuthProxy(path: string): boolean {
@@ -28,14 +28,16 @@ function getAllSetCookies(res: Response): string[] {
 }
 
 /** Cabeçalhos do browser que fazem sentido repetir até à Nest. */
-function copyIngressHeaders(from: Headers, to: Headers): void {
+function copyIngressHeaders(from: Headers, to: Headers, opts?: { stripAuth?: boolean }): void {
   const cookie = from.get("cookie");
   if (cookie) {
     to.set("cookie", cookie);
   }
-  const auth = from.get("authorization");
-  if (auth) {
-    to.set("authorization", auth);
+  if (!opts?.stripAuth) {
+    const auth = from.get("authorization");
+    if (auth) {
+      to.set("authorization", auth);
+    }
   }
   const accept = from.get("accept");
   if (accept) {
@@ -130,15 +132,20 @@ export async function proxyV1ToNest(req: Request, pathSegments: string[]): Promi
   const base = getNexiBackendBaseUrl();
   const urlObj = req.url ? new URL(req.url) : null;
   const search = urlObj?.search ?? "";
-  const url = `${base}/v1/${path}${search}`;
+  const encodedPath = pathSegments
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  const url = `${base}/v1/${encodedPath}${search}`;
 
   const method = req.method.toUpperCase();
+  const anonymous = isAnonymousV1ProxyPath(path);
 
   const headers = new Headers();
-  copyIngressHeaders(req.headers, headers);
+  copyIngressHeaders(req.headers, headers, { stripAuth: anonymous });
 
   const extraSetCookies: string[] = [];
-  if (!headers.get("authorization")) {
+  if (!anonymous && !headers.get("authorization")) {
     const resolved = await resolveUpstreamAuthDetails(req);
     if (resolved?.authz) {
       headers.set("authorization", resolved.authz);

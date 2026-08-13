@@ -54,9 +54,12 @@ export default function AcceptInvitePage() {
     let isMounted = true;
     async function loadInfo() {
       try {
-        const res = await fetch(`/api/v1/users/invite-info/${encodeURIComponent(token)}`, {
+        const res = await fetch(
+          `/api/public/users/invite-info/${encodeURIComponent(token)}`,
+          {
           headers: { accept: "application/json" },
-        });
+        },
+        );
         if (!res.ok) {
           if (isMounted) {
             setLoadingInfo(false);
@@ -92,7 +95,7 @@ export default function AcceptInvitePage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/v1/users/accept-invite", {
+      const res = await fetch("/api/public/users/accept-invite", {
         method: "POST",
         headers: { "Content-Type": "application/json", accept: "application/json" },
         body: JSON.stringify({ token, password }),
@@ -105,7 +108,11 @@ export default function AcceptInvitePage() {
 
       if (!res.ok) {
         const m = Array.isArray(data?.message) ? data.message.join(", ") : data?.message;
-        setError(m ?? "Convite inválido ou expirado.");
+        setError(
+          res.status === 401
+            ? "Sessão inválida interferiu no convite. Tente numa janela privada ou limpe cookies do site."
+            : m ?? "Convite inválido ou expirado.",
+        );
         return;
       }
 
