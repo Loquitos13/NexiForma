@@ -33,6 +33,7 @@ const ACTOR_TYPES = [
 
 const ACTION_PRESETS = [
   { value: "", label: "Todas as acções" },
+  { value: "auth.login", label: "Inícios de sessão" },
   { value: "document.download", label: "Downloads documentos" },
   { value: "fatura.download", label: "Downloads faturas" },
   { value: "saft.export", label: "Export SAF-T" },

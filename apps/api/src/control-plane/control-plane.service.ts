@@ -1228,12 +1228,22 @@ export class ControlPlaneService {
       }),
     ]);
 
-    const tenantOnline = new Set(
-      activeSessions.filter((s) => s.subjectKind === "tenant").map((s) => s.subjectId),
-    ).size;
+    const tenantSessionIds = activeSessions
+      .filter((s) => s.subjectKind === "tenant")
+      .map((s) => s.subjectId);
+    const tenantOnlineUsers = new Set(tenantSessionIds).size;
     const platformOnline = new Set(
       activeSessions.filter((s) => s.subjectKind === "platform").map((s) => s.subjectId),
     ).size;
+
+    const tenantUsersOnline =
+      tenantSessionIds.length > 0
+        ? await this.prisma.user.findMany({
+            where: { id: { in: tenantSessionIds } },
+            select: { id: true, tenantId: true },
+          })
+        : [];
+    const tenantOnline = new Set(tenantUsersOnline.map((u) => u.tenantId)).size;
 
     const acessos24h = this.buildHourlyAccessSeries(sessions24h);
     const loginsTenant24h = sessions24h.filter((s) => s.subjectKind === "tenant").length;
@@ -1291,6 +1301,7 @@ export class ControlPlaneService {
       auditEvents24h: audit24h,
       acessos: {
         onlineAgora: tenantOnline,
+        onlineUtilizadoresTenant: tenantOnlineUsers,
         onlinePlataforma: platformOnline,
         logins24h: loginsTenant24h,
         serie24h: acessos24h,

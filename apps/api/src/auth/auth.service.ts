@@ -44,6 +44,7 @@ import { hashRefreshToken, newRefreshOpaqueToken } from "./refresh-token.util";
 import type { AccessTokenPayload } from "./types/access-token-payload";
 import { LoginAttemptLimiterService } from "./login-attempt-limiter.service";
 import { resolveTenantLoginLockoutPolicy } from "./login-lockout-policy.util";
+import { AuditService } from "../audit/audit.service";
 import {
   buildTenantAmbiguousPayload,
   buildTenantAuthPick,
@@ -116,6 +117,7 @@ export class AuthService {
     private readonly mfa: MfaService,
     private readonly mail: MailService,
     private readonly loginAttempts: LoginAttemptLimiterService,
+    private readonly audit: AuditService,
   ) {
     this.accessExpiresSeconds = parseJwtExpirySeconds(
       this.config.get<string>("JWT_EXPIRES") ?? "60m",
@@ -208,6 +210,7 @@ export class AuthService {
   async loginTenant(
     dto: TenantLoginDto,
     res?: Response,
+    actorIp?: string,
   ): Promise<LoginResponse> {
     const email = normalizeAuthEmail(dto.email);
     const preLockoutKey = tenantLoginLockoutKey(email, dto.tenantSlug);
@@ -312,7 +315,15 @@ export class AuthService {
       tenantSlug: user.tenant.slug,
       ...(user.mustChangePassword ? { mustChangePassword: true } : {}),
     };
-    const login = await this.completeLogin(payload, user.id, user.email, "tenant", res, dto.rememberMe === true);
+    const login = await this.completeLogin(
+      payload,
+      user.id,
+      user.email,
+      "tenant",
+      res,
+      dto.rememberMe === true,
+      { actorIp },
+    );
     return {
       ...login,
       ...(user.mustChangePassword ? { passwordChangeRequired: true } : {}),
@@ -426,6 +437,7 @@ export class AuthService {
   async loginPlatform(
     dto: PlatformLoginDto,
     res?: Response,
+    actorIp?: string,
   ): Promise<LoginResponse> {
     const loginKey = dto.email.trim().toLowerCase();
     await this.loginAttempts.assertNotLocked("platform", loginKey);
@@ -458,7 +470,9 @@ export class AuthService {
       tenantId: null,
       tenantSlug: null,
     };
-    return this.completeLogin(payload, pu.id, pu.email, "platform", res, dto.rememberMe === true);
+    return this.completeLogin(payload, pu.id, pu.email, "platform", res, dto.rememberMe === true, {
+      actorIp,
+    });
   }
 
   private passwordResetPepper(): string {
@@ -1090,7 +1104,7 @@ export class AuthService {
     subjectKind: "tenant" | "platform",
     res?: Response,
     rememberMe?: boolean,
-    opts?: { includeRefreshOpaque?: boolean },
+    opts?: { includeRefreshOpaque?: boolean; actorIp?: string; skipLoginAudit?: boolean },
   ): Promise<LoginResponse> {
     const accessToken = this.signAccessToken(payload);
     const opaque = newRefreshOpaqueToken();
@@ -1131,6 +1145,29 @@ export class AuthService {
     if (this.exposeRefreshInBody() || opts?.includeRefreshOpaque) {
       body.refreshToken = opaque;
     }
+
+    if (!opts?.skipLoginAudit) {
+      void this.audit
+        .log({
+          actorType: subjectKind === "platform" ? "SUPERADMIN_USER" : "TENANT_USER",
+          actorId: payload.sub,
+          actorIp: opts?.actorIp,
+          action: "auth.login",
+          resourceType: subjectKind === "platform" ? "platform_user" : "user",
+          resourceId: payload.sub,
+          targetTenantId: payload.tenantId ?? undefined,
+          targetUserId: subjectKind === "tenant" ? payload.sub : undefined,
+          payload: {
+            role: payload.role,
+            email: emailForResponse,
+            rememberMe: rememberMe === true,
+          },
+        })
+        .catch((err) => {
+          this.logger.warn(`Falha ao registar auditoria de login: ${String(err)}`);
+        });
+    }
+
     return body;
   }
 

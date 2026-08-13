@@ -37,6 +37,7 @@ import {
 import { SkipMustChangePassword } from "./decorators/skip-must-change-password.decorator";
 import { EmailConfirmationService } from "./email-confirmation.service";
 import { UpdateOwnProfileDto, ChangeOwnPasswordDto } from "./dto/own-profile.dto";
+import { extractClientIp } from "../common/client-ip.util";
 
 class UpdateUiPreferencesDto {
   @IsOptional()
@@ -70,16 +71,24 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post("tenant/login")
   @HttpCode(200)
-  tenantLogin(@Body() dto: TenantLoginDto, @Res({ passthrough: true }) res: Response) {
-    return this.auth.loginTenant(dto, res);
+  tenantLogin(
+    @Body() dto: TenantLoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.auth.loginTenant(dto, res, extractClientIp(req));
   }
 
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post("platform/login")
   @HttpCode(200)
-  platformLogin(@Body() dto: PlatformLoginDto, @Res({ passthrough: true }) res: Response) {
-    return this.auth.loginPlatform(dto, res);
+  platformLogin(
+    @Body() dto: PlatformLoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.auth.loginPlatform(dto, res, extractClientIp(req));
   }
 
   @Public()
