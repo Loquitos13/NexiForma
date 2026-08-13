@@ -12,10 +12,8 @@ import {
   MOBILE_BOTTOM_NAV_TEST,
 } from "@/components/portal/mobile-bottom-nav";
 import { publishMobileNavOpen } from "@/lib/client/mobile-nav";
-import { useHeaderScrollCollapse } from "@/lib/client/use-header-scroll-collapse";
 import { Sidebar } from "./sidebar";
 import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
-import { cn } from "@/lib/ui/cn";
 import type { JwtRole, TenantEntitlements } from "@nexiforma/shared";
 
 export function BackofficeShell({
@@ -29,7 +27,6 @@ export function BackofficeShell({
 }) {
   const { entitlements } = useTenantEntitlements();
   const scrollRef = useRef<HTMLElement | null>(null);
-  const headerCollapsed = useHeaderScrollCollapse(scrollRef);
   /** Com bottom nav activa, o drawer lateral em mobile fica desligado. */
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
@@ -53,14 +50,9 @@ export function BackofficeShell({
         onMobileClose={() => setMobileNavOpen(false)}
       />
       <div className="flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col overflow-hidden">
-        <div
-          className={cn(
-            "ui-portal-top-cluster relative z-40 shrink-0",
-            headerCollapsed && "is-header-collapsed",
-          )}
-        >
-          {/* Mobile: logo + badge + crumbs + avatar */}
-          <div className="ui-header-collapsible lg:hidden">
+        <div className="ui-portal-top-cluster relative z-40 shrink-0">
+          {/* Mobile: logo + badge + crumbs + avatar - sempre visível */}
+          <div className="lg:hidden">
             <PortalMobileHeader
               pathname={pathname}
               role={role}
@@ -68,11 +60,9 @@ export function BackofficeShell({
             />
           </div>
 
-          {/* Desktop: session bar; search centrada na mesma fila */}
+          {/* Desktop: identidade + acções; search centrada na mesma fila */}
           <div className="ui-header-desktop-row relative z-40 hidden border-b lg:block">
-            <div className="ui-header-collapsible">
-              <UserSessionBar area="portal" embeddedInAtmosphere />
-            </div>
+            <UserSessionBar area="portal" embeddedInAtmosphere />
             <div className="ui-search-strip pointer-events-none absolute inset-x-0 top-1/2 z-[2] flex -translate-y-1/2 justify-center px-5">
               <div className="pointer-events-auto w-full max-w-md">
                 <PortalGlobalSearch pathname={pathname} />

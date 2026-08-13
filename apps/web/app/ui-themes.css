@@ -30,6 +30,20 @@ html[data-ui-scheme="light"] {
   --ui-on-accent: #ffffff;
 }
 
+/* Temas claros: contraste reforçado para texto secundário e tabelas */
+html[data-ui-scheme="light"] .text-slate-500,
+html[data-ui-scheme="light"] .text-slate-400 {
+  color: color-mix(in srgb, var(--ui-muted) 92%, var(--ui-fg)) !important;
+}
+
+html[data-ui-scheme="light"] .text-slate-300 {
+  color: color-mix(in srgb, var(--ui-fg) 78%, var(--ui-muted)) !important;
+}
+
+html[data-ui-scheme="light"] .portal-app-shell table {
+  color: var(--ui-fg);
+}
+
 html[data-ui-theme="midnight"] {
   color-scheme: dark;
   --ui-bg: #070b12;
