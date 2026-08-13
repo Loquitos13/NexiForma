@@ -112,117 +112,20 @@ export default function NotificacoesPage() {
   return (
     <div className="max-w-4xl space-y-5">
       <PageHeader
-        title="Notificações por email"
-        description="Convites, lembretes de sessão, alertas compliance e certificados. Configura SMTP (ex. Brevo/Resend) ou AWS SES - não uses SMTP do alojamento."
+        title="Centro de avisos"
+        description="Lembretes de sessão, digest de alertas e estado das comunicações por email."
       />
 
       {error ? <Alert variant="error">{error}</Alert> : null}
       {msg ? <Alert variant="success">{msg}</Alert> : null}
 
-      {canManage ? <EmailSetupGuide /> : null}
-
-      {email ? (
-        <div className="rounded-2xl border border-slate-700/30 bg-slate-900/50 p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-slate-200">Email transacional</h2>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <span
-              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${
-                email.sendsRealEmail
-                  ? "bg-green-500/15 text-green-300 border border-green-500/30"
-                  : "bg-amber-500/15 text-amber-300 border border-amber-500/30"
-              }`}
-            >
-              <span
-                className={`h-2 w-2 rounded-full ${email.sendsRealEmail ? "bg-green-400" : "bg-amber-400"}`}
-              />
-              {email.sendsRealEmail ? "Envio real activo" : "Modo log (dev)"}
-            </span>
-            <span className="text-xs text-slate-500">
-              Provider: <strong className="text-slate-400">{email.provider}</strong>
-              {email.sesRegion ? ` · ${email.sesRegion}` : ""}
-            </span>
-          </div>
-
-          {email.aviso ? (
-            <Alert variant={email.sendsRealEmail ? "info" : "warning"}>{email.aviso}</Alert>
-          ) : null}
-
-          <div className="grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
-            <p>
-              <span className="text-slate-500">De:</span> {email.from}
-            </p>
-            <p>
-              <span className="text-slate-500">Reply-To:</span> {email.replyTo ?? "-"}
-            </p>
-          </div>
-
-          {canManage ? (
-            <>
-              <div>
-                <p className="text-xs font-medium text-slate-400 mb-2">Checklist DNS (entregabilidade)</p>
-                <ul className="text-xs text-slate-500 space-y-1 list-disc pl-4">
-                  {email.dnsChecklist.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-
-              {stats ? (
-                <div className="grid grid-cols-3 gap-3 text-center text-xs">
-                  <div className="rounded-lg bg-slate-800/40 p-3">
-                    <p className="text-lg font-bold text-green-400">{stats.deliveries30d}</p>
-                    <p className="text-slate-500">Entregues (30d)</p>
-                  </div>
-                  <div className="rounded-lg bg-slate-800/40 p-3">
-                    <p className="text-lg font-bold text-amber-400">{stats.bounces30d}</p>
-                    <p className="text-slate-500">Bounces (30d)</p>
-                  </div>
-                  <div className="rounded-lg bg-slate-800/40 p-3">
-                    <p className="text-lg font-bold text-red-400">{stats.complaints30d}</p>
-                    <p className="text-slate-500">Spam reports (30d)</p>
-                  </div>
-                </div>
-              ) : null}
-
-              {eventos.length > 0 ? (
-                <div>
-                  <p className="text-xs font-medium text-slate-400 mb-2">Últimos eventos SES</p>
-                  <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-700/40">
-                    <table className="w-full text-xs">
-                      <thead className="bg-slate-800/50 text-slate-500">
-                        <tr>
-                          <th className="px-2 py-1.5 text-left">Tipo</th>
-                          <th className="px-2 py-1.5 text-left">Destinatário</th>
-                          <th className="px-2 py-1.5 text-left">Motivo</th>
-                          <th className="px-2 py-1.5 text-right">Data</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {eventos
-                          .filter((e) => e.tipo !== "DELIVERY")
-                          .slice(0, 20)
-                          .map((e) => (
-                            <tr key={e.id} className="border-t border-slate-800/60">
-                              <td className="px-2 py-1.5 text-slate-300">{e.tipo}</td>
-                              <td className="px-2 py-1.5 text-slate-400">{e.destinatario}</td>
-                              <td className="px-2 py-1.5 text-slate-500 truncate max-w-[140px]">
-                                {e.motivo ?? "-"}
-                              </td>
-                              <td className="px-2 py-1.5 text-right text-slate-500">
-                                {formatDatePt(e.ocorridoEm)}
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : null}
-            </>
-          ) : null}
-        </div>
-      ) : null}
+      <div className="rounded-2xl border border-slate-700/30 bg-slate-900/50 p-5">
+        <h2 className="text-sm font-semibold text-slate-200 mb-2">Lembretes de sessões</h2>
+        <p className="text-xs text-slate-500 mb-3">
+          Envia lembretes por email aos formandos inscritos (sessões de amanhã).
+        </p>
+        <SessaoReminderForm onSend={(id) => void enviarLembretes(id)} busy={busy} canManage={canManage} />
+      </div>
 
       {canManage ? (
         <div className="rounded-2xl border border-slate-700/30 bg-slate-900/50 p-5">
@@ -244,11 +147,117 @@ export default function NotificacoesPage() {
         </div>
       ) : null}
 
-      <div className="rounded-2xl border border-slate-700/30 bg-slate-900/50 p-5">
-        <h2 className="text-sm font-semibold text-slate-200 mb-2">Lembretes de sessões</h2>
-        <p className="text-xs text-slate-500 mb-3">Lembretes por email aos formandos (sessões de amanhã).</p>
-        <SessaoReminderForm onSend={(id) => void enviarLembretes(id)} busy={busy} canManage={canManage} />
-      </div>
+      {email ? (
+        <div className="rounded-2xl border border-slate-700/30 bg-slate-900/50 p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-slate-200">Estado do email</h2>
+            <span
+              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${
+                email.sendsRealEmail
+                  ? "bg-green-500/15 text-green-300 border border-green-500/30"
+                  : "bg-amber-500/15 text-amber-300 border border-amber-500/30"
+              }`}
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${email.sendsRealEmail ? "bg-green-400" : "bg-amber-400"}`}
+              />
+              {email.sendsRealEmail ? "Envio activo" : "Modo simulação"}
+            </span>
+          </div>
+          {!canManage ? (
+            <p className="text-xs text-slate-500">
+              O envio de convites, certificados e lembretes está{" "}
+              {email.sendsRealEmail ? "operacional" : "em modo de testes"}. Contacta o gestor da
+              entidade se algo não chegar.
+            </p>
+          ) : null}
+          {email.aviso && canManage ? (
+            <Alert variant={email.sendsRealEmail ? "info" : "warning"}>{email.aviso}</Alert>
+          ) : null}
+        </div>
+      ) : null}
+
+      {canManage && email ? (
+        <details className="rounded-2xl border border-slate-700/30 bg-slate-900/40 p-5 group">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-300 list-none flex items-center justify-between">
+            Configuração técnica de email
+            <span className="text-xs font-normal text-slate-500 group-open:hidden">Expandir</span>
+          </summary>
+          <div className="mt-4 space-y-4 border-t border-slate-700/30 pt-4">
+            <EmailSetupGuide />
+            <div className="grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
+              <p>
+                <span className="text-slate-500">De:</span> {email.from}
+              </p>
+              <p>
+                <span className="text-slate-500">Reply-To:</span> {email.replyTo ?? "-"}
+              </p>
+              <p className="sm:col-span-2">
+                <span className="text-slate-500">Provider:</span> {email.provider}
+                {email.sesRegion ? ` · ${email.sesRegion}` : ""}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-400 mb-2">Checklist DNS (entregabilidade)</p>
+              <ul className="text-xs text-slate-500 space-y-1 list-disc pl-4">
+                {email.dnsChecklist.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+            {stats ? (
+              <div className="grid grid-cols-3 gap-3 text-center text-xs">
+                <div className="rounded-lg bg-slate-800/40 p-3">
+                  <p className="text-lg font-bold text-green-400">{stats.deliveries30d}</p>
+                  <p className="text-slate-500">Entregues (30d)</p>
+                </div>
+                <div className="rounded-lg bg-slate-800/40 p-3">
+                  <p className="text-lg font-bold text-amber-400">{stats.bounces30d}</p>
+                  <p className="text-slate-500">Bounces (30d)</p>
+                </div>
+                <div className="rounded-lg bg-slate-800/40 p-3">
+                  <p className="text-lg font-bold text-red-400">{stats.complaints30d}</p>
+                  <p className="text-slate-500">Spam reports (30d)</p>
+                </div>
+              </div>
+            ) : null}
+            {eventos.length > 0 ? (
+              <div>
+                <p className="text-xs font-medium text-slate-400 mb-2">Últimos eventos SES</p>
+                <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-700/40">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-800/50 text-slate-500">
+                      <tr>
+                        <th className="px-2 py-1.5 text-left">Tipo</th>
+                        <th className="px-2 py-1.5 text-left">Destinatário</th>
+                        <th className="px-2 py-1.5 text-left">Motivo</th>
+                        <th className="px-2 py-1.5 text-right">Data</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {eventos
+                        .filter((e) => e.tipo !== "DELIVERY")
+                        .slice(0, 20)
+                        .map((e) => (
+                          <tr key={e.id} className="border-t border-slate-800/60">
+                            <td className="px-2 py-1.5 text-slate-300">{e.tipo}</td>
+                            <td className="px-2 py-1.5 text-slate-400">{e.destinatario}</td>
+                            <td className="px-2 py-1.5 text-slate-500 truncate max-w-[140px]">
+                              {e.motivo ?? "-"}
+                            </td>
+                            <td className="px-2 py-1.5 text-right text-slate-500">
+                              {formatDatePt(e.ocorridoEm)}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }
