@@ -1,212 +1,420 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
+import { Building2, FileCheck, Plus, Receipt } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
-import { useClientTablePaging } from "@/lib/client/use-client-table-paging";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { parseApiError } from "@/lib/ui/backoffice";
+import { withPortalFrom } from "@/lib/ui/portal-back-nav";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  DataTable,
+  PageHeader,
+  Select,
+  type Column,
+  type SortState,
+} from "@/components/ui";
+import { CrmContextNav, CONTRATOS_NAV } from "@/components/crm/crm-context-nav";
+import { CrmListFilters,
+  emptyCrmListFilters,
+  type CrmListFiltersValue,
+} from "@/components/crm/crm-list-filters";
 import { parsePaginatedList } from "@/lib/crm/paginated-list";
-import { ListPaginationControls } from "@/components/crm/list-pagination";
+import { fmtDate, fmtEuro } from "@/lib/crm/shared";
 
-type Contrato = {
+type ContratoEstado = "VIGENTE" | "A_EXPIRAR" | "EXPIRADO";
+
+type PropostaAceite = {
   id: string;
   codigo: string;
   titulo: string;
-  entidade: string;
-  valor: string;
-  dataInicio: string;
-  dataFim: string | null;
-  estado: string;
+  valorCentavos: number;
+  validadeAte: string | null;
+  aceiteEm: string | null;
   createdAt: string;
+  entidadeCliente: { id: string; nome: string; nif: string };
+  curso: { designacao: string } | null;
+  fatura?: { id: string; estado: string } | null;
 };
 
-const estadoBadge: Record<string, string> = {
-  VIGENTE: "bg-green-500/10 text-green-400 border-green-500/20",
-  EXPIRADO: "bg-slate-500/10 text-slate-400 border-slate-500/20",
-  RESCINDIDO: "bg-red-500/10 text-red-400 border-red-500/20",
-};
+type ContratoRow = PropostaAceite & { contratoEstado: ContratoEstado };
 
-const inputClass = "w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-sm text-slate-200 placeholder:text-slate-500 outline-none focus:border-blue-500/40";
+const ESTADOS: (ContratoEstado | "TODOS")[] = ["TODOS", "VIGENTE", "A_EXPIRAR", "EXPIRADO"];
+
+function computeContratoEstado(validadeAte: string | null): ContratoEstado {
+  if (!validadeAte) return "VIGENTE";
+  const end = new Date(validadeAte);
+  if (Number.isNaN(end.getTime())) return "VIGENTE";
+  const now = new Date();
+  if (end < now) return "EXPIRADO";
+  const days = (end.getTime() - now.getTime()) / 86_400_000;
+  if (days <= 30) return "A_EXPIRAR";
+  return "VIGENTE";
+}
+
+function contratoEstadoLabel(estado: ContratoEstado): string {
+  const map: Record<ContratoEstado, string> = {
+    VIGENTE: "Vigente",
+    A_EXPIRAR: "A expirar",
+    EXPIRADO: "Expirado",
+  };
+  return map[estado];
+}
+
+function contratoEstadoVariant(estado: ContratoEstado): "green" | "yellow" | "default" {
+  if (estado === "VIGENTE") return "green";
+  if (estado === "A_EXPIRAR") return "yellow";
+  return "default";
+}
+
+function matchesSearch(row: ContratoRow, q: string): boolean {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return true;
+  const hay = [
+    row.codigo,
+    row.titulo,
+    row.entidadeCliente.nome,
+    row.entidadeCliente.nif,
+    row.curso?.designacao ?? "",
+  ]
+    .join(" ")
+    .toLowerCase();
+  return hay.includes(needle);
+}
 
 export default function ContratosPage() {
-  const { canManageCrm: canManage } = useTenantRole();
+  const pathname = usePathname();
+  const { canManageCrm, canManage, writeDisabled } = useTenantRole();
+  const [contratos, setContratos] = useState<ContratoRow[]>([]);
   const [entidades, setEntidades] = useState<{ id: string; nome: string }[]>([]);
-  const [contratos, setContratos] = useState<Contrato[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({ entidadeId: "", codigo: "", titulo: "", valor: "", dataInicio: new Date().toISOString().split("T")[0], dataFim: "" });
-  const paging = useClientTablePaging(contratos, 10);
+  const [estadoFilter, setEstadoFilter] = useState<(ContratoEstado | "TODOS")>("TODOS");
+  const [entidadeFilter, setEntidadeFilter] = useState("");
+  const [listFilters, setListFilters] = useState<CrmListFiltersValue>(emptyCrmListFilters);
+  const [sort, setSort] = useState<SortState | null>({ key: "aceiteEm", direction: "desc" });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const [pRes, eRes] = await Promise.all([
+      bffFetch("/api/v1/propostas?estado=ACEITE&pageSize=200", {
+        headers: { accept: "application/json" },
+      }),
+      bffFetch("/api/v1/entidades-cliente", { headers: { accept: "application/json" } }),
+    ]);
+    if (!pRes.ok) {
+      setError(await parseApiError(pRes));
+      setContratos([]);
+    } else {
+      const items = parsePaginatedList<PropostaAceite>(await pRes.json()).items;
+      setContratos(
+        items.map((p) => ({
+          ...p,
+          contratoEstado: computeContratoEstado(p.validadeAte),
+        })),
+      );
+    }
+    if (eRes.ok) {
+      const raw = (await eRes.json()) as { id: string; nome: string }[] | { items?: { id: string; nome: string }[] };
+      setEntidades(Array.isArray(raw) ? raw : (raw.items ?? []));
+    }
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    void bffFetch("/api/v1/entidades-cliente", { headers: { accept: "application/json" } }).then(async (r) => {
-      if (r.ok) setEntidades((await r.json()) as { id: string; nome: string }[]);
-    });
-  }, []);
+    void load();
+  }, [load]);
 
-  // Contratos are derived from propostas ACEITE
-  const load = useCallback(async () => {
+  const filtered = useMemo(() => {
+    return contratos.filter((c) => {
+      if (estadoFilter !== "TODOS" && c.contratoEstado !== estadoFilter) return false;
+      if (entidadeFilter && c.entidadeCliente.id !== entidadeFilter) return false;
+      if (!matchesSearch(c, listFilters.q)) return false;
+      return true;
+    });
+  }, [contratos, estadoFilter, entidadeFilter, listFilters.q]);
+
+  const counts = useMemo(() => {
+    const base = { TODOS: contratos.length, VIGENTE: 0, A_EXPIRAR: 0, EXPIRADO: 0 };
+    for (const c of contratos) base[c.contratoEstado] += 1;
+    return base;
+  }, [contratos]);
+
+  const resumo = useMemo(() => {
+    const vigentes = contratos.filter((c) => c.contratoEstado !== "EXPIRADO");
+    const expirados = contratos.filter((c) => c.contratoEstado === "EXPIRADO");
+    const valorTotal = contratos.reduce((sum, c) => sum + c.valorCentavos, 0);
+    return { vigentes: vigentes.length, expirados: expirados.length, valorTotal };
+  }, [contratos]);
+
+  async function faturarContrato(id: string) {
+    setBusy(true);
     setError(null);
-    const r = await bffFetch("/api/v1/propostas?estado=ACEITE&pageSize=100", {
+    setMsg(null);
+    const res = await bffFetch(`/api/v1/crm/propostas/${id}/faturar`, {
+      method: "POST",
       headers: { accept: "application/json" },
     });
-    if (!r.ok) { setError("Erro ao carregar."); return; }
-    const propostas = parsePaginatedList<{
-      id: string; codigo: string; titulo: string; estado: string; valorCentavos: number;
-      validadeAte: string | null; createdAt: string;
-      entidadeCliente: { nome: string };
-    }>(await r.json()).items;
-    setContratos(
-      propostas
-        .map((p) => ({
-          id: p.id,
-          codigo: p.codigo,
-          titulo: p.titulo,
-          entidade: p.entidadeCliente.nome,
-          valor: `${(p.valorCentavos / 100).toFixed(2)} EUR`,
-          dataInicio: p.createdAt.split("T")[0],
-          dataFim: p.validadeAte?.split("T")[0] ?? null,
-          estado: p.validadeAte && new Date(p.validadeAte) < new Date() ? "EXPIRADO" : "VIGENTE",
-          createdAt: p.createdAt,
-        }))
-    );
-  }, []);
-
-  useEffect(() => { void load(); }, [load]);
-
-  async function criarProposta(e: FormEvent) {
-    e.preventDefault();
-    if (!canManage) return;
-    setBusy(true); setError(null); setMsg(null);
-    const euros = Number(form.valor.replace(",", ".")) || 0;
-    const r = await bffFetch("/api/v1/propostas", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({
-        entidadeClienteId: form.entidadeId,
-        codigo: form.codigo.trim() || `CTR-${Date.now()}`,
-        titulo: form.titulo.trim(),
-        valorCentavos: Math.round(euros * 100),
-        validadeAte: form.dataFim || undefined,
-      }),
-    });
     setBusy(false);
-    if (!r.ok) { setError("Erro ao criar."); return; }
-    setMsg("Contrato/proposta criado. Aceita na pagina de Propostas para o activar.");
-    setForm({ entidadeId: "", codigo: "", titulo: "", valor: "", dataInicio: new Date().toISOString().split("T")[0], dataFim: "" });
+    if (!res.ok) {
+      setError(await parseApiError(res));
+      return;
+    }
+    const data = (await res.json()) as { id: string };
+    setMsg("Fatura em rascunho criada.");
     await load();
+    window.location.href = `/portal/crm/faturas/${data.id}`;
   }
 
-  if (!canManage) {
+  const COLS: Column<ContratoRow>[] = [
+    {
+      key: "codigo",
+      header: "Contrato",
+      sortable: true,
+      sortValue: (c) => c.codigo,
+      cell: (c) => (
+        <Link
+          href={withPortalFrom(`/portal/propostas/${c.id}`, pathname || "/portal/contratos")}
+          className="block hover:text-violet-300"
+        >
+          <span className="font-medium text-slate-100">{c.codigo}</span>
+          <p className="mt-0.5 text-xs text-slate-500">{c.titulo}</p>
+          {c.curso ? <p className="mt-0.5 text-xs text-slate-600">{c.curso.designacao}</p> : null}
+        </Link>
+      ),
+    },
+    {
+      key: "entidadeCliente",
+      header: "Cliente",
+      sortable: true,
+      sortValue: (c) => c.entidadeCliente.nome,
+      cell: (c) => (
+        <Link
+          href={withPortalFrom(`/portal/clientes/${c.entidadeCliente.id}`, pathname || "/portal/contratos")}
+          className="text-sm hover:text-violet-300"
+        >
+          <p className="text-slate-300">{c.entidadeCliente.nome}</p>
+          <p className="text-xs text-slate-500">NIF {c.entidadeCliente.nif}</p>
+        </Link>
+      ),
+    },
+    {
+      key: "valorCentavos",
+      header: "Valor",
+      sortable: true,
+      hideOnMobile: true,
+      sortValue: (c) => c.valorCentavos,
+      cell: (c) => <span className="font-medium">{fmtEuro(c.valorCentavos)}</span>,
+    },
+    {
+      key: "aceiteEm",
+      header: "Aceite em",
+      sortable: true,
+      hideOnMobile: true,
+      sortValue: (c) => {
+        const iso = c.aceiteEm ?? c.createdAt;
+        const t = new Date(iso).getTime();
+        return Number.isFinite(t) ? t : null;
+      },
+      cell: (c) => <span className="text-sm text-slate-400">{fmtDate(c.aceiteEm ?? c.createdAt)}</span>,
+    },
+    {
+      key: "validadeAte",
+      header: "Validade",
+      sortable: true,
+      sortValue: (c) => {
+        if (!c.validadeAte) return null;
+        const t = new Date(c.validadeAte).getTime();
+        return Number.isFinite(t) ? t : null;
+      },
+      cell: (c) => <span className="text-sm text-slate-400">{fmtDate(c.validadeAte)}</span>,
+    },
+    {
+      key: "contratoEstado",
+      header: "Estado",
+      sortable: true,
+      sortCycle: ["VIGENTE", "A_EXPIRAR", "EXPIRADO"],
+      sortValue: (c) => c.contratoEstado,
+      cell: (c) => (
+        <Badge variant={contratoEstadoVariant(c.contratoEstado)}>{contratoEstadoLabel(c.contratoEstado)}</Badge>
+      ),
+    },
+  ];
+
+  if (!canManageCrm) {
     return (
       <div className="max-w-3xl">
-        <h1 className="text-2xl font-bold text-slate-50">Contratos</h1>
-        <p className="text-sm text-slate-400 mt-2">Apenas gestores podem aceder à gestão de contratos.</p>
+        <PageHeader title="Contratos" description="Gestão de contratos comerciais." />
+        <Alert variant="warning">Sem permissão para aceder à gestão de contratos.</Alert>
       </div>
     );
   }
 
   return (
-    <div className="max-w-5xl space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-50">Contratos</h1>
-        <p className="text-sm text-slate-500 mt-1">Gestao de contratos celebrados com empresas clientes – baseados em propostas aceites.</p>
+    <>
+      <CrmContextNav tabs={CONTRATOS_NAV} ariaLabel="Secções Contratos" />
+      <PageHeader
+        title="Contratos"
+        description="Propostas aceites pelo cliente — contratos vigentes, validade e facturação."
+        actions={
+          canManageCrm ? (
+            <Button asChild disabled={writeDisabled}>
+              <Link href="/portal/propostas?nova=1">
+                <Plus className="h-4 w-4" />
+                Nova proposta
+              </Link>
+            </Button>
+          ) : null
+        }
+      />
+
+      {error ? <Alert variant="error" className="mb-4">{error}</Alert> : null}
+      {msg ? <Alert variant="success" className="mb-4">{msg}</Alert> : null}
+
+      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="rounded-lg bg-green-900/40 p-2">
+              <FileCheck className="h-5 w-5 text-green-400" />
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Vigentes</p>
+              <p className="text-xl font-semibold text-slate-100">{loading ? "—" : resumo.vigentes}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="rounded-lg bg-slate-800/80 p-2">
+              <FileCheck className="h-5 w-5 text-slate-400" />
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Expirados</p>
+              <p className="text-xl font-semibold text-slate-100">{loading ? "—" : resumo.expirados}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="rounded-lg bg-violet-900/40 p-2">
+              <Building2 className="h-5 w-5 text-violet-400" />
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Valor total</p>
+              <p className="text-xl font-semibold text-slate-100">
+                {loading ? "—" : fmtEuro(resumo.valorTotal)}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {error ? <div className="flex items-start gap-2.5 rounded-xl bg-red-950/40 border border-red-500/25 px-4 py-3"><p className="text-sm text-red-300">{error}</p></div> : null}
-      {msg ? <div className="flex items-start gap-2.5 rounded-xl bg-green-950/30 border border-green-500/25 px-4 py-3"><p className="text-sm text-green-300">{msg}</p></div> : null}
+      <CrmListFilters
+        value={listFilters}
+        onChange={setListFilters}
+        gestor={canManage}
+        searchPlaceholder="Pesquisar código, cliente ou curso…"
+      />
 
-      {/* New contract form */}
-      {canManage ? (
-        <div className="rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
-          <h2 className="text-sm font-semibold text-slate-200 mb-3">Novo contrato / proposta</h2>
-          <form onSubmit={(e) => void criarProposta(e)} className="grid sm:grid-cols-2 gap-3 max-w-lg">
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-slate-400 mb-1">Entidade</label>
-              <select value={form.entidadeId} onChange={(e) => setForm((f) => ({ ...f, entidadeId: e.target.value }))} required className={inputClass}>
-                <option value="">Seleccionar...</option>
-                {entidades.map((e) => <option key={e.id} value={e.id}>{e.nome}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Codigo</label>
-              <input value={form.codigo} onChange={(e) => setForm((f) => ({ ...f, codigo: e.target.value }))} placeholder="CTR-2026-001" className={inputClass} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Titulo *</label>
-              <input value={form.titulo} onChange={(e) => setForm((f) => ({ ...f, titulo: e.target.value }))} required className={inputClass} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Valor (EUR)</label>
-              <input type="number" min={0} step={0.01} value={form.valor} onChange={(e) => setForm((f) => ({ ...f, valor: e.target.value }))} className={inputClass} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Validade</label>
-              <input type="date" value={form.dataFim} onChange={(e) => setForm((f) => ({ ...f, dataFim: e.target.value }))} className={inputClass} />
-            </div>
-            <div className="sm:col-span-2">
-              <button type="submit" disabled={busy}
-                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium transition-colors">
-                {busy ? "A criar..." : "Criar contrato"}
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
-
-      {/* Contracts table */}
-      <div className="table-scroll-shell rounded-2xl bg-slate-900/50 border border-slate-700/30">
-        <div className="px-5 py-4 border-b border-slate-700/30">
-          <h2 className="text-sm font-semibold text-slate-200">Contratos vigentes ({contratos.length})</h2>
-        </div>
-        {contratos.length === 0 ? (
-          <div className="p-8 text-center">
-            <svg className="w-10 h-10 text-slate-600 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-            </svg>
-            <p className="text-sm text-slate-500">Sem contratos. Cria uma proposta e aceita-a para gerar um contrato.</p>
-          </div>
-        ) : (
-          <>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-700/30">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Codigo</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Entidade</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Valor</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Periodo</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Estado</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-700/20">
-                {paging.slice.map((c) => (
-                  <tr key={c.id} className="hover:bg-slate-800/30 transition-colors">
-                    <td className="px-4 py-3 text-xs font-mono text-purple-300">{c.codigo}</td>
-                    <td className="px-4 py-3 text-slate-200 text-xs">{c.entidade}</td>
-                    <td className="px-4 py-3 text-xs text-slate-400 hidden sm:table-cell">{c.valor}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">{c.dataInicio}{c.dataFim ? ` – ${c.dataFim}` : ""}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${estadoBadge[c.estado] ?? estadoBadge.VIGENTE}`}>
-                        {c.estado}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {paging.total > 0 ? (
-              <ListPaginationControls
-                className="border-t border-slate-700/40 px-4 py-3"
-                page={paging.page}
-                pageSize={paging.pageSize}
-                total={paging.total}
-                numberedPages
-                onPageChange={paging.setPage}
-                onPageSizeChange={paging.setPageSize}
-              />
-            ) : null}
-          </>
-        )}
+      <div className="mb-4 mt-5 flex flex-wrap items-end gap-3">
+        <Select
+          label="Entidade"
+          className="min-w-[200px]"
+          value={entidadeFilter}
+          onChange={(e) => setEntidadeFilter(e.target.value)}
+        >
+          <option value="">Todas as entidades</option>
+          {entidades.map((e) => (
+            <option key={e.id} value={e.id}>
+              {e.nome}
+            </option>
+          ))}
+        </Select>
       </div>
-    </div>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        {ESTADOS.map((e) => (
+          <button
+            key={e}
+            type="button"
+            onClick={() => setEstadoFilter(e)}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+              estadoFilter === e
+                ? "bg-violet-600 text-white"
+                : "border border-slate-700/50 bg-slate-800 text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            {e === "TODOS" ? "Todos" : contratoEstadoLabel(e)}{" "}
+            <span className="opacity-70">({counts[e] ?? 0})</span>
+          </button>
+        ))}
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={COLS}
+            data={filtered}
+            keyField="id"
+            loading={loading}
+            fixedLayout
+            sort={sort}
+            onSortChange={setSort}
+            emptyMessage={
+              contratos.length === 0
+                ? "Sem contratos. Crie uma proposta comercial e aguarde a aceitação pelo cliente."
+                : "Sem contratos com estes filtros."
+            }
+            rowActions={(c) => (
+              <div className="flex flex-wrap justify-end gap-1">
+                <Button size="sm" variant="secondary" asChild>
+                  <Link href={withPortalFrom(`/portal/propostas/${c.id}`, pathname || "/portal/contratos")}>
+                    Ver proposta
+                  </Link>
+                </Button>
+                <Button size="sm" variant="ghost" asChild>
+                  <Link
+                    href={withPortalFrom(`/portal/clientes/${c.entidadeCliente.id}`, pathname || "/portal/contratos")}
+                  >
+                    <Building2 className="h-3.5 w-3.5" />
+                    Cliente
+                  </Link>
+                </Button>
+                {canManage && !c.fatura ? (
+                  <Button size="sm" variant="teal" disabled={busy} onClick={() => void faturarContrato(c.id)}>
+                    <Receipt className="h-3.5 w-3.5" />
+                    Faturar
+                  </Button>
+                ) : null}
+                {canManage && c.fatura ? (
+                  <Button size="sm" variant="secondary" asChild>
+                    <Link href={`/portal/crm/faturas/${c.fatura.id}`}>
+                      <Receipt className="h-3.5 w-3.5" />
+                      Fatura
+                    </Link>
+                  </Button>
+                ) : null}
+              </div>
+            )}
+          />
+          {!loading && contratos.length === 0 ? (
+            <div className="border-t border-slate-700/30 px-4 py-6 text-center text-sm text-slate-500">
+              <Link href="/portal/propostas" className="font-medium text-violet-400 underline">
+                Ir para Propostas
+              </Link>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+    </>
   );
 }

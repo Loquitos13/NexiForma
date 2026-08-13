@@ -68,3 +68,9 @@ export const PROPOSTAS_NAV: CrmContextNavTab[] = [
   { href: "/portal/propostas", label: "Propostas", exact: true },
   { href: "/portal/propostas/clientes", label: "Clientes" },
 ];
+
+export const CONTRATOS_NAV: CrmContextNavTab[] = [
+  { href: "/portal/contratos", label: "Contratos", exact: true },
+  { href: "/portal/propostas", label: "Propostas" },
+  { href: "/portal/clientes", label: "Clientes" },
+];
