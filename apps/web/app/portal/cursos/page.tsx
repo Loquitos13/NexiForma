@@ -118,30 +118,49 @@ export default function CursosPage() {
 
   const COLUMNS: Column<Curso>[] = [
     {
-      key: "codigoUfcd", header: "UFCD",
+      key: "codigoUfcd",
+      header: "UFCD",
+      sortable: true,
+      sortValue: (c) => c.codigoUfcd ?? "",
       cell: (c) => c.codigoUfcd
         ? <Badge variant="blue">{c.codigoUfcd}</Badge>
         : <span className="text-slate-600">–</span>,
     },
-    { key: "designacao", header: "Designação", cell: (c) => (
+    {
+      key: "designacao",
+      header: "Designação",
+      sortable: true,
+      sortValue: (c) => c.designacao,
+      cell: (c) => (
       <Link href={`/portal/cursos/${c.id}`} className="font-medium text-blue-400 hover:text-blue-300">
         {c.designacao}
       </Link>
-    ) },
+    ),
+    },
     {
-      key: "cargaHoras", header: "Horas",
+      key: "cargaHoras",
+      header: "Horas",
+      sortable: true,
       hideOnMobile: true,
+      sortValue: (c) => c.cargaHoras,
       cell: (c) => <span className="font-mono text-sm tabular-nums text-slate-300">{c.cargaHoras}h</span>,
     },
     {
-      key: "modalidade", header: "Modalidade",
+      key: "modalidade",
+      header: "Modalidade",
+      sortable: true,
       hideOnMobile: true,
+      sortValue: (c) => c.modalidade,
       cell: (c) => <Badge variant="default">{MODALIDADE_LABEL[c.modalidade] ?? c.modalidade}</Badge>,
     },
     {
-      key: "_count", header: "Acções",
+      key: "_count",
+      header: "Acções",
+      sortable: true,
+      sortValue: (c) => c._count?.acoesFormacao ?? 0,
       cell: (c) => <Badge variant="default">{c._count?.acoesFormacao ?? 0}</Badge>,
-      className: "text-center", headerClassName: "text-center",
+      className: "text-center",
+      headerClassName: "text-center",
     },
   ];
 

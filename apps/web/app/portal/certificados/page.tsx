@@ -6,10 +6,8 @@ import { Download } from "lucide-react";
 import { DgertRequisitoBanner, DgertTarget } from "@/components/portal/dgert-requisito-banner";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { openHtmlForPrint } from "@/lib/client/open-html-for-print";
-import { useClientTablePaging } from "@/lib/client/use-client-table-paging";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
-import { ListPaginationControls } from "@/components/crm/list-pagination";
-import { Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle, PageHeader, Select, TableScroll } from "@/components/ui";
+import { Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle, PageHeader, PaginatedDataTable, Select, type Column } from "@/components/ui";
 
 type AcaoOpt = { id: string; codigoInterno: string; titulo: string };
 type FormandoCert = {
@@ -37,7 +35,85 @@ export default function CertificadosPage() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [notifyBusy, setNotifyBusy] = useState(false);
-  const paging = useClientTablePaging(formandos, 10);
+
+  const CERT_COLS: Column<FormandoCert>[] = [
+    {
+      key: "formando",
+      header: "Formando",
+      sortable: true,
+      sortValue: (f) => f.formando.nome,
+      cell: (f) => (
+        <>
+          <p className="text-slate-200 font-medium">{f.formando.nome}</p>
+          <p className="text-xs text-slate-500">NIF {f.formando.nif}</p>
+        </>
+      ),
+    },
+    {
+      key: "turmaCodigo",
+      header: "Turma",
+      sortable: true,
+      hideOnMobile: true,
+      sortValue: (f) => f.turmaCodigo,
+      cell: (f) => <span className="text-slate-400">{f.turmaCodigo}</span>,
+    },
+    {
+      key: "taxaPresenca",
+      header: "Presença",
+      sortable: true,
+      sortValue: (f) => f.taxaPresenca ?? -1,
+      cell: (f) => (
+        <div className="flex items-center gap-2">
+          <span className="text-slate-200">{f.taxaPresenca != null ? `${f.taxaPresenca}%` : "–"}</span>
+          <Badge variant={f.elegivelCertificado ? "green" : "yellow"}>
+            {f.elegivelCertificado ? "Elegível" : "Abaixo limiar"}
+          </Badge>
+        </div>
+      ),
+    },
+    {
+      key: "codigoVerificacao",
+      header: "Verificação",
+      sortable: true,
+      hideOnMobile: true,
+      sortValue: (f) => f.codigoVerificacao ?? "",
+      cell: (f) =>
+        f.codigoVerificacao ? (
+          <code className="text-xs text-blue-300">{f.codigoVerificacao}</code>
+        ) : (
+          <span className="text-slate-600 text-xs">–</span>
+        ),
+    },
+    {
+      key: "certificadoSigo",
+      header: "SIGO",
+      sortable: true,
+      hideOnMobile: true,
+      sortValue: (f) => (f.certificadoSigo ? 1 : 0),
+      cell: (f) =>
+        f.certificadoSigo ? (
+          <div className="space-y-1">
+            <Badge variant="purple">Oficial SIGO</Badge>
+            {f.certificadoSigo.numeroCertificado ? (
+              <p className="text-[10px] text-slate-500">{f.certificadoSigo.numeroCertificado}</p>
+            ) : null}
+            {f.certificadoSigo.temFicheiro ? (
+              <button
+                type="button"
+                onClick={() => downloadSigo(f.certificadoSigo!.id)}
+                className="block text-[11px] text-teal-400 hover:text-teal-300"
+              >
+                Descarregar PDF
+              </button>
+            ) : (
+              <span className="text-[10px] text-slate-600">PDF pendente</span>
+            )}
+          </div>
+        ) : (
+          <span className="text-slate-600 text-xs">–</span>
+        ),
+    },
+  ];
 
   useEffect(() => {
     void bffFetch("/api/v1/acoes-formacao", { headers: { accept: "application/json" } }).then(async (r) => {
@@ -134,88 +210,21 @@ export default function CertificadosPage() {
         ) : formandos.length === 0 ? (
           <div className="p-5 text-sm text-slate-500">Sem matrículas activas nesta acção.</div>
         ) : (
-          <>
-          <TableScroll>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-700/30">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Formando</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Turma</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Presença</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Verificação</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">SIGO</th>
-                  <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-700/20">
-                {paging.slice.map((f) => (
-                  <tr key={f.matriculaId} className="hover:bg-slate-800/30 transition-colors">
-                    <td className="px-4 py-3">
-                      <p className="text-slate-200 font-medium">{f.formando.nome}</p>
-                      <p className="text-xs text-slate-500">NIF {f.formando.nif}</p>
-                    </td>
-                    <td className="px-4 py-3 text-slate-400">{f.turmaCodigo}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-200">{f.taxaPresenca != null ? `${f.taxaPresenca}%` : "–"}</span>
-                        <Badge variant={f.elegivelCertificado ? "green" : "yellow"}>
-                          {f.elegivelCertificado ? "Elegível" : "Abaixo limiar"}
-                        </Badge>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      {f.codigoVerificacao ? (
-                        <code className="text-xs text-blue-300">{f.codigoVerificacao}</code>
-                      ) : (
-                        <span className="text-slate-600 text-xs">–</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {f.certificadoSigo ? (
-                        <div className="space-y-1">
-                          <Badge variant="purple">Oficial SIGO</Badge>
-                          {f.certificadoSigo.numeroCertificado ? (
-                            <p className="text-[10px] text-slate-500">{f.certificadoSigo.numeroCertificado}</p>
-                          ) : null}
-                          {f.certificadoSigo.temFicheiro ? (
-                            <button
-                              type="button"
-                              onClick={() => downloadSigo(f.certificadoSigo!.id)}
-                              className="block text-[11px] text-teal-400 hover:text-teal-300"
-                            >
-                              Descarregar PDF
-                            </button>
-                          ) : (
-                            <span className="text-[10px] text-slate-600">PDF pendente</span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-slate-600 text-xs">–</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Button size="sm" onClick={() => void imprimir(f.matriculaId)}>
-                        <Download className="h-3 w-3" />
-                        Imprimir / PDF
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableScroll>
-          {paging.total > 0 ? (
-            <ListPaginationControls
-              className="border-t border-slate-700/40 px-4 py-3"
-              page={paging.page}
-              pageSize={paging.pageSize}
-              total={paging.total}
-              numberedPages
-              onPageChange={paging.setPage}
-              onPageSizeChange={paging.setPageSize}
+          <CardContent className="p-0">
+            <PaginatedDataTable
+              columns={CERT_COLS}
+              data={formandos}
+              keyField="matriculaId"
+              loading={loading}
+              paginationClassName="border-t border-slate-700/40 px-4 py-3"
+              rowActions={(f) => (
+                <Button size="sm" onClick={() => void imprimir(f.matriculaId)}>
+                  <Download className="h-3 w-3" />
+                  Imprimir / PDF
+                </Button>
+              )}
             />
-          ) : null}
-          </>
+          </CardContent>
         )}
       </Card>
       </DgertTarget>

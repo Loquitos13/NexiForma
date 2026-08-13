@@ -8,12 +8,10 @@ import {
 } from "@/components/settings/avaliacao-parametros-settings";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
-import { useClientTablePaging } from "@/lib/client/use-client-table-paging";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
-import { ListPaginationControls } from "@/components/crm/list-pagination";
 import {
-  Alert, Button, Card, CardContent, CardHeader, CardTitle, Input, PageHeader, Select, TableScroll, Textarea,
+  Alert, Button, Card, CardContent, CardHeader, CardTitle, Input, PageHeader, PaginatedDataTable, Select, Textarea, type Column,
 } from "@/components/ui";
 
 type AcaoOpt = { id: string; codigoInterno: string; titulo: string };
@@ -62,7 +60,55 @@ export default function AvaliacoesPage() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const paging = useClientTablePaging(avaliacoes, 10);
+
+  const AVAL_COLS: Column<AvaliacaoRow>[] = [
+    {
+      key: "tipo",
+      header: "Tipo",
+      sortable: true,
+      sortCycle: ["final", "continua", "recuperacao"],
+      sortCycleLabel: (v) => TIPO_LABEL[String(v)] ?? String(v),
+      sortValue: (a) => a.tipo.toLowerCase(),
+      cell: (a) => (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-purple-500/10 text-purple-400">
+          {TIPO_LABEL[a.tipo.toLowerCase()] ?? a.tipo}
+        </span>
+      ),
+    },
+    {
+      key: "nota",
+      header: "Nota",
+      sortable: true,
+      sortValue: (a) => a.nota ?? -1,
+      cell: (a) =>
+        a.nota != null ? (
+          <>
+            <span className={`text-lg font-bold ${notaColor(a.nota, params.notaMinimaAprovacao)}`}>{a.nota}</span>
+            <span className="text-slate-500 text-xs">/{params.escalaMaxima}</span>
+          </>
+        ) : (
+          <span className="text-slate-500">–</span>
+        ),
+    },
+    {
+      key: "observacoes",
+      header: "Observações",
+      sortable: true,
+      hideOnMobile: true,
+      sortValue: (a) => a.observacoes ?? "",
+      cell: (a) => (
+        <span className="text-xs text-slate-400 max-w-xs truncate block">{a.observacoes ?? "–"}</span>
+      ),
+    },
+    {
+      key: "avaliadoEm",
+      header: "Data",
+      sortable: true,
+      hideOnMobile: true,
+      sortValue: (a) => new Date(a.avaliadoEm).getTime(),
+      cell: (a) => <span className="text-xs text-slate-500">{formatDatePt(a.avaliadoEm)}</span>,
+    },
+  ];
 
   const tiposActivos = useMemo(
     () => params.tiposPermitidos.filter((t) => TIPO_LABEL[t]),
@@ -219,56 +265,14 @@ export default function AvaliacoesPage() {
         {avaliacoes.length === 0 ? (
           <div className="p-5 text-sm text-slate-500">Sem avaliações registadas.</div>
         ) : (
-          <>
-            <TableScroll>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-700/30">
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Tipo</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Nota</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Observações</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Data</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700/20">
-                  {paging.slice.map((a) => (
-                    <tr key={a.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-purple-500/10 text-purple-400">
-                          {TIPO_LABEL[a.tipo.toLowerCase()] ?? a.tipo}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {a.nota != null ? (
-                          <>
-                            <span className={`text-lg font-bold ${notaColor(a.nota, params.notaMinimaAprovacao)}`}>
-                              {a.nota}
-                            </span>
-                            <span className="text-slate-500 text-xs">/{params.escalaMaxima}</span>
-                          </>
-                        ) : (
-                          <span className="text-slate-500">–</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-400 hidden sm:table-cell max-w-xs truncate">{a.observacoes ?? "–"}</td>
-                      <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">{formatDatePt(a.avaliadoEm)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </TableScroll>
-            {paging.total > 0 ? (
-              <ListPaginationControls
-                className="border-t border-slate-700/40 px-4 py-3"
-                page={paging.page}
-                pageSize={paging.pageSize}
-                total={paging.total}
-                numberedPages
-                onPageChange={paging.setPage}
-                onPageSizeChange={paging.setPageSize}
-              />
-            ) : null}
-          </>
+          <CardContent className="p-0">
+            <PaginatedDataTable
+              columns={AVAL_COLS}
+              data={avaliacoes}
+              keyField="id"
+              paginationClassName="border-t border-slate-700/40 px-4 py-3"
+            />
+          </CardContent>
         )}
       </Card>
     </>

@@ -89,6 +89,8 @@ export default function FormadoresPage() {
     {
       key: "nomeCompleto",
       header: "Formador",
+      sortable: true,
+      sortValue: (f) => f.nomeCompleto,
       cell: (f) => (
         <div>
           <span className="font-medium text-slate-100">{f.nomeCompleto}</span>
@@ -101,6 +103,9 @@ export default function FormadoresPage() {
     {
       key: "ccNumero",
       header: "Carta de Condução",
+      sortable: true,
+      hideOnMobile: true,
+      sortValue: (f) => f.ccValidade ?? "",
       cell: (f) => (
         <div className="text-sm space-y-1">
           <p className="text-slate-400">{f.ccNumero ?? "-"}</p>
@@ -111,6 +116,9 @@ export default function FormadoresPage() {
     {
       key: "ccpNumero",
       header: "CCP",
+      sortable: true,
+      hideOnMobile: true,
+      sortValue: (f) => f.ccpValidade ?? "",
       cell: (f) => (
         <div className="text-sm space-y-1">
           <p className="text-slate-400">{f.ccpNumero ?? "-"}</p>
@@ -121,11 +129,15 @@ export default function FormadoresPage() {
     {
       key: "sessoes",
       header: "Sessões",
+      sortable: true,
+      sortValue: (f) => f._count?.sessoesFormacao ?? 0,
       cell: (f) => <span className="text-slate-300">{f._count?.sessoesFormacao ?? 0}</span>,
     },
     {
       key: "documentos",
       header: "Docs",
+      sortable: true,
+      sortValue: (f) => f._count?.documentos ?? 0,
       cell: (f) => <Badge variant="default">{f._count?.documentos ?? 0}</Badge>,
     },
   ];

@@ -1,8 +1,9 @@
 "use client";
 
+import * as React from "react";
 import type { ReactNode } from "react";
 import { ListPaginationControls } from "@/components/crm/list-pagination";
-import { DataTable, type Column, type SortState } from "@/components/ui/data-table";
+import { DataTable, sortRows, type Column, type SortState } from "@/components/ui/data-table";
 import { useClientTablePaging } from "@/lib/client/use-client-table-paging";
 import { cn } from "@/lib/ui/cn";
 
@@ -24,46 +25,87 @@ type Props<T> = {
   stickyHeader?: boolean;
   sort?: SortState | null;
   onSortChange?: (sort: SortState) => void;
+  /** Dados já ordenados no servidor — não reordena no cliente. */
   disableClientSort?: boolean;
-  /** Desliga a paginação client-side (ex.: preview na home CRM). */
   paginate?: boolean;
   defaultPageSize?: number;
   paginationClassName?: string;
 };
 
 /**
- * DataTable com paginação + selector de tamanho de página.
- * Mantém o scroll do portal ao mudar página (via ListPaginationControls).
+ * DataTable com paginação client-side. Ordena a lista completa antes de paginar.
  */
 export function PaginatedDataTable<T>({
   paginate = true,
   defaultPageSize = 10,
   paginationClassName,
   data,
+  columns,
   className,
+  sort: controlledSort,
+  onSortChange,
+  disableClientSort = false,
   ...tableProps
 }: Props<T>) {
-  const paging = useClientTablePaging(data, defaultPageSize);
+  const [uncontrolledSort, setUncontrolledSort] = React.useState<SortState | null>(null);
+  const sort = controlledSort !== undefined ? controlledSort : uncontrolledSort;
+
+  const sortedData = React.useMemo(
+    () => (disableClientSort ? data : sortRows(data, columns, sort)),
+    [data, columns, sort, disableClientSort],
+  );
+
+  const { slice, setPage, page, pageSize, total, setPageSize } = useClientTablePaging(
+    sortedData,
+    defaultPageSize,
+  );
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [sort?.key, sort?.direction, sort?.cycleIndex, setPage]);
+
+  function handleSortChange(next: SortState) {
+    setPage(1);
+    if (onSortChange) onSortChange(next);
+    else setUncontrolledSort(next);
+  }
 
   if (!paginate) {
-    return <DataTable {...tableProps} data={data} className={className} />;
+    return (
+      <DataTable
+        {...tableProps}
+        columns={columns}
+        data={sortedData}
+        className={className}
+        sort={sort}
+        onSortChange={handleSortChange}
+        disableClientSort
+      />
+    );
   }
 
   return (
     <div className={cn("paginated-data-table w-full", className)}>
-      <DataTable {...tableProps} data={paging.slice} />
-      {paging.total > 0 ? (
+      <DataTable
+        {...tableProps}
+        columns={columns}
+        data={slice}
+        sort={sort}
+        onSortChange={handleSortChange}
+        disableClientSort
+      />
+      {total > 0 ? (
         <ListPaginationControls
           className={cn(
             "paginated-data-table__pager mt-3 border-t border-slate-700/40 px-4 pt-4 pb-3",
             paginationClassName,
           )}
-          page={paging.page}
-          pageSize={paging.pageSize}
-          total={paging.total}
+          page={page}
+          pageSize={pageSize}
+          total={total}
           numberedPages
-          onPageChange={paging.setPage}
-          onPageSizeChange={paging.setPageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
         />
       ) : null}
     </div>

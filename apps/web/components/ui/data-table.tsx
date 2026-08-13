@@ -60,7 +60,7 @@ function compareSortValues(
   return String(a).localeCompare(String(b), "pt", { sensitivity: "base" });
 }
 
-function sortRows<T>(data: T[], columns: Column<T>[], sort: SortState | null): T[] {
+export function sortRows<T>(data: T[], columns: Column<T>[], sort: SortState | null): T[] {
   if (!sort) return data;
   const col = columns.find((c) => String(c.key) === sort.key);
   if (!col?.sortable) return data;

@@ -39,7 +39,10 @@ function ScoreBar({ value }: { value: number }) {
 
 const COLUMNS: Column<AcaoCompliance>[] = [
   {
-    key: "codigoInterno", header: "Acção",
+    key: "codigoInterno",
+    header: "Acção",
+    sortable: true,
+    sortValue: (a) => a.codigoInterno,
     cell: (a) => (
       <div>
         <Link href={`/portal/acoes/${a.acaoId}?tab=compliance`} className="font-semibold text-blue-400 hover:text-blue-300">{a.codigoInterno}</Link>
@@ -48,19 +51,33 @@ const COLUMNS: Column<AcaoCompliance>[] = [
     ),
   },
   {
-    key: "estado", header: "Estado",
+    key: "estado",
+    header: "Estado",
+    sortable: true,
+    sortCycle: ["EM_CURSO", "PLANEADA", "CONCLUIDA", "CANCELADA"],
+    sortValue: (a) => a.estado,
     cell: (a) => <Badge variant="default">{a.estado}</Badge>,
   },
   {
-    key: "scorePercent", header: "Score total",
+    key: "scorePercent",
+    header: "Score total",
+    sortable: true,
+    sortValue: (a) => a.scorePercent,
     cell: (a) => <ScoreBar value={a.scorePercent} />,
   },
   {
-    key: "scoreObrigatorioPercent", header: "Obrigatórios",
+    key: "scoreObrigatorioPercent",
+    header: "Obrigatórios",
+    sortable: true,
+    hideOnMobile: true,
+    sortValue: (a) => a.scoreObrigatorioPercent,
     cell: (a) => <ScoreBar value={a.scoreObrigatorioPercent} />,
   },
   {
-    key: "prontoInspecao", header: "Inspecção",
+    key: "prontoInspecao",
+    header: "Inspecção",
+    sortable: true,
+    sortValue: (a) => (a.prontoInspecao ? 1 : 0),
     cell: (a) => a.prontoInspecao
       ? <span className="flex items-center gap-1 text-green-400 text-sm"><CheckCircle className="h-4 w-4" />Pronta</span>
       : <span className="flex items-center gap-1 text-red-400 text-sm"><XCircle className="h-4 w-4" />{a.pendenciasObrigatorias} pend.</span>,

@@ -25,6 +25,8 @@ const COLUMNS: Column<Acao>[] = [
   {
     key: "codigoInterno",
     header: "Código",
+    sortable: true,
+    sortValue: (a) => a.codigoInterno,
     cell: (a) => (
       <Link href={`/portal/acoes/${a.id}`} className="font-semibold text-blue-400 hover:text-blue-300">
         {a.codigoInterno}
@@ -34,21 +36,33 @@ const COLUMNS: Column<Acao>[] = [
   {
     key: "titulo",
     header: "Título",
+    sortable: true,
+    sortValue: (a) => a.titulo,
     cell: (a) => <span className="text-slate-200">{a.titulo}</span>,
   },
   {
     key: "curso",
     header: "Curso",
+    sortable: true,
+    hideOnMobile: true,
+    sortValue: (a) => a.curso?.designacao ?? "",
     cell: (a) => <span className="text-slate-400 text-sm">{a.curso?.designacao ?? "–"}</span>,
   },
   {
     key: "estado",
     header: "Estado",
+    sortable: true,
+    sortCycle: ["EM_CURSO", "PLANEADA", "CONCLUIDA", "CANCELADA"],
+    sortCycleLabel: (v) => String(v).replace("_", " "),
+    sortValue: (a) => a.estado,
     cell: (a) => estadoBadge(a.estado),
   },
   {
     key: "dataInicio",
     header: "Período",
+    sortable: true,
+    hideOnMobile: true,
+    sortValue: (a) => new Date(a.dataInicio).getTime(),
     cell: (a) => (
       <span className="text-slate-400 text-sm tabular-nums">
         {String(a.dataInicio).slice(0, 10)} – {String(a.dataFim).slice(0, 10)}
@@ -58,6 +72,8 @@ const COLUMNS: Column<Acao>[] = [
   {
     key: "_count",
     header: "Turmas",
+    sortable: true,
+    sortValue: (a) => a._count?.turmas ?? 0,
     cell: (a) => (
       <Badge variant="default">{a._count?.turmas ?? 0}</Badge>
     ),
