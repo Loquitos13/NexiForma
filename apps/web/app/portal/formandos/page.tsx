@@ -10,7 +10,7 @@ import { parseApiError } from "@/lib/ui/backoffice";
 import { NifStatusField, type NifStatus } from "@/components/crm/nif-status-field";
 import {
   Alert, Badge, Button, Card,
-  PaginatedDataTable, Dialog, DialogContent, Input, PageHeader, type Column,
+  PaginatedDataTable, Dialog, DialogContent, Input, PageHeader, SearchableSelect, type Column,
 } from "@/components/ui";
 
 type Formando = {
@@ -51,6 +51,8 @@ const EMPTY_SIGO: SigoForm = {
 
 const EMPTY = { nome: "", nif: "", email: "", emailPresenca: "", telefone: "" };
 
+type EntidadeOpt = { id: string; nome: string; nif: string };
+
 function listSigoGaps(s: SigoForm): string[] {
   const gaps: string[] = [];
   if (!s.tipoDocIdentificacao.trim()) gaps.push("tipo de documento");
@@ -86,6 +88,8 @@ export default function FormandosPage() {
       createdAt: string;
     }>
   >([]);
+  const [entidades, setEntidades] = useState<EntidadeOpt[]>([]);
+  const [entidadeClienteId, setEntidadeClienteId] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -96,6 +100,27 @@ export default function FormandosPage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (!canManage) return;
+    void bffFetch("/api/v1/entidades-cliente", { headers: { accept: "application/json" } }).then(
+      async (r) => {
+        if (!r.ok) return;
+        const raw = (await r.json()) as EntidadeOpt[] | { items?: EntidadeOpt[] };
+        setEntidades(Array.isArray(raw) ? raw : (raw.items ?? []));
+      },
+    );
+  }, [canManage]);
+
+  const entidadeOptions = useMemo(
+    () =>
+      entidades.map((e) => ({
+        value: e.id,
+        label: e.nome,
+        hint: e.nif ? `NIF ${e.nif}` : undefined,
+      })),
+    [entidades],
+  );
 
   const incompletosSigo = useMemo(
     () => formandos.filter((f) => !f.sigoPronto).length,
@@ -149,6 +174,7 @@ export default function FormandosPage() {
     setForm(EMPTY);
     setSigoForm(EMPTY_SIGO);
     setNifStatus("idle");
+    setEntidadeClienteId("");
     setFormandoDocs([]);
     setDialogOpen(true);
   }, []);
@@ -163,6 +189,7 @@ export default function FormandosPage() {
   function openEdit(f: Formando) {
     setEditId(f.id);
     setForm({ nome: f.nome, nif: f.nif, email: f.email ?? "", emailPresenca: f.emailPresenca ?? "", telefone: f.telefone ?? "" });
+    setEntidadeClienteId(f.entidadeClienteId ?? f.entidadeCliente?.id ?? "");
     setSigoForm({
       tipoDocIdentificacao: f.sigo?.tipoDocIdentificacao ?? "CC",
       numDocIdentificacao: f.sigo?.numDocIdentificacao ?? "",
@@ -190,6 +217,7 @@ export default function FormandosPage() {
       email: form.email.trim() || undefined,
       emailPresenca: form.emailPresenca.trim() || undefined,
       telefone: form.telefone.trim() || undefined,
+      entidadeClienteId: editId ? entidadeClienteId || null : entidadeClienteId || undefined,
       sigo: {
         tipoDocIdentificacao: sigoForm.tipoDocIdentificacao,
         numDocIdentificacao: sigoForm.numDocIdentificacao.trim() || undefined,
@@ -233,10 +261,19 @@ export default function FormandosPage() {
   }
 
   const COLUMNS: Column<Formando>[] = [
-    { key: "nome", header: "Nome", cell: (f) => <span className="font-medium text-slate-100">{f.nome}</span> },
+    {
+      key: "nome",
+      header: "Nome",
+      sortable: true,
+      sortValue: (f) => f.nome,
+      cell: (f) => <span className="font-medium text-slate-100">{f.nome}</span>,
+    },
     {
       key: "entidadeCliente",
       header: "Entidade",
+      sortable: true,
+      hideOnMobile: true,
+      sortValue: (f) => f.entidadeCliente?.nome ?? "",
       cell: (f) => (
         <span className="text-sm text-slate-300">
           {f.entidadeCliente?.nome ?? <span className="text-slate-500">-</span>}
@@ -246,6 +283,11 @@ export default function FormandosPage() {
     {
       key: "contaEstado",
       header: "Conta",
+      sortable: true,
+      sortCycle: ["activa", "convite_pendente", "sem_conta"],
+      sortCycleLabel: (v) =>
+        v === "activa" ? "Activa" : v === "convite_pendente" ? "Convite pendente" : "Sem conta",
+      sortValue: (f) => f.contaEstado ?? "sem_conta",
       cell: (f) => (
         <Badge
           variant={
@@ -263,6 +305,8 @@ export default function FormandosPage() {
     {
       key: "sigoPronto",
       header: "SIGO",
+      sortable: true,
+      sortValue: (f) => (f.sigoPronto ? 1 : 0),
       cell: (f) => (
         <Badge variant={f.sigoPronto ? "green" : "yellow"}>
           {f.sigoPronto ? "Completo" : "Incompleto"}
@@ -272,6 +316,8 @@ export default function FormandosPage() {
     {
       key: "nif",
       header: "NIF",
+      sortable: true,
+      sortValue: (f) => f.nif,
       cell: (f) => (
         <span className="font-mono text-sm text-slate-300">
           {f.nif}
@@ -281,10 +327,20 @@ export default function FormandosPage() {
         </span>
       ),
     },
-    { key: "email", header: "Email contacto", cell: (f) => <span className="text-slate-400 text-sm">{f.email ?? "–"}</span> },
+    {
+      key: "email",
+      header: "Email contacto",
+      sortable: true,
+      hideOnMobile: true,
+      sortValue: (f) => f.email ?? "",
+      cell: (f) => <span className="text-slate-400 text-sm">{f.email ?? "–"}</span>,
+    },
     {
       key: "emailPresencaEfectivo",
       header: "Email reunião",
+      sortable: true,
+      hideOnMobile: true,
+      sortValue: (f) => f.emailPresencaEfectivo ?? "",
       cell: (f) => (
         <span className="text-slate-300 text-sm">
             {f.emailPresencaEfectivo ?? "–"}
@@ -300,11 +356,22 @@ export default function FormandosPage() {
         </span>
       ),
     },
-    { key: "telefone", header: "Telefone", cell: (f) => <span className="text-slate-400 text-sm">{f.telefone ?? "–"}</span> },
     {
-      key: "_count", header: "Matrículas",
+      key: "telefone",
+      header: "Telefone",
+      sortable: true,
+      hideOnMobile: true,
+      sortValue: (f) => f.telefone ?? "",
+      cell: (f) => <span className="text-slate-400 text-sm">{f.telefone ?? "–"}</span>,
+    },
+    {
+      key: "_count",
+      header: "Matrículas",
+      sortable: true,
+      sortValue: (f) => f._count?.matriculas ?? 0,
       cell: (f) => <Badge variant="default">{f._count?.matriculas ?? 0}</Badge>,
-      className: "text-center", headerClassName: "text-center",
+      className: "text-center",
+      headerClassName: "text-center",
     },
   ];
 
@@ -390,6 +457,21 @@ export default function FormandosPage() {
           description="NIF obrigatório, único por tenant e confirmado automaticamente ao guardar."
         >
           <form onSubmit={(e) => void submit(e)} className="grid gap-4">
+            <SearchableSelect
+              label="Cliente (empresa)"
+              placeholder="Seleccionar cliente…"
+              searchPlaceholder="Pesquisar por nome ou NIF…"
+              value={entidadeClienteId}
+              onChange={setEntidadeClienteId}
+              options={entidadeOptions}
+              allowEmpty
+              emptyLabel="- Sem empresa (particular) -"
+            />
+            {entidades.length === 0 ? (
+              <p className="-mt-2 text-[11px] text-slate-500">
+                Ainda não há clientes CRM registados.
+              </p>
+            ) : null}
             <Input label="Nome *" required value={form.nome} onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))} />
             <NifStatusField
               label="NIF *"

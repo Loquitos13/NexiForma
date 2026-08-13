@@ -7,6 +7,7 @@ export * from "./date-range-input";
 export * from "./dialog";
 export * from "./sheet";
 export * from "./input";
+export * from "./searchable-select";
 export * from "./page-header";
 export * from "./toast";
 export * from "./app-providers";

@@ -1,10 +1,10 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Building2, UserPlus } from "lucide-react";
-import { SIGO_HABILITACOES_QNQ, normalizarHabilitacaoQnq } from "@nexiforma/shared";
+import { UserPlus } from "lucide-react";
+import { SIGO_HABILITACOES_QNQ } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
@@ -18,10 +18,11 @@ import {
   CardTitle,
   Input,
   PageHeader,
+  SearchableSelect,
   Select,
 } from "@/components/ui";
 
-type Entidade = { id: string; nome: string };
+type Entidade = { id: string; nome: string; nif?: string };
 
 type SigoForm = {
   tipoDocIdentificacao: string;
@@ -61,16 +62,24 @@ export default function RegistoFormandoClientePage() {
     const rows = (await r.json()) as Entidade[];
     setEntidades(rows);
     const fromUrl = searchParams.get("entidadeId");
-    const pick =
-      fromUrl && rows.some((e) => e.id === fromUrl)
-        ? fromUrl
-        : rows[0]?.id ?? "";
-    if (pick) setEntidadeId(pick);
+    if (fromUrl && rows.some((e) => e.id === fromUrl)) {
+      setEntidadeId(fromUrl);
+    }
   }, [searchParams]);
 
   useEffect(() => {
     void loadEntidades();
   }, [loadEntidades]);
+
+  const entidadeOptions = useMemo(
+    () =>
+      entidades.map((e) => ({
+        value: e.id,
+        label: e.nome,
+        hint: e.nif ? `NIF ${e.nif}` : undefined,
+      })),
+    [entidades],
+  );
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -115,7 +124,7 @@ export default function RegistoFormandoClientePage() {
   if (!canManage) {
     return (
       <div className="max-w-lg">
-        <PageHeader title="Formando de cliente" description="Acesso reservado a gestores e coordenação pedagógica." />
+        <PageHeader title="Clientes" description="Acesso reservado a gestores e coordenação pedagógica." />
       </div>
     );
   }
@@ -123,8 +132,8 @@ export default function RegistoFormandoClientePage() {
   return (
     <div className="max-w-2xl space-y-5">
       <PageHeader
-        title="Registar formando de cliente"
-        description="Associa opcionalmente o formando a uma empresa cliente (CRM). Podes deixar em branco para formandos particulares."
+        title="Clientes"
+        description="Registe formandos associados a empresas cliente (CRM). Deixe em branco para formandos particulares."
         actions={
           <Link
             href="/portal/formandos"
@@ -147,31 +156,24 @@ export default function RegistoFormandoClientePage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={(e) => void submit(e)} className="space-y-4">
-            <label className="block text-sm space-y-1">
-              <span className="text-slate-400 text-xs flex items-center gap-1.5">
-                <Building2 className="h-3.5 w-3.5" />
-                Empresa cliente (opcional)
-              </span>
-              <Select
-                value={entidadeId}
-                onChange={(e) => setEntidadeId(e.target.value)}
-              >
-                <option value="">- Sem empresa (particular) -</option>
-                {entidades.map((ent) => (
-                  <option key={ent.id} value={ent.id}>
-                    {ent.nome}
-                  </option>
-                ))}
-              </Select>
-              {entidades.length === 0 ? (
-                <p className="text-[11px] text-slate-500">
-                  Ainda não há clientes CRM.{" "}
-                  <Link href="/portal/clientes" className="text-blue-400 hover:underline">
-                    Criar cliente
-                  </Link>
-                </p>
-              ) : null}
-            </label>
+            <SearchableSelect
+              label="Empresa cliente"
+              placeholder="Seleccionar cliente…"
+              searchPlaceholder="Pesquisar por nome ou NIF…"
+              value={entidadeId}
+              onChange={setEntidadeId}
+              options={entidadeOptions}
+              allowEmpty
+              emptyLabel="- Sem empresa (particular) -"
+            />
+            {entidades.length === 0 ? (
+              <p className="text-[11px] text-slate-500">
+                Ainda não há clientes CRM.{" "}
+                <Link href="/portal/clientes" className="text-blue-400 hover:underline">
+                  Criar cliente
+                </Link>
+              </p>
+            ) : null}
 
             <div className="grid sm:grid-cols-2 gap-3">
               <Input

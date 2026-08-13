@@ -435,7 +435,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/portal/formandos", label: "Formandos", icon: "Users", minRole: "coordenador_pedagogico" },
       {
         href: "/portal/formandos/registo-cliente",
-        label: "Formando de cliente",
+        label: "Clientes",
         icon: "Building2",
         minRole: "coordenador_pedagogico",
       },
