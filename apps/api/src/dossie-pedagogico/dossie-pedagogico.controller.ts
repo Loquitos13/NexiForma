@@ -14,6 +14,8 @@ import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/decorators/roles.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import type { RequestUser } from "../auth/types/access-token-payload";
+import { requireTenantId } from "../common/tenant-scope";
+import { DocumentAccessAuditService } from "../audit/document-access-audit.service";
 import { DossieHtmlExportService } from "./dossie-html-export.service";
 import { DossiePedagogicoService } from "./dossie-pedagogico.service";
 import { SigoExportService } from "./sigo-export.service";
@@ -30,15 +32,36 @@ export class DossiePedagogicoController {
     private readonly htmlExport: DossieHtmlExportService,
     private readonly arquivos: DossieArquivoService,
     private readonly inspecaoPacote: InspecaoPacoteService,
+    private readonly documentAudit: DocumentAccessAuditService,
   ) {}
+
+  private auditDgert(
+    user: RequestUser,
+    action: string,
+    resourceType: string,
+    resourceId: string,
+    payload?: Record<string, unknown>,
+  ): void {
+    void this.documentAudit.logDownload({
+      user,
+      tenantId: requireTenantId(user),
+      action,
+      resourceType,
+      resourceId,
+      channel: "generated",
+      payload,
+    });
+  }
 
   @Post("acoes-formacao/:acaoId/gerar-dossie")
   @Roles("tenant_manager", "coordenador_pedagogico")
-  gerarDossieTecnicoPedagogico(
+  async gerarDossieTecnicoPedagogico(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
   ) {
-    return this.inspecaoPacote.gerarDossieTecnicoPedagogico(user, acaoId);
+    const result = await this.inspecaoPacote.gerarDossieTecnicoPedagogico(user, acaoId);
+    this.auditDgert(user, "dgert.dossie.generate", "AcaoFormacao", acaoId);
+    return result;
   }
 
   @Get("acoes-formacao/:acaoId/documentos-dgert")
@@ -58,6 +81,9 @@ export class DossiePedagogicoController {
     @Res() res: Response,
   ) {
     const pkg = await this.inspecaoPacote.buildZipBuffer(user, acaoId);
+    this.auditDgert(user, "dgert.inspecao.export", "AcaoFormacao", acaoId, {
+      filename: pkg.filename,
+    });
     res.setHeader("Content-Type", "application/zip");
     res.setHeader("Content-Disposition", `attachment; filename="${pkg.filename}"`);
     res.send(pkg.buffer);
@@ -65,11 +91,13 @@ export class DossiePedagogicoController {
 
   @Post("acoes-formacao/:acaoId/pacote-inspecao")
   @Roles("tenant_manager", "coordenador_pedagogico")
-  arquivarPacoteInspecao(
+  async arquivarPacoteInspecao(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
   ) {
-    return this.inspecaoPacote.storePacote(user, acaoId);
+    const result = await this.inspecaoPacote.storePacote(user, acaoId);
+    this.auditDgert(user, "dgert.inspecao.archive", "AcaoFormacao", acaoId);
+    return result;
   }
 
   @Get("acoes-formacao/:acaoId/validacao-sigo")
@@ -89,6 +117,9 @@ export class DossiePedagogicoController {
     @Res() res: Response,
   ) {
     const pkg = await this.htmlExport.buildPrintableHtml(user, acaoId);
+    this.auditDgert(user, "dgert.dossie.html", "AcaoFormacao", acaoId, {
+      filename: pkg.filename,
+    });
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Content-Disposition", `inline; filename="${pkg.filename}"`);
     res.send(pkg.html);
@@ -102,6 +133,9 @@ export class DossiePedagogicoController {
     @Res() res: Response,
   ) {
     const pkg = await this.sigo.buildFormandosCsv(user, acaoId);
+    this.auditDgert(user, "dgert.sigo.csv", "AcaoFormacao", acaoId, {
+      filename: pkg.filename,
+    });
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${pkg.filename}"`);
     res.send(pkg.csv);
@@ -115,6 +149,9 @@ export class DossiePedagogicoController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const pkg = await this.sigo.buildSigoJsonPackage(user, acaoId);
+    this.auditDgert(user, "dgert.sigo.export", "AcaoFormacao", acaoId, {
+      filename: pkg.filename,
+    });
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${pkg.filename}"`);
     return pkg.body;
@@ -128,6 +165,9 @@ export class DossiePedagogicoController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const pkg = await this.dossie.buildExportPackage(user, acaoId);
+    this.auditDgert(user, "dgert.dossie.export", "AcaoFormacao", acaoId, {
+      filename: pkg.filename,
+    });
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${pkg.filename}"`);
     return pkg.body;
@@ -153,20 +193,28 @@ export class DossiePedagogicoController {
 
   @Post("acoes-formacao/:acaoId/arquivos")
   @Roles("tenant_manager", "coordenador_pedagogico")
-  storeArquivo(
+  async storeArquivo(
     @CurrentUser() user: RequestUser,
     @Param("acaoId", ParseUUIDPipe) acaoId: string,
     @Body() dto: StoreExportDto,
   ) {
-    return this.arquivos.storeExport(user, acaoId, dto.tipo);
+    const result = await this.arquivos.storeExport(user, acaoId, dto.tipo);
+    this.auditDgert(user, "dgert.arquivo.store", "AcaoFormacao", acaoId, {
+      tipo: dto.tipo,
+    });
+    return result;
   }
 
   @Get("arquivos/:arquivoId/url")
   @Roles("tenant_manager", "coordenador_pedagogico")
-  arquivoUrl(
+  async arquivoUrl(
     @CurrentUser() user: RequestUser,
     @Param("arquivoId", ParseUUIDPipe) arquivoId: string,
   ) {
-    return this.arquivos.getDownloadUrl(user, arquivoId);
+    const result = await this.arquivos.getDownloadUrl(user, arquivoId);
+    this.auditDgert(user, "dgert.arquivo.download", "ArquivoExportacao", arquivoId, {
+      nomeFicheiro: result.nomeFicheiro,
+    });
+    return result;
   }
 }

@@ -19,6 +19,8 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 import { DocumentAccessAuditService } from "../audit/document-access-audit.service";
+import { AuditService } from "../audit/audit.service";
+import { resolveTenantAuditPrefixes } from "../audit/tenant-audit-scopes.util";
 import { FaturasService } from "./faturas.service";
 import {
   AnularFaturaDto,
@@ -36,6 +38,7 @@ export class FaturasController {
   constructor(
     private readonly faturas: FaturasService,
     private readonly documentAudit: DocumentAccessAuditService,
+    private readonly audit: AuditService,
   ) {}
 
   @Get("faturas")
@@ -55,6 +58,35 @@ export class FaturasController {
   @Roles("tenant_manager", "coordenador_financeiro")
   getDashboardFinanceiro(@CurrentUser() user: RequestUser): Promise<unknown> {
     return this.faturas.getDashboardFinanceiro(user);
+  }
+
+  @Get("faturas/audit-trail")
+  @Roles("tenant_manager", "coordenador_financeiro")
+  auditTrail(
+    @CurrentUser() user: RequestUser,
+    @Query("limit") limit?: string,
+    @Query("cursor") cursor?: string,
+    @Query("action") action?: string,
+    @Query("sinceDays") sinceDays?: string,
+    @Query("q") q?: string,
+  ) {
+    const tenantId = requireTenantId(user);
+    const days = sinceDays ? parseInt(sinceDays, 10) : 90;
+    const since =
+      Number.isFinite(days) && days > 0
+        ? new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+        : undefined;
+    return this.audit.list({
+      tenantId,
+      limit: limit ? parseInt(limit, 10) : 100,
+      cursor: cursor ? BigInt(cursor) : undefined,
+      action: action?.trim() || undefined,
+      actionPrefixes: action?.trim()
+        ? undefined
+        : resolveTenantAuditPrefixes("faturacao"),
+      since,
+      q: q?.trim() || undefined,
+    });
   }
 
   @Get("faturas/export/saft")

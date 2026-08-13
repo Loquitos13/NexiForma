@@ -21,6 +21,8 @@ export type AuditListOpts = {
   limit?: number;
   cursor?: bigint;
   action?: string;
+  /** Filtra acções cujo prefixo coincide (ex.: dgert., saft.) */
+  actionPrefixes?: string[];
   actorType?: AuditActorType;
   since?: Date;
   until?: Date;
@@ -82,11 +84,19 @@ export class AuditService {
   async list(opts: AuditListOpts): Promise<Record<string, unknown>[]> {
     const take = Math.min(opts.limit ?? 50, 200);
     const q = opts.q?.trim();
+    const prefixFilters =
+      opts.actionPrefixes?.map((p) => p.trim()).filter(Boolean) ?? [];
     const where: Prisma.GlobalAuditLogWhereInput = {
       ...(opts.tenantId ? { targetTenantId: opts.tenantId } : {}),
       ...(opts.action
         ? { action: { contains: opts.action, mode: "insensitive" } }
-        : {}),
+        : prefixFilters.length
+          ? {
+              OR: prefixFilters.map((prefix) => ({
+                action: { startsWith: prefix, mode: "insensitive" as const },
+              })),
+            }
+          : {}),
       ...(opts.actorType ? { actorType: opts.actorType } : {}),
       ...((opts.since || opts.until)
         ? {

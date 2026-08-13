@@ -7,6 +7,8 @@ import { bffFetch } from "@/lib/client/bff-fetch";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { COMPLIANCE_UPDATE_EVENT } from "@/lib/client/use-portal-notifications";
 import { Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle, PaginatedDataTable, PageHeader, type Column } from "@/components/ui";
+import { TenantAuditTrail } from "@/components/portal/tenant-audit-trail";
+import { DGERT_AUDIT_ACTION_PRESETS } from "@/lib/client/audit-labels";
 import { cn } from "@/lib/ui/cn";
 
 type AcaoCompliance = {
@@ -200,6 +202,13 @@ export default function CompliancePage() {
           </div>
         </CardContent>
       </Card>
+
+      <TenantAuditTrail
+        apiPath="/api/v1/compliance/audit-trail"
+        title="Auditoria DGERT & SIGO"
+        description="Exports de dossiê, pacotes de inspeção, submissões SIGO e arquivos — últimos 90 dias."
+        actionPresets={DGERT_AUDIT_ACTION_PRESETS}
+      />
     </>
   );
 }

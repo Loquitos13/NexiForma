@@ -32,6 +32,8 @@ import {
   Select,
   type Column,
 } from "@/components/ui";
+import { TenantAuditTrail } from "@/components/portal/tenant-audit-trail";
+import { FATURACAO_AUDIT_ACTION_PRESETS } from "@/lib/client/audit-labels";
 
 type Fatura = {
   id: string;
@@ -468,6 +470,13 @@ export default function CrmFaturasPage() {
         onPageChange={setPage}
         onPageSizeChange={setPageSize}
         numberedPages
+      />
+
+      <TenantAuditTrail
+        apiPath="/api/v1/crm/faturas/audit-trail"
+        title="Auditoria SAF-T & faturação"
+        description="Exports SAF-T, pacotes de auditoria fiscal, emissões, comunicações AT e anulações — últimos 90 dias."
+        actionPresets={FATURACAO_AUDIT_ACTION_PRESETS}
       />
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
