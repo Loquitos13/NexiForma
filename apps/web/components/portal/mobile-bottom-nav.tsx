@@ -93,6 +93,7 @@ const SHORT_LABEL: Record<string, string> = {
   Inteligência: "IA",
   "Inteligência & IA": "IA",
   Comunicacao: "Avisos",
+  Comunicação: "Avisos",
   Formação: "Formação",
   "Formação Core": "Formação",
   "Formação Teams": "Teams",

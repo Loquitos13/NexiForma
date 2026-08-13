@@ -140,7 +140,9 @@ export function filterGroups(
     collapsible: false,
     items: [{ href: "/portal/rgpd", label: "RGPD", icon: "Lock" }],
   };
-  const comunicacaoGroup = groups.find((g) => g.label === "Comunicacao");
+  const comunicacaoGroup = groups.find(
+    (g) => g.label === "Comunicação" || g.label === "Comunicacao",
+  );
 
   // Coordenador Comercial: Apenas departamento comercial (CRM) + RGPD + Notificações
   if (isCoordenadorComercial(role)) {
@@ -412,10 +414,11 @@ export const NAV_GROUPS: NavGroup[] = [
     minRole: "tenant_manager",
   },
   {
-    label: "Comunicacao",
+    label: "Comunicação",
+    moduleLabel: "Comunicação",
     collapsible: true,
     icon: "Bell",
-    items: [{ href: "/portal/notificacoes", label: "Notificacoes", icon: "Bell" }],
+    items: [{ href: "/portal/notificacoes", label: "Centro de avisos", icon: "Bell" }],
   },
   {
     label: "Formação",
@@ -430,6 +433,13 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/portal/catalogo-ufcd", label: "Catálogo UFCD", icon: "Library" },
       { href: "/portal/matriculas", label: "Inscrições", icon: "UserPlus", minRole: "coordenador_pedagogico" },
       { href: "/portal/formandos", label: "Formandos", icon: "Users", minRole: "coordenador_pedagogico" },
+      {
+        href: "/portal/formandos/registo-cliente",
+        label: "Formando de cliente",
+        icon: "Building2",
+        minRole: "coordenador_pedagogico",
+      },
+      { href: "/portal/avaliacoes", label: "Avaliações", icon: "BarChart3", minRole: "coordenador_pedagogico" },
       { href: "/portal/formadores", label: "Formadores", icon: "UserCheck", minRole: "coordenador_pedagogico" },
       { href: "/portal/compliance", label: "Compliance DGERT", icon: "ShieldCheck", minRole: "coordenador_pedagogico" },
       { href: "/portal/dossie", label: "Dossiê & Exports", icon: "FolderOpen", minRole: "coordenador_pedagogico" },
@@ -494,6 +504,28 @@ export function filterGroupsForMobileBottomNav(
 
 export type PortalBreadcrumb = { group: string; item: string };
 
+/** Rótulos curtos para breadcrumbs mobile (ex. «CRM > Dashboard»). */
+const BREADCRUMB_GROUP_SHORT: Record<string, string> = {
+  Geral: "Geral",
+  CRM: "CRM",
+  "CRM Comercial": "CRM",
+  Faturação: "Faturação",
+  "Faturação AT": "Faturação",
+  Inteligência: "IA",
+  "Inteligência & IA": "IA",
+  Comunicação: "Avisos",
+  Comunicacao: "Avisos",
+  Formação: "Formação",
+  "Formação Core": "Formação",
+  "Formação Teams": "Teams",
+  Administração: "Admin",
+  Conta: "Conta",
+};
+
+function shortBreadcrumbGroup(title: string): string {
+  return BREADCRUMB_GROUP_SHORT[title] ?? title;
+}
+
 /** Resolve "Grupo > Item" a partir do pathname actual. */
 export function resolvePortalBreadcrumb(
   pathname: string,
@@ -520,7 +552,7 @@ export function resolvePortalBreadcrumb(
         } else if (groupTitle.toLowerCase().includes("crm") && cleanItem.toLowerCase().startsWith("crm ")) {
           cleanItem = cleanItem.slice(4).trim();
         }
-        best = { group: groupTitle, item: cleanItem, len };
+        best = { group: shortBreadcrumbGroup(groupTitle), item: cleanItem, len };
       }
     }
   }
