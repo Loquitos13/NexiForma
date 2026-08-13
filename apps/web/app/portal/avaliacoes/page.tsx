@@ -1,11 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DgertRequisitoBanner, DgertTarget } from "@/components/portal/dgert-requisito-banner";
+import {
+  AvaliacaoParametrosSettings,
+  type AvaliacaoParametros,
+} from "@/components/settings/avaliacao-parametros-settings";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
 import { useClientTablePaging } from "@/lib/client/use-client-table-paging";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { parseApiError } from "@/lib/ui/backoffice";
 import { ListPaginationControls } from "@/components/crm/list-pagination";
 import {
   Alert, Button, Card, CardContent, CardHeader, CardTitle, Input, PageHeader, Select, TableScroll, Textarea,
@@ -17,16 +22,33 @@ type MatriculaOpt = { id: string; formando: { nome: string; nif: string }; turma
 type AvaliacaoRow = {
   id: string;
   tipo: string;
-  nota: number;
+  nota: number | null;
   observacoes: string | null;
-  createdAt: string;
-  createdBy?: { email: string } | null;
+  avaliadoEm: string;
 };
 
-const notaColor = (n: number) => (n >= 80 ? "text-green-400" : n >= 50 ? "text-yellow-400" : "text-red-400");
+const TIPO_LABEL: Record<string, string> = {
+  continua: "Contínua",
+  final: "Final",
+  recuperacao: "Recuperação",
+};
+
+const DEFAULT_PARAMS: AvaliacaoParametros = {
+  notaMinimaAprovacao: 50,
+  escalaMaxima: 100,
+  tiposPermitidos: ["continua", "final", "recuperacao"],
+  exigirObservacoesAbaixoMinima: false,
+};
+
+function notaColor(nota: number, minimo: number) {
+  if (nota >= minimo + 20) return "text-green-400";
+  if (nota >= minimo) return "text-yellow-400";
+  return "text-red-400";
+}
 
 export default function AvaliacoesPage() {
   const { canManageFormacao: canManage } = useTenantRole();
+  const [params, setParams] = useState<AvaliacaoParametros>(DEFAULT_PARAMS);
   const [acoes, setAcoes] = useState<AcaoOpt[]>([]);
   const [turmas, setTurmas] = useState<TurmaOpt[]>([]);
   const [matriculas, setMatriculas] = useState<MatriculaOpt[]>([]);
@@ -34,13 +56,24 @@ export default function AvaliacoesPage() {
   const [acaoId, setAcaoId] = useState("");
   const [turmaId, setTurmaId] = useState("");
   const [matriculaId, setMatriculaId] = useState("");
-  const [tipo, setTipo] = useState("CONTINUA");
+  const [tipo, setTipo] = useState("continua");
   const [nota, setNota] = useState("");
   const [obs, setObs] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const paging = useClientTablePaging(avaliacoes, 10);
+
+  const tiposActivos = useMemo(
+    () => params.tiposPermitidos.filter((t) => TIPO_LABEL[t]),
+    [params.tiposPermitidos],
+  );
+
+  useEffect(() => {
+    if (!tiposActivos.includes(tipo) && tiposActivos[0]) {
+      setTipo(tiposActivos[0]);
+    }
+  }, [tipo, tiposActivos]);
 
   useEffect(() => {
     void bffFetch("/api/v1/acoes-formacao", { headers: { accept: "application/json" } }).then(async (r) => {
@@ -78,15 +111,31 @@ export default function AvaliacoesPage() {
 
   async function criarAvaliacao() {
     if (!canManage || !matriculaId || !nota) return;
-    setBusy(true); setError(null); setMsg(null);
+    const notaNum = Number.parseInt(nota, 10);
+    if (
+      params.exigirObservacoesAbaixoMinima &&
+      notaNum < params.notaMinimaAprovacao &&
+      !obs.trim()
+    ) {
+      setError(`Notas abaixo de ${params.notaMinimaAprovacao} exigem observações.`);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setMsg(null);
     const r = await bffFetch(`/api/v1/avaliacoes/matricula/${matriculaId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ tipo, nota: parseInt(nota), observacoes: obs.trim() || undefined }),
+      body: JSON.stringify({ tipo, nota: notaNum, observacoes: obs.trim() || undefined }),
     });
     setBusy(false);
-    if (!r.ok) { setError("Erro ao criar avaliação."); return; }
-    setNota(""); setObs(""); setMsg("Avaliação registada.");
+    if (!r.ok) {
+      setError(await parseApiError(r));
+      return;
+    }
+    setNota("");
+    setObs("");
+    setMsg("Avaliação registada.");
     await load();
   }
 
@@ -94,13 +143,19 @@ export default function AvaliacoesPage() {
     <>
       <PageHeader
         title="Avaliações"
-        description="Registo de avaliações de formandos por tipo, nota e observações."
+        description={`Registo por tipo e nota (escala 0–${params.escalaMaxima}, mínimo ${params.notaMinimaAprovacao} para aprovação).`}
       />
 
       {error ? <Alert variant="error" className="mb-4">{error}</Alert> : null}
       {msg ? <Alert variant="success" className="mb-4">{msg}</Alert> : null}
 
       <DgertRequisitoBanner backHref={acaoId ? `/portal/dossie?acao=${acaoId}` : "/portal/dossie"} />
+
+      {canManage ? (
+        <div className="mb-6">
+          <AvaliacaoParametrosSettings onSaved={setParams} />
+        </div>
+      ) : null}
 
       <DgertTarget id="avaliacoes_form" className="mb-6">
         <Card>
@@ -122,13 +177,32 @@ export default function AvaliacoesPage() {
                 <h3 className="text-sm font-semibold text-slate-300">Nova avaliação</h3>
                 <div className="flex gap-3">
                   <Select value={tipo} onChange={(e) => setTipo(e.target.value)}>
-                    <option value="CONTINUA">Contínua</option>
-                    <option value="FINAL">Final</option>
-                    <option value="RECUPERACAO">Recuperação</option>
+                    {tiposActivos.map((t) => (
+                      <option key={t} value={t}>
+                        {TIPO_LABEL[t] ?? t}
+                      </option>
+                    ))}
                   </Select>
-                  <Input type="number" min={0} max={100} value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Nota (0-100)" className="w-32" />
+                  <Input
+                    type="number"
+                    min={0}
+                    max={params.escalaMaxima}
+                    value={nota}
+                    onChange={(e) => setNota(e.target.value)}
+                    placeholder={`Nota (0-${params.escalaMaxima})`}
+                    className="w-36"
+                  />
                 </div>
-                <Textarea value={obs} onChange={(e) => setObs(e.target.value)} rows={2} placeholder="Observações (opcional)" />
+                <Textarea
+                  value={obs}
+                  onChange={(e) => setObs(e.target.value)}
+                  rows={2}
+                  placeholder={
+                    params.exigirObservacoesAbaixoMinima
+                      ? `Observações (obrigatórias abaixo de ${params.notaMinimaAprovacao})`
+                      : "Observações (opcional)"
+                  }
+                />
                 <Button onClick={() => void criarAvaliacao()} disabled={busy || !nota}>
                   Registar avaliação
                 </Button>
@@ -160,14 +234,24 @@ export default function AvaliacoesPage() {
                   {paging.slice.map((a) => (
                     <tr key={a.id} className="hover:bg-slate-800/30 transition-colors">
                       <td className="px-4 py-3">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-purple-500/10 text-purple-400">{a.tipo}</span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-purple-500/10 text-purple-400">
+                          {TIPO_LABEL[a.tipo.toLowerCase()] ?? a.tipo}
+                        </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`text-lg font-bold ${notaColor(a.nota)}`}>{a.nota}</span>
-                        <span className="text-slate-500 text-xs">/100</span>
+                        {a.nota != null ? (
+                          <>
+                            <span className={`text-lg font-bold ${notaColor(a.nota, params.notaMinimaAprovacao)}`}>
+                              {a.nota}
+                            </span>
+                            <span className="text-slate-500 text-xs">/{params.escalaMaxima}</span>
+                          </>
+                        ) : (
+                          <span className="text-slate-500">–</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-400 hidden sm:table-cell max-w-xs truncate">{a.observacoes ?? "–"}</td>
-                      <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">{formatDatePt(a.createdAt)}</td>
+                      <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">{formatDatePt(a.avaliadoEm)}</td>
                     </tr>
                   ))}
                 </tbody>

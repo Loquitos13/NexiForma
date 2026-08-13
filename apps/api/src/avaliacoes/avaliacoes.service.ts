@@ -10,6 +10,11 @@ import type { RequestUser } from "../auth/types/access-token-payload";
 import { FormadorScopeService } from "../common/formador-scope.service";
 import { requireTenantId } from "../common/tenant-scope";
 import { moduloIdFromPautaTipo, pautaTipo } from "./pauta.util";
+import {
+  normalizeAvaliacaoTipo,
+  parseTenantAvaliacaoParametros,
+  type AvaliacaoParametrosTenant,
+} from "./avaliacao-parametros.util";
 
 @Injectable()
 export class AvaliacoesService {
@@ -17,6 +22,34 @@ export class AvaliacoesService {
     private readonly prisma: PrismaService,
     private readonly formadorScope: FormadorScopeService,
   ) {}
+
+  private async loadAvaliacaoParametros(tenantId: string): Promise<AvaliacaoParametrosTenant> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true },
+    });
+    return parseTenantAvaliacaoParametros(tenant?.metadata);
+  }
+
+  private assertNotaValida(
+    params: AvaliacaoParametrosTenant,
+    nota: number | null | undefined,
+    observacoes?: string | null,
+  ) {
+    if (nota == null) return;
+    if (!Number.isFinite(nota) || nota < 0 || nota > params.escalaMaxima) {
+      throw new BadRequestException(`Nota deve estar entre 0 e ${params.escalaMaxima}.`);
+    }
+    if (
+      params.exigirObservacoesAbaixoMinima &&
+      nota < params.notaMinimaAprovacao &&
+      !observacoes?.trim()
+    ) {
+      throw new BadRequestException(
+        `Notas abaixo de ${params.notaMinimaAprovacao} exigem observações (parâmetros da entidade).`,
+      );
+    }
+  }
 
   list(user: RequestUser, matriculaId: string) {
     const tenantId = requireTenantId(user);
@@ -35,11 +68,20 @@ export class AvaliacoesService {
     const matricula = await this.prisma.matricula.findFirst({ where: { id: matriculaId, tenantId } });
     if (!matricula) throw new NotFoundException("Matrícula não encontrada.");
 
+    const params = await this.loadAvaliacaoParametros(tenantId);
+    const tipoNorm = normalizeAvaliacaoTipo(data.tipo) ?? "final";
+    if (!params.tiposPermitidos.includes(tipoNorm)) {
+      throw new BadRequestException(`Tipo de avaliação «${tipoNorm}» não permitido para esta entidade.`);
+    }
+    if (data.nota != null) {
+      this.assertNotaValida(params, data.nota, data.observacoes);
+    }
+
     return this.prisma.avaliacaoFormando.create({
       data: {
         tenantId,
         matriculaId,
-        tipo: data.tipo ?? "final",
+        tipo: tipoNorm,
         nota: data.nota ?? null,
         observacoes: data.observacoes?.trim() || null,
       },
@@ -166,8 +208,9 @@ export class AvaliacoesService {
     if (user.role !== "formador" && !canManageFormacao(user.role)) {
       throw new ForbiddenException("Sem permissão.");
     }
-    if (nota != null && (!Number.isFinite(nota) || nota < 0 || nota > 100)) {
-      throw new BadRequestException("Nota deve estar entre 0 e 100.");
+    const params = await this.loadAvaliacaoParametros(tenantId);
+    if (nota != null) {
+      this.assertNotaValida(params, nota, null);
     }
 
     const matricula = await this.prisma.matricula.findFirst({

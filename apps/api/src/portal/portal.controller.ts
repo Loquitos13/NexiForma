@@ -119,6 +119,29 @@ export class PortalController {
     return this.tenantSettings.updateDocumentosPolitica(user, body);
   }
 
+  @Get("tenant/avaliacao-parametros")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  avaliacaoParametros(@CurrentUser() user: RequestUser) {
+    return this.tenantSettings.getAvaliacaoParametros(user);
+  }
+
+  @Put("tenant/avaliacao-parametros")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  updateAvaliacaoParametros(
+    @CurrentUser() user: RequestUser,
+    @Body()
+    body: {
+      notaMinimaAprovacao?: number;
+      escalaMaxima?: number;
+      tiposPermitidos?: string[];
+      exigirObservacoesAbaixoMinima?: boolean;
+    },
+  ) {
+    return this.tenantSettings.updateAvaliacaoParametros(user, body);
+  }
+
   @Get("tenant/logo")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("tenant_manager", "formador", "comercial")

@@ -22,6 +22,15 @@ import {
   UNIVERSAL_DOC_OPTIONS,
   type DocumentosPoliticaTenant,
 } from "../formandos/documentos-politica.util";
+import {
+  AVALIACAO_TIPO_OPTIONS,
+  DEFAULT_AVALIACAO_PARAMETROS,
+  mergeTenantAvaliacaoParametros,
+  normalizeAvaliacaoTipo,
+  parseTenantAvaliacaoParametros,
+  type AvaliacaoParametrosTenant,
+  type AvaliacaoTipoId,
+} from "../avaliacoes/avaliacao-parametros.util";
 
 export type TenantBrandingPayload = {
   logoUrl?: string;
@@ -48,6 +57,7 @@ type TenantMetadata = {
   branding?: TenantBrandingPayload;
   cronograma?: TenantCronogramaConfig;
   documentosPolitica?: DocumentosPoliticaTenant;
+  avaliacaoParametros?: AvaliacaoParametrosTenant;
 };
 
 @Injectable()
@@ -322,6 +332,92 @@ export class TenantSettingsService {
       data: { metadata: next as Prisma.InputJsonValue },
     });
     return { sucesso: true, politica };
+  }
+
+  async getAvaliacaoParametros(user: RequestUser) {
+    const tenantId = requireTenantId(user);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true },
+    });
+    if (!tenant) throw new BadRequestException("Tenant não encontrado.");
+    const parametros = parseTenantAvaliacaoParametros(tenant.metadata);
+    return {
+      parametros,
+      opcoesTipos: AVALIACAO_TIPO_OPTIONS,
+      defaults: DEFAULT_AVALIACAO_PARAMETROS,
+      ajuda:
+        "Define a escala de notas, o mínimo para aprovação e os tipos de avaliação permitidos em toda a entidade.",
+    };
+  }
+
+  async updateAvaliacaoParametros(
+    user: RequestUser,
+    body: {
+      notaMinimaAprovacao?: number;
+      escalaMaxima?: number;
+      tiposPermitidos?: string[];
+      exigirObservacoesAbaixoMinima?: boolean;
+    },
+  ) {
+    const tenantId = requireTenantId(user);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true },
+    });
+    if (!tenant) throw new BadRequestException("Tenant não encontrado.");
+
+    const escalaMaxima =
+      body.escalaMaxima != null ? Math.round(body.escalaMaxima) : undefined;
+    if (escalaMaxima != null && (escalaMaxima < 1 || escalaMaxima > 100)) {
+      throw new BadRequestException("A escala máxima deve estar entre 1 e 100.");
+    }
+    const notaMinimaAprovacao =
+      body.notaMinimaAprovacao != null ? Math.round(body.notaMinimaAprovacao) : undefined;
+    const max = escalaMaxima ?? parseTenantAvaliacaoParametros(tenant.metadata).escalaMaxima;
+    if (
+      notaMinimaAprovacao != null &&
+      (notaMinimaAprovacao < 0 || notaMinimaAprovacao > max)
+    ) {
+      throw new BadRequestException(`Nota mínima deve estar entre 0 e ${max}.`);
+    }
+
+    const tiposPermitidos = body.tiposPermitidos
+      ? body.tiposPermitidos
+          .map((t) => normalizeAvaliacaoTipo(t))
+          .filter((t): t is AvaliacaoTipoId => t != null)
+      : undefined;
+    if (body.tiposPermitidos && (!tiposPermitidos || tiposPermitidos.length === 0)) {
+      throw new BadRequestException("Selecciona pelo menos um tipo de avaliação.");
+    }
+
+    const patch: Partial<AvaliacaoParametrosTenant> = {
+      ...(notaMinimaAprovacao != null ? { notaMinimaAprovacao } : {}),
+      ...(escalaMaxima != null ? { escalaMaxima } : {}),
+      ...(tiposPermitidos ? { tiposPermitidos } : {}),
+      ...(body.exigirObservacoesAbaixoMinima != null
+        ? { exigirObservacoesAbaixoMinima: body.exigirObservacoesAbaixoMinima }
+        : {}),
+    };
+
+    const next = mergeTenantAvaliacaoParametros(tenant.metadata, patch);
+    const parametros = parseTenantAvaliacaoParametros(next);
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { metadata: next as Prisma.InputJsonValue },
+    });
+
+    void this.audit.log({
+      actorType: "TENANT_USER",
+      actorId: user.sub,
+      action: "tenant.avaliacao_parametros.update",
+      resourceType: "tenant",
+      resourceId: tenantId,
+      targetTenantId: tenantId,
+      payload: parametros as unknown as Prisma.InputJsonValue,
+    });
+
+    return { sucesso: true, parametros };
   }
 
   async streamLogo(user: RequestUser) {
