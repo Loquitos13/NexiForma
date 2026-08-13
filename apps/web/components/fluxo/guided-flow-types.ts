@@ -10,6 +10,11 @@ export type GuidedFlowStep = {
   description: string;
   /** Destino no portal para este passo (vista real). */
   href?: string;
+  /**
+   * Elemento alvo na vista real (`data-guided-flow-anchor`).
+   * Só mostra apontador quando um fluxo guiado está activo neste passo.
+   */
+  anchor?: string;
   tip?: string;
   /** Pergunta enviada ao NexiGuia ao pedir ajuda neste passo. */
   helpPrompt?: string;

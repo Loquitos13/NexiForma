@@ -257,7 +257,7 @@ export default function AcoesPage() {
         }
         actions={
           canManage && cursos.length > 0 ? (
-            <Button onClick={() => setShowForm((v) => !v)}>
+            <Button onClick={() => setShowForm((v) => !v)} data-guided-flow-anchor="nova-acao">
               <PlusCircle className="h-4 w-4" />
               Nova acção
             </Button>

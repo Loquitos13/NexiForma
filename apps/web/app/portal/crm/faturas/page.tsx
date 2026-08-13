@@ -289,7 +289,7 @@ export default function CrmFaturasPage() {
         description="Emissão de documentos, comunicação à AT, SAF-T PT e pacote de auditoria fiscal."
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => setCreateOpen(true)} disabled={busy || writeDisabled}>
+            <Button size="sm" onClick={() => setCreateOpen(true)} disabled={busy || writeDisabled} data-guided-flow-anchor="nova-fatura">
               <Plus className="h-3.5 w-3.5" />
               Nova fatura
             </Button>

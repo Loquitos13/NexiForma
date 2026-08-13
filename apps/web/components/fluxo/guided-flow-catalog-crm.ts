@@ -22,7 +22,9 @@ export const GUIDED_FLOW_CRM: GuidedFlowModule[] = [
         title: "Nova lead",
         description:
           "Clica em «Nova lead», preenche nome, email/telefone, origem e entidade (se já existir).",
+        href: "/portal/crm/leads",
         tip: "Usa o NIF ou nome da empresa para associar a um cliente existente.",
+        anchor: "nova-lead",
       },
       {
         title: "Estado e responsável",
@@ -181,6 +183,7 @@ export const GUIDED_FLOW_CRM: GuidedFlowModule[] = [
         title: "Emitir fatura",
         description: "Em Faturas, cria a partir de proposta aceite ou directamente.",
         href: "/portal/crm/faturas",
+        anchor: "nova-fatura",
       },
     ],
   },

@@ -314,6 +314,7 @@ export default function FormandoPerfilPage() {
                 : "text-slate-400 hover:text-slate-200",
             )}
             onClick={() => setTab(t.id)}
+            {...(t.id === "documentos" ? { "data-guided-flow-anchor": "documentos-formando" } : {})}
           >
             {t.label}
             {t.id === "documentos" && docsEmFalta ? (

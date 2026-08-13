@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
@@ -14,12 +14,18 @@ import {
   X,
 } from "lucide-react";
 import { useActiveGuidedFlow } from "@/lib/client/active-guided-flow-context";
+import {
+  buildGuidedFlowSearch,
+  matchesGuidedFlowHref,
+} from "@/lib/client/guided-flow-path";
 import { askNexiGuia } from "@/lib/client/nexi-guia-events";
 import { cn } from "@/lib/ui/cn";
 
 export function NexiGuiaSpeechBubble() {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const search = buildGuidedFlowSearch(searchParams);
   const {
     activeModule,
     currentStepIndex,
@@ -39,7 +45,7 @@ export function NexiGuiaSpeechBubble() {
 
   if (!activeModule || !isBubbleOpen) return null;
 
-  const isOnCurrentStepPage = currentStep?.href ? pathname === currentStep.href : true;
+  const isOnCurrentStepPage = matchesGuidedFlowHref(pathname, search, currentStep?.href);
 
   if (isMinimized) {
     return (

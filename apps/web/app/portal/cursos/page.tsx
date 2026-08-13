@@ -171,7 +171,7 @@ export default function CursosPage() {
         description="Catálogo formativo – UFCD, carga horária e objectivos (critério DGERT)."
         actions={
           canManage ? (
-            <Button onClick={openCreate} disabled={writeDisabled}>
+            <Button onClick={openCreate} disabled={writeDisabled} data-guided-flow-anchor="novo-curso">
               <PlusCircle className="h-4 w-4" />
               Novo curso
             </Button>

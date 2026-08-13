@@ -15,8 +15,19 @@ import {
   type GuidedFlowModule,
   type GuidedFlowStep,
 } from "@/components/fluxo/guided-flow-modules";
+import { matchesGuidedFlowHref } from "@/lib/client/guided-flow-path";
 
 const ACTIVE_FLOW_STORAGE_KEY = "nexiforma-active-guided-flow";
+
+function currentSearch(): string {
+  if (typeof window === "undefined") return "";
+  return window.location.search;
+}
+
+function isOnStepHref(pathname: string, step: GuidedFlowStep | null | undefined): boolean {
+  if (!step) return false;
+  return matchesGuidedFlowHref(pathname, currentSearch(), step.href);
+}
 
 export type GuidedFlowProgressState = {
   moduleId: string;
@@ -199,7 +210,7 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
       });
 
       // Navegar para o ecrã do primeiro passo se existir e se não estivermos já lá
-      if (step?.href && pathname !== step.href) {
+      if (step?.href && !isOnStepHref(pathname, step)) {
         router.push(step.href);
       }
     },
@@ -224,7 +235,7 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
             }
           : null,
       );
-      if (nextStepObj?.href && pathname !== nextStepObj.href) {
+      if (nextStepObj?.href && !isOnStepHref(pathname, nextStepObj)) {
         router.push(nextStepObj.href);
       }
     }
@@ -244,7 +255,7 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
           }
         : null,
     );
-    if (prevStepObj?.href && pathname !== prevStepObj.href) {
+    if (prevStepObj?.href && !isOnStepHref(pathname, prevStepObj)) {
       router.push(prevStepObj.href);
     }
   }, [activeModule, currentStepIndex, pathname, router]);
@@ -263,7 +274,7 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
             }
           : null,
       );
-      if (targetStep?.href && pathname !== targetStep.href) {
+      if (targetStep?.href && !isOnStepHref(pathname, targetStep)) {
         router.push(targetStep.href);
       }
     },

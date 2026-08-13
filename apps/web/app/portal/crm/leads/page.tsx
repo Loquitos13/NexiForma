@@ -544,7 +544,7 @@ export default function CrmLeadsPage() {
             <Button size="sm" disabled={writeDisabled} onClick={() => {
             setForm({ ...emptyForm, codigo: generateLeadCodigo() });
             setCreateOpen(true);
-          }}>
+          }} data-guided-flow-anchor="nova-lead">
             <Plus className="h-3.5 w-3.5" />
             Novo lead
           </Button>

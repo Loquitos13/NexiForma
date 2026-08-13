@@ -34,6 +34,8 @@ export const GUIDED_FLOW_FORMACAO: GuidedFlowModule[] = [
         title: "Novo curso",
         description:
           "Define designação, código, duração, área e metadados DGERT/SIGO necessários.",
+        href: "/portal/cursos",
+        anchor: "novo-curso",
       },
       {
         title: "Guardar e continuar",
@@ -61,6 +63,8 @@ export const GUIDED_FLOW_FORMACAO: GuidedFlowModule[] = [
         title: "Nova acção",
         description:
           "Escolhe o curso, datas, modalidade (presencial / online / mista), local e estado.",
+        href: "/portal/acoes",
+        anchor: "nova-acao",
       },
       {
         title: "Configurar a edição",
@@ -89,6 +93,7 @@ export const GUIDED_FLOW_FORMACAO: GuidedFlowModule[] = [
           "Em Utilizadores podes convidar com cargo Formando; o perfil fica ligado ao email.",
         href: "/portal/utilizadores",
         tip: "NIF é obrigatório para convites de formando.",
+        anchor: "convidar-utilizador",
       },
       {
         title: "Matricular na turma",
@@ -404,6 +409,7 @@ export const GUIDED_FLOW_FORMACAO: GuidedFlowModule[] = [
         description:
           "Envia cópia do CC, certificado de habilitações e comprovativo de IBAN (e outros se pedido).",
         href: "/portal/formando/perfil?tab=documentos",
+        anchor: "documentos-formando",
       },
     ],
   },

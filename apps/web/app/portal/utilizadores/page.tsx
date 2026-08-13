@@ -536,7 +536,7 @@ export default function UtilizadoresPage() {
                 <Shield className="h-3.5 w-3.5" />
                 {mfaSelectMode ? "Cancelar selecção" : "Ativar verificação"}
               </Button>
-              <Button onClick={() => setInviteDialogOpen(true)}>
+              <Button onClick={() => setInviteDialogOpen(true)} data-guided-flow-anchor="convidar-utilizador">
                 <UserPlus className="h-4 w-4" />Convidar
               </Button>
             </div>

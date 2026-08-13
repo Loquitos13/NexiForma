@@ -22,6 +22,7 @@ import {
   type MobileNavDetail,
 } from "@/lib/client/mobile-nav";
 import { useActiveGuidedFlow } from "@/lib/client/active-guided-flow-context";
+import { Suspense } from "react";
 import { NexiGuiaSpeechBubble } from "./nexi-guia-speech-bubble";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/ui/cn";
@@ -425,8 +426,12 @@ export function NexiGuia() {
 
   return (
     <div data-nexiguia-root className={showChat ? "nexiguia-root-open" : undefined}>
-      {/* Balão de fala do fluxo guiado */}
-      {!showChat && !mobileNavOpen ? <NexiGuiaSpeechBubble /> : null}
+      {/* Balão de fala — só com fluxo guiado activo */}
+      {!showChat && !mobileNavOpen ? (
+        <Suspense fallback={null}>
+          <NexiGuiaSpeechBubble />
+        </Suspense>
+      ) : null}
 
       {/* Chat aberto: blur no fundo (z-index: 0 no stacking context do root) */}
       {showChat ? (
