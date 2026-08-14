@@ -62,6 +62,8 @@ export class DocumentosService {
       formandoId?: string;
       formadorId?: string;
       categoria?: string;
+      visivelFormador?: boolean;
+      visivelFormando?: boolean;
     },
   ) {
     const tenantId = requireTenantId(user);
@@ -133,6 +135,8 @@ export class DocumentosService {
             mimeType: file.mimetype,
             tamanhoBytes: file.size,
             createdByUserId: user.sub,
+            visivelFormador: opts.formadorId ? opts.visivelFormador === true : true,
+            visivelFormando: opts.formandoId ? opts.visivelFormando === true : true,
           },
           include: {
             formando: { select: { id: true, nome: true, nif: true } },
@@ -219,17 +223,19 @@ export class DocumentosService {
     };
   }
 
-  listRequisicoes(user: RequestUser, opts?: { estado?: string; formandoId?: string }) {
+  listRequisicoes(user: RequestUser, opts?: { estado?: string; formandoId?: string; formadorId?: string }) {
     const tenantId = requireTenantId(user);
     return this.prisma.documentoRequisicao.findMany({
       where: {
         tenantId,
         ...(opts?.estado ? { estado: opts.estado } : {}),
         ...(opts?.formandoId ? { formandoId: opts.formandoId } : {}),
+        ...(opts?.formadorId ? { formadorId: opts.formadorId } : {}),
       },
       orderBy: { createdAt: "desc" },
       include: {
         formando: { select: { id: true, nome: true, nif: true } },
+        formador: { select: { id: true, nomeCompleto: true, nif: true } },
         acaoFormacao: { select: { id: true, codigoInterno: true, titulo: true } },
         documentoAnexo: {
           select: { id: true, nome: true, mimeType: true, tamanhoBytes: true, createdAt: true },
@@ -242,14 +248,31 @@ export class DocumentosService {
     const tenantId = requireTenantId(user);
     const titulo = dto.titulo.trim();
     if (!titulo) throw new BadRequestException("Indique o título do documento pedido.");
-    if (!dto.formandoId && !dto.acaoFormacaoId) {
-      throw new BadRequestException("Indique um formando ou uma acção de formação.");
+    if (!dto.formandoId && !dto.formadorId && !dto.acaoFormacaoId) {
+      throw new BadRequestException("Indique um formando, formador ou acção de formação.");
     }
 
-    type Alvo = { formandoId: string; matriculaId: string | null; acaoFormacaoId: string | null };
+    type Alvo = {
+      formandoId: string | null;
+      formadorId: string | null;
+      matriculaId: string | null;
+      acaoFormacaoId: string | null;
+    };
     const alvos: Alvo[] = [];
 
-    if (dto.formandoId) {
+    if (dto.formadorId) {
+      const formador = await this.prisma.formadorProfile.findFirst({
+        where: { id: dto.formadorId, tenantId },
+        select: { id: true, userId: true, nomeCompleto: true },
+      });
+      if (!formador) throw new NotFoundException("Formador não encontrado.");
+      alvos.push({
+        formandoId: null,
+        formadorId: formador.id,
+        matriculaId: null,
+        acaoFormacaoId: null,
+      });
+    } else if (dto.formandoId) {
       const formando = await this.prisma.formandoProfile.findFirst({
         where: { id: dto.formandoId, tenantId },
         select: { id: true, userId: true, nome: true },
@@ -275,7 +298,7 @@ export class DocumentosService {
         });
         matriculaId = mat?.id ?? null;
       }
-      alvos.push({ formandoId: formando.id, matriculaId, acaoFormacaoId });
+      alvos.push({ formandoId: formando.id, formadorId: null, matriculaId, acaoFormacaoId });
     } else if (dto.acaoFormacaoId) {
       const acao = await this.prisma.acaoFormacao.findFirst({
         where: { id: dto.acaoFormacaoId, tenantId },
@@ -297,6 +320,7 @@ export class DocumentosService {
       for (const m of mats) {
         alvos.push({
           formandoId: m.formandoId,
+          formadorId: null,
           matriculaId: m.id,
           acaoFormacaoId: acao.id,
         });
@@ -311,6 +335,7 @@ export class DocumentosService {
             titulo,
             descricao: dto.descricao?.trim() || null,
             formandoId: a.formandoId,
+            formadorId: a.formadorId,
             matriculaId: a.matriculaId,
             acaoFormacaoId: a.acaoFormacaoId,
             createdByUserId: user.sub,
@@ -318,6 +343,7 @@ export class DocumentosService {
           },
           include: {
             formando: { select: { id: true, nome: true, nif: true, userId: true } },
+            formador: { select: { id: true, nomeCompleto: true, nif: true, userId: true } },
             acaoFormacao: { select: { id: true, codigoInterno: true, titulo: true } },
           },
         }),
@@ -325,15 +351,19 @@ export class DocumentosService {
     );
 
     for (const row of created) {
-      if (!row.formando.userId) continue;
+      const targetUserId = row.formando?.userId ?? row.formador?.userId;
+      if (!targetUserId) continue;
+      const link = row.formador
+        ? "/portal/formador/perfil?tab=documentos"
+        : "/portal/formando/perfil?tab=documentos";
       void this.portalNotificacoes
         .notifyUser({
           tenantId,
-          userId: row.formando.userId,
+          userId: targetUserId,
           tipo: "documento_requisicao",
           titulo: "Documento pedido pela entidade formadora",
           mensagem: `Foi-lhe pedido o documento «${row.titulo}». Envie-o na área Documentos do perfil.`,
-          link: "/portal/formando/perfil?tab=documentos",
+          link,
           emailConteudo: {
             subject: `Documento pedido: ${row.titulo}`,
             text: `A entidade formadora pediu-lhe o documento «${row.titulo}». Aceda ao portal (login) e envie o ficheiro na área Documentos do perfil.`,
@@ -342,7 +372,7 @@ export class DocumentosService {
           push: {
             title: "Documento pedido",
             body: row.titulo,
-            url: "/portal/formando/perfil?tab=documentos",
+            url: link,
           },
         })
         .catch(() => undefined);

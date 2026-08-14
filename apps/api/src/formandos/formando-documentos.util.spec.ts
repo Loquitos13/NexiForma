@@ -32,14 +32,21 @@ describe("formando-documentos.util", () => {
   it("avalia obrigatórios universais", () => {
     const r = avaliarDocumentosObrigatorios(
       [
-        { categoria: "cv", lado: "unico" },
         { categoria: "certificado_habilitacoes", lado: "frente" },
         { categoria: "documento_identificacao", lado: "unico" },
+        { categoria: "declaracao_entidade_patronal", lado: "unico" },
+        { categoria: "domicilio_fiscal", lado: "unico" },
       ],
-      ["cv", "documento_identificacao", "certificado_habilitacoes", "certidao_grau", "domicilio_fiscal"],
+      [
+        "documento_identificacao",
+        "certificado_habilitacoes",
+        "declaracao_entidade_patronal",
+        "domicilio_fiscal",
+        "comprovativo_iban",
+      ],
     );
     expect(r.completo).toBe(false);
-    expect(r.emFalta).toEqual(["certidao_grau", "domicilio_fiscal"]);
+    expect(r.emFalta).toEqual(["comprovativo_iban"]);
   });
 
   it("respeita lista obrigatória do tenant", () => {

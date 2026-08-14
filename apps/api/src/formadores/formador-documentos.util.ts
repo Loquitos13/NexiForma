@@ -25,8 +25,8 @@ export const FORMADOR_DOC_LABELS: Record<string, string> = {
   ccp: "CCP (Certificado de Competências Pedagógicas)",
   cv: "Curriculum Vitae",
   carta_conducao: "Carta de condução",
-  certificados_formacao: "Certificados das formações",
-  ficha_dgert: "Ficha DGERT preenchida e assinada",
+  certificados_formacao: "Certificados de formação complementar",
+  ficha_dgert: "Ficha Curricular DGERT",
   outros: "Outros documentos",
 };
 
@@ -34,17 +34,12 @@ export const FORMADOR_DOC_LABELS: Record<string, string> = {
 export const FORMADOR_UNIVERSAL_COMPAT = new Set(["cv", "documento_identificacao"]);
 
 /** Obrigatórios do cargo formador (além dos universais compatíveis). */
-export const FORMADOR_ROLE_REQUIRED = [
-  "ccp",
-  "certificados_formacao",
-  "ficha_dgert",
-] as const;
+export const FORMADOR_ROLE_REQUIRED = ["ccp", "ficha_dgert"] as const;
 
 export type FormadorDocObrigatorioId =
   | "cv"
   | "documento_identificacao"
   | "ccp"
-  | "certificados_formacao"
   | "ficha_dgert";
 
 export type FormadorDocObrigatorioItem = {
@@ -70,18 +65,13 @@ const OBRIGATORIO_META: Record<
     origem: "universal",
   },
   ccp: {
-    label: "Cópia do CCP",
+    label: "CCP",
     detalheFalta: "Certificado de Competências Pedagógicas (obrigatório do cargo)",
     origem: "cargo",
   },
-  certificados_formacao: {
-    label: "Certificados das formações",
-    detalheFalta: "Certificados das formações que possui (pode juntar num PDF)",
-    origem: "cargo",
-  },
   ficha_dgert: {
-    label: "Ficha DGERT preenchida e assinada",
-    detalheFalta: "Ficha da DGERT preenchida e assinada (PDF ou imagem)",
+    label: "Ficha Curricular DGERT",
+    detalheFalta: "Ficha curricular DGERT preenchida e assinada (PDF ou imagem)",
     origem: "cargo",
   },
 };

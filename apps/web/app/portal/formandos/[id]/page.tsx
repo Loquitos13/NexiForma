@@ -2,29 +2,20 @@
 
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { FileText } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
-import { formatDatePt } from "@/lib/calendar-date";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import {
   Alert,
   Badge,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
   PageHeader,
 } from "@/components/ui";
 import { DocumentPreviewModal } from "@/components/ui/document-preview-modal";
 import { PortalBackButton } from "@/components/ui/portal-back-button";
 import { PageContentSkeleton } from "@/components/ui/page-skeleton";
 import { FormandoFichaDados } from "@/components/portal/formando-ficha-dados";
-import {
-  FormandoFichaInscricoes,
-  type FormandoInscricao,
-} from "@/components/portal/formando-ficha-inscricoes";
+import { FormandoFichaInscricoes, type FormandoInscricao } from "@/components/portal/formando-ficha-inscricoes";
+import { FormandoDocumentosGestor } from "@/components/portal/formando-documentos-gestor";
 import {
   DgertRequisitoBanner,
   useDgertRequisitoId,
@@ -36,8 +27,19 @@ type Documento = {
   categoria: string | null;
   mimeType: string;
   tamanhoBytes: number;
+  visivelFormando?: boolean;
   createdAt: string;
   acaoFormacao?: { codigoInterno: string; titulo: string } | null;
+};
+
+type Requisicao = {
+  id: string;
+  titulo: string;
+  descricao: string | null;
+  estado: string;
+  createdAt: string;
+  submetidoEm: string | null;
+  documentoAnexo?: { id: string; nome: string } | null;
 };
 
 type Ficha = {
@@ -58,6 +60,7 @@ type Ficha = {
   };
   sigoPronto: boolean;
   documentos: Documento[];
+  requisicoes: Requisicao[];
   inscricoes: FormandoInscricao[];
 };
 
@@ -168,40 +171,14 @@ export default function FormandoFichaPage() {
         onChanged={() => load({ silent: true })}
       />
 
-      <Card>
-        <CardHeader className="border-b border-slate-700/40">
-          <CardTitle className="text-base flex items-center gap-2">
-            <FileText className="h-4 w-4 text-amber-400" />
-            Documentos enviados ({ficha.documentos.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-4">
-          {ficha.documentos.length === 0 ? (
-            <p className="text-sm text-slate-500">Este formando ainda não enviou documentos.</p>
-          ) : (
-            <ul className="space-y-2">
-              {ficha.documentos.map((d) => (
-                <li
-                  key={d.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-700/30 px-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm text-slate-100 truncate">{d.nome}</p>
-                    <p className="text-[11px] text-slate-500">
-                      {formatDatePt(d.createdAt)}
-                      {d.categoria ? ` · ${d.categoria}` : ""}
-                      {d.acaoFormacao ? ` · ${d.acaoFormacao.codigoInterno}` : ""}
-                    </p>
-                  </div>
-                  <Button size="sm" variant="secondary" onClick={() => void verDocumento(d)}>
-                    Ver
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      <FormandoDocumentosGestor
+        formandoId={ficha.id}
+        documentos={ficha.documentos}
+        requisicoes={ficha.requisicoes ?? []}
+        canManage={canManage}
+        onPreview={(doc) => void verDocumento(doc)}
+        onRefresh={() => load({ silent: true })}
+      />
 
       <DocumentPreviewModal
         open={!!previewUrl}

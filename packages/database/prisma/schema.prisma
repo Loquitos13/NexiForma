@@ -693,6 +693,7 @@ model FormadorProfile {
   sessoesFormacao SessaoFormacao[]
   modulosUnidade  ModuloUnidade[]
   documentos      DocumentoAnexo[]
+  documentosRequisicao DocumentoRequisicao[]
 
   @@unique([tenantId, nif])
   @@index([tenantId])
@@ -2105,6 +2106,10 @@ model DocumentoAnexo {
   mimeType          String   @map("mime_type")
   tamanhoBytes      Int      @map("tamanho_bytes")
   createdByUserId   String?  @map("created_by_user_id") @db.Uuid
+  /// Falso = visível só a gestor/coordenação pedagógica (upload da entidade).
+  visivelFormador   Boolean  @default(true) @map("visivel_formador")
+  /// Falso = visível só a gestor/coordenação pedagógica (upload da entidade).
+  visivelFormando   Boolean  @default(true) @map("visivel_formando")
   createdAt         DateTime @default(now()) @map("created_at")
 
   tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -2124,13 +2129,14 @@ model DocumentoAnexo {
   @@schema("public")
 }
 
-/// Pedido do gestor ao formando de documento adicional («outros documentos»).
+/// Pedido do gestor ao formando/formador de documento adicional.
 model DocumentoRequisicao {
   id               String    @id @default(uuid()) @db.Uuid
   tenantId         String    @map("tenant_id") @db.Uuid
   titulo           String
   descricao        String?   @db.Text
-  formandoId       String    @map("formando_id") @db.Uuid
+  formandoId       String?   @map("formando_id") @db.Uuid
+  formadorId       String?   @map("formador_id") @db.Uuid
   matriculaId      String?   @map("matricula_id") @db.Uuid
   acaoFormacaoId   String?   @map("acao_formacao_id") @db.Uuid
   estado           String    @default("pendente") // pendente | submetido | cancelado
@@ -2141,12 +2147,14 @@ model DocumentoRequisicao {
   submetidoEm      DateTime? @map("submetido_em")
 
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  formando       FormandoProfile @relation(fields: [formandoId], references: [id], onDelete: Cascade)
+  formando       FormandoProfile? @relation(fields: [formandoId], references: [id], onDelete: Cascade)
+  formador       FormadorProfile? @relation(fields: [formadorId], references: [id], onDelete: Cascade)
   acaoFormacao   AcaoFormacao?   @relation(fields: [acaoFormacaoId], references: [id], onDelete: SetNull)
   documentoAnexo DocumentoAnexo? @relation(fields: [documentoAnexoId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([formandoId, estado])
+  @@index([formadorId, estado])
   @@index([acaoFormacaoId])
   @@map("documento_requisicoes")
   @@schema("public")

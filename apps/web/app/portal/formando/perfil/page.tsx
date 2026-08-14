@@ -559,6 +559,8 @@ export default function FormandoPerfilPage() {
                       [
                         "documento_identificacao",
                         "certificado_habilitacoes",
+                        "declaracao_entidade_patronal",
+                        "domicilio_fiscal",
                         "comprovativo_iban",
                       ] as DocObrigatorioId[]
                     ).includes(m.id),
@@ -638,10 +640,13 @@ export default function FormandoPerfilPage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <FileText className="h-4 w-4 text-slate-400" />
-                Outros documentos
+                Ficheiros adicionais
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              <p className="text-sm text-slate-400">
+                Documentos complementares que não fazem parte da checklist obrigatória.
+              </p>
               <Alert variant="warning">{AVISO_NOME_DOCUMENTO_OUTROS}</Alert>
               <label className="inline-flex">
                 <input
@@ -657,7 +662,7 @@ export default function FormandoPerfilPage() {
                   }}
                 />
                 <span className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-600 bg-transparent px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
-                  {uploading ? "A enviar…" : "Enviar outro documento"}
+                  {uploading ? "A enviar…" : "Enviar ficheiro adicional"}
                 </span>
               </label>
             </CardContent>

@@ -2,7 +2,6 @@ export type FormadorDocObrigatorioId =
   | "cv"
   | "documento_identificacao"
   | "ccp"
-  | "certificados_formacao"
   | "ficha_dgert";
 
 export type FormadorDocObrigatorioItem = {
@@ -34,36 +33,30 @@ export const FORMADOR_DOCS_OBRIGATORIOS_META: Array<{
   },
   {
     id: "documento_identificacao",
-    label: "Cartão de Cidadão",
+    label: "Documento de Identificação",
     accept: "application/pdf,image/jpeg,image/png",
-    ajuda: "Cópia do cartão de cidadão.",
+    ajuda: "Cópia do cartão de cidadão ou documento equivalente.",
   },
   {
     id: "ccp",
-    label: "Cópia do CCP",
+    label: "CCP",
     accept: "application/pdf,image/jpeg,image/png",
     ajuda: "Certificado de Competências Pedagógicas (obrigatório do cargo).",
   },
   {
-    id: "certificados_formacao",
-    label: "Certificados das formações",
-    accept: "application/pdf,image/jpeg,image/png",
-    ajuda: "Certificados das formações que possui (pode juntar num único PDF).",
-  },
-  {
     id: "ficha_dgert",
-    label: "Ficha DGERT preenchida e assinada",
+    label: "Ficha Curricular DGERT",
     accept: "application/pdf,image/jpeg,image/png",
-    ajuda: "Ficha da DGERT preenchida e assinada.",
+    ajuda: "Ficha curricular DGERT preenchida e assinada.",
   },
 ];
 
 export const FORMADOR_DOC_CATEGORIAS_UPLOAD = [
-  { value: "documento_identificacao", label: "Cartão de Cidadão" },
+  { value: "documento_identificacao", label: "Documento de Identificação" },
   { value: "ccp", label: "CCP" },
   { value: "cv", label: "Curriculum Vitae" },
-  { value: "certificados_formacao", label: "Certificados das formações" },
-  { value: "ficha_dgert", label: "Ficha DGERT preenchida e assinada" },
+  { value: "certificados_formacao", label: "Certificados de formação complementar (se existir)" },
+  { value: "ficha_dgert", label: "Ficha Curricular DGERT" },
   { value: "carta_conducao", label: "Carta de condução" },
-  { value: "outros", label: "Outros documentos" },
+  { value: "outros", label: "Outros documentos relevantes" },
 ] as const;

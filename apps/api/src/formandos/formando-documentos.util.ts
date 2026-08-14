@@ -7,6 +7,7 @@ export const FORMANDO_DOC_TIPOS = new Set([
   "certificado_habilitacoes",
   "certidao_grau",
   "documento_identificacao",
+  "declaracao_entidade_patronal",
   "domicilio_fiscal",
   "comprovativo_iban",
   "outros",
@@ -30,6 +31,7 @@ export const FORMANDO_DOC_SINGLE_FILE = new Set([
   "cv",
   "certificado_habilitacoes",
   "certidao_grau",
+  "declaracao_entidade_patronal",
   "domicilio_fiscal",
   "comprovativo_iban",
   "outros",
@@ -39,6 +41,7 @@ export type FormandoDocObrigatorioId =
   | "cv"
   | "certificado_habilitacoes"
   | "documento_identificacao"
+  | "declaracao_entidade_patronal"
   | "certidao_grau"
   | "domicilio_fiscal"
   | "comprovativo_iban";
@@ -85,25 +88,29 @@ const OBRIGATORIO_META: Record<
     detalheFalta: "PDF obrigatório (reutilizável em todos os cursos)",
   },
   documento_identificacao: {
-    label: "Cópia do Cartão de Cidadão",
+    label: "Documento de Identificação",
     detalheFalta: "PDF único (frente+verso) ou frente e verso; comprova identidade",
   },
   certificado_habilitacoes: {
-    label: "Certificado de habilitações",
+    label: "Certificado de habilitações português",
     detalheFalta:
       "Certificado de habilitações literárias (ou certidão de conclusão de grau, no ensino superior)",
+  },
+  declaracao_entidade_patronal: {
+    label: "Declaração da entidade patronal",
+    detalheFalta: "Declaração assinada pela entidade patronal (PDF ou imagem)",
   },
   certidao_grau: {
     label: "Certidão de conclusão de grau",
     detalheFalta: "Certidão de conclusão de grau de ensino superior (quando aplicável)",
   },
   domicilio_fiscal: {
-    label: "Documento de domicílio fiscal",
-    detalheFalta: "PDF ou imagem obrigatório",
+    label: "Comprovativo de morada",
+    detalheFalta: "Comprovativo de morada (PDF ou imagem)",
   },
   comprovativo_iban: {
-    label: "Comprovativo de IBAN",
-    detalheFalta: "Comprovativo bancário com IBAN (PDF ou imagem)",
+    label: "Declaração de IBAN",
+    detalheFalta: "Declaração ou comprovativo bancário com IBAN (PDF ou imagem)",
   },
 };
 
@@ -162,11 +169,12 @@ export function labelCategoriaDocumento(categoria: string, lado?: string | null)
     bi: "Bilhete de Identidade",
     carta_conducao: "Carta de Condução",
     cv: "Curriculum Vitae",
-    certificado_habilitacoes: "Certificado de habilitações",
+    certificado_habilitacoes: "Certificado de habilitações português",
     certidao_grau: "Certidão de conclusão de grau",
-    documento_identificacao: "Cópia do Cartão de Cidadão",
-    domicilio_fiscal: "Domicílio fiscal",
-    comprovativo_iban: "Comprovativo de IBAN",
+    documento_identificacao: "Documento de Identificação",
+    declaracao_entidade_patronal: "Declaração da entidade patronal",
+    domicilio_fiscal: "Comprovativo de morada",
+    comprovativo_iban: "Declaração de IBAN",
     outros: "Outros documentos",
     outro: "Outro documento",
   };

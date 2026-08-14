@@ -257,7 +257,12 @@ export class FormandoPortalService {
   async listDocumentos(user: RequestUser) {
     const { tenantId, profile } = await this.requireProfile(user);
     return this.prisma.documentoAnexo.findMany({
-      where: { tenantId, formandoId: profile.id, matriculaId: null },
+      where: {
+        tenantId,
+        formandoId: profile.id,
+        matriculaId: null,
+        OR: [{ visivelFormando: true }, { createdByUserId: user.sub }],
+      },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -461,6 +466,7 @@ export class FormandoPortalService {
             mimeType: file.mimetype,
             tamanhoBytes: file.size,
             createdByUserId: user.sub,
+            visivelFormando: true,
           },
         });
         await tx.matriculaDocumento.update({
@@ -578,6 +584,7 @@ export class FormandoPortalService {
             mimeType: file.mimetype,
             tamanhoBytes: file.size,
             createdByUserId: user.sub,
+            visivelFormando: true,
           },
         });
         return tx.documentoRequisicao.update({
@@ -684,6 +691,7 @@ export class FormandoPortalService {
             mimeType: file.mimetype,
             tamanhoBytes: file.size,
             createdByUserId: user.sub,
+            visivelFormando: true,
           },
           select: {
             id: true,
@@ -718,7 +726,10 @@ export class FormandoPortalService {
       where: { id: docId, tenantId },
     });
     if (!doc) throw new NotFoundException("Documento não encontrado.");
-    if (doc.formandoId === profileId) return doc;
+    if (doc.formandoId === profileId) {
+      if (doc.visivelFormando || doc.createdByUserId === userId) return doc;
+      throw new NotFoundException("Documento não encontrado.");
+    }
     // Templates da acção em que o formando está matriculado
     if (doc.acaoFormacaoId && !doc.formandoId) {
       const mat = await this.prisma.matricula.findFirst({

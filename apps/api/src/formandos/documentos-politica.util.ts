@@ -21,14 +21,19 @@ export const UNIVERSAL_DOC_OPTIONS: Array<{
   },
   {
     id: "documento_identificacao",
-    label: "Cópia do Cartão de Cidadão",
+    label: "Documento de Identificação",
     ajuda: "Comprova identidade/nacionalidade.",
   },
   {
     id: "certificado_habilitacoes",
-    label: "Certificado de habilitações",
+    label: "Certificado de habilitações português",
     ajuda:
       "Habilitações literárias; no ensino superior, use a certidão de conclusão de grau.",
+  },
+  {
+    id: "declaracao_entidade_patronal",
+    label: "Declaração da entidade patronal",
+    ajuda: "Declaração assinada pela entidade patronal.",
   },
   {
     id: "certidao_grau",
@@ -37,13 +42,13 @@ export const UNIVERSAL_DOC_OPTIONS: Array<{
   },
   {
     id: "comprovativo_iban",
-    label: "Comprovativo de IBAN",
-    ajuda: "Comprovativo bancário com IBAN.",
+    label: "Declaração de IBAN",
+    ajuda: "Declaração ou comprovativo bancário com IBAN.",
   },
   {
     id: "domicilio_fiscal",
-    label: "Domicílio fiscal",
-    ajuda: "Comprovativo de morada fiscal.",
+    label: "Comprovativo de morada",
+    ajuda: "Comprovativo de morada.",
   },
 ];
 
@@ -72,6 +77,8 @@ export const ENROLLMENT_DOC_OPTIONS: Array<{
 export const DEFAULT_UNIVERSAL_REQUIRED: FormandoDocObrigatorioId[] = [
   "documento_identificacao",
   "certificado_habilitacoes",
+  "declaracao_entidade_patronal",
+  "domicilio_fiscal",
   "comprovativo_iban",
 ];
 

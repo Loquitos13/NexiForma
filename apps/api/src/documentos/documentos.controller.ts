@@ -61,8 +61,9 @@ export class DocumentosController {
     @CurrentUser() user: RequestUser,
     @Query("estado") estado?: string,
     @Query("formandoId") formandoId?: string,
+    @Query("formadorId") formadorId?: string,
   ) {
-    return this.documentos.listRequisicoes(user, { estado, formandoId });
+    return this.documentos.listRequisicoes(user, { estado, formandoId, formadorId });
   }
 
   @Post("requisicoes")
@@ -108,6 +109,8 @@ export class DocumentosController {
     @Query("formandoId") formandoId?: string,
     @Query("formadorId") formadorId?: string,
     @Query("categoria") categoria?: string,
+    @Query("visivelFormador") visivelFormador?: string,
+    @Query("visivelFormando") visivelFormando?: string,
   ) {
     return this.documentos.upload(user, file, {
       entidadeClienteId,
@@ -115,6 +118,8 @@ export class DocumentosController {
       formandoId,
       formadorId,
       categoria,
+      visivelFormador: visivelFormador === "true" || visivelFormador === "1",
+      visivelFormando: visivelFormando === "true" || visivelFormando === "1",
     });
   }
 

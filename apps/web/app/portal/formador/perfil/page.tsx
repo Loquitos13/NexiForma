@@ -54,6 +54,20 @@ type Documento = {
   createdAt: string;
 };
 
+type DocRequisicao = {
+  id: string;
+  titulo: string;
+  descricao: string | null;
+  estado: string;
+  createdAt: string;
+  submetidoEm: string | null;
+  documentoAnexo?: {
+    id: string;
+    nome: string;
+    tamanhoBytes: number;
+  } | null;
+};
+
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "dados", label: "Dados" },
   { id: "seguranca", label: "Segurança" },
@@ -75,6 +89,7 @@ export default function FormadorPerfilPage() {
   const [tab, setTab] = useState<TabId>("dados");
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [docs, setDocs] = useState<Documento[]>([]);
+  const [requisicoes, setRequisicoes] = useState<DocRequisicao[]>([]);
   const [obrigatorios, setObrigatorios] = useState<FormadorDocObrigatorioResumo | null>(null);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -99,10 +114,13 @@ export default function FormadorPerfilPage() {
 
   const load = useCallback(async () => {
     setError(null);
-    const [meRes, docsRes, obrRes] = await Promise.all([
+    const [meRes, docsRes, obrRes, reqRes] = await Promise.all([
       bffFetch("/api/v1/formadores/me", { headers: { accept: "application/json" } }),
       bffFetch("/api/v1/formadores/me/documentos", { headers: { accept: "application/json" } }),
       bffFetch("/api/v1/formadores/me/documentos/obrigatorios", {
+        headers: { accept: "application/json" },
+      }),
+      bffFetch("/api/v1/formadores/me/documentos/requisicoes", {
         headers: { accept: "application/json" },
       }),
     ]);
@@ -123,6 +141,7 @@ export default function FormadorPerfilPage() {
       ccpValidade: me.ccpValidade ? me.ccpValidade.slice(0, 10) : "",
     });
     if (docsRes.ok) setDocs((await docsRes.json()) as Documento[]);
+    if (reqRes.ok) setRequisicoes((await reqRes.json()) as DocRequisicao[]);
     if (obrRes.ok) {
       setObrigatorios((await obrRes.json()) as FormadorDocObrigatorioResumo);
     }
@@ -459,6 +478,88 @@ export default function FormadorPerfilPage() {
       ) : null}
 
       {tab === "documentos" ? (
+        <div className="space-y-6">
+          {requisicoes.length > 0 ? (
+            <Card className="border-slate-700/30 bg-slate-900/40 border-sky-500/15">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-sky-400" />
+                  Pedidos da entidade formadora
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-slate-400">
+                  A entidade pediu documentos adicionais. Envie o ficheiro pedido (PDF, JPG ou PNG).
+                </p>
+                <ul className="space-y-3">
+                  {requisicoes.map((r) => (
+                    <li
+                      key={r.id}
+                      className="rounded-xl border border-slate-700/30 bg-slate-800/30 px-4 py-3 space-y-2"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium text-slate-100">{r.titulo}</p>
+                          {r.descricao ? (
+                            <p className="text-xs text-slate-500 mt-1">{r.descricao}</p>
+                          ) : null}
+                        </div>
+                        <Badge variant={r.estado === "submetido" ? "green" : "yellow"}>
+                          {r.estado === "submetido" ? "Enviado" : "Pendente"}
+                        </Badge>
+                      </div>
+                      {r.documentoAnexo ? (
+                        <p className="text-xs text-slate-500">
+                          Ficheiro: {r.documentoAnexo.nome}
+                          {r.documentoAnexo.tamanhoBytes
+                            ? ` (${formatBytes(r.documentoAnexo.tamanhoBytes)})`
+                            : ""}
+                        </p>
+                      ) : null}
+                      {r.estado === "pendente" || r.estado === "submetido" ? (
+                        <label className="inline-flex">
+                          <input
+                            type="file"
+                            accept="application/pdf,image/jpeg,image/png"
+                            className="sr-only"
+                            disabled={uploading}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = "";
+                              if (!file) return;
+                              void (async () => {
+                                setUploading(true);
+                                setError(null);
+                                setMsg(null);
+                                const fd = new FormData();
+                                fd.append("file", file);
+                                const res = await bffFetch(
+                                  `/api/v1/formadores/me/documentos/requisicoes/${r.id}`,
+                                  { method: "POST", body: fd },
+                                );
+                                setUploading(false);
+                                if (!res.ok) {
+                                  setError(await parseApiError(res));
+                                  return;
+                                }
+                                setMsg(`Documento «${r.titulo}» enviado.`);
+                                await load();
+                                notifyDocumentosObrigatoriosUpdated();
+                              })();
+                            }}
+                          />
+                          <Button size="sm" variant="secondary" disabled={uploading} asChild>
+                            <span>{uploading ? "A enviar…" : "Enviar ficheiro"}</span>
+                          </Button>
+                        </label>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          ) : null}
+
         <Card className="border-slate-700/30 bg-slate-900/40">
           <CardHeader className="border-b border-slate-700/40 flex flex-row flex-wrap items-center justify-between gap-3">
             <CardTitle className="text-base flex items-center gap-2">
@@ -505,8 +606,8 @@ export default function FormadorPerfilPage() {
           </CardHeader>
           <CardContent className="pt-4 space-y-3">
             <p className="text-sm text-slate-400">
-              Obrigatórios: Cartão de Cidadão, CCP, certificados das formações, currículo e ficha
-              DGERT preenchida e assinada. Em «Outros documentos» pode enviar anexos adicionais.
+              Obrigatórios: CV, CCP, documento de identificação e ficha curricular DGERT. Opcional:
+              certificados de formação complementar (se existir) e outros documentos relevantes.
             </p>
             {categoria === "outros" ? (
               <Alert variant="warning">{AVISO_NOME_DOCUMENTO_OUTROS}</Alert>
@@ -552,6 +653,7 @@ export default function FormadorPerfilPage() {
             )}
           </CardContent>
         </Card>
+        </div>
       ) : null}
 
       <DocumentPreviewModal

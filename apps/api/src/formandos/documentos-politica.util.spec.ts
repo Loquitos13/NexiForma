@@ -10,6 +10,8 @@ describe("documentos-politica.util", () => {
     expect(p.universaisObrigatorios).toEqual([
       "documento_identificacao",
       "certificado_habilitacoes",
+      "declaracao_entidade_patronal",
+      "domicilio_fiscal",
       "comprovativo_iban",
     ]);
   });

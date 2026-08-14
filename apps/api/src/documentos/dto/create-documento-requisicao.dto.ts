@@ -16,6 +16,11 @@ export class CreateDocumentoRequisicaoDto {
   @IsUUID()
   formandoId?: string;
 
+  /** Pedido a um formador concreto. */
+  @IsOptional()
+  @IsUUID()
+  formadorId?: string;
+
   /** Pedido a todos os formandos com matrícula activa nesta acção. */
   @IsOptional()
   @IsUUID()
