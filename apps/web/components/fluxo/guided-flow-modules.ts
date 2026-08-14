@@ -5,6 +5,8 @@ import {
   audienceFromRole,
   categoryAllowedForAudience,
   roleCanAccessGuidedFlowCategory,
+  resolveGuidedFlowStep,
+  resolveGuidedFlowSteps,
   GUIDED_FLOW_AUDIENCE_LABEL,
   GUIDED_FLOW_CATEGORY_LABEL,
   type GuidedFlowInteractiveView,
@@ -25,6 +27,8 @@ export {
   audienceFromRole,
   categoryAllowedForAudience,
   roleCanAccessGuidedFlowCategory,
+  resolveGuidedFlowStep,
+  resolveGuidedFlowSteps,
 };
 
 const GUIDED_FLOW_ADMIN: GuidedFlowModule[] = [

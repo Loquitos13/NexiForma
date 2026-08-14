@@ -18,6 +18,13 @@ export type GuidedFlowStep = {
   tip?: string;
   /** Pergunta enviada ao NexiGuia ao pedir ajuda neste passo. */
   helpPrompt?: string;
+  /** Substitui campos consoante o papel JWT (ex.: comercial sem CRM Dashboard). */
+  roleVariants?: Partial<
+    Record<
+      JwtRole,
+      Partial<Pick<GuidedFlowStep, "title" | "description" | "href" | "tip" | "anchor" | "helpPrompt">>
+    >
+  >;
 };
 
 export type GuidedFlowInteractiveView = "setup-completo" | "conteudos";
@@ -104,4 +111,20 @@ export function roleCanAccessGuidedFlowCategory(
   if (role === "formador" || role === "formando") return category === "formacao";
 
   return true;
+}
+
+export function resolveGuidedFlowStep(
+  step: GuidedFlowStep,
+  role: JwtRole | null,
+): GuidedFlowStep {
+  if (!role || !step.roleVariants?.[role]) return step;
+  const variant = step.roleVariants[role]!;
+  return { ...step, ...variant };
+}
+
+export function resolveGuidedFlowSteps(
+  steps: GuidedFlowStep[] | undefined,
+  role: JwtRole | null,
+): GuidedFlowStep[] {
+  return (steps ?? []).map((step) => resolveGuidedFlowStep(step, role));
 }

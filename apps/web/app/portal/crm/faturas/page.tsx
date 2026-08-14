@@ -484,6 +484,7 @@ export default function CrmFaturasPage() {
           title="Nova fatura"
           description="Cria um rascunho para editar, emitir e enviar ao cliente."
           className="max-w-lg"
+          data-guided-flow-anchor="nova-fatura"
         >
           {entidades.length === 0 ? (
             <div className="space-y-3 text-sm text-slate-400">

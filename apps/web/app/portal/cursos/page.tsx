@@ -302,6 +302,7 @@ export default function CursosPage() {
         <DialogContent
           title={editId ? "Editar curso" : "Novo curso"}
           description="UFCD opcional – obrigatório para acções financiadas e SIGO."
+          data-guided-flow-anchor="novo-curso"
         >
           <form onSubmit={(e) => void submit(e)} className="grid gap-4">
             <div

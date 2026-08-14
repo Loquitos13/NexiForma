@@ -293,7 +293,7 @@ export const GUIDED_FLOW_FORMACAO: GuidedFlowModule[] = [
   {
     id: "formacao-conteudos-lms",
     title: "Registar conteúdos LMS num curso",
-    description: "Editor visual de módulos (vídeo, PDF, quiz, SCORM).",
+    description: "Editor de curso com modos Editar e Mockup (vídeo, PDF, quiz, webinar).",
     category: "formacao",
     audiences: ["gestor"],
     view: "conteudos",
@@ -302,20 +302,23 @@ export const GUIDED_FLOW_FORMACAO: GuidedFlowModule[] = [
       {
         title: "Abrir editor",
         description:
-          "No editor visual adiciona módulos ao curso: vídeo, PDF, quiz ou SCORM.",
+          "Selecciona o curso e usa o editor com modos Editar e Mockup para criar módulos (vídeo, PDF, quiz, webinar).",
         href: "/portal/fluxo?v=conteudos",
+        tip: "No Mockup vês o percurso como o formando e podes criar conteúdos a partir daí.",
       },
       {
-        title: "Estruturar módulos",
+        title: "Estruturar e publicar",
         description:
-          "Organiza a sequência de aprendizagem e define títulos, prazos e requisitos de conclusão.",
-        tip: "Publica o módulo quando o conteúdo estiver pronto para os formandos.",
+          "Organiza unidades e módulos, carrega ficheiros ou URLs, e publica quando o conteúdo estiver completo.",
+        href: "/portal/fluxo?v=conteudos",
+        tip: "Alterna Editar/Mockup para validar a experiência antes de publicar.",
       },
       {
-        title: "Publicar e libertar",
+        title: "Datas na acção",
         description:
-          "Depois de publicados, define prazos LMS na acção ou em Formação → Progresso LMS.",
-        href: "/portal/progresso-lms",
+          "Na ficha da acção, separador Tarefas, define desbloqueio e prazos LMS por módulo ou data do cronograma.",
+        href: "/portal/acoes",
+        tip: "As datas aplicam-se à acção; o conteúdo base permanece partilhado pelo curso.",
       },
     ],
   },
@@ -333,9 +336,9 @@ export const GUIDED_FLOW_FORMACAO: GuidedFlowModule[] = [
         href: "/portal/fluxo?v=conteudos",
       },
       {
-        title: "Prazos na acção",
+        title: "Tarefas na acção",
         description:
-          "Na acção, define prazos LMS / desbloqueio por módulo ou data do cronograma.",
+          "Na ficha da acção, separador Tarefas, define prazos LMS e desbloqueio por módulo ou cronograma.",
         href: "/portal/acoes",
       },
       {

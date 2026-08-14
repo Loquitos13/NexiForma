@@ -723,6 +723,7 @@ export default function UtilizadoresPage() {
       <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
         <DialogContent
           title="Convidar utilizador"
+          data-guided-flow-anchor="convidar-utilizador"
           description={
             invite.role === "FORMANDO"
               ? "Cria a ficha de formando (NIF confirmado) e envia convite. Opcionalmente inscreve já numa turma."

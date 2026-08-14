@@ -13,6 +13,8 @@ import {
 import { askNexiGuia } from "@/lib/client/nexi-guia-events";
 import { useAutoStartGuidedFlow } from "@/lib/client/use-auto-start-guided-flow";
 import { useActiveGuidedFlow } from "@/lib/client/active-guided-flow-context";
+import { useGuidedFlowAccess } from "@/lib/client/use-guided-flow-access";
+import { resolveGuidedFlowSteps } from "@/components/fluxo/guided-flow-modules";
 import { Alert, Button, Card, CardContent } from "@/components/ui";
 import type { GuidedFlowModule } from "./guided-flow-types";
 
@@ -21,7 +23,8 @@ type Props = {
 };
 
 export function GuidedFlowGuide({ module }: Props) {
-  const steps = module.steps ?? [];
+  const { ctx } = useGuidedFlowAccess();
+  const steps = resolveGuidedFlowSteps(module.steps, ctx.role);
   const { activeModule, currentStepIndex, startFlow, closeFlow } = useActiveGuidedFlow();
   useAutoStartGuidedFlow(module.id, 0);
 

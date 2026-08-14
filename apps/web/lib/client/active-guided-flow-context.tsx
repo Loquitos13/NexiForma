@@ -12,6 +12,7 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import {
   getGuidedFlowById,
+  resolveGuidedFlowSteps,
   type GuidedFlowModule,
   type GuidedFlowStep,
 } from "@/components/fluxo/guided-flow-modules";
@@ -146,7 +147,7 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
   const router = useRouter();
   const pathname = usePathname();
   const [activeState, setActiveState] = useState<GuidedFlowProgressState | null>(null);
-  const { isModuleVisible, loading: accessLoading } = useGuidedFlowAccess();
+  const { isModuleVisible, loading: accessLoading, ctx } = useGuidedFlowAccess();
 
   // Carregar estado guardado no início
   useEffect(() => {
@@ -191,10 +192,18 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
     }
   }, [activeState]);
 
-  const activeModule = useMemo(() => {
+  const activeModuleRaw = useMemo(() => {
     if (!activeState?.moduleId) return null;
     return getGuidedFlowById(activeState.moduleId) ?? null;
   }, [activeState?.moduleId]);
+
+  const activeModule = useMemo(() => {
+    if (!activeModuleRaw) return null;
+    return {
+      ...activeModuleRaw,
+      steps: resolveGuidedFlowSteps(activeModuleRaw.steps, ctx.role),
+    };
+  }, [activeModuleRaw, ctx.role]);
 
   const steps = activeModule?.steps ?? [];
   const totalSteps = steps.length;

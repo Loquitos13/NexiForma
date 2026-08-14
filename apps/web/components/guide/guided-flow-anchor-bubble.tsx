@@ -8,7 +8,9 @@ import { useActiveGuidedFlow } from "@/lib/client/active-guided-flow-context";
 import {
   buildGuidedFlowSearch,
   matchesGuidedFlowHref,
+  resolveGuidedFlowAnchorElement,
 } from "@/lib/client/guided-flow-path";
+import { cn } from "@/lib/ui/cn";
 
 type AnchorRect = {
   top: number;
@@ -19,7 +21,7 @@ type AnchorRect = {
 
 /**
  * Apontador na vista real - só aparece com fluxo guiado activo no passo actual.
- * Nunca mostra balões genéricos fora de um fluxo.
+ * Com modal aberto, o foco passa para o alvo dentro do modal (nunca escurece o modal).
  */
 export function GuidedFlowAnchorBubble() {
   const pathname = usePathname();
@@ -33,6 +35,7 @@ export function GuidedFlowAnchorBubble() {
     isCompleted,
   } = useActiveGuidedFlow();
   const [rect, setRect] = useState<AnchorRect | null>(null);
+  const [insideModal, setInsideModal] = useState(false);
 
   const anchor = currentStep?.anchor;
   const showAnchor =
@@ -47,16 +50,19 @@ export function GuidedFlowAnchorBubble() {
   useEffect(() => {
     if (!showAnchor || !anchor) {
       setRect(null);
+      setInsideModal(false);
       return;
     }
 
     const update = () => {
-      const el = document.querySelector(`[data-guided-flow-anchor="${anchor}"]`);
-      if (!el) {
+      const { element, insideModal: inModal } = resolveGuidedFlowAnchorElement(anchor);
+      if (!element) {
         setRect(null);
+        setInsideModal(false);
         return;
       }
-      const box = el.getBoundingClientRect();
+      const box = element.getBoundingClientRect();
+      setInsideModal(inModal);
       setRect({
         top: box.top,
         left: box.left,
@@ -68,9 +74,17 @@ export function GuidedFlowAnchorBubble() {
     update();
     window.addEventListener("scroll", update, true);
     window.addEventListener("resize", update);
+    const mo = new MutationObserver(update);
+    mo.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["data-state", "open", "style", "class"],
+    });
     return () => {
       window.removeEventListener("scroll", update, true);
       window.removeEventListener("resize", update);
+      mo.disconnect();
     };
   }, [showAnchor, anchor, pathname, search]);
 
@@ -79,11 +93,16 @@ export function GuidedFlowAnchorBubble() {
   }
 
   const labelTop = Math.max(12, rect.top - 12);
+  const spotlightZ = insideModal ? "z-[55]" : "z-[125]";
+  const labelZ = insideModal ? "z-[56]" : "z-[126]";
 
   return createPortal(
     <>
       <div
-        className="pointer-events-none fixed z-[125] rounded-lg border-2 border-blue-400/70 bg-blue-500/10 shadow-[0_0_0_9999px_rgba(2,6,23,0.35)] transition-all duration-300"
+        className={cn(
+          "pointer-events-none fixed rounded-lg border-2 border-blue-400/70 bg-blue-500/10 shadow-[0_0_0_9999px_rgba(2,6,23,0.35)] transition-all duration-300",
+          spotlightZ,
+        )}
         style={{
           top: rect.top - 4,
           left: rect.left - 4,
@@ -93,7 +112,10 @@ export function GuidedFlowAnchorBubble() {
         aria-hidden
       />
       <div
-        className="pointer-events-none fixed z-[126] max-w-[min(16rem,calc(100vw-2rem))] animate-in fade-in slide-in-from-bottom-1 duration-300"
+        className={cn(
+          "pointer-events-none fixed max-w-[min(16rem,calc(100vw-2rem))] animate-in fade-in slide-in-from-bottom-1 duration-300",
+          labelZ,
+        )}
         style={{
           top: labelTop,
           left: rect.left + rect.width / 2,

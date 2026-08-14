@@ -31,3 +31,38 @@ export function buildGuidedFlowSearch(
   const raw = searchParams?.toString() ?? "";
   return raw ? `?${raw}` : "";
 }
+
+function findOpenDialogLayer(): Element | null {
+  return document.querySelector('[role="dialog"][data-state="open"]');
+}
+
+function isVisibleAnchor(el: Element): boolean {
+  const style = window.getComputedStyle(el);
+  if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") {
+    return false;
+  }
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+/** Resolve o elemento alvo do fluxo guiado, priorizando modais abertos sobre a página. */
+export function resolveGuidedFlowAnchorElement(anchor: string): {
+  element: Element | null;
+  insideModal: boolean;
+} {
+  const candidates = Array.from(
+    document.querySelectorAll(`[data-guided-flow-anchor="${anchor}"]`),
+  );
+  if (!candidates.length) return { element: null, insideModal: false };
+
+  const openLayer = findOpenDialogLayer();
+  if (openLayer) {
+    const inLayer = candidates.find((el) => openLayer.contains(el));
+    return { element: inLayer ?? null, insideModal: Boolean(inLayer) };
+  }
+
+  const outside = candidates.find(
+    (el) => !el.closest('[role="dialog"]') && isVisibleAnchor(el),
+  );
+  return { element: outside ?? null, insideModal: false };
+}

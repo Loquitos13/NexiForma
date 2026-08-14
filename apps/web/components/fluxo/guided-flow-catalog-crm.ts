@@ -27,14 +27,24 @@ export const GUIDED_FLOW_CRM: GuidedFlowModule[] = [
         anchor: "nova-lead",
       },
       {
-        title: "Estado e responsável",
+        title: "Estado no funil",
         description:
-          "Define o estado no funil (ex.: novo, em contacto) e o comercial responsável.",
+          "Na lista ou Kanban, avança a lead (ex.: Contactado, Qualificar). O responsável comercial é quem regista a oportunidade - vês na coluna «Responsável».",
+        href: "/portal/crm/leads",
+        tip: "Isto não é uma nota comercial. Notas comerciais são outro fluxo (interacções e follow-ups).",
       },
       {
         title: "Seguir no dashboard",
         description: "Confirma no CRM Dashboard ou na ficha da lead as próximas acções sugeridas.",
         href: "/portal/crm",
+        roleVariants: {
+          comercial: {
+            title: "Próximas acções",
+            description:
+              "Na lista de leads, usa «Notas & IA» ou as sugestões na linha para planear o follow-up.",
+            href: "/portal/crm/leads",
+          },
+        },
       },
     ],
   },
@@ -150,7 +160,8 @@ export const GUIDED_FLOW_CRM: GuidedFlowModule[] = [
     description: "Visão geral do funil, alertas e atalhos do dia.",
     category: "negocio",
     audiences: ["gestor", "comercial"],
-    visible: ({ ent, canManageCrm }) => canManageCrm && crm(ent),
+    visible: ({ ent, canManageCrm, role }) =>
+      canManageCrm && crm(ent) && role !== "comercial",
     steps: [
       {
         title: "Abrir CRM Dashboard",

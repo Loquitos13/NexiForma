@@ -705,7 +705,7 @@ export default function CrmLeadsPage() {
       )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent title="Novo lead">
+        <DialogContent title="Novo lead" data-guided-flow-anchor="nova-lead">
           <form onSubmit={(e) => void onCreate(e)} className="space-y-3">
             <Select
               label="Cliente *"

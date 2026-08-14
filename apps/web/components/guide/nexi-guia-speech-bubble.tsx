@@ -37,6 +37,7 @@ export function NexiGuiaSpeechBubble() {
     prevStep,
     goToStep,
     closeFlow,
+    completeFlow,
     toggleBubble,
     setMinimized,
   } = useActiveGuidedFlow();
@@ -59,7 +60,9 @@ export function NexiGuiaSpeechBubble() {
         >
           <Sparkles className="h-3.5 w-3.5 text-blue-400 animate-pulse" />
           <span>
-            {activeModule.title}: Passo {currentStepIndex + 1}/{totalSteps}
+            {isCompleted
+              ? `${activeModule.title}: concluído`
+              : `${activeModule.title}: Passo ${currentStepIndex + 1}/${totalSteps}`}
           </span>
         </button>
       </div>
@@ -129,79 +132,86 @@ export function NexiGuiaSpeechBubble() {
           key={`${activeModule.id}-${currentStepIndex}-${isCompleted}`}
           className="mt-3 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-200"
         >
-          <div className="rounded-xl border border-blue-500/20 bg-gradient-to-r from-blue-950/40 via-slate-900/60 to-teal-950/30 p-3">
-            <div className="flex items-start gap-2.5">
-              <Sparkles className="h-4 w-4 shrink-0 text-blue-400 mt-0.5" />
-              <div className="text-xs leading-relaxed text-blue-100/90 font-medium">
-                {supportiveMessage?.comfort}
-              </div>
-            </div>
-          </div>
-
-          {!isCompleted && currentStep ? (
-            <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center rounded-full bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold text-blue-300">
-                  Passo {currentStepIndex + 1} de {totalSteps}
-                </span>
-                <span className="text-xs font-semibold text-slate-100 truncate">
-                  {currentStep.title}
-                </span>
-              </div>
-
-              <p className="text-xs text-slate-300 leading-relaxed">
-                {currentStep.description}
-              </p>
-
-              {currentStep.tip ? (
-                <div className="flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-950/30 px-2.5 py-1.5 text-[11px] text-amber-200/90">
-                  <Lightbulb className="h-3.5 w-3.5 shrink-0 text-amber-400 mt-0.5" />
-                  <span className="leading-snug">{currentStep.tip}</span>
-                </div>
-              ) : null}
-
-              {currentStep.href ? (
-                <div className="pt-1">
-                  {!isOnCurrentStepPage ? (
-                    <button
-                      type="button"
-                      onClick={() => router.push(currentStep.href!)}
-                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600/90 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-blue-500 transition-colors"
-                    >
-                      <span>Ir para esta vista</span>
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-400">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      <span>Estás no ecrã correto deste passo</span>
-                    </div>
-                  )}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
           {isCompleted ? (
-            <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/30 p-3.5 text-center space-y-2">
-              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-300">
-                <CheckCircle2 className="h-6 w-6 text-emerald-400" />
+            <div className="rounded-xl border border-emerald-500/35 bg-gradient-to-b from-emerald-950/50 to-slate-950/80 p-4 text-center space-y-3">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-300 ring-2 ring-emerald-500/30">
+                <CheckCircle2 className="h-7 w-7 text-emerald-400" />
               </div>
-              <p className="text-xs font-semibold text-emerald-200">
-                Fluxo concluído com distinção!
-              </p>
-              <p className="text-[11px] text-slate-300 leading-relaxed">
-                Excelente trabalho! Concluíste todas as tarefas necessárias para esta operação.
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-emerald-200">
+                  {supportiveMessage?.headline ?? "Missão cumprida com sucesso!"}
+                </p>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {supportiveMessage?.comfort}
+                </p>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed border-t border-emerald-500/20 pt-3">
+                {supportiveMessage?.actionGuide}
               </p>
               <button
                 type="button"
                 onClick={closeFlow}
-                className="mt-1 w-full rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 transition-colors"
+                className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-emerald-500 transition-colors"
               >
                 Concluir e fechar guia
               </button>
             </div>
-          ) : null}
+          ) : (
+            <>
+              <div className="rounded-xl border border-blue-500/20 bg-gradient-to-r from-blue-950/40 via-slate-900/60 to-teal-950/30 p-3">
+                <div className="flex items-start gap-2.5">
+                  <Sparkles className="h-4 w-4 shrink-0 text-blue-400 mt-0.5" />
+                  <div className="text-xs leading-relaxed text-blue-100/90 font-medium">
+                    {supportiveMessage?.comfort}
+                  </div>
+                </div>
+              </div>
+
+              {currentStep ? (
+                <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center rounded-full bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold text-blue-300">
+                      Passo {currentStepIndex + 1} de {totalSteps}
+                    </span>
+                    <span className="text-xs font-semibold text-slate-100 truncate">
+                      {currentStep.title}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    {currentStep.description}
+                  </p>
+
+                  {currentStep.tip ? (
+                    <div className="flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-950/30 px-2.5 py-1.5 text-[11px] text-amber-200/90">
+                      <Lightbulb className="h-3.5 w-3.5 shrink-0 text-amber-400 mt-0.5" />
+                      <span className="leading-snug">{currentStep.tip}</span>
+                    </div>
+                  ) : null}
+
+                  {currentStep.href ? (
+                    <div className="pt-1">
+                      {!isOnCurrentStepPage ? (
+                        <button
+                          type="button"
+                          onClick={() => router.push(currentStep.href!)}
+                          className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600/90 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-blue-500 transition-colors"
+                        >
+                          <span>Ir para esta vista</span>
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-400">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          <span>Estás no ecrã correto deste passo</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
 
         {!isCompleted ? (
@@ -241,7 +251,13 @@ export function NexiGuiaSpeechBubble() {
 
               <button
                 type="button"
-                onClick={nextStep}
+                onClick={() => {
+                  if (currentStepIndex >= totalSteps - 1) {
+                    completeFlow();
+                    return;
+                  }
+                  nextStep();
+                }}
                 className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-blue-500 transition-colors"
               >
                 <span>
