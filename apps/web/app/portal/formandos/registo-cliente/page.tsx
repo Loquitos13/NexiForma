@@ -29,6 +29,12 @@ type ClienteForm = {
   cidade: string;
 };
 
+type ClienteResumo = {
+  id: string;
+  nome: string;
+  nif: string;
+};
+
 const EMPTY: ClienteForm = {
   nome: "",
   nif: "",
@@ -54,6 +60,13 @@ function buildMoradaFiscal(form: ClienteForm): string {
   return `${morada}, ${codigoPostal} ${cidade}`;
 }
 
+function mensagemClienteExistente(cliente?: ClienteResumo | null): string {
+  if (cliente?.nome) {
+    return `Já existe um cliente registado com este NIF: ${cliente.nome}.`;
+  }
+  return "Já existe um cliente registado com este NIF.";
+}
+
 export default function RegistoClienteFormacaoPage() {
   const router = useRouter();
   const { canManageFormacao: canManage } = useTenantRole();
@@ -62,9 +75,7 @@ export default function RegistoClienteFormacaoPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const [clienteExistente, setClienteExistente] = useState<{ id: string; nome: string } | null>(
-    null,
-  );
+  const [clienteExistente, setClienteExistente] = useState<ClienteResumo | null>(null);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -72,7 +83,10 @@ export default function RegistoClienteFormacaoPage() {
 
     setError(null);
     setMsg(null);
-    setClienteExistente(null);
+
+    if (clienteExistente) {
+      return;
+    }
 
     const nome = form.nome.trim();
     const nif = form.nif.trim();
@@ -129,24 +143,10 @@ export default function RegistoClienteFormacaoPage() {
     setBusy(false);
 
     if (res.status === 409) {
-      const search = await bffFetch(
-        `/api/v1/entidades-cliente?q=${encodeURIComponent(nif)}&pageSize=5`,
-        { headers: { accept: "application/json" } },
-      );
-      let existente: { id: string; nome: string } | null = null;
-      if (search.ok) {
-        const data = (await search.json()) as
-          | { id: string; nome: string; nif: string }[]
-          | { items: { id: string; nome: string; nif: string }[] };
-        const rows = Array.isArray(data) ? data : data.items;
-        existente = rows.find((r) => r.nif === nif) ?? rows[0] ?? null;
-      }
-      setClienteExistente(existente);
-      setError(
-        existente
-          ? `Já existe um cliente registado com este NIF (${existente.nome}).`
-          : "Já existe um cliente registado com este NIF.",
-      );
+      const data = (await res.json().catch(() => null)) as {
+        clienteExistente?: ClienteResumo;
+      } | null;
+      setClienteExistente(data?.clienteExistente ?? { id: "", nome: "", nif });
       return;
     }
 
@@ -185,21 +185,10 @@ export default function RegistoClienteFormacaoPage() {
         }
       />
 
-      {error ? (
-        <Alert variant="error">
-          <p>{error}</p>
-          {clienteExistente ? (
-            <p className="mt-2 text-sm">
-              <Link
-                href={`/portal/formandos?cliente=${clienteExistente.id}`}
-                className="font-medium text-blue-400 hover:underline"
-              >
-                Registar formando deste cliente
-              </Link>
-            </p>
-          ) : null}
-        </Alert>
+      {clienteExistente ? (
+        <Alert variant="warning">{mensagemClienteExistente(clienteExistente)}</Alert>
       ) : null}
+      {error ? <Alert variant="warning">{error}</Alert> : null}
       {msg ? <Alert variant="success">{msg}</Alert> : null}
 
       <Card>
@@ -222,8 +211,12 @@ export default function RegistoClienteFormacaoPage() {
             <NifStatusField
               label="NIF"
               value={form.nif}
-              onChange={(nif) => setForm((f) => ({ ...f, nif }))}
+              onChange={(nif) => {
+                setForm((f) => ({ ...f, nif }));
+                setClienteExistente(null);
+              }}
               onStatusChange={setNifStatus}
+              onClienteExistente={setClienteExistente}
               tipo="empresa"
             />
 
@@ -271,7 +264,7 @@ export default function RegistoClienteFormacaoPage() {
               />
             </div>
 
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy || Boolean(clienteExistente)}>
               {busy ? "A criar cliente…" : "Criar cliente"}
             </Button>
           </form>

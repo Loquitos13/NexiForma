@@ -90,7 +90,14 @@ export class EntidadesClienteService {
     assertDadosClienteCompletos({ nome, nif, moradaFiscal });
     const dup = await this.prisma.entidadeCliente.findFirst({ where: { tenantId, nif } });
     if (dup) {
-      throw new ConflictException("Já existe entidade cliente com este NIF.");
+      throw new ConflictException({
+        message: "Já existe um cliente registado com este número de contribuinte (NIF).",
+        clienteExistente: {
+          id: dup.id,
+          nome: dup.nome,
+          nif: dup.nif,
+        },
+      });
     }
     return this.prisma.entidadeCliente.create({
       data: {

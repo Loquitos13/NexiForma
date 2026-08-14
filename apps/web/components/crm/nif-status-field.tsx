@@ -1,12 +1,25 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import { Check, Loader2, X } from "lucide-react";
+import { AlertCircle, Check, Loader2, X } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { cn } from "@/lib/ui/cn";
 
 export type NifTipo = "pessoa" | "empresa";
-export type NifStatus = "idle" | "checking" | "valid" | "invalid";
+export type NifStatus = "idle" | "checking" | "valid" | "invalid" | "warning";
+
+export type NifClienteExistente = {
+  id: string;
+  nome: string;
+  nif: string;
+};
+
+type ValidarNifResposta = {
+  valido?: boolean;
+  mensagem?: string;
+  codigo?: string;
+  clienteExistente?: NifClienteExistente;
+};
 
 type Props = {
   label?: string;
@@ -19,6 +32,8 @@ type Props = {
   className?: string;
   /** Notifica o estado para desactivar submit, etc. */
   onStatusChange?: (status: NifStatus) => void;
+  /** Empresa já registada no tenant (só tipo empresa). */
+  onClienteExistente?: (cliente: NifClienteExistente | null) => void;
 };
 
 export function NifStatusField({
@@ -30,10 +45,12 @@ export function NifStatusField({
   disabled,
   className,
   onStatusChange,
+  onClienteExistente,
 }: Props) {
   const id = useId();
   const [status, setStatus] = useState<NifStatus>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [hintMsg, setHintMsg] = useState<string | null>(null);
 
   useEffect(() => {
     onStatusChange?.(status);
@@ -44,17 +61,23 @@ export function NifStatusField({
     if (nif.length < 9) {
       setStatus("idle");
       setErrorMsg(null);
+      setHintMsg(null);
+      onClienteExistente?.(null);
       return;
     }
     if (!/^\d{9}$/.test(nif)) {
       setStatus("invalid");
       setErrorMsg("NIF deve ter 9 dígitos.");
+      setHintMsg(null);
+      onClienteExistente?.(null);
       return;
     }
 
     let cancelled = false;
     setStatus("checking");
     setErrorMsg(null);
+    setHintMsg(null);
+    onClienteExistente?.(null);
     const t = window.setTimeout(() => {
       void (async () => {
         try {
@@ -72,19 +95,30 @@ export function NifStatusField({
               ? data.message.join(", ")
               : typeof data?.message === "string"
                 ? data.message
-                : "NIF inválido. Tente novamente.";
+                : "Não foi possível verificar o NIF.";
             setErrorMsg(msg);
             setStatus("invalid");
             return;
           }
-          const data = (await res.json()) as { valido?: boolean };
+          const data = (await res.json()) as ValidarNifResposta;
+          if (data.codigo === "CLIENTE_EXISTENTE" && data.clienteExistente) {
+            setErrorMsg(null);
+            setHintMsg(data.mensagem ?? "Já existe um cliente registado com este NIF.");
+            setStatus("warning");
+            onClienteExistente?.(data.clienteExistente);
+            return;
+          }
           if (data.valido === true) {
             setErrorMsg(null);
+            setHintMsg(null);
             setStatus("valid");
-          } else {
-            setErrorMsg("NIF inválido. Tente novamente.");
-            setStatus("invalid");
+            onClienteExistente?.(null);
+            return;
           }
+
+          const msg = data.mensagem?.trim() || "NIF não confirmado no registo fiscal.";
+          setErrorMsg(msg);
+          setStatus(data.codigo === "RATE_LIMIT" || data.codigo === "INDISPONIVEL" ? "warning" : "invalid");
         } catch {
           if (!cancelled) {
             setErrorMsg("Não foi possível verificar o NIF.");
@@ -98,7 +132,7 @@ export function NifStatusField({
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [value, tipo]);
+  }, [value, tipo, onClienteExistente]);
 
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
@@ -125,6 +159,7 @@ export function NifStatusField({
             "focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-500/60",
             "disabled:opacity-50 disabled:cursor-not-allowed",
             status === "valid" && "border-green-500/50",
+            status === "warning" && "border-amber-500/50",
             status === "invalid" && "border-red-500",
           )}
         />
@@ -140,10 +175,16 @@ export function NifStatusField({
             NIF válido
           </span>
         ) : null}
+        {status === "warning" ? (
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-amber-400 whitespace-nowrap max-w-[min(100%,20rem)]">
+            <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
+            <span className="truncate">{hintMsg ?? errorMsg ?? "Atenção"}</span>
+          </span>
+        ) : null}
         {status === "invalid" ? (
-          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-red-500 whitespace-nowrap">
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-red-500 whitespace-nowrap max-w-[min(100%,20rem)]">
             <X className="h-4 w-4 shrink-0 text-red-500" aria-hidden />
-            {errorMsg ?? "NIF inválido. Tente novamente."}
+            <span className="truncate">{errorMsg ?? "NIF inválido. Tente novamente."}</span>
           </span>
         ) : null}
       </div>
