@@ -72,6 +72,7 @@ export default function GuidedLmsContentEditor() {
             value={cursoId}
             onChange={(e) => selectCurso(e.target.value)}
             className={selectClass}
+            data-guided-flow-anchor="lms-seleccionar-curso"
           >
             {cursos.map((c) => (
               <option key={c.id} value={c.id}>

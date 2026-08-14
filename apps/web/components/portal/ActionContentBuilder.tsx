@@ -597,6 +597,7 @@ export function ActionContentBuilder({
                   title="Novo módulo"
                   disabled={busy}
                   onClick={() => void criarUnidade()}
+                  data-guided-flow-anchor="lms-novo-modulo"
                   className="flex h-7 w-7 items-center justify-center rounded-lg bg-teal-600/20 text-teal-400 hover:bg-teal-600/30"
                 >
                   <Plus className="h-4 w-4" />
@@ -749,7 +750,7 @@ export function ActionContentBuilder({
                     Escolher ficheiros do computador
                   </Button>
                 </div>
-                <div className="flex flex-wrap gap-1.5 px-3 pb-3">
+                <div className="flex flex-wrap gap-1.5 px-3 pb-3" data-guided-flow-anchor="lms-tipo-conteudo">
                   <span className="text-[10px] text-slate-500 w-full mb-0.5">Ou criar conteúdo vazio:</span>
                   {TIPOS.map((t) => {
                     const c = colorMap[t.color];
@@ -765,7 +766,10 @@ export function ActionContentBuilder({
               </div>
             ) : null}
 
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4">
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4"
+              data-guided-flow-anchor="lms-lista-conteudos"
+            >
               {!selectedUnidadeId ? (
                 <div className="flex flex-col items-center justify-center h-full py-12 text-center">
                   <BookMarked className="h-10 w-10 text-slate-600 mb-3" />

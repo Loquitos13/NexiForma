@@ -38,10 +38,12 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   return (
     <TenantEntitlementsProvider>
       <RelatorioJobsProvider>
-        <ActiveGuidedFlowProvider>
-          <PortalLayoutInner>{children}</PortalLayoutInner>
-          <NexiGuia />
-        </ActiveGuidedFlowProvider>
+        <Suspense fallback={null}>
+          <ActiveGuidedFlowProvider>
+            <PortalLayoutInner>{children}</PortalLayoutInner>
+            <NexiGuia />
+          </ActiveGuidedFlowProvider>
+        </Suspense>
       </RelatorioJobsProvider>
     </TenantEntitlementsProvider>
   );

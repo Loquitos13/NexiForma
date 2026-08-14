@@ -7,6 +7,8 @@ import { Sparkles } from "lucide-react";
 import { useActiveGuidedFlow } from "@/lib/client/active-guided-flow-context";
 import {
   buildGuidedFlowSearch,
+  guidedFlowStepHrefOptions,
+  isGuidedFlowStepComplete,
   matchesGuidedFlowHref,
   resolveGuidedFlowAnchorElement,
 } from "@/lib/client/guided-flow-path";
@@ -17,6 +19,7 @@ type AnchorRect = {
   left: number;
   width: number;
   height: number;
+  borderRadius: string;
 };
 
 /**
@@ -45,7 +48,12 @@ export function GuidedFlowAnchorBubble() {
     !isCompleted &&
     isBubbleOpen &&
     !isMinimized &&
-    matchesGuidedFlowHref(pathname, search, currentStep?.href);
+    matchesGuidedFlowHref(
+      pathname,
+      search,
+      currentStep?.anchorHref ?? currentStep?.href,
+      guidedFlowStepHrefOptions(currentStep),
+    );
 
   useEffect(() => {
     if (!showAnchor || !anchor) {
@@ -62,12 +70,14 @@ export function GuidedFlowAnchorBubble() {
         return;
       }
       const box = element.getBoundingClientRect();
+      const computed = window.getComputedStyle(element);
       setInsideModal(inModal);
       setRect({
         top: box.top,
         left: box.left,
         width: box.width,
         height: box.height,
+        borderRadius: computed.borderRadius || "0.5rem",
       });
     };
 
@@ -95,22 +105,31 @@ export function GuidedFlowAnchorBubble() {
   const labelTop = Math.max(12, rect.top - 12);
   const spotlightZ = insideModal ? "z-[55]" : "z-[125]";
   const labelZ = insideModal ? "z-[56]" : "z-[126]";
+  const pad = 6;
+  const frameStyle = {
+    top: rect.top - pad,
+    left: rect.left - pad,
+    width: rect.width + pad * 2,
+    height: rect.height + pad * 2,
+    borderRadius: rect.borderRadius,
+  } as const;
 
   return createPortal(
     <>
       <div
-        className={cn(
-          "pointer-events-none fixed rounded-lg border-2 border-blue-400/70 bg-blue-500/10 shadow-[0_0_0_9999px_rgba(2,6,23,0.35)] transition-all duration-300",
-          spotlightZ,
-        )}
-        style={{
-          top: rect.top - 4,
-          left: rect.left - 4,
-          width: rect.width + 8,
-          height: rect.height + 8,
-        }}
+        className={cn("guided-flow-spotlight pointer-events-none fixed", spotlightZ)}
+        style={frameStyle}
         aria-hidden
-      />
+      >
+        <div className="guided-flow-spotlight__mask">
+          <div className="guided-flow-spotlight__rgb" />
+          <div
+            className="guided-flow-spotlight__inner"
+            style={{ borderRadius: rect.borderRadius }}
+          />
+        </div>
+        <div className="guided-flow-spotlight__pulse" />
+      </div>
       <div
         className={cn(
           "pointer-events-none fixed max-w-[min(16rem,calc(100vw-2rem))] animate-in fade-in slide-in-from-bottom-1 duration-300",

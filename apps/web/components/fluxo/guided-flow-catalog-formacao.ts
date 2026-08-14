@@ -112,8 +112,10 @@ export const GUIDED_FLOW_FORMACAO: GuidedFlowModule[] = [
     steps: [
       {
         title: "Formandos ou inscrições",
-        description: "Usa Formandos para criar o perfil, ou Inscrições para matricular numa turma.",
+        description:
+          "Clica em «Novo formando» para criar o perfil, ou usa Inscrições para matricular numa turma.",
         href: "/portal/formandos",
+        anchor: "novo-formando",
       },
       {
         title: "Convite / conta",
@@ -141,8 +143,10 @@ export const GUIDED_FLOW_FORMACAO: GuidedFlowModule[] = [
     steps: [
       {
         title: "Garantir perfil de formador",
-        description: "Em Formadores ou Utilizadores confirma que o formador tem perfil e documentos.",
+        description:
+          "Clica em «Novo formador» para registar o perfil (nome, contacto, NIF e morada fiscal).",
         href: "/portal/formadores",
+        anchor: "novo-formador",
       },
       {
         title: "Atribuir à acção",
@@ -168,18 +172,31 @@ export const GUIDED_FLOW_FORMACAO: GuidedFlowModule[] = [
     steps: [
       {
         title: "Abrir a acção",
-        description: "Entra na ficha da acção formativa.",
+        description: "Entra na ficha da acção formativa (clica numa acção na lista).",
         href: "/portal/acoes",
+        hrefPrefix: true,
+        autoAdvance: true,
+        autoAdvanceRequiresChildPath: true,
       },
       {
-        title: "Cronograma",
+        title: "Sessões & assiduidade",
+        description:
+          "Abre o separador «Sessões & assiduidade» na ficha da acção.",
+        href: "/portal/acoes?tab=cronograma",
+        anchorHref: "/portal/acoes",
+        hrefPrefix: true,
+        autoAdvance: true,
+        autoAdvanceRequiresChildPath: true,
+        anchor: "acao-tab-cronograma",
+      },
+      {
+        title: "Criar cronograma",
         description:
           "Cria ou importa o cronograma (sessões, datas, módulos, prazos de autoaprendizagem).",
-      },
-      {
-        title: "Exportar / validar",
-        description:
-          "Revê o cronograma (incl. exportação VNG se aplicável) e publica as sessões.",
+        href: "/portal/acoes?tab=cronograma",
+        hrefPrefix: true,
+        autoAdvanceRequiresChildPath: true,
+        anchor: "cronograma-criar",
         tip: "Sessões sem formador ou sala ficam incompletas para presença online.",
       },
     ],
@@ -300,18 +317,36 @@ export const GUIDED_FLOW_FORMACAO: GuidedFlowModule[] = [
     visible: ({ ent, canManageFormacao }) => canManageFormacao && core(ent),
     steps: [
       {
-        title: "Abrir editor",
+        title: "Seleccionar curso",
         description:
-          "Selecciona o curso e usa o editor com modos Editar e Mockup para criar módulos (vídeo, PDF, quiz, webinar).",
+          "Escolhe o curso no selector. O editor partilha os conteúdos LMS com todas as acções desse curso.",
         href: "/portal/fluxo?v=conteudos",
-        tip: "No Mockup vês o percurso como o formando e podes criar conteúdos a partir daí.",
+        anchor: "lms-seleccionar-curso",
+        tip: "Alterna Editar e Mockup para validar o percurso como o formando o vê.",
       },
       {
-        title: "Estruturar e publicar",
+        title: "Criar módulo",
         description:
-          "Organiza unidades e módulos, carrega ficheiros ou URLs, e publica quando o conteúdo estiver completo.",
+          "Clica no botão «+» junto a Módulos para criar a primeira unidade (ex.: Introdução, Módulo 1).",
         href: "/portal/fluxo?v=conteudos",
-        tip: "Alterna Editar/Mockup para validar a experiência antes de publicar.",
+        anchor: "lms-novo-modulo",
+        tip: "Cada módulo agrupa vídeos, PDFs, quizzes e webinars do mesmo tema.",
+      },
+      {
+        title: "Escolher tipo de conteúdo",
+        description:
+          "Com o módulo seleccionado, usa os botões Vídeo, Webinar, PDF, Texto ou Quiz - ou arrasta ficheiros para a área de upload.",
+        href: "/portal/fluxo?v=conteudos",
+        anchor: "lms-tipo-conteudo",
+        tip: "Também podes arrastar MP4 ou PDF directamente para o módulo.",
+      },
+      {
+        title: "Editar conteúdo",
+        description:
+          "Clica no conteúdo que acabaste de criar na lista para o abrir no editor. As alterações guardam-se automaticamente ao sair de cada campo.",
+        href: "/portal/fluxo?v=conteudos",
+        anchor: "lms-lista-conteudos",
+        tip: "Não precisas de botão Guardar - título, URL, ficheiros e perguntas do quiz persistem ao editar.",
       },
       {
         title: "Datas na acção",

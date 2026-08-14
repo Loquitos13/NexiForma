@@ -11,10 +11,30 @@ export type GuidedFlowStep = {
   /** Destino no portal para este passo (vista real). */
   href?: string;
   /**
+   * Rotas filhas contam como cumpridas (ex.: `/portal/acoes/[id]` para href `/portal/acoes`).
+   * Usado na UI e no auto-avanço.
+   */
+  hrefPrefix?: boolean;
+  /**
+   * Avançar automaticamente quando o objectivo do passo estiver cumprido
+   * (ex.: abrir ficha da acção, mudar separador).
+   */
+  autoAdvance?: boolean;
+  /**
+   * Só considera cumprido com segmento filho (ficha `/portal/acoes/[id]`, não a lista).
+   * Por defeito igual a `hrefPrefix` quando `autoAdvance` está activo.
+   */
+  autoAdvanceRequiresChildPath?: boolean;
+  /**
    * Elemento alvo na vista real (`data-guided-flow-anchor`).
    * Só mostra apontador quando um fluxo guiado está activo neste passo.
    */
   anchor?: string;
+  /**
+   * Rota mínima para mostrar o spotlight (por defeito usa `href`).
+   * Útil quando o passo só se cumpre num separador mas o alvo aparece antes.
+   */
+  anchorHref?: string;
   tip?: string;
   /** Pergunta enviada ao NexiGuia ao pedir ajuda neste passo. */
   helpPrompt?: string;
@@ -22,7 +42,7 @@ export type GuidedFlowStep = {
   roleVariants?: Partial<
     Record<
       JwtRole,
-      Partial<Pick<GuidedFlowStep, "title" | "description" | "href" | "tip" | "anchor" | "helpPrompt">>
+      Partial<Pick<GuidedFlowStep, "title" | "description" | "href" | "tip" | "anchor" | "anchorHref" | "helpPrompt" | "hrefPrefix" | "autoAdvance" | "autoAdvanceRequiresChildPath">>
     >
   >;
 };

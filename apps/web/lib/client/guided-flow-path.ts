@@ -1,21 +1,33 @@
-/** Verifica se a rota actual corresponde ao href de um passo do fluxo guiado. */
-export function matchesGuidedFlowHref(
+import type { GuidedFlowStep } from "@/components/fluxo/guided-flow-types";
+
+export type GuidedFlowHrefOptions = {
+  prefix?: boolean;
+  requireChild?: boolean;
+};
+
+function pathMatches(
   pathname: string,
-  search: string,
-  href?: string,
+  path: string,
+  options?: GuidedFlowHrefOptions,
 ): boolean {
-  if (!href) return true;
+  const childSegment = pathname.startsWith(`${path}/`)
+    ? pathname.slice(path.length + 1)
+    : "";
+  const hasSingleChild = Boolean(childSegment) && !childSegment.includes("/");
 
-  const normalizedSearch = search.startsWith("?")
-    ? search
-    : search
-      ? `?${search}`
-      : "";
-  const [path, queryString] = href.split("?");
+  if (options?.requireChild) {
+    return hasSingleChild;
+  }
+  if (options?.prefix) {
+    return pathname === path || hasSingleChild;
+  }
+  return pathname === path;
+}
 
-  if (pathname !== path) return false;
+function searchMatches(search: string, queryString: string | undefined): boolean {
   if (!queryString) return true;
 
+  const normalizedSearch = search.startsWith("?") ? search : search ? `?${search}` : "";
   const expected = new URLSearchParams(queryString);
   const actual = new URLSearchParams(normalizedSearch.replace(/^\?/, ""));
 
@@ -23,6 +35,55 @@ export function matchesGuidedFlowHref(
     if (actual.get(key) !== value) return false;
   }
   return true;
+}
+
+export function guidedFlowStepHrefOptions(
+  step: GuidedFlowStep | null | undefined,
+): GuidedFlowHrefOptions {
+  if (!step) return {};
+  const requireChild =
+    step.autoAdvanceRequiresChildPath ??
+    (step.autoAdvance ? step.hrefPrefix : false);
+  return {
+    prefix: step.hrefPrefix,
+    requireChild: requireChild || undefined,
+  };
+}
+
+/** Verifica se a rota actual corresponde ao href de um passo do fluxo guiado. */
+export function matchesGuidedFlowHref(
+  pathname: string,
+  search: string,
+  href?: string,
+  options?: GuidedFlowHrefOptions,
+): boolean {
+  if (!href) return true;
+
+  const [path, queryString] = href.split("?");
+  if (!pathMatches(pathname, path, options)) return false;
+  return searchMatches(search, queryString);
+}
+
+/** Destino de navegação preservando rota filha (ex.: ficha da acção + ?tab=cronograma). */
+export function resolveGuidedFlowNavigationHref(
+  pathname: string,
+  stepHref: string,
+): string {
+  const [path, queryString] = stepHref.split("?");
+  if (queryString && (pathname === path || pathname.startsWith(`${path}/`))) {
+    return `${pathname}?${queryString}`;
+  }
+  return stepHref;
+}
+
+/** Passo cumprido (para auto-avanço e indicador verde). */
+export function isGuidedFlowStepComplete(
+  pathname: string,
+  search: string,
+  step: GuidedFlowStep | null | undefined,
+): boolean {
+  if (!step?.href) return false;
+  return matchesGuidedFlowHref(pathname, search, step.href, guidedFlowStepHrefOptions(step));
 }
 
 export function buildGuidedFlowSearch(

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
@@ -15,9 +16,19 @@ import {
 import { useActiveGuidedFlow } from "@/lib/client/active-guided-flow-context";
 import {
   buildGuidedFlowSearch,
-  matchesGuidedFlowHref,
+  isGuidedFlowStepComplete,
+  resolveGuidedFlowAnchorElement,
+  resolveGuidedFlowNavigationHref,
 } from "@/lib/client/guided-flow-path";
 import { cn } from "@/lib/ui/cn";
+
+/** Tempo total do pop-in (balão + lâmpada regressam ao FAB). */
+const BUBBLE_EXIT_MS = 500;
+const MINIMIZED_EXIT_MS = 300;
+
+type ExitPhase = "minimize" | "close" | null;
+
+type BubbleCorner = "right" | "left";
 
 export function NexiGuiaSpeechBubble() {
   const router = useRouter();
@@ -38,24 +49,108 @@ export function NexiGuiaSpeechBubble() {
     goToStep,
     closeFlow,
     completeFlow,
-    toggleBubble,
     setMinimized,
   } = useActiveGuidedFlow();
 
+  const [exitPhase, setExitPhase] = useState<ExitPhase>(null);
+  const [minimizedExiting, setMinimizedExiting] = useState(false);
+  const [bubbleCorner, setBubbleCorner] = useState<BubbleCorner>("right");
+  const exitTimerRef = useRef<number | null>(null);
+
+  const clearExitTimer = () => {
+    if (exitTimerRef.current != null) {
+      window.clearTimeout(exitTimerRef.current);
+      exitTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => () => clearExitTimer(), []);
+
+  useEffect(() => {
+    if (isMinimized) setMinimizedExiting(false);
+  }, [isMinimized]);
+
+  useEffect(() => {
+    const anchor = currentStep?.anchor;
+    if (!anchor || !isBubbleOpen || isMinimized || isCompleted) {
+      setBubbleCorner("right");
+      return;
+    }
+
+    const update = () => {
+      const { element } = resolveGuidedFlowAnchorElement(anchor);
+      // Com spotlight activo, deslocar o balão para a esquerda para não tapar o alvo.
+      setBubbleCorner(element ? "left" : "right");
+    };
+
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    const mo = new MutationObserver(update);
+    mo.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["class", "style", "data-state"],
+    });
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+      mo.disconnect();
+    };
+  }, [currentStep?.anchor, isBubbleOpen, isMinimized, isCompleted]);
+
+  const beginMinimize = () => {
+    if (exitPhase) return;
+    setExitPhase("minimize");
+    clearExitTimer();
+    exitTimerRef.current = window.setTimeout(() => {
+      setMinimized(true);
+      setExitPhase(null);
+    }, BUBBLE_EXIT_MS);
+  };
+
+  const beginClose = () => {
+    if (exitPhase) return;
+    setExitPhase("close");
+    clearExitTimer();
+    exitTimerRef.current = window.setTimeout(() => {
+      closeFlow();
+      setExitPhase(null);
+    }, BUBBLE_EXIT_MS);
+  };
+
+  const beginExpand = () => {
+    if (minimizedExiting) return;
+    setMinimizedExiting(true);
+    clearExitTimer();
+    exitTimerRef.current = window.setTimeout(() => {
+      setMinimized(false);
+      setMinimizedExiting(false);
+    }, MINIMIZED_EXIT_MS);
+  };
+
   if (!activeModule || !isBubbleOpen) return null;
 
-  const isOnCurrentStepPage = matchesGuidedFlowHref(pathname, search, currentStep?.href);
+  const isOnCurrentStepPage = isGuidedFlowStepComplete(pathname, search, currentStep);
+  const isExiting = exitPhase !== null;
+  const bubbleSideClass =
+    bubbleCorner === "left" ? "nexiguia-speech-anchor--left" : undefined;
 
-  if (isMinimized) {
+  if (isMinimized && !isExiting) {
     return (
       <div
-        className="fixed z-[130] nexiguia-speech-anchor animate-in fade-in zoom-in-95 duration-200"
-        style={{ transformOrigin: "bottom right" }}
+        className={cn(
+          "fixed z-[130] nexiguia-speech-anchor",
+          bubbleSideClass,
+          minimizedExiting ? "nexiguia-minimized-pop-in" : "nexiguia-minimized-pop",
+        )}
+        style={{ transformOrigin: bubbleCorner === "left" ? "bottom left" : "bottom right" }}
       >
         <button
           type="button"
-          onClick={() => setMinimized(false)}
-          className="flex items-center gap-2 rounded-full border border-blue-500/40 bg-slate-950/90 px-3.5 py-1.5 text-xs font-medium text-blue-200 shadow-xl shadow-blue-950/40 backdrop-blur-md hover:bg-slate-900 transition-all"
+          onClick={beginExpand}
+          className="flex items-center gap-2 rounded-full border border-blue-500/40 bg-slate-950/90 px-3.5 py-1.5 text-xs font-medium text-blue-200 shadow-xl shadow-blue-950/40 backdrop-blur-md hover:bg-slate-900 transition-colors"
           title="Expandir guia do NexiGuia"
         >
           <Sparkles className="h-3.5 w-3.5 text-blue-400 animate-pulse" />
@@ -73,18 +168,42 @@ export function NexiGuiaSpeechBubble() {
     <div
       role="dialog"
       aria-label="Guia do NexiGuia"
-      className="fixed z-[130] nexiguia-speech-anchor w-[min(calc(100vw-2.5rem),23rem)] select-none"
+      className={cn(
+        "fixed z-[130] nexiguia-speech-anchor w-[min(calc(100vw-2.5rem),23rem)] select-none transition-[left,right] duration-300",
+        bubbleSideClass,
+      )}
+      aria-hidden={isExiting}
     >
-      {/* Ideia a surgir do círculo NexiGuia */}
-      <div className="nexiguia-idea-pop pointer-events-none absolute -bottom-1 right-0 flex h-10 w-10 items-center justify-center">
-        <span className="absolute inset-0 rounded-full bg-blue-400/25 nexiguia-idea-ring" aria-hidden />
+      <div
+        className={cn(
+          "pointer-events-none absolute -bottom-1 flex h-10 w-10 items-center justify-center",
+          bubbleCorner === "left" ? "left-0" : "right-0",
+          isExiting ? "nexiguia-idea-pop-in" : "nexiguia-idea-pop",
+        )}
+      >
+        <span
+          className={cn(
+            "absolute inset-0 rounded-full bg-blue-400/25",
+            isExiting ? "nexiguia-idea-ring-in" : "nexiguia-idea-ring",
+          )}
+          aria-hidden
+        />
         <Lightbulb className="relative h-5 w-5 text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.85)]" />
       </div>
 
-      {/* Balão de fala */}
-      <div className="relative mb-14 mr-1 nexiguia-speech-pop rounded-2xl border border-blue-500/35 bg-slate-950/95 p-4 text-slate-200 shadow-2xl shadow-black/80 backdrop-blur-xl ring-1 ring-blue-500/20">
+      <div
+        className={cn(
+          "relative mb-14 rounded-2xl border border-blue-500/35 bg-slate-950/95 p-4 text-slate-200 shadow-2xl shadow-black/80 backdrop-blur-xl ring-1 ring-blue-500/20",
+          bubbleCorner === "left" ? "ml-1" : "mr-1",
+          isExiting ? "nexiguia-speech-pop-in pointer-events-none" : "nexiguia-speech-pop",
+          bubbleCorner === "left" && "nexiguia-speech-panel--left",
+        )}
+      >
         <div
-          className="absolute -bottom-2.5 right-6 h-4 w-4 rotate-45 border-b border-r border-blue-500/35 bg-slate-950/95"
+          className={cn(
+            "absolute -bottom-2.5 h-4 w-4 rotate-45 border-b border-r border-blue-500/35 bg-slate-950/95",
+            bubbleCorner === "left" ? "left-6" : "right-6",
+          )}
           aria-hidden="true"
         />
 
@@ -109,8 +228,9 @@ export function NexiGuiaSpeechBubble() {
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() => setMinimized(true)}
-              className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"
+              onClick={beginMinimize}
+              disabled={isExiting}
+              className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors disabled:opacity-40"
               title="Minimizar balão"
               aria-label="Minimizar"
             >
@@ -118,8 +238,9 @@ export function NexiGuiaSpeechBubble() {
             </button>
             <button
               type="button"
-              onClick={closeFlow}
-              className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"
+              onClick={beginClose}
+              disabled={isExiting}
+              className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors disabled:opacity-40"
               title="Fechar fluxo guiado"
               aria-label="Fechar"
             >
@@ -150,8 +271,9 @@ export function NexiGuiaSpeechBubble() {
               </p>
               <button
                 type="button"
-                onClick={closeFlow}
-                className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-emerald-500 transition-colors"
+                onClick={beginClose}
+                disabled={isExiting}
+                className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-emerald-500 transition-colors disabled:opacity-40"
               >
                 Concluir e fechar guia
               </button>
@@ -194,7 +316,11 @@ export function NexiGuiaSpeechBubble() {
                       {!isOnCurrentStepPage ? (
                         <button
                           type="button"
-                          onClick={() => router.push(currentStep.href!)}
+                          onClick={() =>
+                            router.push(
+                              resolveGuidedFlowNavigationHref(pathname, currentStep.href!),
+                            )
+                          }
                           className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600/90 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-blue-500 transition-colors"
                         >
                           <span>Ir para esta vista</span>
@@ -222,8 +348,9 @@ export function NexiGuiaSpeechBubble() {
                   key={idx}
                   type="button"
                   onClick={() => goToStep(idx)}
+                  disabled={isExiting}
                   className={cn(
-                    "h-1.5 rounded-full transition-all",
+                    "h-1.5 rounded-full transition-all disabled:opacity-40",
                     idx === currentStepIndex
                       ? "w-5 bg-blue-400"
                       : idx < currentStepIndex
@@ -241,7 +368,8 @@ export function NexiGuiaSpeechBubble() {
                 <button
                   type="button"
                   onClick={prevStep}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/80 px-2.5 py-1 text-xs font-medium text-slate-300 hover:bg-slate-800 transition-colors"
+                  disabled={isExiting}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/80 px-2.5 py-1 text-xs font-medium text-slate-300 hover:bg-slate-800 transition-colors disabled:opacity-40"
                   title="Passo anterior"
                 >
                   <ArrowLeft className="h-3 w-3" />
@@ -258,7 +386,8 @@ export function NexiGuiaSpeechBubble() {
                   }
                   nextStep();
                 }}
-                className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-blue-500 transition-colors"
+                disabled={isExiting}
+                className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-blue-500 transition-colors disabled:opacity-40"
               >
                 <span>
                   {currentStepIndex === totalSteps - 1 ? "Concluir" : "Seguinte"}

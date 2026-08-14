@@ -434,6 +434,9 @@ export default function AcaoDetailPage() {
               key={t.id}
               type="button"
               onClick={() => setTab(t.id)}
+              {...(t.id === "cronograma"
+                ? { "data-guided-flow-anchor": "acao-tab-cronograma" }
+                : {})}
               className={`inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
                 tab === t.id
                   ? "border-blue-500 text-blue-400"

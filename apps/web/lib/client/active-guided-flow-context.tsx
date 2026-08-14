@@ -6,30 +6,27 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   getGuidedFlowById,
   resolveGuidedFlowSteps,
   type GuidedFlowModule,
   type GuidedFlowStep,
 } from "@/components/fluxo/guided-flow-modules";
-import { matchesGuidedFlowHref } from "@/lib/client/guided-flow-path";
+import {
+  buildGuidedFlowSearch,
+  isGuidedFlowStepComplete,
+  matchesGuidedFlowHref,
+  resolveGuidedFlowNavigationHref,
+} from "@/lib/client/guided-flow-path";
 import { useGuidedFlowAccess } from "@/lib/client/use-guided-flow-access";
 
 const ACTIVE_FLOW_STORAGE_KEY = "nexiforma-active-guided-flow";
-
-function currentSearch(): string {
-  if (typeof window === "undefined") return "";
-  return window.location.search;
-}
-
-function isOnStepHref(pathname: string, step: GuidedFlowStep | null | undefined): boolean {
-  if (!step) return false;
-  return matchesGuidedFlowHref(pathname, currentSearch(), step.href);
-}
+const AUTO_ADVANCE_DELAY_MS = 650;
 
 export type GuidedFlowProgressState = {
   moduleId: string;
@@ -146,7 +143,10 @@ function generateSupportiveMessage(
 export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const search = buildGuidedFlowSearch(searchParams);
   const [activeState, setActiveState] = useState<GuidedFlowProgressState | null>(null);
+  const autoAdvanceTimerRef = useRef<number | null>(null);
   const { isModuleVisible, loading: accessLoading, ctx } = useGuidedFlowAccess();
 
   // Carregar estado guardado no início
@@ -218,6 +218,72 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
     return generateSupportiveMessage(activeModule, currentStepIndex, isCompleted);
   }, [activeModule, currentStepIndex, isCompleted]);
 
+  // Auto-avanço quando o utilizador cumpre o objectivo do passo (ex.: abrir ficha da acção).
+  useEffect(() => {
+    if (autoAdvanceTimerRef.current != null) {
+      window.clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+
+    if (
+      !activeModule ||
+      !activeState ||
+      isCompleted ||
+      isMinimized ||
+      !isBubbleOpen ||
+      !currentStep?.autoAdvance
+    ) {
+      return;
+    }
+
+    if (!isGuidedFlowStepComplete(pathname, search, currentStep)) return;
+
+    autoAdvanceTimerRef.current = window.setTimeout(() => {
+      autoAdvanceTimerRef.current = null;
+      setActiveState((prev) => {
+        if (!prev || prev.completed || prev.moduleId !== activeModule.id) return prev;
+        if (prev.stepIndex !== currentStepIndex) return prev;
+
+        const max = (activeModule.steps?.length ?? 1) - 1;
+        if (prev.stepIndex >= max) {
+          return { ...prev, completed: true, bubbleOpen: true, minimized: false };
+        }
+
+        const nextIndex = prev.stepIndex + 1;
+        const nextStepObj = activeModule.steps?.[nextIndex];
+        if (nextStepObj?.href && !isGuidedFlowStepComplete(pathname, search, nextStepObj)) {
+          router.push(resolveGuidedFlowNavigationHref(pathname, nextStepObj.href));
+        }
+
+        return {
+          ...prev,
+          stepIndex: nextIndex,
+          completed: false,
+          bubbleOpen: true,
+          minimized: false,
+        };
+      });
+    }, AUTO_ADVANCE_DELAY_MS);
+
+    return () => {
+      if (autoAdvanceTimerRef.current != null) {
+        window.clearTimeout(autoAdvanceTimerRef.current);
+        autoAdvanceTimerRef.current = null;
+      }
+    };
+  }, [
+    activeModule,
+    activeState,
+    currentStep,
+    currentStepIndex,
+    isBubbleOpen,
+    isCompleted,
+    isMinimized,
+    pathname,
+    router,
+    search,
+  ]);
+
   const startFlow = useCallback(
     (moduleOrId: GuidedFlowModule | string, initialStep = 0) => {
       const mod =
@@ -234,11 +300,11 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
       });
 
       // Navegar para o ecrã do primeiro passo se existir e se não estivermos já lá
-      if (step?.href && !isOnStepHref(pathname, step)) {
-        router.push(step.href);
+      if (step?.href && !isGuidedFlowStepComplete(pathname, search, step)) {
+        router.push(resolveGuidedFlowNavigationHref(pathname, step.href));
       }
     },
-    [pathname, router, isModuleVisible],
+    [pathname, router, search, isModuleVisible],
   );
 
   const nextStep = useCallback(() => {
@@ -259,11 +325,11 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
             }
           : null,
       );
-      if (nextStepObj?.href && !isOnStepHref(pathname, nextStepObj)) {
-        router.push(nextStepObj.href);
+      if (nextStepObj?.href && !isGuidedFlowStepComplete(pathname, search, nextStepObj)) {
+        router.push(resolveGuidedFlowNavigationHref(pathname, nextStepObj.href));
       }
     }
-  }, [activeModule, currentStepIndex, pathname, router]);
+  }, [activeModule, currentStepIndex, pathname, router, search]);
 
   const prevStep = useCallback(() => {
     if (!activeModule || currentStepIndex <= 0) return;
@@ -279,10 +345,10 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
           }
         : null,
     );
-    if (prevStepObj?.href && !isOnStepHref(pathname, prevStepObj)) {
-      router.push(prevStepObj.href);
+    if (prevStepObj?.href && !isGuidedFlowStepComplete(pathname, search, prevStepObj)) {
+      router.push(resolveGuidedFlowNavigationHref(pathname, prevStepObj.href));
     }
-  }, [activeModule, currentStepIndex, pathname, router]);
+  }, [activeModule, currentStepIndex, pathname, router, search]);
 
   const goToStep = useCallback(
     (index: number) => {
@@ -298,11 +364,11 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
             }
           : null,
       );
-      if (targetStep?.href && !isOnStepHref(pathname, targetStep)) {
-        router.push(targetStep.href);
+      if (targetStep?.href && !isGuidedFlowStepComplete(pathname, search, targetStep)) {
+        router.push(resolveGuidedFlowNavigationHref(pathname, targetStep.href));
       }
     },
-    [activeModule, pathname, router],
+    [activeModule, pathname, router, search],
   );
 
   const completeFlow = useCallback(() => {
