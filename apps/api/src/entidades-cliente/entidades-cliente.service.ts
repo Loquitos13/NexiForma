@@ -7,6 +7,10 @@ import type { CreateEntidadeClienteDto, UpdateEntidadeClienteDto } from "./dto/e
 import type { EntidadeClienteResposta } from "./entidade-cliente.types";
 import { assertDadosClienteCompletos } from "../faturas/faturacao-dados-legais.util";
 import { ViesService } from "../vies/vies.service";
+import {
+  mergeRegistoClienteMeta,
+  resolveRegistoClienteStatus,
+} from "../crm/entidade-cliente-registo.util";
 
 @Injectable()
 export class EntidadesClienteService {
@@ -15,22 +19,43 @@ export class EntidadesClienteService {
     private readonly vies: ViesService,
   ) {}
 
+  private mapEntidade<T extends { metadata?: unknown }>(
+    row: T,
+  ): T & { registoStatus: ReturnType<typeof resolveRegistoClienteStatus> } {
+    return {
+      ...row,
+      registoStatus: resolveRegistoClienteStatus(row.metadata as never),
+    };
+  }
+
+  private filterClientesVisiveis<T extends { metadata?: unknown }>(
+    rows: T[],
+    opts?: { incluirProspectos?: boolean },
+  ): T[] {
+    if (opts?.incluirProspectos) return rows;
+    return rows.filter((r) => {
+      const status = resolveRegistoClienteStatus(r.metadata as never);
+      return status !== "prospecto";
+    });
+  }
+
   async list(
     user: RequestUser,
-    opts?: { parceiro?: boolean; q?: string; page?: string; pageSize?: string },
+    opts?: { parceiro?: boolean; q?: string; page?: string; pageSize?: string; incluirProspectos?: boolean },
   ): Promise<PaginatedList<EntidadeClienteResposta> | EntidadeClienteResposta[]> {
     const tenantId = requireTenantId(user);
     const parceiro = opts?.parceiro;
 
     if (!opts?.page && !opts?.pageSize && !opts?.q) {
-      return this.prisma.entidadeCliente.findMany({
+      const rows = await this.prisma.entidadeCliente.findMany({
         where: {
           tenantId,
           ...(parceiro === true ? { isParceiro: true } : parceiro === false ? { isParceiro: false } : {}),
         },
         orderBy: { nome: "asc" },
         include: { _count: { select: { propostas: true } } },
-      }) as Promise<EntidadeClienteResposta[]>;
+      });
+      return this.filterClientesVisiveis(rows, opts).map((r) => this.mapEntidade(r)) as EntidadeClienteResposta[];
     }
 
     const pagination = parseListPagination(opts?.page, opts?.pageSize);
@@ -47,7 +72,7 @@ export class EntidadesClienteService {
       ];
     }
 
-    const [total, items] = await Promise.all([
+    const [totalRaw, itemsRaw] = await Promise.all([
       this.prisma.entidadeCliente.count({ where }),
       this.prisma.entidadeCliente.findMany({
         where,
@@ -57,6 +82,8 @@ export class EntidadesClienteService {
         include: { _count: { select: { propostas: true } } },
       }),
     ]);
+    const items = this.filterClientesVisiveis(itemsRaw, opts).map((r) => this.mapEntidade(r));
+    const total = opts?.incluirProspectos ? totalRaw : items.length;
 
     return {
       items: items as EntidadeClienteResposta[],
@@ -77,7 +104,40 @@ export class EntidadesClienteService {
     if (!row) {
       throw new NotFoundException("Entidade cliente não encontrada.");
     }
-    return row as EntidadeClienteResposta;
+    return this.mapEntidade(row) as EntidadeClienteResposta;
+  }
+
+  async listPendenciasRegisto(user: RequestUser) {
+    const tenantId = requireTenantId(user);
+    const rows = await this.prisma.entidadeCliente.findMany({
+      where: { tenantId },
+      orderBy: { nome: "asc" },
+      select: {
+        id: true,
+        nome: true,
+        nif: true,
+        metadata: true,
+        email: true,
+        telefone: true,
+      },
+    });
+    const pendentes = rows
+      .filter((r) => resolveRegistoClienteStatus(r.metadata) === "pendente_completar")
+      .map((r) => ({
+        id: r.id,
+        nome: r.nome,
+        nif: r.nif,
+        href: `/portal/clientes/${r.id}?tab=dados`,
+        itens: [
+          ...(r.email ? [] : ["Email de contacto"]),
+          ...(r.telefone ? [] : ["Telefone (recomendado)"]),
+          "Confirmar morada fiscal e dados de faturação",
+        ],
+      }));
+    return {
+      temPendencias: pendentes.length > 0,
+      entidades: pendentes,
+    };
   }
 
   async create(user: RequestUser, dto: CreateEntidadeClienteDto): Promise<EntidadeClienteResposta> {
@@ -107,11 +167,11 @@ export class EntidadesClienteService {
         moradaFiscal,
         email: dto.email?.trim() || null,
         telefone: dto.telefone?.trim() || null,
-        // Parceiros só se adicionam a partir de clientes existentes (PATCH isParceiro).
         isParceiro: false,
         descontoPercent: null,
+        metadata: mergeRegistoClienteMeta(null, { status: "cliente" }),
       },
-    }) as Promise<EntidadeClienteResposta>;
+    }).then((r) => this.mapEntidade(r)) as Promise<EntidadeClienteResposta>;
   }
 
   async update(

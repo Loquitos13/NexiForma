@@ -146,11 +146,19 @@ export class ConverterLeadDto {
   @MaxLength(200)
   nome?: string;
 
-  /** Obrigatório para criar/actualizar a ficha de cliente (faturação / parceiro). */
+  /** Obrigatório para concluir registo após aceite da proposta. */
   @IsString()
   @MinLength(5)
   @MaxLength(500)
   moradaFiscal!: string;
+
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  telefone?: string;
 }
 
 export class CriarPropostaFromLeadDto {

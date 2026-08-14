@@ -178,7 +178,7 @@ export default function PropostasPage() {
     const q = params.toString() ? `?${params}` : "";
     const [pRes, eRes, cRes] = await Promise.all([
       bffFetch(`/api/v1/propostas${q}`, { headers: { accept: "application/json" } }),
-      bffFetch("/api/v1/entidades-cliente", { headers: { accept: "application/json" } }),
+      bffFetch("/api/v1/entidades-cliente?incluirProspectos=true", { headers: { accept: "application/json" } }),
       bffFetch("/api/v1/cursos", { headers: { accept: "application/json" } }),
     ]);
     if (!pRes.ok) setError(await parseApiError(pRes));

@@ -170,7 +170,6 @@ export function UserSessionBar({
               });
               if (!ok) return;
               setBusy(true);
-              // Avisa dep. pedagógico ANTES de revogar a sessão / navegar.
               try {
                 await avisarPedagogicoLogout();
               } catch (err) {
@@ -180,6 +179,50 @@ export function UserSessionBar({
           }
         } catch {
           // Rede/API indisponível - não bloqueia o logout.
+        }
+      }
+
+      const isComercialStaff =
+        user?.role === "tenant_manager" ||
+        user?.role === "comercial" ||
+        user?.role === "coordenador_comercial";
+      if (area === "portal" && isComercialStaff) {
+        try {
+          const res = await bffFetch("/api/v1/entidades-cliente/pendencias-registo", {
+            headers: { accept: "application/json" },
+          });
+          if (res.ok) {
+            const data = (await res.json()) as {
+              temPendencias?: boolean;
+              entidades?: Array<{
+                id: string;
+                nome: string;
+                nif: string;
+                href: string;
+                itens: string[];
+              }>;
+            };
+            if (data.temPendencias && data.entidades?.length) {
+              setBusy(false);
+              const ok = await confirmPendencias({
+                title: "Registos de cliente incompletos",
+                question: "Tens a certeza que queres sair sem concluir o registo?",
+                hint:
+                  "Após aceite de proposta, complete a ficha do cliente (contactos e dados de faturação). Clique numa pendência para abrir a ficha.",
+                sessoes: data.entidades.map((e) => ({
+                  acaoLabel: e.nome,
+                  itens: e.itens.map((label) => ({ label, href: e.href })),
+                  href: e.href,
+                })),
+                confirmLabel: "Sair na mesma",
+                cancelLabel: "Ficar no portal",
+              });
+              if (!ok) return;
+              setBusy(true);
+            }
+          }
+        } catch {
+          // Não bloqueia logout se API indisponível.
         }
       }
 

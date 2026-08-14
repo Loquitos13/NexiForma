@@ -368,8 +368,14 @@ export function DataTable<T>({
             compact ? "w-11 px-2" : "px-4",
           )}
         >
-          <span className={compact ? "sr-only" : undefined}>Acções</span>
-          {compact ? "···" : "Acções"}
+          {compact ? (
+            <>
+              <span className="sr-only">Acções</span>
+              ···
+            </>
+          ) : (
+            "Acções"
+          )}
         </th>
       )}
     </tr>

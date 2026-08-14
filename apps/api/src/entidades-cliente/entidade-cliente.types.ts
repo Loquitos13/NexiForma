@@ -11,4 +11,5 @@ export type EntidadeClienteResposta = {
   descontoPercent: number | null;
   createdAt: Date;
   _count?: { propostas: number };
+  registoStatus?: "prospecto" | "pendente_completar" | "cliente";
 };

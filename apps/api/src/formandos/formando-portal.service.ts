@@ -381,22 +381,44 @@ export class FormandoPortalService {
       templates.map((t) => [t.categoria, t] as const).filter(([c]) => !!c),
     );
 
-    const checklist = politica.inscricaoObrigatorios.map((categoria) => {
+    const checklist = politica.inscricaoObrigatorios.map((categoria, ordem) => {
       const row = byCat.get(categoria);
       const templateCat = ACAO_TEMPLATE_CATEGORIAS[categoria];
       const template = templateByCat.get(templateCat) ?? null;
       const estado = row?.estado ?? "pendente";
+      const documentoGestor = row?.documentoAnexo ?? null;
+      const documentoLeitura =
+        documentoGestor ??
+        (template
+          ? {
+              id: template.id,
+              nome: template.nome,
+              mimeType: "application/pdf",
+              tamanhoBytes: null,
+              createdAt: template.createdAt,
+            }
+          : null);
+      const anterioresOk = politica.inscricaoObrigatorios
+        .slice(0, ordem)
+        .every((cat) => {
+          const st = byCat.get(cat)?.estado ?? "pendente";
+          return st === "aceite";
+        });
       return {
         categoria,
+        ordem,
         label: labelMatriculaDoc(categoria),
         estado,
-        completo: estado === "enviado" || estado === "aceite",
+        completo: estado === "aceite",
         aceiteEm: row?.aceiteEm ?? null,
-        documento: row?.documentoAnexo ?? null,
+        documento: documentoGestor,
+        documentoLeitura,
         template: template
           ? { id: template.id, nome: template.nome, createdAt: template.createdAt }
           : null,
-        aceitarSemFicheiro: categoria === "regulamento_formacao",
+        disponivel: Boolean(documentoLeitura),
+        podeAceitar: anterioresOk && Boolean(documentoLeitura) && estado !== "aceite",
+        consentimentoObrigatorio: true,
       };
     });
 
@@ -415,75 +437,14 @@ export class FormandoPortalService {
   }
 
   async uploadMatriculaDocumento(
-    user: RequestUser,
-    matriculaId: string,
-    file: Express.Multer.File,
-    categoriaRaw?: string,
+    _user: RequestUser,
+    _matriculaId: string,
+    _file: Express.Multer.File,
+    _categoriaRaw?: string,
   ) {
-    const { tenantId, profile, matricula } = await this.requireOwnMatricula(user, matriculaId);
-    const categoria = (categoriaRaw ?? "").trim();
-    if (!isMatriculaDocCategoria(categoria)) {
-      throw new BadRequestException("Categoria de documento de inscrição inválida.");
-    }
-    if (categoria === "regulamento_formacao") {
-      throw new BadRequestException("O regulamento é aceite digitalmente - não é necessário enviar ficheiro.");
-    }
-    if (!file?.buffer?.length) throw new BadRequestException("Ficheiro em falta.");
-    if (!FORMANDO_DOC_MIMES.has(file.mimetype)) {
-      throw new BadRequestException("Formato inválido - use JPG, PNG ou PDF (máx. 10 MB).");
-    }
-    if (file.size > FORMANDO_DOC_MAX_BYTES) {
-      throw new BadRequestException("Ficheiro demasiado grande (máx. 10 MB).");
-    }
-
-    const item = await this.prisma.matriculaDocumento.findUnique({
-      where: { matriculaId_categoria: { matriculaId, categoria } },
-    });
-    if (!item) throw new NotFoundException("Item documental da inscrição não encontrado.");
-
-    const storageKey = opaqueStorageKey(["docs", tenantId, "mat", matriculaId]);
-    await this.storage.putObject(storageKey, file.buffer, file.mimetype);
-
-    try {
-      const created = await this.prisma.$transaction(async (tx) => {
-        if (item.documentoAnexoId) {
-          const old = await tx.documentoAnexo.findFirst({ where: { id: item.documentoAnexoId } });
-          if (old) {
-            await tx.documentoAnexo.delete({ where: { id: old.id } });
-            await this.storage.deleteObject(old.storageKey).catch(() => undefined);
-          }
-        }
-        const doc = await tx.documentoAnexo.create({
-          data: {
-            tenantId,
-            formandoId: profile.id,
-            matriculaId,
-            acaoFormacaoId: matricula.turma.acaoFormacao.id,
-            categoria,
-            lado: "unico",
-            nome: file.originalname,
-            storageKey,
-            mimeType: file.mimetype,
-            tamanhoBytes: file.size,
-            createdByUserId: user.sub,
-            visivelFormando: true,
-          },
-        });
-        await tx.matriculaDocumento.update({
-          where: { id: item.id },
-          data: {
-            estado: "enviado",
-            documentoAnexoId: doc.id,
-            aceiteEm: null,
-          },
-        });
-        return doc;
-      });
-      return { id: created.id, nome: created.nome, categoria, estado: "enviado" as const };
-    } catch (err) {
-      await this.storage.deleteObject(storageKey);
-      throw err;
-    }
+    throw new BadRequestException(
+      "Os documentos de inscrição são disponibilizados pela coordenação pedagógica. Leia e registe o consentimento na aplicação.",
+    );
   }
 
   async aceitarMatriculaDocumento(
@@ -491,17 +452,70 @@ export class FormandoPortalService {
     matriculaId: string,
     categoriaRaw: string,
   ) {
-    const { tenantId } = await this.requireOwnMatricula(user, matriculaId);
-    const categoria = categoriaRaw.trim() as MatriculaDocCategoria;
-    if (categoria !== "regulamento_formacao") {
-      throw new BadRequestException("Só o regulamento de formação pode ser aceite sem ficheiro.");
+    const { tenantId, matricula } = await this.requireOwnMatricula(user, matriculaId);
+    const categoria = categoriaRaw.trim();
+    if (!isMatriculaDocCategoria(categoria)) {
+      throw new BadRequestException("Categoria de documento de inscrição inválida.");
     }
+
+    const acaoFull = await this.prisma.acaoFormacao.findFirst({
+      where: { id: matricula.turma.acaoFormacao.id, tenantId },
+      select: {
+        configuracaoMatricula: true,
+        curso: { select: { configuracaoMatricula: true } },
+      },
+    });
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true },
+    });
+    const politica = resolveDocumentosPolitica({
+      tenantMetadata: tenant?.metadata,
+      cursoConfig: acaoFull?.curso.configuracaoMatricula,
+      acaoConfig: acaoFull?.configuracaoMatricula,
+    });
+    const ordem = politica.inscricaoObrigatorios.indexOf(categoria);
+    if (ordem === -1) {
+      throw new BadRequestException("Documento não exigido nesta inscrição.");
+    }
+    for (let i = 0; i < ordem; i += 1) {
+      const prev = politica.inscricaoObrigatorios[i]!;
+      const prevRow = await this.prisma.matriculaDocumento.findUnique({
+        where: { matriculaId_categoria: { matriculaId, categoria: prev } },
+      });
+      if (prevRow?.estado !== "aceite") {
+        throw new BadRequestException(
+          `Deve aceitar primeiro «${labelMatriculaDoc(prev)}» antes de «${labelMatriculaDoc(categoria)}».`,
+        );
+      }
+    }
+
     const item = await this.prisma.matriculaDocumento.findUnique({
       where: { matriculaId_categoria: { matriculaId, categoria } },
     });
     if (!item || item.tenantId !== tenantId) {
       throw new NotFoundException("Item documental da inscrição não encontrado.");
     }
+    if (item.estado === "aceite") {
+      return { categoria, estado: "aceite" as const, aceiteEm: item.aceiteEm };
+    }
+
+    const templateCat = ACAO_TEMPLATE_CATEGORIAS[categoria as MatriculaDocCategoria];
+    const template = await this.prisma.documentoAnexo.findFirst({
+      where: {
+        tenantId,
+        acaoFormacaoId: matricula.turma.acaoFormacao.id,
+        categoria: templateCat,
+      },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (!item.documentoAnexoId && !template) {
+      throw new BadRequestException(
+        "Documento ainda não disponível — a coordenação pedagógica irá publicá-lo em breve.",
+      );
+    }
+
     return this.prisma.matriculaDocumento.update({
       where: { id: item.id },
       data: { estado: "aceite", aceiteEm: new Date() },

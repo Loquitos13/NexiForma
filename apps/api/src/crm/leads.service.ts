@@ -34,6 +34,11 @@ import type {
 } from "./dto/leads.dto";
 import { assertDadosClienteCompletos } from "../faturas/faturacao-dados-legais.util";
 import { ViesService } from "../vies/vies.service";
+import {
+  entidadeRegistoPendenteCompletar,
+  mergeRegistoClienteMeta,
+  resolveRegistoClienteStatus,
+} from "./entidade-cliente-registo.util";
 
 const LEAD_INCLUDE = {
   entidadeCliente: {
@@ -449,49 +454,78 @@ export class LeadsService {
     const tenantId = requireTenantId(user);
     const lead = await this.getOne(user, id);
 
-    if (lead.estado === "CONVERTIDO" && lead.entidadeClienteId) {
-      return {
-        lead,
-        entidade: lead.entidadeCliente,
-        alreadyConverted: true,
-      };
-    }
     if (lead.estado === "PERDIDO") {
       throw new BadRequestException("Lead marcado como perdido.");
     }
 
-    const nif = (dto.nif ?? lead.nif ?? "").replace(/\D/g, "");
-    if (!nif || nif.length !== 9) {
-      throw new BadRequestException("NIF é obrigatório para converter em entidade cliente.");
+    const entidadeExistente = lead.entidadeClienteId
+      ? await this.prisma.entidadeCliente.findFirst({
+          where: { id: lead.entidadeClienteId, tenantId },
+        })
+      : null;
+
+    if (
+      lead.estado === "CONVERTIDO" &&
+      entidadeExistente &&
+      resolveRegistoClienteStatus(entidadeExistente.metadata) === "cliente"
+    ) {
+      return {
+        lead,
+        entidade: entidadeExistente,
+        alreadyConverted: true,
+      };
     }
-    if (!this.validarNif(nif)) {
-      throw new BadRequestException("NIF inválido.");
+
+    if (
+      !entidadeExistente ||
+      !entidadeRegistoPendenteCompletar(entidadeExistente.metadata)
+    ) {
+      throw new BadRequestException(
+        "A conversão em cliente só é possível após aceite da proposta. Crie e envie uma proposta comercial; quando o cliente aceitar, complete aqui os dados em falta.",
+      );
     }
 
     const moradaFiscal =
       dto.moradaFiscal?.trim() ||
+      entidadeExistente.moradaFiscal?.trim() ||
       leadMoradaFiscalFromMetadata(lead.metadata) ||
       "";
-    if (moradaFiscal.length < 5) {
+    const nome = (dto.nome ?? entidadeExistente.nome ?? lead.empresaNome).trim();
+    const email = dto.email?.trim() || entidadeExistente.email?.trim() || lead.email?.trim();
+    const telefone =
+      dto.telefone?.trim() || entidadeExistente.telefone?.trim() || lead.telefone?.trim();
+
+    assertDadosClienteCompletos({
+      nome,
+      nif: entidadeExistente.nif,
+      moradaFiscal,
+    });
+    if (!email) {
       throw new BadRequestException(
-        "Morada fiscal é obrigatória para converter em entidade cliente.",
+        "Email de contacto é obrigatório para concluir o registo do cliente.",
       );
     }
 
-    const nome = (dto.nome ?? lead.empresaNome).trim();
-    const entidade = await this.resolverOuCriarEntidade(
-      tenantId,
-      lead,
-      nif,
-      nome,
-      moradaFiscal,
-    );
+    const entidade = await this.prisma.entidadeCliente.update({
+      where: { id: entidadeExistente.id },
+      data: {
+        nome,
+        moradaFiscal,
+        email,
+        telefone: telefone || null,
+        metadata: mergeRegistoClienteMeta(entidadeExistente.metadata, {
+          status: "cliente",
+          completadoEm: new Date().toISOString(),
+          completadoPorUserId: user.sub,
+        }),
+      },
+    });
 
     const updatedLead = await this.prisma.leadComercial.update({
       where: { id },
       data: {
         estado: "CONVERTIDO",
-        nif,
+        nif: entidade.nif,
         entidadeClienteId: entidade.id,
         convertidoEm: new Date(),
       },
@@ -585,6 +619,7 @@ export class LeadsService {
     });
 
     if (entidade) {
+      const status = resolveRegistoClienteStatus(entidade.metadata);
       entidade = await this.prisma.entidadeCliente.update({
         where: { id: entidade.id },
         data: {
@@ -592,6 +627,11 @@ export class LeadsService {
           moradaFiscal: moradaFinal || entidade.moradaFiscal,
           email: lead.email ?? entidade.email,
           telefone: lead.telefone ?? entidade.telefone,
+          ...(status !== "cliente" && status !== "pendente_completar"
+            ? {
+                metadata: mergeRegistoClienteMeta(entidade.metadata, { status: "prospecto" }),
+              }
+            : {}),
         },
       });
     } else {
@@ -603,6 +643,7 @@ export class LeadsService {
           moradaFiscal: moradaFinal,
           email: lead.email,
           telefone: lead.telefone,
+          metadata: mergeRegistoClienteMeta(null, { status: "prospecto" }),
         },
       });
     }

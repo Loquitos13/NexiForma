@@ -11,6 +11,7 @@ import {
   FileText,
   GraduationCap,
   ListTodo,
+  Trash2,
   Users,
 } from "lucide-react";
 import { PortalEnrollmentSection } from "@/app/_components/portal-enrollment-section";
@@ -39,6 +40,8 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  Dialog,
+  DialogContent,
   estadoBadge,
   PageHeader,
   Button,
@@ -179,6 +182,7 @@ export default function AcaoDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const refreshCompliance = useCallback(async () => {
     if (!acaoId || !canManage) return;
@@ -279,6 +283,23 @@ export default function AcaoDetailPage() {
     setBusy(false);
   }
 
+  async function eliminarAcao() {
+    if (!canManage || writeDisabled || !acao) return;
+    setBusy(true);
+    setError(null);
+    const res = await bffFetch(`/api/v1/acoes-formacao/${acaoId}`, {
+      method: "DELETE",
+      headers: { accept: "application/json" },
+    });
+    setBusy(false);
+    setConfirmDelete(false);
+    if (!res.ok) {
+      setError(await parseApiError(res));
+      return;
+    }
+    router.push("/portal/acoes");
+  }
+
   async function saveAcao(data: {
     titulo: string;
     estado: string;
@@ -345,6 +366,17 @@ export default function AcaoDetailPage() {
         actions={
           canManage ? (
             <div className="flex items-center gap-2">
+              {acao.estado === "PLANEADA" || acao.estado === "CANCELADA" ? (
+                <button
+                  type="button"
+                  disabled={busy || writeDisabled}
+                  onClick={() => setConfirmDelete(true)}
+                  className="inline-flex items-center gap-1.5 h-7 px-3 text-xs font-semibold rounded-lg border border-red-500/40 text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Eliminar
+                </button>
+              ) : null}
               {acao.estado === "EM_CURSO" && conclusao?.ready ? (
                 <button
                   type="button"
@@ -714,6 +746,23 @@ export default function AcaoDetailPage() {
           </Card>
         </div>
       ) : null}
+
+      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent title="Eliminar acção de formação">
+          <p className="text-sm text-slate-400">
+            Eliminar permanentemente «{acao?.titulo}»? Só é possível sem matrículas e fora de
+            execução/conclusão.
+          </p>
+          <div className="flex justify-end gap-2 pt-3">
+            <Button variant="ghost" onClick={() => setConfirmDelete(false)} disabled={busy}>
+              Cancelar
+            </Button>
+            <Button variant="danger" disabled={busy || writeDisabled} onClick={() => void eliminarAcao()}>
+              {busy ? "A eliminar…" : "Eliminar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

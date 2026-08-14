@@ -46,6 +46,7 @@ import type { PropostaLinhaDto } from "../propostas/dto/proposta-linha.dto";
 import { CrmAuditService } from "./crm-audit.service";
 import { CrmWebhooksService } from "./crm-webhooks.service";
 import { CrmAutomationService } from "./crm-automation.service";
+import { mergeRegistoClienteMeta, resolveRegistoClienteStatus } from "./entidade-cliente-registo.util";
 import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 import { HtmlPdfExportService } from "../common/html-pdf-export.service";
 import { EmailTemplates } from "../notificacoes/templates/email.templates";
@@ -668,7 +669,23 @@ export class ProposalService {
       },
     });
 
-    await this.converterLeadsAssociados(tenantId, proposta.entidadeClienteId);
+    const entidade = await this.prisma.entidadeCliente.findFirst({
+      where: { id: proposta.entidadeClienteId, tenantId },
+    });
+    if (entidade && resolveRegistoClienteStatus(entidade.metadata) !== "cliente") {
+      await this.prisma.entidadeCliente.update({
+        where: { id: entidade.id },
+        data: {
+          metadata: mergeRegistoClienteMeta(entidade.metadata, {
+            status: "pendente_completar",
+            propostaAceiteId: propostaId,
+            propostaAceiteEm: new Date().toISOString(),
+          }),
+        },
+      });
+    }
+
+    await this.converterLeadsAssociados(tenantId, proposta.entidadeClienteId, propostaId);
 
     await this.propostaNotificacoes.aoAlterarEstado(
       tenantId,
@@ -765,10 +782,11 @@ export class ProposalService {
     return { sucesso: true, estado: "REJEITADA" as const, already: false };
   }
 
-  /** Converte leads ligados à entidade quando o cliente aceita a proposta. */
+  /** Associa leads à entidade após aceite (conversão final após completar registo). */
   private async converterLeadsAssociados(
     tenantId: string,
     entidadeClienteId: string,
+    _propostaId: string,
   ) {
     const entidade = await this.prisma.entidadeCliente.findFirst({
       where: { id: entidadeClienteId, tenantId },
@@ -788,19 +806,16 @@ export class ProposalService {
 
     if (!leads.length) return;
 
-    const agora = new Date();
     await this.prisma.leadComercial.updateMany({
       where: { id: { in: leads.map((l) => l.id) } },
       data: {
-        estado: "CONVERTIDO",
         entidadeClienteId: entidade.id,
         nif: entidade.nif,
-        convertidoEm: agora,
       },
     });
 
     this.logger.log(
-      `✓ ${leads.length} lead(s) convertido(s) automaticamente após aceite (${entidade.nome})`,
+      `✓ ${leads.length} lead(s) associado(s) à entidade após aceite (${entidade.nome}) — registo pendente de conclusão comercial`,
     );
   }
 }

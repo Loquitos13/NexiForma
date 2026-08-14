@@ -13,6 +13,12 @@ import type { EntidadeClienteResposta } from "./entidade-cliente.types";
 export class EntidadesClienteController {
   constructor(private readonly entidades: EntidadesClienteService) {}
 
+  @Get("pendencias-registo")
+  @Roles("tenant_manager", "comercial", "coordenador_comercial")
+  pendenciasRegisto(@CurrentUser() user: RequestUser) {
+    return this.entidades.listPendenciasRegisto(user);
+  }
+
   @Get()
   @Roles("tenant_manager", "comercial", "coordenador_pedagogico")
   list(
@@ -21,10 +27,17 @@ export class EntidadesClienteController {
     @Query("q") q?: string,
     @Query("page") page?: string,
     @Query("pageSize") pageSize?: string,
+    @Query("incluirProspectos") incluirProspectos?: string,
   ) {
     const filter =
       parceiro === "true" ? true : parceiro === "false" ? false : undefined;
-    return this.entidades.list(user, { parceiro: filter, q, page, pageSize });
+    return this.entidades.list(user, {
+      parceiro: filter,
+      q,
+      page,
+      pageSize,
+      incluirProspectos: incluirProspectos === "true",
+    });
   }
 
   @Get(":id")

@@ -175,7 +175,7 @@ export default function CrmLeadsPage() {
   const sugestoesPorLead = useSugestoesPendentesPorLead();
   const [motivoPerda, setMotivoPerda] = useState("");
   const [convertNif, setConvertNif] = useState("");
-  const [convertMorada, setConvertMorada] = useState("");
+  const [convertEmail, setConvertEmail] = useState("");
   const [form, setForm] = useState(emptyForm);
   const [customFields, setCustomFields] = useState<Record<string, unknown>>({});
   const [leadFieldDefs, setLeadFieldDefs] = useState<CrmCustomFieldDef[]>([]);
@@ -390,6 +390,8 @@ export default function CrmLeadsPage() {
       body: JSON.stringify({
         nif: convertNif || activeLead.nif || undefined,
         moradaFiscal: convertMorada.trim(),
+        email: convertEmail.trim() || activeLead.email || undefined,
+        telefone: activeLead.telefone || undefined,
       }),
     });
     setBusy(false);
@@ -401,6 +403,7 @@ export default function CrmLeadsPage() {
     setConvertOpen(false);
     setConvertNif("");
     setConvertMorada("");
+    setConvertEmail("");
     setActiveLead(null);
     setMsg(`Convertido em entidade «${data.entidade.nome}».`);
     await load();
@@ -410,6 +413,7 @@ export default function CrmLeadsPage() {
     setActiveLead(lead);
     setConvertNif(lead.nif ?? "");
     setConvertMorada(leadMoradaFiscal(lead));
+    setConvertEmail(lead.email ?? "");
     setConvertOpen(true);
   }
 
@@ -667,7 +671,7 @@ export default function CrmLeadsPage() {
                       onClick={() => abrirConverter(l)}
                     >
                       <Building2 className="h-3.5 w-3.5" />
-                      Converter
+                      Completar registo
                     </Button>
                     <Button
                       size="sm"
@@ -844,16 +848,23 @@ export default function CrmLeadsPage() {
       </Dialog>
 
       <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
-        <DialogContent title="Converter em entidade cliente">
+        <DialogContent title="Completar registo de cliente">
           <p className="text-sm text-slate-400 mb-3">
-            Cria ou actualiza uma entidade B2B a partir deste lead. NIF e morada fiscal são
-            obrigatórios para faturação e parceiros.
+            Disponível após aceite da proposta comercial. Preencha os dados em falta para concluir
+            o registo do cliente (faturação e CRM).
           </p>
           <Input
-            label="NIF *"
+            label="NIF"
             value={convertNif}
             onChange={(e) => setConvertNif(e.target.value.replace(/\D/g, "").slice(0, 9))}
             maxLength={9}
+            disabled
+          />
+          <Input
+            label="Email de contacto *"
+            type="email"
+            value={convertEmail}
+            onChange={(e) => setConvertEmail(e.target.value)}
             required
           />
           <Textarea
@@ -872,13 +883,13 @@ export default function CrmLeadsPage() {
               disabled={
                 busy ||
                 writeDisabled ||
-                convertNif.length !== 9 ||
-                convertMorada.trim().length < 5
+                convertMorada.trim().length < 5 ||
+                !convertEmail.trim()
               }
               onClick={() => void confirmarConverter()}
             >
               <UserPlus className="h-3.5 w-3.5" />
-              Converter
+              Concluir registo
             </Button>
           </div>
         </DialogContent>

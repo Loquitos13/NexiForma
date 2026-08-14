@@ -55,6 +55,10 @@ export class PropostaNotificacoesService {
     const portalMensagem = notaCliente
       ? `${proposta.titulo} - ${estadoLabel}. Nota do cliente: ${notaCliente}`
       : `${proposta.titulo} - ${estadoLabel}`;
+    const portalMensagemGestor =
+      estadoNovo === "ACEITE"
+        ? `${portalMensagem}. Complete o registo do cliente na ficha CRM.`
+        : portalMensagem;
 
     // Gestor + coordenador comercial (sem duplicar o comercial que enviou).
     const gestao = await this.prisma.user.findMany({
@@ -79,7 +83,7 @@ export class PropostaNotificacoesService {
         userId: g.id,
         tipo: "proposta_estado",
         titulo: `Proposta ${proposta.codigo} ${estadoLabel}`,
-        mensagem: portalMensagem.slice(0, 280),
+        mensagem: portalMensagemGestor.slice(0, 280),
         link: portalLink,
         email: to ? { to, subject: tpl.subject, text: tpl.text, html: tpl.html } : undefined,
         push: {
@@ -110,7 +114,7 @@ export class PropostaNotificacoesService {
           userId: comercial.id,
           tipo: "proposta_estado",
           titulo: `Proposta ${proposta.codigo} ${estadoLabel}`,
-          mensagem: portalMensagem.slice(0, 280),
+          mensagem: portalMensagemGestor.slice(0, 280),
           link: portalLink,
           email: to
             ? { to, subject: tpl.subject, text: tpl.text, html: tpl.html }

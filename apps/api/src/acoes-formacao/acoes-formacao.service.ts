@@ -981,4 +981,37 @@ export class AcoesFormacaoService {
     });
     return { body: obj.body, contentType: doc.mimeType || obj.contentType, nome: doc.nome };
   }
+
+  async remove(user: RequestUser, id: string) {
+    const tenantId = requireTenantId(user);
+    const acao = await this.prisma.acaoFormacao.findFirst({
+      where: { id, tenantId },
+      include: {
+        turmas: { include: { _count: { select: { matriculas: true } } } },
+        _count: { select: { sigoSubmissoes: true, cronogramas: true } },
+      },
+    });
+    if (!acao) {
+      throw new NotFoundException("Acção de formação não encontrada.");
+    }
+    if (acao.estado === "EM_CURSO" || acao.estado === "CONCLUIDA") {
+      throw new BadRequestException(
+        "Não é possível eliminar acções em curso ou concluídas.",
+      );
+    }
+    const matriculas = acao.turmas.reduce((n, t) => n + (t._count?.matriculas ?? 0), 0);
+    if (matriculas > 0) {
+      throw new BadRequestException(
+        "Não é possível eliminar acções com formandos matriculados. Remova as matrículas primeiro.",
+      );
+    }
+    if ((acao._count?.sigoSubmissoes ?? 0) > 0) {
+      throw new BadRequestException(
+        "Não é possível eliminar acções com submissões SIGO registadas.",
+      );
+    }
+
+    await this.prisma.acaoFormacao.delete({ where: { id } });
+    return { ok: true, id };
+  }
 }

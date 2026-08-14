@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -129,5 +130,11 @@ export class AcoesFormacaoController {
   @Roles("tenant_manager", "coordenador_pedagogico")
   concluir(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
     return this.acoesFormacao.concluir(user, id);
+  }
+
+  @Delete(":id")
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  remove(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
+    return this.acoesFormacao.remove(user, id);
   }
 }
