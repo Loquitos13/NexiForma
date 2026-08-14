@@ -3,7 +3,6 @@ import Script from "next/script";
 import "./globals.css";
 import "./ui-themes.css";
 import { APP_NAME } from "@nexiforma/shared";
-import { NexiGuia } from "@/components/guide/nexi-guia";
 import { AppProviders } from "@/components/ui/app-providers";
 
 /** Boot: usa cache local do tema (se existir); senão meia-noite. /auth/me confirma a seguir. */
@@ -53,10 +52,7 @@ export default function RootLayout({
         <Script id="ui-theme-boot" strategy="beforeInteractive">
           {UI_THEME_BOOT}
         </Script>
-        <AppProviders>
-          {children}
-          <NexiGuia />
-        </AppProviders>
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

@@ -60,6 +60,7 @@ export type ActiveGuidedFlowContextValue = {
   completeFlow: () => void;
   closeFlow: () => void;
   toggleBubble: () => void;
+  openBubble: () => void;
   setMinimized: (min: boolean) => void;
 };
 
@@ -154,7 +155,11 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
       if (raw) {
         const parsed = JSON.parse(raw) as GuidedFlowProgressState;
         if (parsed.moduleId) {
-          setActiveState(parsed);
+          setActiveState({
+            ...parsed,
+            bubbleOpen: true,
+            minimized: false,
+          });
         }
       }
     } catch {
@@ -305,6 +310,12 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
     );
   }, []);
 
+  const openBubble = useCallback(() => {
+    setActiveState((prev) =>
+      prev ? { ...prev, bubbleOpen: true, minimized: false } : null,
+    );
+  }, []);
+
   const setMinimized = useCallback((min: boolean) => {
     setActiveState((prev) => (prev ? { ...prev, minimized: min } : null));
   }, []);
@@ -326,6 +337,7 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
       completeFlow,
       closeFlow,
       toggleBubble,
+      openBubble,
       setMinimized,
     }),
     [
@@ -344,6 +356,7 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
       completeFlow,
       closeFlow,
       toggleBubble,
+      openBubble,
       setMinimized,
     ],
   );
@@ -371,6 +384,7 @@ const DEFAULT_FLOW_VALUE: ActiveGuidedFlowContextValue = {
   completeFlow: () => {},
   closeFlow: () => {},
   toggleBubble: () => {},
+  openBubble: () => {},
   setMinimized: () => {},
 };
 

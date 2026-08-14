@@ -22,7 +22,7 @@ export const GUIDED_FLOW_FORMACAO: GuidedFlowModule[] = [
         description:
           "Define designação, código UFCD, carga horária e modalidade. Podes seleccionar um curso existente ou criar novo.",
         href: "/portal/fluxo?v=setup-completo",
-        tip: "O curso é a base do catálogo — todas as acções formativas ligam-se a um curso.",
+        tip: "O curso é a base do catálogo - todas as acções formativas ligam-se a um curso.",
       },
       {
         title: "Acção",

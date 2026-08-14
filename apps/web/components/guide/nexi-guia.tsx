@@ -426,7 +426,7 @@ export function NexiGuia() {
 
   return (
     <div data-nexiguia-root className={showChat ? "nexiguia-root-open" : undefined}>
-      {/* Balão de fala — só com fluxo guiado activo */}
+      {/* Balão de fala - só com fluxo guiado activo */}
       {!showChat && !mobileNavOpen ? (
         <Suspense fallback={null}>
           <NexiGuiaSpeechBubble />

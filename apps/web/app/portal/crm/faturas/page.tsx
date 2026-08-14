@@ -475,7 +475,7 @@ export default function CrmFaturasPage() {
       <TenantAuditTrail
         apiPath="/api/v1/crm/faturas/audit-trail"
         title="Auditoria SAF-T & faturação"
-        description="Exports SAF-T, pacotes de auditoria fiscal, emissões, comunicações AT e anulações — últimos 90 dias."
+        description="Exports SAF-T, pacotes de auditoria fiscal, emissões, comunicações AT e anulações - últimos 90 dias."
         actionPresets={FATURACAO_AUDIT_ACTION_PRESETS}
       />
 

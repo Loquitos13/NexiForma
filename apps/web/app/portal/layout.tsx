@@ -32,6 +32,7 @@ import { RelatorioJobsProvider } from "@/lib/relatorios/relatorio-jobs-context";
 import { Suspense } from "react";
 import { ActiveGuidedFlowProvider } from "@/lib/client/active-guided-flow-context";
 import { GuidedFlowAnchorBubble } from "@/components/guide/guided-flow-anchor-bubble";
+import { NexiGuia } from "@/components/guide/nexi-guia";
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -39,6 +40,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       <RelatorioJobsProvider>
         <ActiveGuidedFlowProvider>
           <PortalLayoutInner>{children}</PortalLayoutInner>
+          <NexiGuia />
         </ActiveGuidedFlowProvider>
       </RelatorioJobsProvider>
     </TenantEntitlementsProvider>

@@ -1,5 +1,5 @@
 /**
- * Rotas /api/v1/* anónimas — não injectar Bearer derivado de cookies
+ * Rotas /api/v1/* anónimas - não injectar Bearer derivado de cookies
  * (evita 401 em accept-invite quando há sessão expirada no browser).
  */
 const ANONYMOUS_V1_PREFIXES = [

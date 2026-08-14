@@ -18,7 +18,7 @@ type AnchorRect = {
 };
 
 /**
- * Apontador na vista real — só aparece com fluxo guiado activo no passo actual.
+ * Apontador na vista real - só aparece com fluxo guiado activo no passo actual.
  * Nunca mostra balões genéricos fora de um fluxo.
  */
 export function GuidedFlowAnchorBubble() {

@@ -25,7 +25,7 @@ type Props<T> = {
   stickyHeader?: boolean;
   sort?: SortState | null;
   onSortChange?: (sort: SortState) => void;
-  /** Dados já ordenados no servidor — não reordena no cliente. */
+  /** Dados já ordenados no servidor - não reordena no cliente. */
   disableClientSort?: boolean;
   paginate?: boolean;
   defaultPageSize?: number;

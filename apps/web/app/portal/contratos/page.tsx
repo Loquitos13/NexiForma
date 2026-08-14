@@ -264,7 +264,7 @@ export default function ContratosPage() {
       <CrmContextNav tabs={CONTRATOS_NAV} ariaLabel="Secções Contratos" />
       <PageHeader
         title="Contratos"
-        description="Propostas aceites pelo cliente — contratos vigentes, validade e facturação."
+        description="Propostas aceites pelo cliente - contratos vigentes, validade e facturação."
         actions={
           canManageCrm ? (
             <Button asChild disabled={writeDisabled}>
@@ -288,7 +288,7 @@ export default function ContratosPage() {
             </div>
             <div>
               <p className="text-xs text-slate-500">Vigentes</p>
-              <p className="text-xl font-semibold text-slate-100">{loading ? "—" : resumo.vigentes}</p>
+              <p className="text-xl font-semibold text-slate-100">{loading ? "-" : resumo.vigentes}</p>
             </div>
           </CardContent>
         </Card>
@@ -299,7 +299,7 @@ export default function ContratosPage() {
             </div>
             <div>
               <p className="text-xs text-slate-500">Expirados</p>
-              <p className="text-xl font-semibold text-slate-100">{loading ? "—" : resumo.expirados}</p>
+              <p className="text-xl font-semibold text-slate-100">{loading ? "-" : resumo.expirados}</p>
             </div>
           </CardContent>
         </Card>
@@ -311,7 +311,7 @@ export default function ContratosPage() {
             <div>
               <p className="text-xs text-slate-500">Valor total</p>
               <p className="text-xl font-semibold text-slate-100">
-                {loading ? "—" : fmtEuro(resumo.valorTotal)}
+                {loading ? "-" : fmtEuro(resumo.valorTotal)}
               </p>
             </div>
           </CardContent>

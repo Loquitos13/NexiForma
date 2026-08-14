@@ -206,7 +206,7 @@ export default function CompliancePage() {
       <TenantAuditTrail
         apiPath="/api/v1/compliance/audit-trail"
         title="Auditoria DGERT & SIGO"
-        description="Exports de dossiê, pacotes de inspeção, submissões SIGO e arquivos — últimos 90 dias."
+        description="Exports de dossiê, pacotes de inspeção, submissões SIGO e arquivos - últimos 90 dias."
         actionPresets={DGERT_AUDIT_ACTION_PRESETS}
       />
     </>

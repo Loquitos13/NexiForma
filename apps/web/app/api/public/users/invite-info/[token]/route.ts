@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 type RouteCtx = { params: Promise<{ token?: string }> };
 
-/** Pré-visualização de convite — rota anónima dedicada. */
+/** Pré-visualização de convite - rota anónima dedicada. */
 export async function GET(req: Request, ctx: RouteCtx) {
   const { token } = await ctx.params;
   if (!token?.trim()) {

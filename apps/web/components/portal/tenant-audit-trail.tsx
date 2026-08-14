@@ -36,7 +36,7 @@ type TenantAuditTrailProps = {
 };
 
 function formatPayload(payload: Record<string, unknown> | undefined): string {
-  if (!payload || Object.keys(payload).length === 0) return "—";
+  if (!payload || Object.keys(payload).length === 0) return "-";
   const parts: string[] = [];
   if (payload.filename != null) parts.push(String(payload.filename));
   if (payload.ano != null) {
