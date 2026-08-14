@@ -1,9 +1,9 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Building2 } from "lucide-react";
+import { Building2, Search, UserPlus } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
@@ -17,6 +17,8 @@ import {
   CardTitle,
   Input,
   PageHeader,
+  PaginatedDataTable,
+  type Column,
 } from "@/components/ui";
 
 type ClienteForm = {
@@ -33,6 +35,11 @@ type ClienteResumo = {
   id: string;
   nome: string;
   nif: string;
+};
+
+type ClienteRow = ClienteResumo & {
+  email: string | null;
+  telefone: string | null;
 };
 
 const EMPTY: ClienteForm = {
@@ -76,6 +83,66 @@ export default function RegistoClienteFormacaoPage() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [clienteExistente, setClienteExistente] = useState<ClienteResumo | null>(null);
+  const [clientes, setClientes] = useState<ClienteRow[]>([]);
+  const [loadingClientes, setLoadingClientes] = useState(true);
+  const [search, setSearch] = useState("");
+
+  const loadClientes = useCallback(async () => {
+    setLoadingClientes(true);
+    const params = new URLSearchParams();
+    if (search.trim()) params.set("q", search.trim());
+    params.set("pageSize", "200");
+    const res = await bffFetch(`/api/v1/entidades-cliente?${params}`, {
+      headers: { accept: "application/json" },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const rows = Array.isArray(data)
+        ? (data as ClienteRow[])
+        : ((data as { items?: ClienteRow[] }).items ?? []);
+      setClientes(rows);
+    }
+    setLoadingClientes(false);
+  }, [search]);
+
+  useEffect(() => {
+    if (!canManage) return;
+    const t = setTimeout(() => void loadClientes(), search ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [canManage, loadClientes, search]);
+
+  const columns = useMemo<Column<ClienteRow>[]>(
+    () => [
+      {
+        key: "nome",
+        header: "Designação",
+        sortable: true,
+        sortValue: (c) => c.nome,
+        cell: (c) => <span className="font-medium text-slate-100">{c.nome}</span>,
+      },
+      {
+        key: "nif",
+        header: "NIF",
+        sortable: true,
+        mobilePriority: true,
+        sortValue: (c) => c.nif,
+        cell: (c) => <span className="tabular-nums text-slate-300">{c.nif}</span>,
+      },
+      {
+        key: "email",
+        header: "Email",
+        hideOnMobile: true,
+        cell: (c) => <span className="text-slate-400">{c.email ?? "-"}</span>,
+      },
+      {
+        key: "telefone",
+        header: "Telemóvel",
+        hideOnMobile: true,
+        cell: (c) => <span className="text-slate-400">{c.telefone ?? "-"}</span>,
+      },
+    ],
+    [],
+  );
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -171,7 +238,7 @@ export default function RegistoClienteFormacaoPage() {
   }
 
   return (
-    <div className="max-w-2xl space-y-5">
+    <div className="max-w-5xl space-y-5">
       <PageHeader
         title="Clientes"
         description="Registe empresas cliente para associar formandos e acções de formação."
@@ -268,6 +335,39 @@ export default function RegistoClienteFormacaoPage() {
               {busy ? "A criar cliente…" : "Criar cliente"}
             </Button>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Clientes registados</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="relative max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Pesquisar por nome ou NIF…"
+              className="pl-9"
+            />
+          </div>
+          <PaginatedDataTable
+            columns={columns}
+            data={clientes}
+            keyField="id"
+            loading={loadingClientes}
+            getRowHref={(c) => `/portal/clientes/${c.id}`}
+            emptyMessage="Ainda não há clientes registados."
+            rowActions={(c) => (
+              <Link href={`/portal/formandos?cliente=${encodeURIComponent(c.id)}`}>
+                <Button size="sm" variant="secondary">
+                  <UserPlus className="h-3.5 w-3.5" />
+                  Registar formando
+                </Button>
+              </Link>
+            )}
+          />
         </CardContent>
       </Card>
     </div>

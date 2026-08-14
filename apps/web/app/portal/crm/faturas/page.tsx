@@ -231,6 +231,7 @@ export default function CrmFaturasPage() {
     {
       key: "entidade",
       header: "Cliente",
+      hideOnMobile: true,
       cell: (f) => (
         <div className="text-sm">
           <Link
@@ -246,11 +247,13 @@ export default function CrmFaturasPage() {
     {
       key: "valor",
       header: "Valor (s/ IVA)",
+      hideOnMobile: true,
       cell: (f) => <span className="font-medium tabular-nums">{fmtEuro(f.valorCentavos)}</span>,
     },
     {
       key: "iva",
       header: "IVA",
+      hideOnMobile: true,
       cell: (f) => (
         <span className="text-slate-400 tabular-nums text-sm">{fmtEuro(f.ivaCentavos)}</span>
       ),
@@ -258,6 +261,7 @@ export default function CrmFaturasPage() {
     {
       key: "estado",
       header: "Estado",
+      mobilePriority: true,
       cell: (f) => (
         <div>
           <FaturaEstadoBadge estado={f.estado} />
@@ -444,20 +448,19 @@ export default function CrmFaturasPage() {
             data={faturas}
             keyField="id"
             loading={loading}
+            getRowHref={(f) => withPortalFrom(`/portal/crm/faturas/${f.id}`, pathname)}
             emptyMessage={
               searchQuery
                 ? "Nenhuma fatura corresponde à pesquisa."
                 : "Sem faturas - clique em «Nova fatura» para começar."
             }
             rowActions={(f) => (
-              <div className="flex justify-end">
-                <Link href={withPortalFrom(`/portal/crm/faturas/${f.id}`, pathname)}>
-                  <Button size="sm" variant="secondary">
-                    <Pencil className="h-3.5 w-3.5" />
-                    {f.estado === "RASCUNHO" ? "Editar" : "Abrir"}
-                  </Button>
-                </Link>
-              </div>
+              <Link href={withPortalFrom(`/portal/crm/faturas/${f.id}`, pathname)}>
+                <Button size="sm" variant="secondary">
+                  <Pencil className="h-3.5 w-3.5" />
+                  {f.estado === "RASCUNHO" ? "Editar" : "Abrir"}
+                </Button>
+              </Link>
             )}
           />
         </CardContent>

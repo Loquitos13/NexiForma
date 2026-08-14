@@ -29,16 +29,19 @@ export function ClienteFichaFaturas({ entidadeId, faturas, loading, canCreate }:
     {
       key: "estado",
       header: "Estado",
+      mobilePriority: true,
       cell: (f) => <FaturaEstadoBadge estado={f.estado as never} />,
     },
     {
       key: "valor",
       header: "Valor",
+      hideOnMobile: true,
       cell: (f) => <span className="tabular-nums text-slate-200">{fmtEuro(f.valorCentavos)}</span>,
     },
     {
       key: "proposta",
       header: "Proposta",
+      hideOnMobile: true,
       cell: (f) => (
         <span className="text-sm text-slate-400">{f.proposta?.codigo ?? "-"}</span>
       ),
@@ -46,6 +49,7 @@ export function ClienteFichaFaturas({ entidadeId, faturas, loading, canCreate }:
     {
       key: "data",
       header: "Data",
+      hideOnMobile: true,
       cell: (f) => <span className="text-sm text-slate-500">{fmtDate(f.createdAt)}</span>,
     },
   ];
@@ -69,6 +73,7 @@ export function ClienteFichaFaturas({ entidadeId, faturas, loading, canCreate }:
           data={faturas}
           keyField="id"
           loading={loading}
+          getRowHref={(f) => `/portal/crm/faturas/${f.id}`}
           emptyMessage="Sem faturas para este cliente."
         />
       </CardContent>

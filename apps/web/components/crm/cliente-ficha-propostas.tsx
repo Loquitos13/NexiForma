@@ -32,16 +32,19 @@ export function ClienteFichaPropostas({ entidadeId, propostas, loading, showAuto
     {
       key: "estado",
       header: "Estado",
+      mobilePriority: true,
       cell: (p) => <PropostaEstadoBadge estado={p.estado as never} />,
     },
     {
       key: "valor",
       header: "Valor",
+      hideOnMobile: true,
       cell: (p) => <span className="tabular-nums text-slate-200">{fmtEuro(p.valorCentavos)}</span>,
     },
     {
       key: "validade",
       header: "Validade",
+      hideOnMobile: true,
       cell: (p) => (
         <span className="text-sm text-slate-500">
           {p.validadeAte ? fmtDate(p.validadeAte) : "-"}
@@ -80,6 +83,7 @@ export function ClienteFichaPropostas({ entidadeId, propostas, loading, showAuto
           data={propostas}
           keyField="id"
           loading={loading}
+          getRowHref={(p) => `/portal/propostas/${p.id}`}
           emptyMessage="Sem propostas para este cliente."
         />
       </CardContent>

@@ -319,12 +319,12 @@ export default function ClientesPage() {
             data={filtered}
             keyField="id"
             loading={loading}
+            getRowHref={(c) => withPortalFrom(`/portal/clientes/${c.id}`, "/portal/clientes")}
             emptyMessage={
               search
                 ? "Nenhum cliente corresponde à pesquisa."
                 : "Sem clientes - clique em «Novo cliente» para registar o primeiro."
             }
-            onRowClick={(c) => router.push(withPortalFrom(`/portal/clientes/${c.id}`, "/portal/clientes"))}
             rowActions={
               canGerirClientes
                 ? (c) => (

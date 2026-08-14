@@ -1,8 +1,11 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
+import { useCompactTable } from "@/lib/client/use-compact-table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TableRowActions } from "@/components/ui/table-row-actions";
 import { cn } from "@/lib/ui/cn";
 
 /* ──────────────────────────────────────────────
@@ -33,8 +36,10 @@ export interface Column<T> {
   headerFilterLabel?: string;
   /** Valor usado na ordenação (quando sortable). */
   sortValue?: (row: T) => string | number | boolean | null | undefined;
-  /** Esconde a coluna em viewports &lt; sm (tabelas compactas em mobile). */
+  /** Esconde a coluna em viewports compactos (mobile/tablet). */
   hideOnMobile?: boolean;
+  /** Mostrar em mobile/tablet (por defeito só a 1.ª coluna + até 1 prioritária). */
+  mobilePriority?: boolean;
 }
 
 export type SortState = {
@@ -98,6 +103,17 @@ export function sortRows<T>(data: T[], columns: Column<T>[], sort: SortState | n
   });
 }
 
+function compactVisibleColumnKeys<T>(columns: Column<T>[]): Set<string> {
+  const eligible = columns.filter((c) => !c.hideOnMobile);
+  const keys = new Set<string>();
+  if (eligible[0]) keys.add(String(eligible[0].key));
+  for (const col of eligible) {
+    if (col.mobilePriority) keys.add(String(col.key));
+  }
+  if (keys.size < 2 && eligible[1]) keys.add(String(eligible[1].key));
+  return keys;
+}
+
 /* ──────────────────────────────────────────────
    DataTable
 ────────────────────────────────────────────── */
@@ -108,6 +124,8 @@ interface DataTableProps<T> {
   loading?: boolean;
   emptyMessage?: string;
   onRowClick?: (row: T) => void;
+  /** Navegação ao clicar na linha (alternativa a onRowClick). */
+  getRowHref?: (row: T) => string | undefined;
   className?: string;
   /** Renders action buttons at the end of each row */
   rowActions?: (row: T) => React.ReactNode;
@@ -138,6 +156,7 @@ export function DataTable<T>({
   loading,
   emptyMessage = "Sem resultados.",
   onRowClick,
+  getRowHref,
   className,
   rowActions,
   selection,
@@ -147,14 +166,43 @@ export function DataTable<T>({
   onSortChange,
   disableClientSort = false,
 }: DataTableProps<T>) {
+  const router = useRouter();
+  const compact = useCompactTable();
   const hasActions = Boolean(rowActions);
   const hasSelection = Boolean(selection);
   const [uncontrolledSort, setUncontrolledSort] = React.useState<SortState | null>(null);
   const sort = controlledSort !== undefined ? controlledSort : uncontrolledSort;
 
+  const visibleKeys = React.useMemo(
+    () => (compact ? compactVisibleColumnKeys(columns) : null),
+    [compact, columns],
+  );
+
+  const displayColumns = React.useMemo(
+    () =>
+      columns.filter((col) => {
+        if (!compact) return true;
+        if (col.hideOnMobile) return false;
+        return visibleKeys?.has(String(col.key)) ?? false;
+      }),
+    [columns, compact, visibleKeys],
+  );
+
   const sortedData = React.useMemo(
     () => (disableClientSort ? data : sortRows(data, columns, sort)),
     [data, columns, sort, disableClientSort],
+  );
+
+  const openRow = React.useCallback(
+    (row: T) => {
+      if (onRowClick) {
+        onRowClick(row);
+        return;
+      }
+      const href = getRowHref?.(row);
+      if (href) router.push(href);
+    },
+    [getRowHref, onRowClick, router],
   );
 
   function toggleSort(col: Column<T>) {
@@ -189,12 +237,12 @@ export function DataTable<T>({
 
   const tableClass = cn(
     "w-full text-sm",
-    fixedLayout ? "table-fixed" : "min-w-[640px]",
+    fixedLayout ? "table-fixed" : compact ? "w-full" : "min-w-[640px]",
   );
 
   const headerRow = (
     <tr className="border-b border-slate-700/50 bg-slate-900">
-      {columns.map((col) => {
+      {displayColumns.map((col) => {
         const key = String(col.key);
         const active = sort?.key === key;
         const isCycle = Boolean(col.sortCycle?.length);
@@ -223,7 +271,6 @@ export function DataTable<T>({
             key={key}
             className={cn(
               "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400",
-              col.hideOnMobile && "hidden sm:table-cell",
               col.headerClassName,
             )}
           >
@@ -268,9 +315,7 @@ export function DataTable<T>({
                 <SortIcon
                   className={cn(
                     "h-3.5 w-3.5 shrink-0 transition-opacity",
-                    active
-                      ? "opacity-100"
-                      : "opacity-0 group-hover/sort:opacity-80",
+                    active ? "opacity-100" : "opacity-40 group-hover/sort:opacity-90",
                   )}
                   aria-hidden
                 />
@@ -305,7 +350,7 @@ export function DataTable<T>({
                     "h-3.5 w-3.5 shrink-0 transition-opacity",
                     col.headerFilterLabel
                       ? "opacity-100"
-                      : "opacity-0 group-hover/sort:opacity-80",
+                      : "opacity-40 group-hover/sort:opacity-90",
                   )}
                   aria-hidden
                 />
@@ -317,27 +362,30 @@ export function DataTable<T>({
         );
       })}
       {hasActions && (
-        <th className="sticky top-0 z-10 bg-slate-900 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Acções
+        <th
+          className={cn(
+            "sticky top-0 z-10 bg-slate-900 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-400",
+            compact ? "w-11 px-2" : "px-4",
+          )}
+        >
+          <span className={compact ? "sr-only" : undefined}>Acções</span>
+          {compact ? "···" : "Acções"}
         </th>
       )}
     </tr>
   );
 
   const bodyRows = loading ? (
-    Array.from({ length: 5 }).map((_, row) => (
+    Array.from({ length: compact ? 3 : 5 }).map((_, row) => (
       <tr key={row} className="border-b border-slate-700/30">
-        {columns.map((col) => (
-          <td
-            key={String(col.key)}
-            className={cn("px-4 py-3.5", col.hideOnMobile && "hidden sm:table-cell", col.className)}
-          >
+        {displayColumns.map((col) => (
+          <td key={String(col.key)} className={cn("px-4 py-3.5", col.className)}>
             <Skeleton className="h-3.5 w-full max-w-[120px]" />
           </td>
         ))}
         {hasActions ? (
-          <td className="px-4 py-3.5 text-right">
-            <Skeleton className="ml-auto h-7 w-16 rounded-md" />
+          <td className={cn("py-3.5 text-right", compact ? "w-11 px-2" : "px-4")}>
+            <Skeleton className="ml-auto h-7 w-7 rounded-md" />
           </td>
         ) : null}
       </tr>
@@ -345,7 +393,7 @@ export function DataTable<T>({
   ) : sortedData.length === 0 ? (
     <tr>
       <td
-        colSpan={columns.length + (hasActions ? 1 : 0)}
+        colSpan={displayColumns.length + (hasActions ? 1 : 0)}
         className="py-12 text-center text-slate-500"
       >
         {emptyMessage}
@@ -356,7 +404,7 @@ export function DataTable<T>({
       const rowId = String(row[keyField]);
       const selectable = selection?.isSelectable?.(row) ?? true;
       const selected = selection?.selectedIds.has(rowId) ?? false;
-      const rowClickable = hasSelection ? selectable : Boolean(onRowClick);
+      const rowClickable = hasSelection ? selectable : Boolean(onRowClick || getRowHref);
 
       return (
         <tr
@@ -370,19 +418,19 @@ export function DataTable<T>({
               if (selectable) selection?.onToggle(rowId);
               return;
             }
-            onRowClick?.(row);
+            if (rowClickable) openRow(row);
           }}
           onKeyDown={(e) => {
             if (!rowClickable) return;
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
               if (hasSelection && selectable) selection?.onToggle(rowId);
-              else onRowClick?.(row);
+              else openRow(row);
             }
           }}
           className={cn(
             "group border-b border-slate-700/30 transition-colors duration-150",
-            hasActions && !hasSelection && !onRowClick && "hover:bg-slate-800/40",
+            rowClickable && "cursor-pointer hover:bg-slate-800/40",
             hasSelection &&
               selectable && [
                 "cursor-pointer",
@@ -390,17 +438,12 @@ export function DataTable<T>({
                 selected && "bg-violet-950/55 ring-1 ring-inset ring-violet-500/35",
               ],
             hasSelection && !selectable && "cursor-not-allowed opacity-45",
-            !hasSelection && onRowClick && "cursor-pointer hover:bg-slate-800/40",
           )}
         >
-          {columns.map((col) => (
+          {displayColumns.map((col) => (
             <td
               key={String(col.key)}
-              className={cn(
-                "px-4 py-3 text-slate-200",
-                col.hideOnMobile && "hidden sm:table-cell",
-                col.className,
-              )}
+              className={cn("px-4 py-3 text-slate-200", col.className)}
             >
               {col.cell
                 ? col.cell(row)
@@ -409,11 +452,11 @@ export function DataTable<T>({
           ))}
           {hasActions && (
             <td
-              className="px-3 py-3 text-right sm:px-4"
+              className={cn("py-3 text-right", compact ? "w-11 px-2" : "px-3 sm:px-4")}
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-end gap-2">{rowActions!(row)}</div>
+              <TableRowActions>{rowActions!(row)}</TableRowActions>
             </td>
           )}
         </tr>

@@ -79,6 +79,7 @@ export default function AvaliacoesPage() {
       key: "nota",
       header: "Nota",
       sortable: true,
+      mobilePriority: true,
       sortValue: (a) => a.nota ?? -1,
       cell: (a) =>
         a.nota != null ? (

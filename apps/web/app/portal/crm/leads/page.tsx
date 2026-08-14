@@ -448,6 +448,7 @@ export default function CrmLeadsPage() {
     {
       key: "contacto",
       header: "Contacto",
+      hideOnMobile: true,
       cell: (l) => (
         <div className="text-sm text-slate-300">
           {l.email ? <p>{l.email}</p> : null}
@@ -459,6 +460,7 @@ export default function CrmLeadsPage() {
     {
       key: "origem",
       header: "Origem",
+      hideOnMobile: true,
       cell: (l) => (
         <span className="text-sm text-slate-400">{leadOrigemLabel(l.origem)}</span>
       ),
@@ -466,6 +468,7 @@ export default function CrmLeadsPage() {
     {
       key: "valor",
       header: "Valor est.",
+      hideOnMobile: true,
       cell: (l) => (
         <span className="tabular-nums text-slate-200">
           {l.valorEstimadoCentavos > 0 ? fmtEuro(l.valorEstimadoCentavos) : "-"}
@@ -475,6 +478,7 @@ export default function CrmLeadsPage() {
     {
       key: "criadoPor",
       header: "Registado por",
+      hideOnMobile: true,
       cell: (l) => (
         <span className="text-sm text-slate-300">{fmtCrmAutor(l.criadoPor)}</span>
       ),
@@ -482,6 +486,7 @@ export default function CrmLeadsPage() {
     {
       key: "atribuido",
       header: "Responsável",
+      hideOnMobile: true,
       cell: (l) => (
         <span className="text-sm text-slate-400">{fmtCrmAutor(l.atribuido)}</span>
       ),
@@ -489,6 +494,7 @@ export default function CrmLeadsPage() {
     {
       key: "estado",
       header: "Estado",
+      mobilePriority: true,
       cell: (l) => (
         <div>
           <LeadEstadoBadge estado={l.estado} />
@@ -613,9 +619,13 @@ export default function CrmLeadsPage() {
             data={leads}
             keyField="id"
             loading={loading}
+            onRowClick={(l) => {
+              setActiveLead(l);
+              setNotasOpen(true);
+            }}
             emptyMessage="Sem leads - registe a primeira oportunidade comercial."
             rowActions={(l) => (
-              <div className="flex flex-wrap justify-end gap-1">
+              <>
                 <Button
                   size="sm"
                   variant="secondary"
@@ -688,7 +698,7 @@ export default function CrmLeadsPage() {
                     Proposta
                   </Button>
                 ) : null}
-              </div>
+              </>
             )}
           />
           <ListPaginationControls

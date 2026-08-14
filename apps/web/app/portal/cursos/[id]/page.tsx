@@ -66,10 +66,11 @@ const ACao_COLS: Column<AcaoRow>[] = [
     ),
   },
   { key: "titulo", header: "Título", cell: (a) => <span className="text-slate-200">{a.titulo}</span> },
-  { key: "estado", header: "Estado", cell: (a) => estadoBadge(a.estado) },
+  { key: "estado", header: "Estado", mobilePriority: true, cell: (a) => estadoBadge(a.estado) },
   {
     key: "periodo",
     header: "Período",
+    hideOnMobile: true,
     cell: (a) => (
       <span className="text-sm text-slate-400 tabular-nums">
         {String(a.dataInicio).slice(0, 10)} – {String(a.dataFim).slice(0, 10)}
@@ -246,6 +247,7 @@ export default function CursoDetailPage() {
                 data={curso.acoesFormacao}
                 keyField="id"
                 loading={false}
+                getRowHref={(a) => `/portal/acoes/${a.id}`}
                 emptyMessage="Este curso ainda não tem acções de formação."
               />
             </CardContent>

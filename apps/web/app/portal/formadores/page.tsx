@@ -204,10 +204,10 @@ export default function FormadoresPage() {
               data={formadores}
               keyField="id"
               loading={loading}
+              getRowHref={(f) => `/portal/formadores/${f.id}`}
               emptyMessage="Sem formadores registados neste centro."
-              onRowClick={(f) => router.push(`/portal/formadores/${f.id}`)}
               rowActions={(f) => (
-                <div className="flex items-center gap-0.5">
+                <>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -239,7 +239,7 @@ export default function FormadoresPage() {
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
                   ) : null}
-                </div>
+                </>
               )}
             />
           </CardContent>

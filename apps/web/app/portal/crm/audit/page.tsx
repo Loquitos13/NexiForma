@@ -58,9 +58,10 @@ export default function CrmAuditPage() {
     {
       key: "resourceId",
       header: "ID",
+      hideOnMobile: true,
       cell: (r) => <span className="font-mono text-xs text-slate-400">{r.resourceId.slice(0, 8)}…</span>,
     },
-    { key: "actorId", header: "Actor", cell: (r) => r.actorId.slice(0, 8) + "…" },
+    { key: "actorId", header: "Actor", hideOnMobile: true, cell: (r) => r.actorId.slice(0, 8) + "…" },
   ];
 
   if (sessionExpired || roleLoading) {

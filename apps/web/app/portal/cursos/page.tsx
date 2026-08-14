@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { PlusCircle, Pencil, Eye, Trash2 } from "lucide-react";
 import { DgertRequisitoBanner, useDgertRequisitoId } from "@/components/portal/dgert-requisito-banner";
 import { bffFetch } from "@/lib/client/bff-fetch";
@@ -13,7 +12,6 @@ import {
   Alert, Badge, Button,
   PaginatedDataTable, Dialog, DialogContent, Input, PageHeader, Select, Textarea, type Column,
 } from "@/components/ui";
-import { ActionMenu } from "@/components/ui/action-menu";
 
 type Curso = {
   id: string; codigoUfcd: string | null; designacao: string;
@@ -27,7 +25,6 @@ const MODALIDADE_LABEL: Record<string, string> = {
 };
 
 export default function CursosPage() {
-  const router = useRouter();
   const { canManageFormacao: canManage, writeDisabled } = useTenantRole();
   const [cursos, setCursos] = useState<Curso[]>([]);
   const [loading, setLoading] = useState(true);
@@ -130,6 +127,7 @@ export default function CursosPage() {
       key: "designacao",
       header: "Designação",
       sortable: true,
+      mobilePriority: true,
       sortValue: (c) => c.designacao,
       cell: (c) => (
       <Link href={`/portal/cursos/${c.id}`} className="font-medium text-blue-400 hover:text-blue-300">
@@ -189,73 +187,39 @@ export default function CursosPage() {
         data={cursos}
         keyField="id"
         loading={loading}
+        getRowHref={(c) => `/portal/cursos/${c.id}`}
         emptyMessage="Sem cursos no catálogo. Crie o primeiro."
         rowActions={(c) => (
           <>
-            <div className="hidden gap-1 sm:flex">
-              <Link
-                href={`/portal/cursos/${c.id}`}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-                aria-label={`Ver ${c.designacao}`}
-                title="Ver"
-              >
+            <Button size="sm" variant="ghost" asChild>
+              <Link href={`/portal/cursos/${c.id}`} aria-label={`Ver ${c.designacao}`} title="Ver">
                 <Eye className="h-3.5 w-3.5" />
               </Link>
-              {canManage ? (
-                <>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={writeDisabled}
-                    onClick={() => void openEdit(c)}
-                    aria-label={`Editar ${c.designacao}`}
-                    title="Editar"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={writeDisabled || busy}
-                    onClick={() => setDeleteTarget(c)}
-                    aria-label={`Eliminar ${c.designacao}`}
-                    title="Eliminar"
-                  >
-                    <Trash2 className="h-3.5 w-3.5 text-red-400" />
-                  </Button>
-                </>
-              ) : null}
-            </div>
-            <div className="sm:hidden">
-              <ActionMenu
-                iconOnly
-                label={`Acções de ${c.designacao}`}
-                side="left"
-                items={[
-                  {
-                    label: "Ver",
-                    icon: <Eye className="h-4 w-4" />,
-                    onClick: () => router.push(`/portal/cursos/${c.id}`),
-                  },
-                  ...(canManage
-                    ? [
-                        {
-                          label: "Editar",
-                          icon: <Pencil className="h-4 w-4" />,
-                          disabled: writeDisabled,
-                          onClick: () => void openEdit(c),
-                        },
-                        {
-                          label: "Eliminar",
-                          icon: <Trash2 className="h-4 w-4 text-red-400" />,
-                          disabled: writeDisabled || busy,
-                          onClick: () => setDeleteTarget(c),
-                        },
-                      ]
-                    : []),
-                ]}
-              />
-            </div>
+            </Button>
+            {canManage ? (
+              <>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={writeDisabled}
+                  onClick={() => void openEdit(c)}
+                  aria-label={`Editar ${c.designacao}`}
+                  title="Editar"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={writeDisabled || busy}
+                  onClick={() => setDeleteTarget(c)}
+                  aria-label={`Eliminar ${c.designacao}`}
+                  title="Eliminar"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                </Button>
+              </>
+            ) : null}
           </>
         )}
       />

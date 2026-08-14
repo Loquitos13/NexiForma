@@ -14,6 +14,7 @@ type Props<T> = {
   loading?: boolean;
   emptyMessage?: string;
   onRowClick?: (row: T) => void;
+  getRowHref?: (row: T) => string | undefined;
   className?: string;
   rowActions?: (row: T) => ReactNode;
   selection?: {

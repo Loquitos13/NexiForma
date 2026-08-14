@@ -363,10 +363,8 @@ export default function CrmDashboardPage() {
             data={recentes}
             keyField="id"
             loading={loading}
+            getRowHref={(p) => `/portal/propostas/${p.id}`}
             emptyMessage="Sem propostas - crie a primeira no módulo Propostas."
-            onRowClick={(p) => {
-              window.location.href = `/portal/propostas?highlight=${p.id}`;
-            }}
           />
         </CardContent>
       </Card>

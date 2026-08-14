@@ -608,11 +608,7 @@ export default function UtilizadoresPage() {
             : undefined
         }
         rowActions={canManage && !mfaSelectMode ? (u) => (
-          <div
-            className="flex items-center justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
+          <>
             <Button
               size="sm"
               variant="ghost"
@@ -662,7 +658,7 @@ export default function UtilizadoresPage() {
                 </Button>
               </>
             )}
-          </div>
+          </>
         ) : undefined}
       />
 

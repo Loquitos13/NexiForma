@@ -110,6 +110,7 @@ export function TenantAuditTrail({
         key: "action",
         header: "Acção",
         sortable: true,
+        mobilePriority: true,
         sortValue: (r) => r.action,
         cell: (r) => (
           <div>

@@ -231,6 +231,7 @@ export default function ContratosPage() {
       key: "validadeAte",
       header: "Validade",
       sortable: true,
+      hideOnMobile: true,
       sortValue: (c) => {
         if (!c.validadeAte) return null;
         const t = new Date(c.validadeAte).getTime();
@@ -242,6 +243,7 @@ export default function ContratosPage() {
       key: "contratoEstado",
       header: "Estado",
       sortable: true,
+      mobilePriority: true,
       sortCycle: ["VIGENTE", "A_EXPIRAR", "EXPIRADO"],
       sortValue: (c) => c.contratoEstado,
       cell: (c) => (
@@ -369,13 +371,16 @@ export default function ContratosPage() {
             fixedLayout
             sort={sort}
             onSortChange={setSort}
+            getRowHref={(c) =>
+              withPortalFrom(`/portal/propostas/${c.id}`, pathname || "/portal/contratos")
+            }
             emptyMessage={
               contratos.length === 0
                 ? "Sem contratos. Crie uma proposta comercial e aguarde a aceitação pelo cliente."
                 : "Sem contratos com estes filtros."
             }
             rowActions={(c) => (
-              <div className="flex flex-wrap justify-end gap-1">
+              <>
                 <Button size="sm" variant="secondary" asChild>
                   <Link href={withPortalFrom(`/portal/propostas/${c.id}`, pathname || "/portal/contratos")}>
                     Ver proposta
@@ -403,7 +408,7 @@ export default function ContratosPage() {
                     </Link>
                   </Button>
                 ) : null}
-              </div>
+              </>
             )}
           />
           {!loading && contratos.length === 0 ? (

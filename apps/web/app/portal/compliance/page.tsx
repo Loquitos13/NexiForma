@@ -56,6 +56,7 @@ const COLUMNS: Column<AcaoCompliance>[] = [
     key: "estado",
     header: "Estado",
     sortable: true,
+    mobilePriority: true,
     sortCycle: ["EM_CURSO", "PLANEADA", "CONCLUIDA", "CANCELADA"],
     sortValue: (a) => a.estado,
     cell: (a) => <Badge variant="default">{a.estado}</Badge>,
@@ -79,6 +80,7 @@ const COLUMNS: Column<AcaoCompliance>[] = [
     key: "prontoInspecao",
     header: "Inspecção",
     sortable: true,
+    mobilePriority: true,
     sortValue: (a) => (a.prontoInspecao ? 1 : 0),
     cell: (a) => a.prontoInspecao
       ? <span className="flex items-center gap-1 text-green-400 text-sm"><CheckCircle className="h-4 w-4" />Pronta</span>
@@ -178,6 +180,7 @@ export default function CompliancePage() {
         data={data?.acoes ?? []}
         keyField="acaoId"
         loading={loading}
+        getRowHref={(a) => `/portal/acoes/${a.acaoId}?tab=compliance`}
         emptyMessage="Sem acções de formação avaliadas."
       />
 

@@ -65,6 +65,7 @@ export default function MatriculasPage() {
       key: "estado",
       header: "Estado",
       sortable: true,
+      mobilePriority: true,
       sortCycle: ["ATIVA", "CONCLUSAO", "DESISTENCIA"],
       sortValue: (m) => m.estado,
       cell: (m) => <Badge variant={ESTADO_VARIANT[m.estado] ?? "default"}>{m.estado}</Badge>,
@@ -195,11 +196,12 @@ export default function MatriculasPage() {
               columns={MATRICULA_COLS}
               data={matriculas}
               keyField="id"
+              getRowHref={(m) => `/portal/formandos/${m.formando.id}`}
               paginationClassName="border-t border-slate-700/40 px-4 py-3"
               rowActions={
                 canManage
                   ? (m) => (
-                      <div className="flex items-center justify-end gap-1.5">
+                      <>
                         {m.estado === "ATIVA" ? (
                           <>
                             <Button size="sm" variant="teal" onClick={() => void mudarEstado(m.id, "CONCLUSAO")}>
@@ -214,7 +216,7 @@ export default function MatriculasPage() {
                             Reactivar
                           </Button>
                         )}
-                      </div>
+                      </>
                     )
                   : undefined
               }

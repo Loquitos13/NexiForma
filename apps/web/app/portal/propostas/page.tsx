@@ -438,6 +438,7 @@ export default function PropostasPage() {
       key: "valorCentavos",
       header: "Valor",
       sortable: true,
+      hideOnMobile: true,
       sortValue: (p) => p.valorCentavos,
       cell: (p) => <span className="font-medium">{fmtEuro(p.valorCentavos)}</span>,
     },
@@ -445,6 +446,7 @@ export default function PropostasPage() {
       key: "validadeAte",
       header: "Validade",
       sortable: true,
+      hideOnMobile: true,
       sortValue: (p) => {
         if (!p.validadeAte) return null;
         const t = new Date(p.validadeAte).getTime();
@@ -456,6 +458,7 @@ export default function PropostasPage() {
       key: "estado",
       header: "Estado",
       headerText: "Estado",
+      mobilePriority: true,
       headerFilterLabel:
         estadoFilter !== "TODAS" &&
         (["ACEITE", "REJEITADA", "ENVIADA", "RASCUNHO"] as const).includes(
@@ -480,6 +483,7 @@ export default function PropostasPage() {
       key: "autoria",
       header: "Equipa comercial",
       sortable: true,
+      hideOnMobile: true,
       sortValue: (p) =>
         p.criadoPor?.displayName?.trim() ||
         p.enviadaPor?.displayName?.trim() ||
@@ -581,6 +585,7 @@ export default function PropostasPage() {
             fixedLayout
             sort={sort}
             disableClientSort
+            getRowHref={(p) => withPortalFrom(`/portal/propostas/${p.id}`, pathname || "/portal/propostas")}
             onSortChange={(next) => {
               pinTableInView();
               setPage(1);
@@ -590,7 +595,7 @@ export default function PropostasPage() {
             rowActions={
               canManageCrm
                 ? (p) => (
-                    <div className="flex justify-end gap-1 flex-wrap">
+                    <>
                       <Button
                         size="sm"
                         variant="secondary"
@@ -647,7 +652,7 @@ export default function PropostasPage() {
                           <Trash2 className="h-3.5 w-3.5 text-red-400" />
                         </Button>
                       ) : null}
-                    </div>
+                    </>
                   )
                 : undefined
             }

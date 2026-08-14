@@ -61,6 +61,7 @@ export default function CertificadosPage() {
       key: "taxaPresenca",
       header: "Presença",
       sortable: true,
+      mobilePriority: true,
       sortValue: (f) => f.taxaPresenca ?? -1,
       cell: (f) => (
         <div className="flex items-center gap-2">

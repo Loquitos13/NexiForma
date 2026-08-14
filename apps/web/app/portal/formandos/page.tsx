@@ -291,6 +291,7 @@ export default function FormandosPage() {
       key: "contaEstado",
       header: "Conta",
       sortable: true,
+      mobilePriority: true,
       sortCycle: ["activa", "convite_pendente", "sem_conta"],
       sortCycleLabel: (v) =>
         v === "activa" ? "Activa" : v === "convite_pendente" ? "Convite pendente" : "Sem conta",
@@ -412,9 +413,9 @@ export default function FormandosPage() {
           data={formandos}
           keyField="id"
           loading={loading}
-          onRowClick={(f) => router.push(`/portal/formandos/${f.id}`)}
+          getRowHref={(f) => `/portal/formandos/${f.id}`}
           rowActions={(f) => (
-            <div className="flex items-center gap-0.5">
+            <>
               <Button
                 size="sm"
                 variant="ghost"
@@ -453,7 +454,7 @@ export default function FormandosPage() {
                   </Button>
                 </>
               ) : null}
-            </div>
+            </>
           )}
         />
       )}

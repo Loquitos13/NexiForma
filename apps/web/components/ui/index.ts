@@ -15,3 +15,4 @@ export * from "./skeleton";
 export * from "./page-skeleton";
 export * from "./skip-link";
 export * from "./table-scroll";
+export * from "./table-row-actions";

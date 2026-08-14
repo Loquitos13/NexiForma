@@ -52,6 +52,7 @@ const COLUMNS: Column<Acao>[] = [
     key: "estado",
     header: "Estado",
     sortable: true,
+    mobilePriority: true,
     sortCycle: ["EM_CURSO", "PLANEADA", "CONCLUIDA", "CANCELADA"],
     sortCycleLabel: (v) => String(v).replace("_", " "),
     sortValue: (a) => a.estado,
@@ -411,6 +412,7 @@ export default function AcoesPage() {
         data={acoes}
         keyField="id"
         loading={loading}
+        getRowHref={(a) => `/portal/acoes/${a.id}`}
         emptyMessage="Ainda não há acções de formação. Crie a primeira acima."
       />
     </>
