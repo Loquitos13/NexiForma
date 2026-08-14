@@ -10,7 +10,7 @@ export const GUIDED_FLOW_CRM: GuidedFlowModule[] = [
     description: "Registar um contacto comercial e acompanhar no pipeline.",
     category: "negocio",
     audiences: ["gestor", "comercial"],
-    visible: ({ ent }) => crm(ent),
+    visible: ({ ent, canManageCrm }) => canManageCrm && crm(ent),
     steps: [
       {
         title: "Abrir leads",
@@ -44,7 +44,7 @@ export const GUIDED_FLOW_CRM: GuidedFlowModule[] = [
     description: "Registar interacções, reuniões e follow-ups com leads ou clientes.",
     category: "negocio",
     audiences: ["gestor", "comercial"],
-    visible: ({ ent }) => crm(ent),
+    visible: ({ ent, canManageCrm }) => canManageCrm && crm(ent),
     steps: [
       {
         title: "Abrir notas comerciais",
@@ -74,7 +74,7 @@ export const GUIDED_FLOW_CRM: GuidedFlowModule[] = [
     description: "Agendar e consultar reuniões e compromissos do CRM.",
     category: "negocio",
     audiences: ["gestor", "comercial"],
-    visible: ({ ent }) => crm(ent),
+    visible: ({ ent, canManageCrm }) => canManageCrm && crm(ent),
     steps: [
       {
         title: "Abrir calendário",
@@ -99,7 +99,7 @@ export const GUIDED_FLOW_CRM: GuidedFlowModule[] = [
     description: "Gerar uma proposta comercial a partir de um cliente ou lead.",
     category: "negocio",
     audiences: ["gestor", "comercial"],
-    visible: ({ ent }) => crm(ent),
+    visible: ({ ent, canManageCrm }) => canManageCrm && crm(ent),
     steps: [
       {
         title: "Abrir propostas",
@@ -125,7 +125,7 @@ export const GUIDED_FLOW_CRM: GuidedFlowModule[] = [
     description: "Ficha de cliente, documentos e histórico comercial.",
     category: "negocio",
     audiences: ["gestor", "comercial"],
-    visible: ({ ent }) => crm(ent),
+    visible: ({ ent, canManageCrm }) => canManageCrm && crm(ent),
     steps: [
       {
         title: "Lista de clientes",
@@ -150,7 +150,7 @@ export const GUIDED_FLOW_CRM: GuidedFlowModule[] = [
     description: "Visão geral do funil, alertas e atalhos do dia.",
     category: "negocio",
     audiences: ["gestor", "comercial"],
-    visible: ({ ent }) => crm(ent),
+    visible: ({ ent, canManageCrm }) => canManageCrm && crm(ent),
     steps: [
       {
         title: "Abrir CRM Dashboard",

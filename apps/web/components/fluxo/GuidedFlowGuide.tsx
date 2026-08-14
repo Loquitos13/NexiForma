@@ -11,6 +11,7 @@ import {
   StopCircle,
 } from "lucide-react";
 import { askNexiGuia } from "@/lib/client/nexi-guia-events";
+import { useAutoStartGuidedFlow } from "@/lib/client/use-auto-start-guided-flow";
 import { useActiveGuidedFlow } from "@/lib/client/active-guided-flow-context";
 import { Alert, Button, Card, CardContent } from "@/components/ui";
 import type { GuidedFlowModule } from "./guided-flow-types";
@@ -22,6 +23,7 @@ type Props = {
 export function GuidedFlowGuide({ module }: Props) {
   const steps = module.steps ?? [];
   const { activeModule, currentStepIndex, startFlow, closeFlow } = useActiveGuidedFlow();
+  useAutoStartGuidedFlow(module.id, 0);
 
   const isCurrentModuleActive = activeModule?.id === module.id;
 

@@ -16,6 +16,7 @@ import {
   type GuidedFlowStep,
 } from "@/components/fluxo/guided-flow-modules";
 import { matchesGuidedFlowHref } from "@/lib/client/guided-flow-path";
+import { useGuidedFlowAccess } from "@/lib/client/use-guided-flow-access";
 
 const ACTIVE_FLOW_STORAGE_KEY = "nexiforma-active-guided-flow";
 
@@ -144,6 +145,7 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
   const router = useRouter();
   const pathname = usePathname();
   const [activeState, setActiveState] = useState<GuidedFlowProgressState | null>(null);
+  const { isModuleVisible, loading: accessLoading } = useGuidedFlowAccess();
 
   // Carregar estado guardado no início
   useEffect(() => {
@@ -159,6 +161,14 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
       // localStorage indisponível
     }
   }, []);
+
+  // Limpar fluxo persistido se o papel/plano já não permite
+  useEffect(() => {
+    if (accessLoading || !activeState?.moduleId) return;
+    if (!isModuleVisible(activeState.moduleId)) {
+      setActiveState(null);
+    }
+  }, [accessLoading, activeState?.moduleId, isModuleVisible]);
 
   // Guardar estado sempre que muda
   useEffect(() => {
@@ -198,7 +208,7 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
     (moduleOrId: GuidedFlowModule | string, initialStep = 0) => {
       const mod =
         typeof moduleOrId === "string" ? getGuidedFlowById(moduleOrId) : moduleOrId;
-      if (!mod) return;
+      if (!mod || !isModuleVisible(mod.id)) return;
 
       const step = mod.steps?.[initialStep];
       setActiveState({
@@ -214,7 +224,7 @@ export function ActiveGuidedFlowProvider({ children }: { children: ReactNode }) 
         router.push(step.href);
       }
     },
-    [pathname, router],
+    [pathname, router, isModuleVisible],
   );
 
   const nextStep = useCallback(() => {

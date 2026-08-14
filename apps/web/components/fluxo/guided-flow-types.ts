@@ -88,3 +88,20 @@ export function categoryAllowedForAudience(
   if (audience === "formador" || audience === "formando") return category === "formacao";
   return true;
 }
+
+/** Restrições por papel JWT (além de audiência + entitlements). */
+export function roleCanAccessGuidedFlowCategory(
+  role: JwtRole | null,
+  category: GuidedFlowCategory,
+): boolean {
+  if (!role) return false;
+  const audience = audienceFromRole(role);
+  if (!audience || !categoryAllowedForAudience(category, audience)) return false;
+
+  if (role === "coordenador_pedagogico") return category === "formacao";
+  if (role === "coordenador_comercial" || role === "comercial") return category === "negocio";
+  if (role === "coordenador_financeiro") return category === "negocio";
+  if (role === "formador" || role === "formando") return category === "formacao";
+
+  return true;
+}

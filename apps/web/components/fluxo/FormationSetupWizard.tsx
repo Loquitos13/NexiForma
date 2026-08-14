@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { CheckCircle2, ChevronRight } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { useActiveGuidedFlow } from "@/lib/client/active-guided-flow-context";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { Alert, Button, Card, CardContent, Input, Select } from "@/components/ui";
 
@@ -12,6 +13,7 @@ type Step = 1 | 2 | 3 | 4;
 const STEP_LABELS = ["Curso", "Acção", "Conteúdos", "Sessão"] as const;
 
 export function FormationSetupWizard() {
+  const { activeModule, goToStep, completeFlow } = useActiveGuidedFlow();
   const [step, setStep] = useState<Step>(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +64,11 @@ export function FormationSetupWizard() {
       }
     });
   }, [loadCurso]);
+
+  useEffect(() => {
+    if (activeModule?.id !== "setup-completo") return;
+    goToStep(step - 1);
+  }, [step, activeModule?.id, goToStep]);
 
   async function saveCurso(e: FormEvent) {
     e.preventDefault();
@@ -123,6 +130,7 @@ export function FormationSetupWizard() {
   function finishWizard() {
     setStep(4);
     setMsg("Formação base criada. Continua nos passos opcionais abaixo.");
+    completeFlow();
   }
 
   return (

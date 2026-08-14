@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect } from "react";
 import {
   ArrowLeft,
   BarChart3,
@@ -34,10 +35,12 @@ import {
   GUIDED_FLOW_AUDIENCE_LABEL,
   GUIDED_FLOW_CATEGORY_LABEL,
   isInteractiveGuidedView,
+  moduleIdForInteractiveView,
   type GuidedFlowInteractiveView,
   type GuidedFlowModule,
   visibleGuidedFlowModules,
 } from "./guided-flow-modules";
+import { useGuidedFlowAccess } from "@/lib/client/use-guided-flow-access";
 
 const ICONS: Record<string, LucideIcon> = {
   "crm-criar-lead": Users,
@@ -84,6 +87,23 @@ function FlowCard({ module, onOpen }: { module: GuidedFlowModule; onOpen: Props[
   const Icon = ICONS[module.id] ?? Workflow;
   const hasGuide = Boolean(module.steps?.length);
   const interactive = module.view;
+  const { startFlow } = useActiveGuidedFlow();
+  const { isModuleVisible } = useGuidedFlowAccess();
+
+  const openInteractive = (view: GuidedFlowInteractiveView) => {
+    const moduleId = moduleIdForInteractiveView(view);
+    if (isModuleVisible(moduleId)) {
+      startFlow(moduleId, 0);
+    }
+    onOpen({ kind: "interactive", view });
+  };
+
+  const openGuide = () => {
+    if (module.steps?.length && isModuleVisible(module.id)) {
+      startFlow(module.id, 0);
+    }
+    onOpen({ kind: "guide", id: module.id });
+  };
 
   const body = (
     <Card className="h-full border-slate-700/40 bg-slate-900/50 hover:border-blue-500/35 hover:bg-slate-900/80 transition-all group">
@@ -109,7 +129,7 @@ function FlowCard({ module, onOpen }: { module: GuidedFlowModule; onOpen: Props[
       <button
         type="button"
         className="text-left w-full"
-        onClick={() => onOpen({ kind: "interactive", view: interactive })}
+        onClick={() => openInteractive(interactive)}
       >
         {body}
       </button>
@@ -121,7 +141,7 @@ function FlowCard({ module, onOpen }: { module: GuidedFlowModule; onOpen: Props[
       <button
         type="button"
         className="text-left w-full"
-        onClick={() => onOpen({ kind: "guide", id: module.id })}
+        onClick={openGuide}
       >
         {body}
       </button>
@@ -280,14 +300,28 @@ export function useGuidedFlowView(): [GuidedFlowRouteView, (target: OpenTarget |
   const router = useRouter();
   const raw = searchParams.get("v");
   const guideId = searchParams.get("id");
+  const { getModuleIfVisible, isInteractiveViewVisible, loading } = useGuidedFlowAccess();
 
   let current: GuidedFlowRouteView = { kind: "hub" };
-  if (isInteractiveGuidedView(raw)) {
-    current = { kind: "interactive", view: raw };
-  } else if (raw === "guide" && guideId) {
-    const module = getGuidedFlowById(guideId);
-    if (module?.steps?.length) current = { kind: "guide", module };
+  if (!loading) {
+    if (isInteractiveGuidedView(raw) && isInteractiveViewVisible(raw)) {
+      current = { kind: "interactive", view: raw };
+    } else if (raw === "guide" && guideId) {
+      const module = getModuleIfVisible(guideId);
+      if (module?.steps?.length) current = { kind: "guide", module };
+    }
   }
+
+  useEffect(() => {
+    if (loading) return;
+    if (isInteractiveGuidedView(raw) && !isInteractiveViewVisible(raw)) {
+      router.replace("/portal/fluxo");
+      return;
+    }
+    if (raw === "guide" && guideId && !getModuleIfVisible(guideId)) {
+      router.replace("/portal/fluxo");
+    }
+  }, [loading, raw, guideId, isInteractiveViewVisible, getModuleIfVisible, router]);
 
   const setView = (target: OpenTarget | "hub") => {
     if (target === "hub") {

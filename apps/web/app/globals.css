@@ -1854,6 +1854,68 @@ textarea:focus-visible,
   .nexiguia-panel {
     right: calc(20px + env(safe-area-inset-right, 0px));
   }
+
+  .nexiguia-speech-anchor {
+    right: calc(20px + env(safe-area-inset-right, 0px));
+  }
+}
+
+@keyframes nexiguia-idea-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.15) translateY(14px);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.12) translateY(-6px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes nexiguia-idea-ring {
+  0% {
+    transform: scale(0.35);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+@keyframes nexiguia-speech-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.42) translate(22px, 22px);
+  }
+  68% {
+    transform: scale(1.04) translate(0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translate(0, 0);
+  }
+}
+
+.nexiguia-speech-anchor {
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px) + var(--nexiguia-fab-h, 2.75rem) + 10px);
+  right: 0.5rem;
+}
+
+.nexiguia-idea-pop {
+  animation: nexiguia-idea-pop 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.nexiguia-idea-ring {
+  animation: nexiguia-idea-ring 760ms ease-out both;
+}
+
+.nexiguia-speech-pop {
+  transform-origin: bottom right;
+  animation: nexiguia-speech-pop 440ms cubic-bezier(0.22, 1, 0.36, 1) 160ms both;
 }
 
 @media (max-width: 1023px) {
@@ -1878,6 +1940,13 @@ textarea:focus-visible,
       4.15rem + 0.45rem + var(--nexiguia-fab-h, 2.75rem) + 0.55rem +
         env(safe-area-inset-bottom, 0px)
     ) !important;
+  }
+
+  body:has(.portal-mobile-bottom-nav) .nexiguia-speech-anchor {
+    bottom: calc(
+      4.15rem + 0.45rem + env(safe-area-inset-bottom, 0px) + var(--nexiguia-fab-h, 2.75rem) + 10px
+    ) !important;
+    right: 0.35rem !important;
   }
 }
 

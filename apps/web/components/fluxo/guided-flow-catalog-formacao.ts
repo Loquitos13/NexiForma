@@ -16,6 +16,34 @@ export const GUIDED_FLOW_FORMACAO: GuidedFlowModule[] = [
     audiences: ["gestor"],
     view: "setup-completo",
     visible: ({ ent, canManageFormacao }) => canManageFormacao && core(ent),
+    steps: [
+      {
+        title: "Curso",
+        description:
+          "Define designação, código UFCD, carga horária e modalidade. Podes seleccionar um curso existente ou criar novo.",
+        href: "/portal/fluxo?v=setup-completo",
+        tip: "O curso é a base do catálogo — todas as acções formativas ligam-se a um curso.",
+      },
+      {
+        title: "Acção",
+        description:
+          "Cria a acção formativa (edição) ligada ao curso: código interno, título, datas e estado.",
+        href: "/portal/fluxo?v=setup-completo",
+      },
+      {
+        title: "Conteúdos",
+        description:
+          "Opcional: editor LMS (vídeo, PDF, quiz) associado ao curso. Podes saltar e voltar mais tarde.",
+        href: "/portal/fluxo?v=setup-completo",
+        tip: "Os módulos são partilhados por todas as acções do mesmo curso.",
+      },
+      {
+        title: "Sessão",
+        description:
+          "Opcional: cronograma, presenças QR e sala Teams na ficha da acção.",
+        href: "/portal/fluxo?v=setup-completo",
+      },
+    ],
   },
   {
     id: "formacao-criar-curso",
@@ -270,6 +298,26 @@ export const GUIDED_FLOW_FORMACAO: GuidedFlowModule[] = [
     audiences: ["gestor"],
     view: "conteudos",
     visible: ({ ent, canManageFormacao }) => canManageFormacao && core(ent),
+    steps: [
+      {
+        title: "Abrir editor",
+        description:
+          "No editor visual adiciona módulos ao curso: vídeo, PDF, quiz ou SCORM.",
+        href: "/portal/fluxo?v=conteudos",
+      },
+      {
+        title: "Estruturar módulos",
+        description:
+          "Organiza a sequência de aprendizagem e define títulos, prazos e requisitos de conclusão.",
+        tip: "Publica o módulo quando o conteúdo estiver pronto para os formandos.",
+      },
+      {
+        title: "Publicar e libertar",
+        description:
+          "Depois de publicados, define prazos LMS na acção ou em Formação → Progresso LMS.",
+        href: "/portal/progresso-lms",
+      },
+    ],
   },
   {
     id: "formacao-libertar-lms",

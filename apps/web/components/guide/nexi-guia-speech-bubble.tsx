@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Compass,
   ExternalLink,
-  HelpCircle,
   Lightbulb,
   Minus,
   Sparkles,
@@ -18,7 +17,6 @@ import {
   buildGuidedFlowSearch,
   matchesGuidedFlowHref,
 } from "@/lib/client/guided-flow-path";
-import { askNexiGuia } from "@/lib/client/nexi-guia-events";
 import { cn } from "@/lib/ui/cn";
 
 export function NexiGuiaSpeechBubble() {
@@ -50,7 +48,7 @@ export function NexiGuiaSpeechBubble() {
   if (isMinimized) {
     return (
       <div
-        className="fixed z-[130] bottom-24 right-5 animate-in fade-in zoom-in-95 duration-200"
+        className="fixed z-[130] nexiguia-speech-anchor animate-in fade-in zoom-in-95 duration-200"
         style={{ transformOrigin: "bottom right" }}
       >
         <button
@@ -72,20 +70,21 @@ export function NexiGuiaSpeechBubble() {
     <div
       role="dialog"
       aria-label="Guia do NexiGuia"
-      className="fixed z-[130] bottom-24 right-5 w-[min(calc(100vw-2.5rem),23rem)] select-none animate-in fade-in zoom-in-90 duration-300 transition-all"
-      style={{
-        transformOrigin: "bottom right",
-      }}
+      className="fixed z-[130] nexiguia-speech-anchor w-[min(calc(100vw-2.5rem),23rem)] select-none"
     >
-      {/* Speech balloon container */}
-      <div className="relative rounded-2xl border border-blue-500/35 bg-slate-950/95 p-4 text-slate-200 shadow-2xl shadow-black/80 backdrop-blur-xl ring-1 ring-blue-500/20">
-        {/* Balloon pointer tail pointing to the bottom right FAB */}
+      {/* Ideia a surgir do círculo NexiGuia */}
+      <div className="nexiguia-idea-pop pointer-events-none absolute -bottom-1 right-0 flex h-10 w-10 items-center justify-center">
+        <span className="absolute inset-0 rounded-full bg-blue-400/25 nexiguia-idea-ring" aria-hidden />
+        <Lightbulb className="relative h-5 w-5 text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.85)]" />
+      </div>
+
+      {/* Balão de fala */}
+      <div className="relative mb-14 mr-1 nexiguia-speech-pop rounded-2xl border border-blue-500/35 bg-slate-950/95 p-4 text-slate-200 shadow-2xl shadow-black/80 backdrop-blur-xl ring-1 ring-blue-500/20">
         <div
           className="absolute -bottom-2.5 right-6 h-4 w-4 rotate-45 border-b border-r border-blue-500/35 bg-slate-950/95"
           aria-hidden="true"
         />
 
-        {/* Header */}
         <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
           <div className="flex items-center gap-2 min-w-0">
             <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-blue-600 to-teal-400 text-white shadow-sm">
@@ -126,12 +125,10 @@ export function NexiGuiaSpeechBubble() {
           </div>
         </div>
 
-        {/* Main Content with transition animation on step change */}
         <div
           key={`${activeModule.id}-${currentStepIndex}-${isCompleted}`}
           className="mt-3 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-200"
         >
-          {/* Supportive Comfort Message */}
           <div className="rounded-xl border border-blue-500/20 bg-gradient-to-r from-blue-950/40 via-slate-900/60 to-teal-950/30 p-3">
             <div className="flex items-start gap-2.5">
               <Sparkles className="h-4 w-4 shrink-0 text-blue-400 mt-0.5" />
@@ -142,7 +139,6 @@ export function NexiGuiaSpeechBubble() {
           </div>
 
           {!isCompleted && currentStep ? (
-            /* Current Step Guide */
             <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="inline-flex items-center rounded-full bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold text-blue-300">
@@ -164,7 +160,6 @@ export function NexiGuiaSpeechBubble() {
                 </div>
               ) : null}
 
-              {/* Navigation to step page button */}
               {currentStep.href ? (
                 <div className="pt-1">
                   {!isOnCurrentStepPage ? (
@@ -188,7 +183,6 @@ export function NexiGuiaSpeechBubble() {
           ) : null}
 
           {isCompleted ? (
-            /* Completed Flow Celebration */
             <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/30 p-3.5 text-center space-y-2">
               <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-300">
                 <CheckCircle2 className="h-6 w-6 text-emerald-400" />
@@ -210,10 +204,8 @@ export function NexiGuiaSpeechBubble() {
           ) : null}
         </div>
 
-        {/* Footer Navigation Controls */}
         {!isCompleted ? (
           <div className="mt-3.5 flex items-center justify-between gap-2 border-t border-slate-800/80 pt-3">
-            {/* Step indicators */}
             <div className="flex items-center gap-1">
               {Array.from({ length: totalSteps }).map((_, idx) => (
                 <button

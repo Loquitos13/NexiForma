@@ -4,6 +4,7 @@ import { GUIDED_FLOW_FORMACAO } from "./guided-flow-catalog-formacao";
 import {
   audienceFromRole,
   categoryAllowedForAudience,
+  roleCanAccessGuidedFlowCategory,
   GUIDED_FLOW_AUDIENCE_LABEL,
   GUIDED_FLOW_CATEGORY_LABEL,
   type GuidedFlowInteractiveView,
@@ -23,6 +24,7 @@ export {
   GUIDED_FLOW_CATEGORY_LABEL,
   audienceFromRole,
   categoryAllowedForAudience,
+  roleCanAccessGuidedFlowCategory,
 };
 
 const GUIDED_FLOW_ADMIN: GuidedFlowModule[] = [
@@ -92,6 +94,32 @@ export function getGuidedFlowById(id: string): GuidedFlowModule | undefined {
   return GUIDED_FLOW_MODULES.find((m) => m.id === id);
 }
 
+export function moduleIdForInteractiveView(view: GuidedFlowInteractiveView): string {
+  return view === "setup-completo" ? "setup-completo" : "formacao-conteudos-lms";
+}
+
+export function isGuidedFlowAllowed(
+  moduleId: string,
+  ctx: {
+    ent: TenantEntitlements | null;
+    role: JwtRole | null;
+    canManage: boolean;
+    canManageFormacao?: boolean;
+    canManageCrm?: boolean;
+    canManageFaturacao?: boolean;
+  },
+): boolean {
+  if (!ctx.ent) return false;
+  return visibleGuidedFlowModules({
+    ent: ctx.ent,
+    role: ctx.role,
+    canManage: ctx.canManage,
+    canManageFormacao: ctx.canManageFormacao,
+    canManageCrm: ctx.canManageCrm,
+    canManageFaturacao: ctx.canManageFaturacao,
+  }).some((m) => m.id === moduleId);
+}
+
 export function visibleGuidedFlowModules(ctx: {
   ent: TenantEntitlements | null;
   role: JwtRole | null;
@@ -116,6 +144,7 @@ export function visibleGuidedFlowModules(ctx: {
   return GUIDED_FLOW_MODULES.filter((m) => {
     if (!m.audiences.includes(audience)) return false;
     if (!categoryAllowedForAudience(m.category, audience)) return false;
+    if (!roleCanAccessGuidedFlowCategory(ctx.role, m.category)) return false;
     return m.visible(visibleCtx);
   });
 }
