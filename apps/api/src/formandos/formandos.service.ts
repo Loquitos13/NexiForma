@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import type { FormandoProfile } from "@nexiforma/database";
 import type { Prisma } from "@nexiforma/database";
 import { resolverEmailPresencaFormando } from "@nexiforma/shared";
@@ -16,12 +16,18 @@ import {
   mergeFormandoMetadataSigo,
 } from "./formando-sigo-metadata.util";
 import { ViesService } from "../vies/vies.service";
+import { UsersService } from "../users/users.service";
+import {
+  avaliarDocumentosObrigatorios,
+} from "./formando-documentos.util";
+import { parseTenantDocumentosPolitica } from "./documentos-politica.util";
 
 @Injectable()
 export class FormandosService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly vies: ViesService,
+    private readonly users: UsersService,
   ) {}
 
   private async assertEmailPresencaUnico(
@@ -141,7 +147,11 @@ export class FormandosService {
     return rows.map((f) => this.mapFormandoListRow(f, { pendingInviteEmails }));
   }
 
-  async create(user: RequestUser, dto: CreateFormandoDto): Promise<FormandoProfile> {
+  async create(
+    user: RequestUser,
+    dto: CreateFormandoDto,
+    req?: { headers: Record<string, string | string[] | undefined> },
+  ): Promise<FormandoProfile & { contaProvisionada: boolean }> {
     const tenantId = requireTenantId(user);
 
     const nif = dto.nif.trim();
@@ -163,39 +173,50 @@ export class FormandosService {
       }
     }
 
-    await this.assertEmailPresencaUnico(tenantId, dto.emailPresenca);
-
-    const emailContacto = dto.email?.trim().toLowerCase();
-    const linkedUser = emailContacto
-      ? await this.prisma.user.findFirst({
-          where: {
-            tenantId,
-            role: "FORMANDO",
-            email: { equals: emailContacto, mode: "insensitive" },
-            formandoProfile: null,
-          },
-          select: { id: true },
-        })
-      : null;
+    const email = dto.email.trim().toLowerCase();
+    if (!email) {
+      throw new BadRequestException("Email obrigatório para criar formando.");
+    }
 
     let metadata = mergeFormandoMetadataSigo(undefined, dto.sigo);
     if (dto.morada !== undefined) {
       metadata = mergeFormandoMetadataMorada(metadata, dto.morada);
     }
 
-    return this.prisma.formandoProfile.create({
+    const profile = await this.prisma.formandoProfile.create({
       data: {
         tenantId,
         nome: dto.nome.trim(),
         nif,
-        email: dto.email?.trim() || null,
-        emailPresenca: dto.emailPresenca?.trim() || null,
+        email,
+        emailPresenca: null,
         telefone: dto.telefone?.trim() || null,
         entidadeClienteId: dto.entidadeClienteId ?? null,
-        userId: linkedUser?.id ?? null,
         metadata: (metadata ?? undefined) as Prisma.InputJsonValue | undefined,
       },
     });
+
+    try {
+      await this.users.provisionFormandoAccount(
+        user,
+        {
+          formandoProfileId: profile.id,
+          email,
+          displayName: dto.nome.trim(),
+          nif,
+          telefone: dto.telefone,
+        },
+        req,
+      );
+    } catch (err) {
+      await this.prisma.formandoProfile.delete({ where: { id: profile.id } }).catch(() => undefined);
+      throw err;
+    }
+
+    const linked = await this.prisma.formandoProfile.findUniqueOrThrow({
+      where: { id: profile.id },
+    });
+    return { ...linked, contaProvisionada: true };
   }
 
   async getOne(user: RequestUser, id: string) {
@@ -214,7 +235,7 @@ export class FormandosService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const [documentos, matriculas] = await Promise.all([
+    const [documentos, matriculas, requisicoes] = await Promise.all([
       this.prisma.documentoAnexo.findMany({
         where: { tenantId, formandoId: id },
         orderBy: { createdAt: "desc" },
@@ -225,6 +246,8 @@ export class FormandosService {
           lado: true,
           mimeType: true,
           tamanhoBytes: true,
+          visivelFormando: true,
+          createdByUserId: true,
           createdAt: true,
           matriculaId: true,
           acaoFormacao: { select: { codigoInterno: true, titulo: true } },
@@ -254,6 +277,21 @@ export class FormandosService {
                 },
               },
             },
+          },
+        },
+      }),
+      this.prisma.documentoRequisicao.findMany({
+        where: { tenantId, formandoId: id },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          titulo: true,
+          descricao: true,
+          estado: true,
+          createdAt: true,
+          submetidoEm: true,
+          documentoAnexo: {
+            select: { id: true, nome: true, mimeType: true, tamanhoBytes: true, createdAt: true },
           },
         },
       }),
@@ -301,8 +339,31 @@ export class FormandosService {
       sigo: mapSigoMetadataPublic(formando.metadata),
       sigoPronto: formandoSigoPronto(formando.metadata),
       documentos,
+      requisicoes,
       inscricoes,
     };
+  }
+
+  async getDocumentosObrigatorios(user: RequestUser, id: string) {
+    const tenantId = requireTenantId(user);
+    const formando = await this.prisma.formandoProfile.findFirst({
+      where: { id, tenantId },
+      select: { id: true },
+    });
+    if (!formando) throw new NotFoundException("Formando não encontrado.");
+
+    const [docs, tenant] = await Promise.all([
+      this.prisma.documentoAnexo.findMany({
+        where: { tenantId, formandoId: id, matriculaId: null },
+        select: { categoria: true, lado: true },
+      }),
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { metadata: true },
+      }),
+    ]);
+    const politica = parseTenantDocumentosPolitica(tenant?.metadata);
+    return avaliarDocumentosObrigatorios(docs, politica.universaisObrigatorios);
   }
 
   async update(user: RequestUser, id: string, dto: UpdateFormandoDto): Promise<FormandoProfile> {

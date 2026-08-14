@@ -969,6 +969,177 @@ export class EmailTemplates {
     };
   }
 
+  static formandoCredenciaisTemporarias(params: {
+    nomeFormando: string;
+    entidadeFormadora: string;
+    slug: string;
+    email: string;
+    temporaryPassword: string;
+    loginUrl: string;
+  }): EmailTemplate {
+    return {
+      subject: `Acesso formando – ${params.entidadeFormadora}`,
+      text:
+        `Caro(a) ${params.nomeFormando},\n\n` +
+        `Foi registado(a) como formando na entidade «${params.entidadeFormadora}» no NexiForma.\n\n` +
+        `Credenciais temporárias:\n` +
+        `• Identificador (slug): ${params.slug}\n` +
+        `• Email: ${params.email}\n` +
+        `• Palavra-passe temporária: ${params.temporaryPassword}\n\n` +
+        `Inicie sessão em:\n${params.loginUrl}\n\n` +
+        `No primeiro acesso, defina a sua palavra-passe definitiva.\n\n` +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
+      html:
+        cumprimento(params.nomeFormando) +
+        emailParagraph(
+          `Foi registado(a) como <strong>formando</strong> na entidade formadora ` +
+            `<strong>${escapeHtml(params.entidadeFormadora)}</strong> no NexiForma.`,
+        ) +
+        emailParagraph("Utilize as credenciais temporárias abaixo para o primeiro acesso:") +
+        emailInfoBox(
+          emailDataTable(
+            emailDataRow("Identificador (slug)", `<code>${escapeHtml(params.slug)}</code>`) +
+              emailDataRow("Email", `<strong>${escapeHtml(params.email)}</strong>`) +
+              emailDataRow(
+                "Password temporária",
+                `<code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-weight:bold;color:#0f172a;">${escapeHtml(params.temporaryPassword)}</code>`,
+              ),
+          ),
+        ) +
+        emailParagraph(
+          "<strong>Importante:</strong> no primeiro login, ser-lhe-á pedido que defina uma nova palavra-passe.",
+        ) +
+        emailButtonRow(emailButton("Iniciar sessão", params.loginUrl, "primary")) +
+        assinatura(),
+    };
+  }
+
+  static formandoContaCriadaStaff(params: {
+    nomeStaff: string;
+    nomeFormando: string;
+    emailFormando: string;
+    entidadeFormadora: string;
+    slug: string;
+    temporaryPassword: string;
+    loginUrl: string;
+  }): EmailTemplate {
+    return EmailTemplates.registoContaCopiaRegistador({
+      nomeRegistador: params.nomeStaff,
+      tipoPerfil: "formando",
+      nomeUtilizador: params.nomeFormando,
+      emailUtilizador: params.emailFormando,
+      entidadeFormadora: params.entidadeFormadora,
+      slug: params.slug,
+      temporaryPassword: params.temporaryPassword,
+      loginUrl: params.loginUrl,
+    });
+  }
+
+  static registoContaCopiaRegistador(params: {
+    nomeRegistador: string;
+    tipoPerfil: "formando" | "formador";
+    nomeUtilizador: string;
+    emailUtilizador: string;
+    entidadeFormadora: string;
+    slug: string;
+    temporaryPassword: string;
+    loginUrl: string;
+  }): EmailTemplate {
+    const perfilLabel = params.tipoPerfil === "formador" ? "formador" : "formando";
+    return {
+      subject: `Conta ${perfilLabel} criada – ${params.nomeUtilizador}`,
+      text:
+        `Caro(a) ${params.nomeRegistador},\n\n` +
+        `Confirmamos a criação da conta de ${perfilLabel} para «${params.nomeUtilizador}» (${params.emailUtilizador}), ` +
+        `registada por si na plataforma.\n\n` +
+        `Credenciais temporárias enviadas ao ${perfilLabel}:\n` +
+        `• Slug: ${params.slug}\n` +
+        `• Email: ${params.emailUtilizador}\n` +
+        `• Palavra-passe temporária: ${params.temporaryPassword}\n\n` +
+        `Login: ${params.loginUrl}\n\n` +
+        `NexiForma\n`,
+      html:
+        cumprimento(params.nomeRegistador) +
+        emailParagraph(
+          `Foi criada a conta de <strong>${perfilLabel}</strong> para ` +
+            `<strong>${escapeHtml(params.nomeUtilizador)}</strong> ` +
+            `(<a href="mailto:${escapeHtml(params.emailUtilizador)}">${escapeHtml(params.emailUtilizador)}</a>), ` +
+            `registada por si.`,
+        ) +
+        emailParagraph("Credenciais temporárias (cópia para o seu registo):") +
+        emailInfoBox(
+          emailDataTable(
+            emailDataRow("Identificador (slug)", `<code>${escapeHtml(params.slug)}</code>`) +
+              emailDataRow(`Email ${perfilLabel}`, `<strong>${escapeHtml(params.emailUtilizador)}</strong>`) +
+              emailDataRow(
+                "Password temporária",
+                `<code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-weight:bold;color:#0f172a;">${escapeHtml(params.temporaryPassword)}</code>`,
+              ),
+          ),
+        ) +
+        emailButtonRow(emailButton("Página de login", params.loginUrl, "secondary")) +
+        assinatura(),
+    };
+  }
+
+  static formadorCredenciaisTemporarias(params: {
+    nomeFormador: string;
+    entidadeFormadora: string;
+    slug: string;
+    email: string;
+    temporaryPassword: string;
+    loginUrl: string;
+    portalUrl: string;
+    documentosObrigatorios: string[];
+  }): EmailTemplate {
+    const docs = params.documentosObrigatorios;
+    return {
+      subject: `Acesso formador – ${params.entidadeFormadora}`,
+      text:
+        `Caro(a) ${params.nomeFormador},\n\n` +
+        `Foi registado(a) como formador na entidade «${params.entidadeFormadora}» no NexiForma.\n\n` +
+        `Credenciais temporárias:\n` +
+        `• Identificador (slug): ${params.slug}\n` +
+        `• Email: ${params.email}\n` +
+        `• Palavra-passe temporária: ${params.temporaryPassword}\n\n` +
+        `Inicie sessão em:\n${params.loginUrl}\n\n` +
+        `Documentos obrigatórios a carregar no perfil:\n` +
+        docs.map((d) => `• ${d}`).join("\n") +
+        `\n\nPortal: ${params.portalUrl}\n\n` +
+        `No primeiro acesso, defina a sua palavra-passe definitiva.\n\n` +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
+      html:
+        cumprimento(params.nomeFormador) +
+        emailParagraph(
+          `Foi registado(a) como <strong>formador</strong> na entidade formadora ` +
+            `<strong>${escapeHtml(params.entidadeFormadora)}</strong> no NexiForma.`,
+        ) +
+        emailParagraph("Utilize as credenciais temporárias abaixo para o primeiro acesso:") +
+        emailInfoBox(
+          emailDataTable(
+            emailDataRow("Identificador (slug)", `<code>${escapeHtml(params.slug)}</code>`) +
+              emailDataRow("Email", `<strong>${escapeHtml(params.email)}</strong>`) +
+              emailDataRow(
+                "Password temporária",
+                `<code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-weight:bold;color:#0f172a;">${escapeHtml(params.temporaryPassword)}</code>`,
+              ),
+          ),
+        ) +
+        emailParagraph("Documentos obrigatórios a carregar após o login:") +
+        emailInfoBox(
+          `<p style="margin:0 0 8px;"><strong>Checklist documental</strong></p>` +
+            listaHtml(docs.length ? docs : ["Curriculum Vitae", "Documento de identificação", "CCP"]),
+          "#d97706",
+        ) +
+        emailParagraph(
+          "<strong>Importante:</strong> no primeiro login, ser-lhe-á pedido que defina uma nova palavra-passe.",
+        ) +
+        emailButtonRow(emailButton("Iniciar sessão", params.loginUrl, "primary")) +
+        emailMuted(`<a href="${params.portalUrl.replace(/"/g, "%22")}">Abrir perfil de formador</a> para carregar documentos.`) +
+        assinatura(),
+    };
+  }
+
   static erroPlataforma(params: {
     modulo: string;
     tenantLabel: string;

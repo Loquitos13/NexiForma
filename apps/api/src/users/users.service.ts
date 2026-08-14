@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { randomBytes } from "crypto";
 import { ConfigService } from "@nestjs/config";
 import * as argon2 from "argon2";
 import type { Prisma, User } from "@nexiforma/database";
@@ -56,6 +57,10 @@ import {
   linkFormandoProfileToUserByEmail,
   upsertFormandoProfileForInvite,
 } from "../common/formando-user-link.util";
+
+function generateTempAccountPassword(): string {
+  return randomBytes(9).toString("base64url").slice(0, 12) + "!A1";
+}
 
 @Injectable()
 export class UsersService {
@@ -486,6 +491,302 @@ export class UsersService {
       { documentosObrigatorios },
     );
     return inviteUrl;
+  }
+
+  /** Cria ou reactiva conta FORMANDO com password temporária (registo pelo portal). */
+  async provisionFormandoAccount(
+    actor: RequestUser,
+    params: {
+      formandoProfileId: string;
+      email: string;
+      displayName: string;
+      nif: string;
+      telefone?: string | null;
+    },
+    req?: { headers: Record<string, string | string[] | undefined> },
+  ): Promise<{ userId: string }> {
+    const tenantId = requireTenantId(actor);
+    const email = params.email.toLowerCase().trim();
+
+    const profile = await this.prisma.formandoProfile.findFirst({
+      where: { id: params.formandoProfileId, tenantId },
+      select: { id: true, userId: true, nif: true },
+    });
+    if (!profile) {
+      throw new NotFoundException("Formando não encontrado.");
+    }
+    if (profile.userId) {
+      throw new ConflictException("Este formando já tem conta de utilizador.");
+    }
+
+    const existing = await this.prisma.user.findFirst({
+      where: { tenantId, email },
+      include: { formandoProfile: { select: { id: true } } },
+    });
+    if (existing?.active) {
+      if (existing.role !== "FORMANDO") {
+        throw new ConflictException("Já existe utilizador activo com este email noutro cargo.");
+      }
+      if (existing.formandoProfile && existing.formandoProfile.id !== profile.id) {
+        throw new ConflictException("Já existe outro formando com este email.");
+      }
+    }
+
+    await this.prisma.tenantInvite.deleteMany({
+      where: { tenantId, email, acceptedAt: null },
+    });
+
+    await assertUserLimit(this.prisma, tenantId);
+
+    const temporaryPassword = generateTempAccountPassword();
+    const passwordHash = await argon2.hash(temporaryPassword, { type: argon2.argon2id });
+
+    let userId: string;
+    if (existing) {
+      await this.prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          active: true,
+          displayName: params.displayName.trim(),
+          role: "FORMANDO",
+          passwordHash,
+          mustChangePassword: true,
+          emailVerifiedAt: null,
+        },
+      });
+      userId = existing.id;
+    } else {
+      const created = await this.prisma.user.create({
+        data: {
+          tenantId,
+          email,
+          displayName: params.displayName.trim(),
+          role: "FORMANDO",
+          active: true,
+          passwordHash,
+          mustChangePassword: true,
+        },
+      });
+      userId = created.id;
+    }
+
+    await this.prisma.formandoProfile.update({
+      where: { id: profile.id },
+      data: {
+        userId,
+        email,
+        telefone: params.telefone?.trim() || undefined,
+      },
+    });
+
+    const [tenant, actorRow] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { legalName: true, slug: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: actor.sub },
+        select: { email: true, displayName: true },
+      }),
+    ]);
+
+    const entidadeFormadora = tenant?.legalName ?? tenant?.slug ?? "entidade formadora";
+    const appUrl = resolveAppPublicUrlForLinks(this.config, req).replace(/\/$/, "");
+    const slug = tenant?.slug ?? "";
+    const loginUrl = `${appUrl}/login?slug=${encodeURIComponent(slug)}&email=${encodeURIComponent(email)}`;
+
+    const tpl = EmailTemplates.formandoCredenciaisTemporarias({
+      nomeFormando: params.displayName.trim(),
+      entidadeFormadora,
+      slug,
+      email,
+      temporaryPassword,
+      loginUrl,
+    });
+
+    await this.mail.send({
+      to: email,
+      subject: tpl.subject,
+      text: tpl.text,
+      html: tpl.html,
+    });
+
+    const actorEmail = actorRow?.email?.trim().toLowerCase();
+    if (actorEmail && actorEmail !== email) {
+      const staffTpl = EmailTemplates.registoContaCopiaRegistador({
+        nomeRegistador: actorRow?.displayName?.trim() || actorEmail.split("@")[0]!,
+        tipoPerfil: "formando",
+        nomeUtilizador: params.displayName.trim(),
+        emailUtilizador: email,
+        entidadeFormadora,
+        slug,
+        temporaryPassword,
+        loginUrl,
+      });
+      await this.mail.send({
+        to: actorEmail,
+        subject: staffTpl.subject,
+        text: staffTpl.text,
+        html: staffTpl.html,
+      });
+    }
+
+    return { userId };
+  }
+
+  /** Cria conta FORMADOR + perfil com password temporária (registo pelo portal). */
+  async provisionNewFormadorAccount(
+    actor: RequestUser,
+    params: {
+      email: string;
+      displayName: string;
+      nif: string;
+      telefone: string;
+      morada: string;
+    },
+    req?: { headers: Record<string, string | string[] | undefined> },
+  ) {
+    const tenantId = requireTenantId(actor);
+    const email = params.email.toLowerCase().trim();
+    const nif = params.nif.trim();
+
+    const dupNif = await this.prisma.formadorProfile.findFirst({ where: { tenantId, nif } });
+    if (dupNif) throw new ConflictException("Já existe formador com este NIF.");
+
+    const existing = await this.prisma.user.findFirst({
+      where: { tenantId, email },
+      include: { formadorProfile: { select: { id: true } } },
+    });
+    if (existing?.active) {
+      if (existing.role !== "FORMADOR") {
+        throw new ConflictException("Já existe utilizador activo com este email noutro cargo.");
+      }
+      if (existing.formadorProfile) {
+        throw new ConflictException("Já existe formador com este email.");
+      }
+    }
+
+    await this.prisma.tenantInvite.deleteMany({
+      where: { tenantId, email, acceptedAt: null },
+    });
+
+    await assertUserLimit(this.prisma, tenantId);
+
+    const temporaryPassword = generateTempAccountPassword();
+    const passwordHash = await argon2.hash(temporaryPassword, { type: argon2.argon2id });
+
+    let userId: string;
+    if (existing) {
+      await this.prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          active: true,
+          displayName: params.displayName.trim(),
+          role: "FORMADOR",
+          passwordHash,
+          mustChangePassword: true,
+          emailVerifiedAt: null,
+        },
+      });
+      userId = existing.id;
+    } else {
+      const created = await this.prisma.user.create({
+        data: {
+          tenantId,
+          email,
+          displayName: params.displayName.trim(),
+          role: "FORMADOR",
+          active: true,
+          passwordHash,
+          mustChangePassword: true,
+        },
+      });
+      userId = created.id;
+    }
+
+    const profile = await this.prisma.formadorProfile.create({
+      data: {
+        tenantId,
+        userId,
+        nif,
+        email,
+        nomeCompleto: params.displayName.trim(),
+        telefone: params.telefone.trim(),
+        morada: params.morada.trim(),
+      },
+      select: {
+        id: true,
+        nomeCompleto: true,
+        nif: true,
+        email: true,
+        emailPresenca: true,
+        telefone: true,
+        morada: true,
+        ccNumero: true,
+        ccpNumero: true,
+        ccValidade: true,
+        ccpValidade: true,
+        user: { select: { id: true, email: true, active: true } },
+      },
+    });
+
+    const [tenant, actorRow, docsLabels] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { legalName: true, slug: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: actor.sub },
+        select: { email: true, displayName: true },
+      }),
+      this.formadorDocsObrigatoriosLabels(tenantId),
+    ]);
+
+    const entidadeFormadora = tenant?.legalName ?? tenant?.slug ?? "entidade formadora";
+    const appUrl = resolveAppPublicUrlForLinks(this.config, req).replace(/\/$/, "");
+    const slug = tenant?.slug ?? "";
+    const loginUrl = `${appUrl}/login?slug=${encodeURIComponent(slug)}&email=${encodeURIComponent(email)}`;
+    const portalUrl = `${appUrl}/portal/formador/perfil?tab=documentos`;
+
+    const tpl = EmailTemplates.formadorCredenciaisTemporarias({
+      nomeFormador: params.displayName.trim(),
+      entidadeFormadora,
+      slug,
+      email,
+      temporaryPassword,
+      loginUrl,
+      portalUrl,
+      documentosObrigatorios: docsLabels,
+    });
+
+    await this.mail.send({
+      to: email,
+      subject: tpl.subject,
+      text: tpl.text,
+      html: tpl.html,
+    });
+
+    const actorEmail = actorRow?.email?.trim().toLowerCase();
+    if (actorEmail && actorEmail !== email) {
+      const copyTpl = EmailTemplates.registoContaCopiaRegistador({
+        nomeRegistador: actorRow?.displayName?.trim() || actorEmail.split("@")[0]!,
+        tipoPerfil: "formador",
+        nomeUtilizador: params.displayName.trim(),
+        emailUtilizador: email,
+        entidadeFormadora,
+        slug,
+        temporaryPassword,
+        loginUrl,
+      });
+      await this.mail.send({
+        to: actorEmail,
+        subject: copyTpl.subject,
+        text: copyTpl.text,
+        html: copyTpl.html,
+      });
+    }
+
+    return profile;
   }
 
   private async notifyFormadorCargoAtribuido(params: {

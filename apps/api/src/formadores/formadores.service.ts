@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -13,6 +14,7 @@ import { syncPasswordHashByEmail } from "../auth/shared-password.util";
 import type { UpdateFormadorDto } from "./dto/update-formador.dto";
 import type { UpdateFormadorMeDto } from "./dto/update-formador-me.dto";
 import type { ChangeFormadorPasswordDto } from "./dto/change-formador-password.dto";
+import type { CreateFormadorDto } from "./dto/create-formador.dto";
 import { StorageService } from "../storage/storage.service";
 import { DocumentAccessAuditService } from "../audit/document-access-audit.service";
 import { opaqueStorageKey } from "../common/opaque-storage-key.util";
@@ -23,6 +25,9 @@ import {
   FORMADOR_DOC_TIPOS,
 } from "./formador-documentos.util";
 import { parseTenantDocumentosPolitica } from "../formandos/documentos-politica.util";
+import { UsersService } from "../users/users.service";
+import { ViesService } from "../vies/vies.service";
+import { PortalNotificacoesService } from "../notificacoes/portal-notificacoes.service";
 
 const FORMADOR_CONTACT_SELECT = {
   id: true,
@@ -54,7 +59,34 @@ export class FormadoresService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly documentAudit: DocumentAccessAuditService,
+    private readonly users: UsersService,
+    private readonly vies: ViesService,
+    private readonly portalNotificacoes: PortalNotificacoesService,
   ) {}
+
+  async create(
+    user: RequestUser,
+    dto: CreateFormadorDto,
+    req?: { headers: Record<string, string | string[] | undefined> },
+  ) {
+    const nif = dto.nif.trim();
+    if (!/^\d{9}$/.test(nif)) {
+      throw new BadRequestException("NIF inválido (9 dígitos).");
+    }
+    await this.vies.assertConfirmado(nif, "pessoa");
+
+    return this.users.provisionNewFormadorAccount(
+      user,
+      {
+        email: dto.email,
+        displayName: dto.nomeCompleto.trim(),
+        nif,
+        telefone: dto.telefone,
+        morada: dto.morada,
+      },
+      req,
+    );
+  }
 
   list(user: RequestUser) {
     const tenantId = requireTenantId(user);
@@ -91,11 +123,51 @@ export class FormadoresService {
         lado: true,
         mimeType: true,
         tamanhoBytes: true,
+        visivelFormador: true,
+        createdByUserId: true,
         createdAt: true,
       },
     });
 
-    return { ...formador, documentos };
+    const requisicoes = await this.prisma.documentoRequisicao.findMany({
+      where: { tenantId, formadorId: id },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        titulo: true,
+        descricao: true,
+        estado: true,
+        createdAt: true,
+        submetidoEm: true,
+        documentoAnexo: {
+          select: { id: true, nome: true, mimeType: true, tamanhoBytes: true, createdAt: true },
+        },
+      },
+    });
+
+    return { ...formador, documentos, requisicoes };
+  }
+
+  async getDocumentosObrigatorios(user: RequestUser, id: string) {
+    const tenantId = requireTenantId(user);
+    const formador = await this.prisma.formadorProfile.findFirst({
+      where: { id, tenantId },
+      select: { id: true },
+    });
+    if (!formador) throw new NotFoundException("Formador não encontrado.");
+
+    const [docs, tenant] = await Promise.all([
+      this.prisma.documentoAnexo.findMany({
+        where: { tenantId, formadorId: id },
+        select: { categoria: true },
+      }),
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { metadata: true },
+      }),
+    ]);
+    const politica = parseTenantDocumentosPolitica(tenant?.metadata);
+    return avaliarDocumentosObrigatoriosFormador(docs, politica.universaisObrigatorios);
   }
 
   async update(user: RequestUser, id: string, dto: UpdateFormadorDto) {
@@ -249,7 +321,11 @@ export class FormadoresService {
   async listMeDocumentos(user: RequestUser) {
     const { tenantId, profile } = await this.requireOwnProfile(user);
     return this.prisma.documentoAnexo.findMany({
-      where: { tenantId, formadorId: profile.id },
+      where: {
+        tenantId,
+        formadorId: profile.id,
+        OR: [{ visivelFormador: true }, { createdByUserId: user.sub }],
+      },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -258,6 +334,7 @@ export class FormadoresService {
         lado: true,
         mimeType: true,
         tamanhoBytes: true,
+        visivelFormador: true,
         createdAt: true,
       },
     });
@@ -311,6 +388,7 @@ export class FormadoresService {
           mimeType: file.mimetype,
           tamanhoBytes: file.size,
           createdByUserId: user.sub,
+          visivelFormador: true,
         },
         select: {
           id: true,
@@ -330,7 +408,12 @@ export class FormadoresService {
   async streamMeDocumento(user: RequestUser, id: string) {
     const { tenantId, profile } = await this.requireOwnProfile(user);
     const doc = await this.prisma.documentoAnexo.findFirst({
-      where: { id, tenantId, formadorId: profile.id },
+      where: {
+        id,
+        tenantId,
+        formadorId: profile.id,
+        OR: [{ visivelFormador: true }, { createdByUserId: user.sub }],
+      },
     });
     if (!doc) throw new NotFoundException("Documento não encontrado.");
     const obj = await this.storage.getObject(doc.storageKey);
@@ -349,5 +432,103 @@ export class FormadoresService {
       contentType: doc.mimeType || obj.contentType,
       nome: doc.nome,
     };
+  }
+
+  async listMeDocumentoRequisicoes(user: RequestUser) {
+    const { tenantId, profile } = await this.requireOwnProfile(user);
+    return this.prisma.documentoRequisicao.findMany({
+      where: {
+        tenantId,
+        formadorId: profile.id,
+        estado: { in: ["pendente", "submetido"] },
+      },
+      orderBy: [{ estado: "asc" }, { createdAt: "desc" }],
+      select: {
+        id: true,
+        titulo: true,
+        descricao: true,
+        estado: true,
+        createdAt: true,
+        submetidoEm: true,
+        documentoAnexo: {
+          select: { id: true, nome: true, mimeType: true, tamanhoBytes: true, createdAt: true },
+        },
+      },
+    });
+  }
+
+  async uploadDocumentoRequisicao(
+    user: RequestUser,
+    requisicaoId: string,
+    file: Express.Multer.File,
+  ) {
+    const { tenantId, profile } = await this.requireOwnProfile(user);
+    if (!file?.buffer?.length) throw new BadRequestException("Ficheiro em falta.");
+    if (!FORMADOR_DOC_MIMES.has(file.mimetype)) {
+      throw new BadRequestException("Formato inválido. Use PDF, JPG ou PNG.");
+    }
+    if (file.size > FORMADOR_DOC_MAX_BYTES) {
+      throw new BadRequestException("Ficheiro demasiado grande (máx. 10 MB).");
+    }
+
+    const req = await this.prisma.documentoRequisicao.findFirst({
+      where: { id: requisicaoId, tenantId, formadorId: profile.id },
+    });
+    if (!req) throw new NotFoundException("Requisição não encontrada.");
+    if (req.estado === "cancelado") {
+      throw new BadRequestException("Esta requisição foi cancelada.");
+    }
+
+    const storageKey = opaqueStorageKey(["docs", tenantId, "formador-req", profile.id]);
+    await this.storage.putObject(storageKey, file.buffer, file.mimetype);
+
+    try {
+      const updated = await this.prisma.$transaction(async (tx) => {
+        if (req.documentoAnexoId) {
+          const prev = await tx.documentoAnexo.findFirst({
+            where: { id: req.documentoAnexoId, tenantId },
+          });
+          if (prev) {
+            await tx.documentoAnexo.delete({ where: { id: prev.id } });
+            await this.storage.deleteObject(prev.storageKey).catch(() => undefined);
+          }
+        }
+        const doc = await tx.documentoAnexo.create({
+          data: {
+            tenantId,
+            formadorId: profile.id,
+            categoria: "outros",
+            lado: "unico",
+            nome: file.originalname,
+            storageKey,
+            mimeType: file.mimetype,
+            tamanhoBytes: file.size,
+            createdByUserId: user.sub,
+            visivelFormador: true,
+          },
+        });
+        return tx.documentoRequisicao.update({
+          where: { id: req.id },
+          data: {
+            estado: "submetido",
+            submetidoEm: new Date(),
+            documentoAnexoId: doc.id,
+          },
+          select: {
+            id: true,
+            titulo: true,
+            estado: true,
+            submetidoEm: true,
+            documentoAnexo: {
+              select: { id: true, nome: true, mimeType: true, tamanhoBytes: true, createdAt: true },
+            },
+          },
+        });
+      });
+      return updated;
+    } catch (err) {
+      await this.storage.deleteObject(storageKey).catch(() => undefined);
+      throw err;
+    }
   }
 }

@@ -7,11 +7,13 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
+import type { Request } from "express";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -23,6 +25,7 @@ import { FormadoresService } from "./formadores.service";
 import { UpdateFormadorDto } from "./dto/update-formador.dto";
 import { UpdateFormadorMeDto } from "./dto/update-formador-me.dto";
 import { ChangeFormadorPasswordDto } from "./dto/change-formador-password.dto";
+import { CreateFormadorDto } from "./dto/create-formador.dto";
 
 @Controller("formadores")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -71,6 +74,23 @@ export class FormadoresController {
     return this.formadores.getMeDocumentosObrigatorios(user);
   }
 
+  @Get("me/documentos/requisicoes")
+  @Roles("formador")
+  listMeDocumentoRequisicoes(@CurrentUser() user: RequestUser) {
+    return this.formadores.listMeDocumentoRequisicoes(user);
+  }
+
+  @Post("me/documentos/requisicoes/:id")
+  @Roles("formador")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
+  uploadDocumentoRequisicao(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.formadores.uploadDocumentoRequisicao(user, id, file);
+  }
+
   @Post("me/documentos")
   @Roles("formador")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
@@ -96,10 +116,29 @@ export class FormadoresController {
     res.send(file.body);
   }
 
+  @Get(":id/documentos/obrigatorios")
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  getDocumentosObrigatorios(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return this.formadores.getDocumentosObrigatorios(user, id);
+  }
+
   @Get(":id")
   @Roles("tenant_manager", "coordenador_pedagogico")
   getOne(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
     return this.formadores.getOne(user, id);
+  }
+
+  @Post()
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  create(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: CreateFormadorDto,
+    @Req() req: Request,
+  ) {
+    return this.formadores.create(user, dto, req);
   }
 
   @Patch(":id")

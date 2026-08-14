@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, GraduationCap, Pencil, ShieldAlert, UserRound } from "lucide-react";
+import { AlertTriangle, GraduationCap, Pencil, PlusCircle, ShieldAlert, UserRound } from "lucide-react";
+import { NifStatusField, type NifStatus } from "@/components/crm/nif-status-field";
 import { DgertRequisitoBanner, DgertTarget } from "@/components/portal/dgert-requisito-banner";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
@@ -15,6 +16,9 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  Dialog,
+  DialogContent,
+  Input,
   PaginatedDataTable,
   PageHeader,
   type Column,
@@ -58,6 +62,14 @@ function CredencialBadge({ validade }: { validade: string | null }) {
   return <Badge variant={v.variant}>{v.label}</Badge>;
 }
 
+const EMPTY_FORM = {
+  nomeCompleto: "",
+  nif: "",
+  email: "",
+  telefone: "",
+  morada: "",
+};
+
 export default function FormadoresPage() {
   const router = useRouter();
   const { canManageFormacao: canManage } = useTenantRole();
@@ -65,6 +77,11 @@ export default function FormadoresPage() {
   const [alertas, setAlertas] = useState<Alerta[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [nifStatus, setNifStatus] = useState<NifStatus>("idle");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -84,6 +101,33 @@ export default function FormadoresPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function submitCreate(e: FormEvent) {
+    e.preventDefault();
+    if (!canManage || nifStatus !== "valid") return;
+    setBusy(true);
+    setError(null);
+    setMsg(null);
+    const r = await bffFetch("/api/v1/formadores", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(form),
+    });
+    setBusy(false);
+    if (!r.ok) {
+      setError(await parseApiError(r));
+      return;
+    }
+    const created = (await r.json()) as Formador;
+    setDialogOpen(false);
+    setForm(EMPTY_FORM);
+    setNifStatus("idle");
+    setMsg(
+      "Formador registado. Foi enviada uma password temporária ao email do formador e uma cópia a quem efectuou o registo.",
+    );
+    await load();
+    router.push(`/portal/formadores/${created.id}`);
+  }
 
   const COLS: Column<Formador>[] = [
     {
@@ -149,8 +193,17 @@ export default function FormadoresPage() {
       <PageHeader
         title="Formadores"
         description="Perfil, contacto e documentos dos formadores - CC/CCP e ficheiros para DGERT."
+        actions={
+          canManage ? (
+            <Button onClick={() => setDialogOpen(true)} data-guided-flow-anchor="novo-formador">
+              <PlusCircle className="h-4 w-4" />
+              Novo formador
+            </Button>
+          ) : null
+        }
       />
 
+      {msg && <Alert variant="success" className="mb-4">{msg}</Alert>}
       {error && <Alert variant="error" className="mb-4">{error}</Alert>}
 
       <DgertRequisitoBanner backHref="/portal/dossie" />
@@ -245,6 +298,56 @@ export default function FormadoresPage() {
           </CardContent>
         </Card>
       </DgertTarget>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent title="Novo formador">
+          <form onSubmit={(e) => void submitCreate(e)} className="grid gap-4">
+            <Input
+              label="Nome completo *"
+              value={form.nomeCompleto}
+              onChange={(e) => setForm((f) => ({ ...f, nomeCompleto: e.target.value }))}
+              required
+            />
+            <NifStatusField
+              value={form.nif}
+              onChange={(nif) => setForm((f) => ({ ...f, nif }))}
+              onStatusChange={setNifStatus}
+            />
+            <Input
+              label="Email *"
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+              required
+            />
+            <Input
+              label="Telemóvel *"
+              value={form.telefone}
+              onChange={(e) => setForm((f) => ({ ...f, telefone: e.target.value }))}
+              required
+            />
+            <Input
+              label="Morada fiscal *"
+              value={form.morada}
+              onChange={(e) => setForm((f) => ({ ...f, morada: e.target.value }))}
+              required
+            />
+            <p className="text-xs text-slate-500">
+              Será criada automaticamente uma conta NexiForma e enviada uma password temporária a este
+              endereço (cópia para quem efectua o registo). O formador deve carregar CV, CCP, documento
+              de identificação e ficha curricular DGERT no perfil.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={busy || nifStatus !== "valid"}>
+                {busy ? "A registar…" : "Registar formador"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

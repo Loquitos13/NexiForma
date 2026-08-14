@@ -89,7 +89,6 @@ export function FormandoFichaDados({
     nome: "",
     nif: "",
     email: "",
-    emailPresenca: "",
     telefone: "",
     morada: "",
     entidadeClienteId: "",
@@ -117,7 +116,6 @@ export function FormandoFichaDados({
       nome: ficha.nome,
       nif: ficha.nif,
       email: ficha.email ?? "",
-      emailPresenca: ficha.emailPresenca ?? "",
       telefone: ficha.telefone ?? "",
       morada: ficha.morada ?? "",
       entidadeClienteId: ficha.entidadeCliente?.id ?? "",
@@ -170,7 +168,6 @@ export function FormandoFichaDados({
         nome: form.nome.trim(),
         nif: form.nif.replace(/\s/g, "").trim(),
         email: form.email.trim() || null,
-        emailPresenca: form.emailPresenca.trim() || null,
         telefone: form.telefone.trim() || null,
         morada: form.morada.trim() || null,
         entidadeClienteId: form.entidadeClienteId.trim() || null,
@@ -335,16 +332,10 @@ export function FormandoFichaDados({
                 onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
               />
               <Input
-                label="Email de contacto"
+                label="Email"
                 type="email"
                 value={form.email}
                 onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-              />
-              <Input
-                label="Email para presença na reunião"
-                type="email"
-                value={form.emailPresenca}
-                onChange={(e) => setForm((f) => ({ ...f, emailPresenca: e.target.value }))}
               />
               <Input
                 label="Telefone"
@@ -442,7 +433,6 @@ export function FormandoFichaDados({
               </div>
               <Field label="Nome" value={ficha.nome} />
               <Field label="Email" value={ficha.email ?? "-"} />
-              <Field label="Email reunião" value={ficha.emailPresenca ?? "-"} />
               <Field label="Telefone" value={ficha.telefone ?? "-"} />
               <div className="sm:col-span-2">
                 <Field label="Morada" value={ficha.morada ?? "-"} />

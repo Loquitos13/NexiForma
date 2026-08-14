@@ -8,8 +8,10 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from "@nestjs/common";
+import type { Request } from "express";
 import type { FormandoProfile } from "@nexiforma/database";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
@@ -34,6 +36,15 @@ export class FormandosController {
     return this.formandos.list(user, { entidadeClienteId });
   }
 
+  @Get(":id/documentos/obrigatorios")
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  getDocumentosObrigatorios(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return this.formandos.getDocumentosObrigatorios(user, id);
+  }
+
   @Get(":id")
   @Roles("tenant_manager", "coordenador_pedagogico")
   detail(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
@@ -45,8 +56,9 @@ export class FormandosController {
   create(
     @CurrentUser() user: RequestUser,
     @Body() dto: CreateFormandoDto,
-  ): Promise<FormandoProfile> {
-    return this.formandos.create(user, dto);
+    @Req() req: Request,
+  ): Promise<FormandoProfile & { contaProvisionada: boolean }> {
+    return this.formandos.create(user, dto, req);
   }
 
   @Patch(":id")

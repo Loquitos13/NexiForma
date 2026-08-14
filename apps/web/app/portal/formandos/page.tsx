@@ -50,7 +50,7 @@ const EMPTY_SIGO: SigoForm = {
   habilitacaoLiteraria: "3",
 };
 
-const EMPTY = { nome: "", nif: "", email: "", emailPresenca: "", telefone: "" };
+const EMPTY = { nome: "", nif: "", email: "", telefone: "" };
 
 type EntidadeOpt = { id: string; nome: string; nif: string };
 
@@ -195,7 +195,7 @@ export default function FormandosPage() {
   }, [searchParams, canManage, router, openCreate]);
   function openEdit(f: Formando) {
     setEditId(f.id);
-    setForm({ nome: f.nome, nif: f.nif, email: f.email ?? "", emailPresenca: f.emailPresenca ?? "", telefone: f.telefone ?? "" });
+    setForm({ nome: f.nome, nif: f.nif, email: f.email ?? "", telefone: f.telefone ?? "" });
     setEntidadeClienteId(f.entidadeClienteId ?? f.entidadeCliente?.id ?? "");
     setSigoForm({
       tipoDocIdentificacao: f.sigo?.tipoDocIdentificacao ?? "CC",
@@ -216,13 +216,16 @@ export default function FormandosPage() {
       setError("NIF inválido. Tente novamente.");
       return;
     }
+    if (!editId && !form.email.trim()) {
+      setError("Email obrigatório para criar formando.");
+      return;
+    }
     setBusy(true); setMsg(null); setError(null);
     // Confirmação NIF só no backend (Portugal NIF / SIGO stub).
     const body: Record<string, unknown> = {
       nome: form.nome.trim(),
       nif: form.nif.trim(),
-      email: form.email.trim() || undefined,
-      emailPresenca: form.emailPresenca.trim() || undefined,
+      email: form.email.trim(),
       telefone: form.telefone.trim() || undefined,
       entidadeClienteId: editId ? entidadeClienteId || null : entidadeClienteId || undefined,
       sigo: {
@@ -239,7 +242,15 @@ export default function FormandosPage() {
       body: JSON.stringify(body),
     });
     if (!res.ok) { setError(await parseApiError(res)); }
-    else { setMsg(editId ? "Formando actualizado." : "Formando criado."); setDialogOpen(false); await load(); }
+    else {
+      setMsg(
+        editId
+          ? "Formando actualizado."
+          : "Formando criado. Foi enviada uma password temporária ao email do formando e uma cópia a quem efectuou o registo.",
+      );
+      setDialogOpen(false);
+      await load();
+    }
     setBusy(false);
   }
 
@@ -337,31 +348,12 @@ export default function FormandosPage() {
     },
     {
       key: "email",
-      header: "Email contacto",
+      header: "Email",
       sortable: true,
       hideOnMobile: true,
-      sortValue: (f) => f.email ?? "",
-      cell: (f) => <span className="text-slate-400 text-sm">{f.email ?? "–"}</span>,
-    },
-    {
-      key: "emailPresencaEfectivo",
-      header: "Email reunião",
-      sortable: true,
-      hideOnMobile: true,
-      sortValue: (f) => f.emailPresencaEfectivo ?? "",
+      sortValue: (f) => f.email ?? f.emailConta ?? "",
       cell: (f) => (
-        <span className="text-slate-300 text-sm">
-            {f.emailPresencaEfectivo ?? "–"}
-          {f.emailPresencaEfectivo ? (
-            f.emailPresenca ? (
-              <span className="block text-[10px] text-teal-500/80">definido pelo gestor</span>
-            ) : f.emailConta ? (
-              <span className="block text-[10px] text-slate-500">conta do tenant</span>
-            ) : null
-          ) : (
-            <span className="block text-[10px] text-amber-500/90">obrigatório p/ online</span>
-          )}
-        </span>
+        <span className="text-slate-400 text-sm">{f.email ?? f.emailConta ?? "–"}</span>
       ),
     },
     {
@@ -388,7 +380,7 @@ export default function FormandosPage() {
       <PageHeader
         title="Formandos"
         description="Registo de participantes – NIF e dados SIGO (documento, nascimento, nacionalidade, habilitações) para export/submissão DGERT."
-        actions={canManage ? <Button onClick={() => openCreate()}><PlusCircle className="h-4 w-4" />Novo formando</Button> : null}
+        actions={canManage ? <Button onClick={() => openCreate()} data-guided-flow-anchor="novo-formando"><PlusCircle className="h-4 w-4" />Novo formando</Button> : null}
       />
 
       {error && <Alert variant="error" className="mb-4">{error}</Alert>}
@@ -405,7 +397,6 @@ export default function FormandosPage() {
         <Card className="py-16 text-center">
           <Users className="mx-auto mb-3 h-10 w-10 text-slate-600" />
           <p className="text-slate-400">Ainda não há formandos registados.</p>
-          {canManage && <Button className="mt-4" onClick={() => openCreate()}><PlusCircle className="h-4 w-4" />Registar primeiro formando</Button>}
         </Card>
       ) : (
         <PaginatedDataTable
@@ -491,18 +482,19 @@ export default function FormandosPage() {
               tipo="pessoa"
               onStatusChange={setNifStatus}
             />
-            <Input label="Email de contacto" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
             <Input
-              label="Email para presença na reunião"
+              label="Email *"
               type="email"
-              value={form.emailPresenca}
-              onChange={(e) => setForm((f) => ({ ...f, emailPresenca: e.target.value }))}
-              placeholder="Opcional - sobrepõe o email da conta"
+              required
+              value={form.email}
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
             />
-            <p className="text-[11px] text-slate-500 -mt-2 leading-snug">
-              Se vazio, o formando deve entrar no Zoom/Teams com o email da conta NexiForma. Se preenchido, só esse
-              endereço conta na assiduidade da reunião.
-            </p>
+            {!editId ? (
+              <p className="text-[11px] text-slate-500 -mt-2 leading-snug">
+                Será criada automaticamente uma conta NexiForma e enviada uma password temporária a este
+                endereço (cópia para quem efectua o registo).
+              </p>
+            ) : null}
             <Input label="Telefone" value={form.telefone} onChange={(e) => setForm((f) => ({ ...f, telefone: e.target.value }))} />
 
             <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-3 space-y-3">

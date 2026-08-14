@@ -14,10 +14,9 @@ export class CreateFormandoDto {
   @MaxLength(32)
   nif!: string;
 
-  @IsOptional()
-  @IsString()
+  @IsEmail()
   @MaxLength(320)
-  email?: string | null;
+  email!: string;
 
   @IsOptional()
   @IsEmail()
