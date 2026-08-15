@@ -585,6 +585,8 @@ export default function FormadorPerfilPage() {
                 roleKind="formador"
                 idCompleto={idDocOk}
                 onSynced={load}
+                enabled={personaEnabled}
+                ready={personaReady}
               />
               {personaReady && personaEnabled ? (
                 <p className="mt-2 text-xs text-slate-500">

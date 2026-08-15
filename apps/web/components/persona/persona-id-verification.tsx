@@ -44,6 +44,9 @@ type Props = {
   roleKind: "formando" | "formador";
   idCompleto?: boolean;
   onSynced?: () => void | Promise<void>;
+  /** Estado partilhado do hook `usePersonaEnabled` na página (evita pedidos duplicados). */
+  enabled: boolean;
+  ready: boolean;
 };
 
 function loadPersonaScript(): Promise<void> {
@@ -67,8 +70,7 @@ function loadPersonaScript(): Promise<void> {
 }
 
 /** Verificação de identidade via Persona; descarrega imagens para o dossiê ao concluir. */
-export function PersonaIdVerification({ roleKind, idCompleto, onSynced }: Props) {
-  const { enabled, ready } = usePersonaEnabled();
+export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled, ready }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);

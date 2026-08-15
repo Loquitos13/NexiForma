@@ -42,6 +42,8 @@ const CORE_FORMATION_API = [
   "quizzes",
   "verificacao",
   "rgpd",
+  /** Verificação de identidade (Persona) — dossiê formandos/formadores. */
+  "persona",
 ] as const;
 
 const CRM_API = ["crm", "entidades-cliente", "propostas"] as const;
@@ -106,6 +108,8 @@ const FORMANDO_PORTAL_API = [
   "notificacoes",
   /** Check-in de presença via QR (sessão presencial / híbrida). */
   "presenca-checkin",
+  /** Verificação de identidade (Persona) no perfil do formando. */
+  "persona",
 ] as const;
 
 const IA_API = ["relatorios"] as const;
@@ -221,6 +225,9 @@ export function isApiPathAllowed(
   if (opts?.role === "formador") {
     if (segment === "consent" || segment === "auth" || segment === "rgpd") return true;
     if (normalized === "formadores/me" || normalized.startsWith("formadores/me/")) {
+      return ent.canAccessCoreFormation || ent.canAccessFormacaoTeams;
+    }
+    if (segment === "persona") {
       return ent.canAccessCoreFormation || ent.canAccessFormacaoTeams;
     }
   }

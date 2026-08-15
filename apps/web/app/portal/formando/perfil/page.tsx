@@ -607,6 +607,8 @@ export default function FormandoPerfilPage() {
                             roleKind="formando"
                             idCompleto={ok}
                             onSynced={load}
+                            enabled={personaEnabled}
+                            ready={personaReady}
                           />
                           {personaReady && personaEnabled ? null : (
                             <Select
@@ -687,49 +689,51 @@ export default function FormandoPerfilPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-slate-700/30 bg-slate-900/40">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Fingerprint className="h-4 w-4 text-teal-400" />
-                Captura de cartão (opcional)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-xs text-slate-500">
-                Alternativa à identificação: captura on-camera do CC (frente e verso). Conta para o
-                documento de identificação obrigatório.
-              </p>
-              <Select
-                label="Tipo de cartão"
-                value={tipoDocumento}
-                onChange={(e) => setTipoDocumento(e.target.value as TipoDocumento | "")}
-                disabled={uploading}
-              >
-                <option value="">Selecciona…</option>
-                {TIPOS_DOCUMENTO.map((tipo) => {
-                  const enviado =
-                    tipo === "cc"
-                      ? (ladosPorTipo[tipo]?.length ?? 0) >= 2
-                      : Boolean(ladosPorTipo[tipo]?.includes("frente"));
-                  return (
-                    <option key={tipo} value={tipo}>
-                      {DOCUMENTO_LAYOUTS[tipo].titulo}
-                      {enviado ? " ✓" : ""}
-                    </option>
-                  );
-                })}
-              </Select>
-              {tipoDocumento ? (
-                <DocumentCaptureModule
-                  key={tipoDocumento}
-                  tipo={tipoDocumento}
+          {personaReady && personaEnabled ? null : (
+            <Card className="border-slate-700/30 bg-slate-900/40">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Fingerprint className="h-4 w-4 text-teal-400" />
+                  Captura de cartão (opcional)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-xs text-slate-500">
+                  Alternativa à identificação: captura on-camera do CC (frente e verso). Conta para o
+                  documento de identificação obrigatório.
+                </p>
+                <Select
+                  label="Tipo de cartão"
+                  value={tipoDocumento}
+                  onChange={(e) => setTipoDocumento(e.target.value as TipoDocumento | "")}
                   disabled={uploading}
-                  ladosEnviados={ladosPorTipo[tipoDocumento] ?? []}
-                  onCapture={(file, lado) => void uploadDocumento(file, tipoDocumento, lado)}
-                />
-              ) : null}
-            </CardContent>
-          </Card>
+                >
+                  <option value="">Selecciona…</option>
+                  {TIPOS_DOCUMENTO.map((tipo) => {
+                    const enviado =
+                      tipo === "cc"
+                        ? (ladosPorTipo[tipo]?.length ?? 0) >= 2
+                        : Boolean(ladosPorTipo[tipo]?.includes("frente"));
+                    return (
+                      <option key={tipo} value={tipo}>
+                        {DOCUMENTO_LAYOUTS[tipo].titulo}
+                        {enviado ? " ✓" : ""}
+                      </option>
+                    );
+                  })}
+                </Select>
+                {tipoDocumento ? (
+                  <DocumentCaptureModule
+                    key={tipoDocumento}
+                    tipo={tipoDocumento}
+                    disabled={uploading}
+                    ladosEnviados={ladosPorTipo[tipoDocumento] ?? []}
+                    onCapture={(file, lado) => void uploadDocumento(file, tipoDocumento, lado)}
+                  />
+                ) : null}
+              </CardContent>
+            </Card>
+          )}
 
           {documentos.length > 0 ? (
             <Card className="border-slate-700/30 bg-slate-900/40">
