@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, ShieldCheck } from "lucide-react";
+import { Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { notifyDocumentosObrigatoriosUpdated } from "@/components/portal/documentos-obrigatorios-gate";
 import { parseApiError } from "@/lib/ui/backoffice";
@@ -9,6 +9,15 @@ import { Button } from "@/components/ui/button";
 
 type PersonaClient = {
   open: () => void;
+};
+
+type SyncResult = { synced?: boolean; reason?: string };
+
+type LatestInquiry = {
+  personaInquiryId: string;
+  status: string;
+  personaStatus: string | null;
+  syncedAt: string | null;
 };
 
 declare global {
@@ -69,11 +78,111 @@ function loadPersonaScript(): Promise<void> {
   });
 }
 
+function syncErrorMessage(reason?: string): string {
+  if (reason === "not_passed") {
+    return "Verificação não aprovada. Tente novamente.";
+  }
+  if (reason === "no_files") {
+    return "Verificação concluída mas as imagens do documento ainda não estão disponíveis. Aguarde um momento e tente sincronizar novamente.";
+  }
+  return "Verificação concluída mas o documento não foi sincronizado.";
+}
+
+function canShowResync(inquiry: LatestInquiry | null, idCompleto?: boolean): boolean {
+  if (!inquiry?.personaInquiryId || idCompleto) return false;
+  if (inquiry.status === "failed") return false;
+  if (inquiry.syncedAt) return false;
+  return true;
+}
+
+async function postSync(inquiryId: string): Promise<{ ok: true; sync: SyncResult } | { ok: false; error: string }> {
+  const syncRes = await bffFetch(
+    `/api/v1/persona/inquiries/${encodeURIComponent(inquiryId)}/sync`,
+    {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: "{}",
+    },
+  );
+  if (!syncRes.ok) {
+    return { ok: false, error: await parseApiError(syncRes) };
+  }
+  return { ok: true, sync: (await syncRes.json()) as SyncResult };
+}
+
 /** Verificação de identidade via Persona; descarrega imagens para o dossiê ao concluir. */
 export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled, ready }: Props) {
   const [busy, setBusy] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [latestInquiry, setLatestInquiry] = useState<LatestInquiry | null>(null);
+
+  const refreshLatestInquiry = useCallback(async () => {
+    if (!enabled || idCompleto) {
+      setLatestInquiry(null);
+      return;
+    }
+    try {
+      const res = await bffFetch("/api/v1/persona/inquiries/me", {
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) {
+        setLatestInquiry(null);
+        return;
+      }
+      const data = (await res.json()) as LatestInquiry | null;
+      setLatestInquiry(data?.personaInquiryId ? data : null);
+    } catch {
+      setLatestInquiry(null);
+    }
+  }, [enabled, idCompleto]);
+
+  useEffect(() => {
+    if (!ready || !enabled) return;
+    void refreshLatestInquiry();
+  }, [ready, enabled, idCompleto, refreshLatestInquiry]);
+
+  const handleSyncSuccess = useCallback(async () => {
+    setMsg("Identidade verificada. Cópia do documento guardada no dossiê.");
+    setError(null);
+    notifyDocumentosObrigatoriosUpdated();
+    await onSynced?.();
+    await refreshLatestInquiry();
+  }, [onSynced, refreshLatestInquiry]);
+
+  const runSync = useCallback(
+    async (inquiryId: string) => {
+      const result = await postSync(inquiryId);
+      if (!result.ok) {
+        setError(result.error);
+        return false;
+      }
+      if (result.sync.synced) {
+        await handleSyncSuccess();
+        return true;
+      }
+      setError(syncErrorMessage(result.sync.reason));
+      await refreshLatestInquiry();
+      return false;
+    },
+    [handleSyncSuccess, refreshLatestInquiry],
+  );
+
+  const resync = useCallback(async () => {
+    if (!latestInquiry?.personaInquiryId) return;
+    setSyncing(true);
+    setError(null);
+    setMsg(null);
+    try {
+      await runSync(latestInquiry.personaInquiryId);
+    } finally {
+      setSyncing(false);
+    }
+  }, [latestInquiry, runSync]);
 
   const start = useCallback(async () => {
     setBusy(true);
@@ -102,6 +211,13 @@ export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled,
         return;
       }
 
+      setLatestInquiry({
+        personaInquiryId: data.inquiryId,
+        status: "created",
+        personaStatus: "created",
+        syncedAt: null,
+      });
+
       await new Promise<void>((resolve, reject) => {
         const client = new window.Persona!.Client({
           inquiryId: data.inquiryId,
@@ -109,38 +225,9 @@ export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled,
           onReady: () => client.open(),
           onComplete: async ({ inquiryId }: { inquiryId: string; status: string }) => {
             try {
-              const syncRes = await bffFetch(
-                `/api/v1/persona/inquiries/${encodeURIComponent(inquiryId)}/sync`,
-                {
-                  method: "POST",
-                  headers: {
-                    accept: "application/json",
-                    "content-type": "application/json",
-                  },
-                  body: "{}",
-                },
-              );
-              if (!syncRes.ok) {
-                setError(await parseApiError(syncRes));
-                reject(new Error("sync failed"));
-                return;
-              }
-              const sync = (await syncRes.json()) as { synced?: boolean; reason?: string };
-              if (sync.synced) {
-                setMsg("Identidade verificada. Cópia do documento guardada no dossiê.");
-                notifyDocumentosObrigatoriosUpdated();
-                await onSynced?.();
-                resolve();
-              } else {
-                setError(
-                  sync.reason === "not_passed"
-                    ? "Verificação não aprovada. Tente novamente."
-                    : sync.reason === "no_files"
-                      ? "Verificação concluída mas as imagens do documento ainda não estão disponíveis. Aguarde um momento e tente sincronizar novamente."
-                      : "Verificação concluída mas o documento não foi sincronizado.",
-                );
-                reject(new Error("not synced"));
-              }
+              const ok = await runSync(inquiryId);
+              if (ok) resolve();
+              else reject(new Error("not synced"));
             } catch (err) {
               reject(err instanceof Error ? err : new Error("sync error"));
             }
@@ -156,13 +243,14 @@ export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled,
         });
       });
     } catch (e) {
-      if (!error) {
+      if (!(e instanceof Error && e.message === "not synced")) {
         setError(e instanceof Error ? e.message : "Erro ao iniciar verificação.");
       }
     } finally {
       setBusy(false);
+      await refreshLatestInquiry();
     }
-  }, [error, onSynced]);
+  }, [refreshLatestInquiry, runSync]);
 
   if (!ready || !enabled) return null;
 
@@ -175,22 +263,48 @@ export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled,
     );
   }
 
+  const showResync = canShowResync(latestInquiry, idCompleto);
+
   return (
     <div className="space-y-2 rounded-xl border border-sky-500/30 bg-sky-950/25 px-3 py-3">
       <p className="text-xs text-sky-100/90 leading-relaxed">
         Use a câmara para verificar o seu documento de identificação. A NexiForma guarda a cópia
         no dossiê após aprovação.
       </p>
+      {showResync ? (
+        <p className="text-xs text-sky-200/70 leading-relaxed">
+          Já concluiu a verificação na Persona? Sincronize novamente para anexar o documento ao
+          dossiê.
+        </p>
+      ) : null}
       {error ? <p className="text-xs text-red-400">{error}</p> : null}
       {msg ? <p className="text-xs text-teal-400">{msg}</p> : null}
-      <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => void start()}>
-        {busy ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <ShieldCheck className="h-3.5 w-3.5" />
-        )}
-        Verificar identidade
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" size="sm" variant="secondary" disabled={busy || syncing} onClick={() => void start()}>
+          {busy ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <ShieldCheck className="h-3.5 w-3.5" />
+          )}
+          Verificar identidade
+        </Button>
+        {showResync ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy || syncing}
+            onClick={() => void resync()}
+          >
+            {syncing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+            Sincronizar novamente
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
