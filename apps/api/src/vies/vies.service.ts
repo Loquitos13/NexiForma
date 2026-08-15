@@ -5,6 +5,7 @@ import type { RequestUser } from "../auth/types/access-token-payload";
 import { isValidNifPt } from "../dossie-pedagogico/sigo-validation.util";
 import { PrismaService } from "../prisma/prisma.service";
 import { SigoNifValidationService } from "../sigo/sigo-nif-validation.service";
+import { ExternalServiceEventService } from "../common/external-service-event.service";
 import {
   buildViesResult,
   evaluateNifConfirmation,
@@ -63,6 +64,7 @@ export class ViesService {
   constructor(
     private readonly sigoNif: SigoNifValidationService,
     private readonly prisma: PrismaService,
+    private readonly externalEvents: ExternalServiceEventService,
   ) {}
 
   /** Validação para feedback na UI (com mensagens úteis, sem expor API key). */
@@ -239,6 +241,11 @@ export class ViesService {
 
       if (!res.ok) {
         this.logger.warn(`NIF.PT HTTP ${res.status} para ${vatNumber}`);
+        this.externalEvents.recordError({
+          service: "nif_pt",
+          code: `HTTP_${res.status}`,
+          message: `NIF.PT indisponível (HTTP ${res.status}).`,
+        });
         return buildViesResult({
           countryCode: "PT",
           vatNumber,
@@ -262,6 +269,12 @@ export class ViesService {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(`NIF.PT indisponível: ${msg}`);
+      this.externalEvents.recordError({
+        service: "nif_pt",
+        code: "NETWORK_ERROR",
+        message: "NIF.PT indisponível (erro de rede ou timeout).",
+        detail: msg.slice(0, 500),
+      });
       return buildViesResult({
         countryCode: "PT",
         vatNumber,

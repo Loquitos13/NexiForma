@@ -21,6 +21,8 @@ export interface NavItem {
   minRole?: JwtRole;
   /** Oculta o item para estes papéis. */
   excludeRoles?: JwtRole[];
+  /** Prefixos de pathname que também activam este item (além de href). */
+  includeSubpaths?: string[];
 }
 
 /** Módulos de subscrição reflectidos na sidebar colapsável. */
@@ -122,11 +124,45 @@ function applyModuleFilter(
     .map((g) => enrichFaturacaoGroup(g, entitlements));
 }
 
+/** Grupos de navegação do portal formando (bottom nav mobile + breadcrumbs). */
+export const FORMANDO_NAV_GROUPS: NavGroup[] = [
+  {
+    label: "Aprendizagem",
+    collapsible: false,
+    icon: "GraduationCap",
+    items: [
+      {
+        href: "/portal/formando",
+        label: "Aprendizagem",
+        icon: "GraduationCap",
+        includeSubpaths: ["/portal/formando/aprendizagem"],
+      },
+      { href: "/portal/formando/calendario", label: "Calendário", icon: "Calendar" },
+      { href: "/portal/formando/catalogo", label: "Catálogo", icon: "LayoutGrid" },
+      { href: "/portal/formando/inscricoes", label: "Inscrições", icon: "BookOpen" },
+    ],
+  },
+  {
+    label: "Conta",
+    collapsible: false,
+    icon: "UserCircle",
+    items: [
+      { href: "/portal/formando/perfil?tab=documentos", label: "Documentos", icon: "FileText" },
+      { href: "/portal/formando/perfil", label: "Perfil", icon: "UserCircle" },
+      { href: "/portal/formando/rgpd", label: "Privacidade", icon: "Lock" },
+    ],
+  },
+];
+
 export function filterGroups(
   groups: NavGroup[],
   role: JwtRole | null,
   entitlements?: TenantEntitlements | null,
 ): NavGroup[] {
+  if (role === "formando") {
+    return FORMANDO_NAV_GROUPS;
+  }
+
   const byEntitlements = (items: NavItem[]) => {
     const byRole = items.filter((i) => !i.excludeRoles?.includes(role as JwtRole));
     if (!entitlements) {
@@ -504,6 +540,35 @@ export function filterGroupsForMobileBottomNav(
 
 export type PortalBreadcrumb = { group: string; item: string };
 
+/** Verifica se um item de nav está activo (pathname + query opcional). */
+export function navItemPathActive(
+  pathname: string,
+  item: NavItem,
+  searchParams?: URLSearchParams | null,
+): boolean {
+  const qIdx = item.href.indexOf("?");
+  const path = qIdx >= 0 ? item.href.slice(0, qIdx) : item.href;
+  const query = qIdx >= 0 ? item.href.slice(qIdx + 1) : null;
+  const search = searchParams ?? new URLSearchParams();
+
+  const paths = [path, ...(item.includeSubpaths ?? [])];
+  const pathMatch = paths.some((p) =>
+    p === "/portal" ? pathname === "/portal" : pathname === p || pathname.startsWith(`${p}/`),
+  );
+  if (!pathMatch) return false;
+
+  if (path === "/portal/formando/perfil" && !query) {
+    return search.get("tab") !== "documentos";
+  }
+  if (query) {
+    const expected = new URLSearchParams(query);
+    for (const [k, v] of expected) {
+      if (search.get(k) !== v) return false;
+    }
+  }
+  return true;
+}
+
 /** Rótulos curtos para breadcrumbs mobile (ex. «CRM > Dashboard»). */
 const BREADCRUMB_GROUP_SHORT: Record<string, string> = {
   Geral: "Geral",
@@ -518,6 +583,7 @@ const BREADCRUMB_GROUP_SHORT: Record<string, string> = {
   Formação: "Formação",
   "Formação Core": "Formação",
   "Formação Teams": "Teams",
+  Aprendizagem: "Aprender",
   Administração: "Admin",
   Conta: "Conta",
 };
@@ -531,18 +597,16 @@ export function resolvePortalBreadcrumb(
   pathname: string,
   role: JwtRole | null | undefined,
   entitlements?: TenantEntitlements | null,
+  searchParams?: URLSearchParams | null,
 ): PortalBreadcrumb | null {
   const groups = filterGroups(NAV_GROUPS, role ?? null, entitlements);
   let best: { group: string; item: string; len: number } | null = null;
 
   for (const group of groups) {
     for (const item of group.items) {
-      const match =
-        item.href === "/portal"
-          ? pathname === "/portal"
-          : pathname === item.href || pathname.startsWith(`${item.href}/`);
-      if (!match) continue;
-      const len = item.href.length;
+      if (!navItemPathActive(pathname, item, searchParams)) continue;
+      const path = item.href.split("?")[0] ?? item.href;
+      const len = path.length;
       if (!best || len > best.len) {
         const groupTitle = navGroupTitle(group);
         let cleanItem = item.label;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { UserSessionBar } from "@/components/site/user-session-bar";
 import { PortalPushRegister } from "@/components/portal/portal-push-register";
@@ -53,11 +53,13 @@ export function BackofficeShell({
         <div className="ui-portal-top-cluster relative z-40 shrink-0">
           {/* Mobile: logo + badge + crumbs + avatar - sempre visível */}
           <div className="lg:hidden">
-            <PortalMobileHeader
-              pathname={pathname}
-              role={role}
-              entitlements={entitlements}
-            />
+            <Suspense fallback={null}>
+              <PortalMobileHeader
+                pathname={pathname}
+                role={role}
+                entitlements={entitlements}
+              />
+            </Suspense>
           </div>
 
           {/* Desktop: identidade + acções; search centrada na mesma fila */}

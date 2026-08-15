@@ -14,6 +14,7 @@ import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 import { PersonaApiClient, PersonaApiError } from "./persona-api.client";
 import { PersonaDocumentSyncService } from "./persona-document-sync.service";
+import { ExternalServiceEventService } from "../common/external-service-event.service";
 
 @Injectable()
 export class PersonaService {
@@ -24,6 +25,7 @@ export class PersonaService {
     private readonly config: ConfigService,
     private readonly personaApi: PersonaApiClient,
     private readonly documentSync: PersonaDocumentSyncService,
+    private readonly externalEvents: ExternalServiceEventService,
   ) {}
 
   getPublicConfig() {
@@ -83,7 +85,7 @@ export class PersonaService {
     try {
       created = await this.personaApi.createInquiry(templateId, referenceId);
     } catch (err) {
-      throw this.mapPersonaApiError(err);
+      throw this.mapPersonaApiError(err, tenantId);
     }
 
     try {
@@ -116,11 +118,22 @@ export class PersonaService {
     };
   }
 
-  private mapPersonaApiError(err: unknown): BadGatewayException | BadRequestException | ServiceUnavailableException | InternalServerErrorException {
+  private mapPersonaApiError(
+    err: unknown,
+    tenantId?: string,
+  ): BadGatewayException | BadRequestException | ServiceUnavailableException | InternalServerErrorException {
     if (!(err instanceof PersonaApiError)) {
       return new InternalServerErrorException(
         err instanceof Error ? err.message : "Erro Persona inesperado.",
       );
+    }
+    if (err.status >= 500 || err.status === 401 || err.status === 403) {
+      this.externalEvents.recordError({
+        service: "persona",
+        tenantId,
+        code: `HTTP_${err.status}`,
+        message: err.message,
+      });
     }
     if (err.status === 401 || err.status === 403) {
       return new ServiceUnavailableException(
@@ -180,7 +193,7 @@ export class PersonaService {
         ...result,
       };
     } catch (err) {
-      throw this.mapPersonaApiError(err);
+      throw this.mapPersonaApiError(err, tenantId);
     }
   }
 

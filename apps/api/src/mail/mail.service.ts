@@ -6,6 +6,7 @@ import MailComposer from "nodemailer/lib/mail-composer";
 import type Transporter from "nodemailer/lib/mailer";
 import { wrapEmailHtml, emailButton, emailParagraph, emailMuted, escapeHtml } from "./email-layout.util";
 import { EmailTemplates } from "../notificacoes/templates/email.templates";
+import { ExternalServiceEventService } from "../common/external-service-event.service";
 
 export type MailAttachment = {
   filename: string;
@@ -42,7 +43,10 @@ export class MailService implements OnModuleInit {
   private brevoApiKey: string | null = null;
   private provider: "log" | "smtp" | "ses" | "brevo" = "log";
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly externalEvents: ExternalServiceEventService,
+  ) {}
 
   onModuleInit() {
     const mailProvider = (this.config.get<string>("MAIL_PROVIDER") ?? "").toLowerCase();
@@ -340,6 +344,12 @@ export class MailService implements OnModuleInit {
     if (!res.ok) {
       const err = await res.text();
       this.logger.error(`Brevo API falhou: ${res.status} ${err}`);
+      this.externalEvents.recordError({
+        service: "brevo",
+        code: `HTTP_${res.status}`,
+        message: "Falha ao enviar email via Brevo API.",
+        detail: err.slice(0, 500),
+      });
       throw new Error("Falha ao enviar email via Brevo API.");
     }
   }

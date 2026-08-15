@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -155,5 +156,11 @@ export class FormadoresController {
     @Body() dto: UpdateFormadorDto,
   ) {
     return this.formadores.update(user, id, dto);
+  }
+
+  @Delete(":id")
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  remove(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
+    return this.formadores.remove(user, id);
   }
 }

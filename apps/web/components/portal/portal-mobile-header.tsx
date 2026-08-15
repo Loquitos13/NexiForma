@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { NexiFormaLogoAnimated } from "@/components/brand/NexiFormaLogoAnimated";
 import { TenantSubscriptionBadge } from "@/components/portal/tenant-subscription-badge";
 import {
@@ -34,6 +35,7 @@ export function PortalMobileHeader({
   entitlements,
   className,
 }: Props) {
+  const searchParams = useSearchParams();
   const [user, setUser] = useState<MeUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const { hasActivity, totalBadgeCount } = usePortalNotifications();
@@ -56,7 +58,7 @@ export function PortalMobileHeader({
     setMenuOpen(false);
   }, [pathname]);
 
-  const crumb = resolvePortalBreadcrumb(pathname, role, entitlements);
+  const crumb = resolvePortalBreadcrumb(pathname, role, entitlements, searchParams);
   const crumbLabel = crumb
     ? `${crumb.group} > ${crumb.item}`
     : "Portal";

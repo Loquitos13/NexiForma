@@ -77,6 +77,11 @@ function profileHref(role?: string): string {
   return "/portal/perfil";
 }
 
+function rgpdHref(role?: string): string {
+  if (role === "formando") return "/portal/formando/rgpd";
+  return "/portal/rgpd";
+}
+
 function initials(user: MeUser | null): string {
   const raw = (user?.displayName || user?.email || "N").trim();
   const parts = raw.split(/\s+/).filter(Boolean);
@@ -545,7 +550,7 @@ export function PortalUserMenu({ open, onClose, user }: Props) {
                   </Link>
                 )}
                 <Link
-                  href="/portal/rgpd"
+                  href={rgpdHref(user?.role)}
                   onClick={requestClose}
                   className="portal-user-menu-item"
                 >

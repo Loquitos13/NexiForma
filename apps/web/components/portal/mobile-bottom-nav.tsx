@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Award,
@@ -18,6 +19,7 @@ import {
   GraduationCap,
   Handshake,
   LayoutDashboard,
+  LayoutGrid,
   Library,
   LifeBuoy,
   Lock,
@@ -30,6 +32,7 @@ import {
   Sparkles,
   Upload,
   UserCheck,
+  UserCircle,
   UserCog,
   UserPlus,
   Users,
@@ -41,7 +44,9 @@ import {
   NAV_GROUPS,
   filterGroupsForMobileBottomNav,
   navGroupTitle,
+  navItemPathActive,
   type NavGroup,
+  type NavItem,
 } from "@/lib/ui/nav-items";
 import { cn } from "@/lib/ui/cn";
 import type { JwtRole, TenantEntitlements } from "@nexiforma/shared";
@@ -69,9 +74,11 @@ const ICONS: Record<string, LucideIcon> = {
   GraduationCap,
   BookOpen,
   Globe,
+  LayoutGrid,
   Library,
   Users,
   UserCheck,
+  UserCircle,
   ShieldCheck,
   FolderOpen,
   Award,
@@ -97,9 +104,10 @@ const SHORT_LABEL: Record<string, string> = {
   Formação: "Formação",
   "Formação Core": "Formação",
   "Formação Teams": "Teams",
-  Conta: "Conta",
+  Aprendizagem: "Aprender",
   Administracao: "Config",
   Configurações: "Config",
+  Conta: "Conta",
 };
 
 function groupIcon(group: NavGroup): LucideIcon {
@@ -122,9 +130,8 @@ function shortLabel(group: NavGroup) {
   return SHORT_LABEL[title] ?? SHORT_LABEL[group.label] ?? title.slice(0, 8);
 }
 
-function pathActive(pathname: string, href: string) {
-  if (href === "/portal") return pathname === "/portal";
-  return pathname === href || pathname.startsWith(`${href}/`);
+function pathActive(pathname: string, item: NavItem, searchParams: URLSearchParams) {
+  return navItemPathActive(pathname, item, searchParams);
 }
 
 type Phase = "idle" | "enter" | "open" | "exit";
@@ -139,6 +146,7 @@ type Props = {
  * Bottom nav mobile: ícones por grupo + sheet em grelha com animações.
  */
 export function MobileBottomNav({ pathname, role, entitlements }: Props) {
+  const searchParams = useSearchParams();
   const groups = useMemo(
     () => filterGroupsForMobileBottomNav(NAV_GROUPS, role, entitlements),
     [role, entitlements],
@@ -267,7 +275,7 @@ export function MobileBottomNav({ pathname, role, entitlements }: Props) {
             <ul className="portal-mobile-bottom-grid">
               {activeGroup.items.map((item) => {
                 const Icon = itemIcon(item.icon);
-                const active = pathActive(pathname, item.href);
+                const active = pathActive(pathname, item, searchParams);
                 return (
                   <li key={`${item.href}-${item.label}`}>
                     <Link
@@ -296,7 +304,7 @@ export function MobileBottomNav({ pathname, role, entitlements }: Props) {
             const key = groupKey(group);
             const Icon = groupIcon(group);
             const selected = openKey === key && phase !== "idle" && phase !== "exit";
-            const groupActive = group.items.some((item) => pathActive(pathname, item.href));
+            const groupActive = group.items.some((item) => pathActive(pathname, item, searchParams));
             const dimOthers = sheetVisible && !selected;
             return (
               <button

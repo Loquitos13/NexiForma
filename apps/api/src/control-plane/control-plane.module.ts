@@ -11,6 +11,7 @@ import { ControlPlaneOpsController } from "./control-plane-ops.controller";
 import { ControlPlaneSupportController } from "./control-plane-support.controller";
 import { ControlPlaneService } from "./control-plane.service";
 import { ControlPlaneOpsService } from "./control-plane-ops.service";
+import { ExternalServicesStatusService } from "./external-services-status.service";
 import { ControlPlaneTenantOpsService } from "./control-plane-tenant-ops.service";
 import { ControlPlaneOpsSchedulerService } from "./control-plane-ops-scheduler.service";
 import { ImpersonationService } from "./impersonation.service";
@@ -34,6 +35,7 @@ import { TenantAccessKeyService } from "./tenant-access-key.service";
   providers: [
     ControlPlaneService,
     ControlPlaneOpsService,
+    ExternalServicesStatusService,
     ControlPlaneTenantOpsService,
     ControlPlaneOpsSchedulerService,
     ImpersonationService,

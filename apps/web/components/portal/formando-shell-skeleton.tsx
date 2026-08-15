@@ -14,12 +14,12 @@ function SessionBarSkeleton() {
 export function FormandoShellSkeleton() {
   return (
     <div className="portal-app-shell">
-      <header className="ui-themed-topbar border-b px-5 py-3.5">
+      <header className="ui-themed-topbar border-b px-3 py-2.5 lg:px-5 lg:py-3.5">
         <div className="mx-auto flex max-w-4xl items-center gap-2.5">
           <SkeletonCircle className="h-7 w-7" />
           <div className="space-y-1.5">
             <Skeleton className="h-3.5 w-20" />
-            <Skeleton className="h-2.5 w-24" />
+            <Skeleton className="hidden h-2.5 w-24 lg:block" />
           </div>
         </div>
       </header>

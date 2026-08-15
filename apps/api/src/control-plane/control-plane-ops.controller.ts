@@ -21,6 +21,7 @@ import { Roles } from "../auth/decorators/roles.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { ControlPlaneOpsService } from "./control-plane-ops.service";
+import { ExternalServicesStatusService } from "./external-services-status.service";
 import { DbBackupService } from "../backup/db-backup.service";
 import { decryptIpWithSecret } from "../common/ip-encryption.util";
 
@@ -30,9 +31,18 @@ import { decryptIpWithSecret } from "../common/ip-encryption.util";
 export class ControlPlaneOpsController {
   constructor(
     private readonly ops: ControlPlaneOpsService,
+    private readonly externalServices: ExternalServicesStatusService,
     private readonly backup: DbBackupService,
     private readonly config: ConfigService,
   ) {}
+
+  @Get("external-services")
+  externalServicesStatus(@Query("windowHours") windowHours?: string) {
+    const hours = windowHours ? Number(windowHours) : undefined;
+    return this.externalServices.getStatus(
+      Number.isFinite(hours) && hours! > 0 ? hours : undefined,
+    );
+  }
 
   @Get("dashboard")
   dashboard(): Promise<unknown> {

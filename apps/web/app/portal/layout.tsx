@@ -157,7 +157,7 @@ function PortalLayoutInner({ children }: { children: React.ReactNode }) {
   if (isFormando) {
     if (!isFormandoRoute && !isFormandoSharedRoute && !isDemoRoute) {
       return (
-        <FormandoShell>
+        <FormandoShell role={role}>
           <main className="mx-auto max-w-[720px] flex-1 px-5 py-6">
             <PageContentSkeleton variant="default" />
           </main>
@@ -167,7 +167,7 @@ function PortalLayoutInner({ children }: { children: React.ReactNode }) {
     if (isDemoRoute) return children;
     return (
       <DocumentosObrigatoriosProvider>
-        <FormandoShell>
+        <FormandoShell role={role}>
           <ConsentGate>{children}</ConsentGate>
           <MustChangePasswordModal />
         </FormandoShell>

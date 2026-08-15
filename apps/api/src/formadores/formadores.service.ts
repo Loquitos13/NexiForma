@@ -202,6 +202,50 @@ export class FormadoresService {
     });
   }
 
+  async remove(user: RequestUser, id: string) {
+    const tenantId = requireTenantId(user);
+    const formador = await this.prisma.formadorProfile.findFirst({
+      where: { id, tenantId },
+      select: {
+        id: true,
+        email: true,
+        userId: true,
+        _count: { select: { sessoesFormacao: true, documentos: true } },
+      },
+    });
+    if (!formador) {
+      throw new NotFoundException("Formador não encontrado.");
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const email = formador.email?.trim();
+      if (email) {
+        await tx.tenantInvite.deleteMany({
+          where: {
+            tenantId,
+            role: "FORMADOR",
+            acceptedAt: null,
+            email: { equals: email, mode: "insensitive" },
+          },
+        });
+      }
+      if (formador.userId) {
+        await tx.user.update({
+          where: { id: formador.userId },
+          data: { active: false },
+        });
+      }
+      await tx.formadorProfile.delete({ where: { id } });
+    });
+
+    return {
+      ok: true,
+      sessoesDesatribuidas: formador._count.sessoesFormacao,
+      documentosRemovidos: formador._count.documentos,
+      contaDesactivada: Boolean(formador.userId),
+    };
+  }
+
   async listAlertasCc(user: RequestUser, diasAntecedencia = 90): Promise<{ alertas: FormadorAlerta[] }> {
     const tenantId = requireTenantId(user);
     const now = new Date();

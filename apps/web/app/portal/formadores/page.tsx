@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, GraduationCap, Pencil, PlusCircle, ShieldAlert, UserRound } from "lucide-react";
+import { AlertTriangle, GraduationCap, Pencil, PlusCircle, ShieldAlert, Trash2, UserRound } from "lucide-react";
 import { NifStatusField, type NifStatus } from "@/components/crm/nif-status-field";
 import { DgertRequisitoBanner, DgertTarget } from "@/components/portal/dgert-requisito-banner";
 import { bffFetch } from "@/lib/client/bff-fetch";
@@ -79,6 +79,7 @@ export default function FormadoresPage() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Formador | null>(null);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [nifStatus, setNifStatus] = useState<NifStatus>("idle");
@@ -127,6 +128,37 @@ export default function FormadoresPage() {
     );
     await load();
     router.push(`/portal/formadores/${created.id}`);
+  }
+
+  async function confirmDelete() {
+    if (!canManage || !deleteTarget) return;
+    setBusy(true);
+    setError(null);
+    setMsg(null);
+    const res = await bffFetch(`/api/v1/formadores/${deleteTarget.id}`, { method: "DELETE" });
+    setBusy(false);
+    if (!res.ok) {
+      setError(await parseApiError(res));
+      return;
+    }
+    const data = (await res.json()) as {
+      sessoesDesatribuidas?: number;
+      documentosRemovidos?: number;
+      contaDesactivada?: boolean;
+    };
+    const parts = ["Formador eliminado."];
+    if ((data.sessoesDesatribuidas ?? 0) > 0) {
+      parts.push(`${data.sessoesDesatribuidas} sessão(ões) ficaram sem formador atribuído.`);
+    }
+    if ((data.documentosRemovidos ?? 0) > 0) {
+      parts.push(`${data.documentosRemovidos} documento(s) removido(s).`);
+    }
+    if (data.contaDesactivada) {
+      parts.push("Conta de utilizador desactivada.");
+    }
+    setMsg(parts.join(" "));
+    setDeleteTarget(null);
+    await load();
   }
 
   const COLS: Column<Formador>[] = [
@@ -274,23 +306,37 @@ export default function FormadoresPage() {
                     <UserRound className="h-3.5 w-3.5 text-sky-400" />
                   </Button>
                   {canManage ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-label="Editar"
-                      title="Editar dados"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        router.push(`/portal/formadores/${f.id}`);
-                      }}
-                      className={cn(
-                        !f.ccNumero?.trim() &&
-                          !f.ccpNumero?.trim() &&
-                          "ring-1 ring-amber-400/50",
-                      )}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label="Editar"
+                        title="Editar dados"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(`/portal/formadores/${f.id}`);
+                        }}
+                        className={cn(
+                          !f.ccNumero?.trim() &&
+                            !f.ccpNumero?.trim() &&
+                            "ring-1 ring-amber-400/50",
+                        )}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label="Eliminar"
+                        title="Eliminar formador"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteTarget(f);
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                      </Button>
+                    </>
                   ) : null}
                 </>
               )}
@@ -346,6 +392,30 @@ export default function FormadoresPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent
+          title="Eliminar formador"
+          description={
+            deleteTarget
+              ? `Eliminar ${deleteTarget.nomeCompleto}? Os documentos (${deleteTarget._count?.documentos ?? 0}) são removidos` +
+                (deleteTarget._count?.sessoesFormacao
+                  ? ` e ${deleteTarget._count.sessoesFormacao} sessão(ões) ficam sem formador atribuído`
+                  : "") +
+                ". A conta de utilizador fica desactivada."
+              : undefined
+          }
+        >
+          <div className="flex gap-2 pt-2">
+            <Button variant="danger" disabled={busy} onClick={() => void confirmDelete()}>
+              {busy ? "A eliminar…" : "Eliminar"}
+            </Button>
+            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
+              Cancelar
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </>

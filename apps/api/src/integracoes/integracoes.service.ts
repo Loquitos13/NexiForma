@@ -21,6 +21,7 @@ import type { UpsertIntegracaoDto } from "./dto/integracoes.dto";
 import { FormadorScopeService } from "../common/formador-scope.service";
 import { SessoesFormacaoService } from "../sessoes-formacao/sessoes-formacao.service";
 import { BillingEntitlementsService } from "../billing/billing-entitlements.service";
+import { ExternalServiceEventService } from "../common/external-service-event.service";
 
 export type ReuniaoResult = {
   provider: IntegracaoProvider;
@@ -68,7 +69,18 @@ export class IntegracoesService {
     private readonly entitlements: BillingEntitlementsService,
     @Inject(forwardRef(() => SessoesFormacaoService))
     private readonly sessoes: SessoesFormacaoService,
+    private readonly externalEvents: ExternalServiceEventService,
   ) {}
+
+  private recordTeamsError(message: string, tenantId?: string, code?: string, detail?: string) {
+    this.externalEvents.recordError({
+      service: "teams",
+      tenantId,
+      message,
+      code,
+      detail,
+    });
+  }
 
   /**
    * Cria reunião OAuth ao criar/activar sessão online. Sem credenciais → sessão fica sem sala (aviso na UI).
@@ -580,7 +592,7 @@ export class IntegracoesService {
       throw new BadRequestException(`Credenciais Teams em falta: ${missing.join(", ")}`);
     }
     const token = await this.fetchMsToken(values.tenantId, values.clientId, values.clientSecret);
-    const meeting = await this.createTeamsMeeting(token, values.organizerId, opts);
+    const meeting = await this.createTeamsMeeting(token, values.organizerId, { ...opts, tenantId });
     return { meetingId: meeting.id, joinUrl: meeting.joinUrl };
   }
 
@@ -724,12 +736,12 @@ export class IntegracoesService {
       { headers: { authorization: `Bearer ${token}` } },
     );
     if (!probe.ok) {
-      throw new BadRequestException(
-        await this.readUpstreamError(
-          probe,
-          "Token Microsoft OK, mas organizador inacessível – verifica TEAMS_ORGANIZER_ID e permissão User.Read.All",
-        ),
+      const detail = await this.readUpstreamError(
+        probe,
+        "Token Microsoft OK, mas organizador inacessível – verifica TEAMS_ORGANIZER_ID e permissão User.Read.All",
       );
+      this.recordTeamsError(detail, nexiformaTenantId, `HTTP_${probe.status}`);
+      throw new BadRequestException(detail);
     }
     return {
       ok: true,
@@ -835,7 +847,7 @@ export class IntegracoesService {
       throw new BadRequestException(`Credenciais Teams em falta: ${missing.join(", ")}`);
     }
     const token = await this.fetchMsToken(values.tenantId, values.clientId, values.clientSecret);
-    const meeting = await this.createTeamsMeeting(token, values.organizerId);
+    const meeting = await this.createTeamsMeeting(token, values.organizerId, { tenantId });
     await this.prisma.sessaoFormacao.update({
       where: { id: sessaoId },
       data: {
@@ -916,7 +928,9 @@ export class IntegracoesService {
       },
     );
     if (!res.ok) {
-      throw new BadRequestException(await this.readUpstreamError(res, "Falha OAuth Microsoft"));
+      const detail = await this.readUpstreamError(res, "Falha OAuth Microsoft");
+      this.recordTeamsError(detail, undefined, `HTTP_${res.status}`);
+      throw new BadRequestException(detail);
     }
     const data = (await res.json()) as { access_token: string };
     return data.access_token;
@@ -956,7 +970,7 @@ export class IntegracoesService {
   private async createTeamsMeeting(
     token: string,
     organizerIdOrEmail: string,
-    opts?: { subject?: string; start?: Date; end?: Date },
+    opts?: { subject?: string; start?: Date; end?: Date; tenantId?: string },
   ) {
     const organizer = await this.resolveMsUser(token, organizerIdOrEmail);
     const start = opts?.start ?? new Date();
@@ -978,6 +992,7 @@ export class IntegracoesService {
     );
     if (!res.ok) {
       const base = await this.readUpstreamError(res, "Falha ao criar reunião Teams");
+      this.recordTeamsError(`${base}${this.teamsMeetingErrorHint(res.status)}`, opts?.tenantId, `HTTP_${res.status}`);
       throw new BadRequestException(`${base}${this.teamsMeetingErrorHint(res.status)}`);
     }
     const data = (await res.json()) as { id: string; joinWebUrl: string };
