@@ -64,6 +64,7 @@ import { OpenApiModule } from "./openapi/openapi.module";
 import { FormacoesModule } from "./formacoes/formacoes.module";
 import { CalendarioModule } from "./calendario/calendario.module";
 import { GuideModule } from "./guide/guide.module";
+import { PersonaModule } from "./persona/persona.module";
 import { ImpersonationReadonlyInterceptor } from "./auth/impersonation-readonly.interceptor";
 import { MustChangePasswordInterceptor } from "./auth/must-change-password.interceptor";
 import { StructuredLogInterceptor } from "./observability/structured-log.interceptor";
@@ -138,6 +139,7 @@ import { AppPublicUrlInterceptor } from "./common/app-public-url.interceptor";
     EnterpriseModule,
     OpenApiModule,
     GuideModule,
+    PersonaModule,
   ],
   controllers: [AppController],
   providers: [

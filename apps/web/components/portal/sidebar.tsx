@@ -14,6 +14,8 @@ import {
   type NavItem,
 } from "@/lib/ui/nav-items";
 import { CrmSugestoesNavBadge } from "@/components/crm/crm-sugestoes-panel";
+import { DocPendenteNeonDot } from "@/components/portal/doc-pendente-neon-dot";
+import { useDocumentosObrigatorios } from "@/components/portal/documentos-obrigatorios-gate";
 import { NavAtmosphere } from "@/components/portal/nav-atmosphere";
 import { MobileNavToggle } from "@/components/portal/mobile-nav-toggle";
 import { TenantSubscriptionBadge } from "@/components/portal/tenant-subscription-badge";
@@ -70,7 +72,13 @@ function NavLink({
   nested?: boolean;
   railCollapsed?: boolean;
 }) {
+  const { emFaltaCount, roleKind } = useDocumentosObrigatorios();
   const active = isActive(item.href, pathname);
+  const docsDot =
+    !railCollapsed &&
+    item.href === "/portal/formador/perfil" &&
+    roleKind === "formador" &&
+    emFaltaCount > 0;
   return (
     <Link
       href={item.href}
@@ -93,6 +101,9 @@ function NavLink({
       </span>
       {!railCollapsed && item.href === "/portal/crm/sugestoes-ia" && entitlements?.canAccessCrm ? (
         <CrmSugestoesNavBadge enabled />
+      ) : null}
+      {!railCollapsed && docsDot ? (
+        <DocPendenteNeonDot />
       ) : null}
     </Link>
   );

@@ -7,7 +7,7 @@ import { FormandoShellSkeleton } from "@/components/portal/formando-shell-skelet
 import { BackofficeShell } from "@/components/portal/backoffice-shell";
 import { FormandoShell } from "@/components/portal/formando-shell";
 import { ConsentGate } from "@/components/consent/consent-gate";
-import { DocumentosObrigatoriosGate } from "@/components/portal/documentos-obrigatorios-gate";
+import { DocumentosObrigatoriosProvider } from "@/components/portal/documentos-obrigatorios-gate";
 import { getAccessToken } from "@/lib/client/access-token";
 import { isAccessTokenExpired } from "@/lib/client/session-lifecycle";
 import {
@@ -166,12 +166,12 @@ function PortalLayoutInner({ children }: { children: React.ReactNode }) {
     }
     if (isDemoRoute) return children;
     return (
-      <FormandoShell>
-        <ConsentGate>
-          <DocumentosObrigatoriosGate>{children}</DocumentosObrigatoriosGate>
-        </ConsentGate>
-        <MustChangePasswordModal />
-      </FormandoShell>
+      <DocumentosObrigatoriosProvider>
+        <FormandoShell>
+          <ConsentGate>{children}</ConsentGate>
+          <MustChangePasswordModal />
+        </FormandoShell>
+      </DocumentosObrigatoriosProvider>
     );
   }
 
@@ -182,15 +182,15 @@ function PortalLayoutInner({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <BackofficeShell pathname={pathname} role={role}>
-      <ConsentGate>
-        <DocumentosObrigatoriosGate>{children}</DocumentosObrigatoriosGate>
-      </ConsentGate>
-      <Suspense fallback={null}>
-        <GuidedFlowAnchorBubble />
-      </Suspense>
-      <PortalPriorityCompanion />
-      <MustChangePasswordModal />
-    </BackofficeShell>
+    <DocumentosObrigatoriosProvider>
+      <BackofficeShell pathname={pathname} role={role}>
+        <ConsentGate>{children}</ConsentGate>
+        <Suspense fallback={null}>
+          <GuidedFlowAnchorBubble />
+        </Suspense>
+        <PortalPriorityCompanion />
+        <MustChangePasswordModal />
+      </BackofficeShell>
+    </DocumentosObrigatoriosProvider>
   );
 }

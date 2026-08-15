@@ -6,6 +6,11 @@ import { CheckCircle2, CircleAlert, FileText, Fingerprint, Lock, Shield, User } 
 import { DocumentCaptureModule } from "@/components/formando/document-capture-module";
 import { useConsentSettings } from "@/components/consent/consent-gate";
 import { notifyDocumentosObrigatoriosUpdated } from "@/components/portal/documentos-obrigatorios-gate";
+import { DocPendenteNeonDot } from "@/components/portal/doc-pendente-neon-dot";
+import {
+  PersonaIdVerification,
+  usePersonaEnabled,
+} from "@/components/persona/persona-id-verification";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
 import {
@@ -95,6 +100,7 @@ export default function FormandoPerfilPage() {
   const [idLadoUpload, setIdLadoUpload] = useState<"unico" | "frente" | "verso">("unico");
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { enabled: personaEnabled, ready: personaReady } = usePersonaEnabled();
 
   const load = useCallback(async () => {
     setError(null);
@@ -318,7 +324,7 @@ export default function FormandoPerfilPage() {
           >
             {t.label}
             {t.id === "documentos" && docsEmFalta ? (
-              <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-400 align-middle" />
+              <DocPendenteNeonDot className="ml-1.5 align-middle" />
             ) : null}
           </button>
         ))}
@@ -596,39 +602,52 @@ export default function FormandoPerfilPage() {
                       </div>
 
                       {status.id === "documento_identificacao" ? (
-                        <Select
-                          label="Modo de envio"
-                          value={idLadoUpload}
-                          onChange={(e) =>
-                            setIdLadoUpload(e.target.value as "unico" | "frente" | "verso")
-                          }
-                          disabled={uploading}
-                        >
-                          <option value="unico">PDF único (frente e verso no mesmo ficheiro)</option>
-                          <option value="frente">Frente (ficheiro separado)</option>
-                          <option value="verso">Verso (ficheiro separado)</option>
-                        </Select>
+                        <>
+                          <PersonaIdVerification
+                            roleKind="formando"
+                            idCompleto={ok}
+                            onSynced={load}
+                          />
+                          {personaReady && personaEnabled ? null : (
+                            <Select
+                              label="Modo de envio"
+                              value={idLadoUpload}
+                              onChange={(e) =>
+                                setIdLadoUpload(e.target.value as "unico" | "frente" | "verso")
+                              }
+                              disabled={uploading}
+                            >
+                              <option value="unico">PDF único (frente e verso no mesmo ficheiro)</option>
+                              <option value="frente">Frente (ficheiro separado)</option>
+                              <option value="verso">Verso (ficheiro separado)</option>
+                            </Select>
+                          )}
+                        </>
                       ) : null}
 
-                      <label className="inline-flex">
-                        <input
-                          type="file"
-                          accept={meta?.accept ?? "application/pdf,image/jpeg,image/png"}
-                          className="sr-only"
-                          disabled={uploading}
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            e.target.value = "";
-                            if (!file) return;
-                            const lado =
-                              status.id === "documento_identificacao" ? idLadoUpload : "unico";
-                            void uploadFicheiro(file, status.id, lado);
-                          }}
-                        />
-                        <span className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-600 bg-transparent px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
-                          {uploading ? "A enviar…" : "Carregar ficheiro"}
-                        </span>
-                      </label>
+                      {status.id === "documento_identificacao" &&
+                      personaReady &&
+                      personaEnabled ? null : (
+                        <label className="inline-flex">
+                          <input
+                            type="file"
+                            accept={meta?.accept ?? "application/pdf,image/jpeg,image/png"}
+                            className="sr-only"
+                            disabled={uploading}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = "";
+                              if (!file) return;
+                              const lado =
+                                status.id === "documento_identificacao" ? idLadoUpload : "unico";
+                              void uploadFicheiro(file, status.id, lado);
+                            }}
+                          />
+                          <span className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-600 bg-transparent px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
+                            {uploading ? "A enviar…" : "Carregar ficheiro"}
+                          </span>
+                        </label>
+                      )}
                     </li>
                   );
                 })}

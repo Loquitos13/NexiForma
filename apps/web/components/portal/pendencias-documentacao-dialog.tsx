@@ -26,6 +26,8 @@ export type PendenciasDocumentacaoDialogProps = {
   title: string;
   question: string;
   hint?: string;
+  /** Título da secção de listagem (por defeito: documentação pedagógica). */
+  sectionTitle?: string;
   /** Lista de sessões (logout) ou uma sessão com itens (terminar). */
   sessoes?: PendenciaSessaoItem[];
   confirmLabel?: string;
@@ -103,6 +105,7 @@ export function PendenciasDocumentacaoDialog({
   title,
   question,
   hint,
+  sectionTitle = "Documentação pedagógica por concluir",
   sessoes = [],
   confirmLabel = "Continuar na mesma",
   cancelLabel = "Cancelar",
@@ -139,7 +142,7 @@ export function PendenciasDocumentacaoDialog({
               </span>
               <div className="min-w-0 flex-1 space-y-3">
                 <p className="text-sm font-semibold text-amber-100 sm:text-base">
-                  Documentação pedagógica por concluir
+                  {sectionTitle}
                 </p>
                 {sessoes.length > 0 ? (
                   <ul className="space-y-2.5 text-sm leading-relaxed text-amber-50/90">
@@ -208,6 +211,7 @@ type ConfirmInput = {
   title: string;
   question: string;
   hint?: string;
+  sectionTitle?: string;
   sessoes: PendenciaSessaoItem[];
   confirmLabel?: string;
   cancelLabel?: string;
@@ -243,6 +247,7 @@ export function usePendenciasDocumentacaoConfirm(): {
       title={input?.title ?? "Atenção"}
       question={input?.question ?? ""}
       hint={input?.hint}
+      sectionTitle={input?.sectionTitle}
       sessoes={input?.sessoes}
       confirmLabel={input?.confirmLabel}
       cancelLabel={input?.cancelLabel}

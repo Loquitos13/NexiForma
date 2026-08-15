@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { BookOpen, CalendarDays, GraduationCap, LayoutGrid, Lock, UserCircle } from "lucide-react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { BookOpen, CalendarDays, FileText, GraduationCap, LayoutGrid, Lock, UserCircle } from "lucide-react";
+import { DocPendenteNeonDot } from "@/components/portal/doc-pendente-neon-dot";
+import { useDocumentosObrigatorios } from "@/components/portal/documentos-obrigatorios-gate";
 import { cn } from "@/lib/ui/cn";
 
 const ITEMS = [
@@ -10,8 +12,9 @@ const ITEMS = [
   { href: "/portal/formando/calendario", label: "Calendário", icon: CalendarDays },
   { href: "/portal/formando/catalogo", label: "Catálogo", icon: LayoutGrid },
   { href: "/portal/formando/inscricoes", label: "Inscrições", icon: BookOpen },
+  { href: "/portal/formando/perfil?tab=documentos", label: "Documentos", icon: FileText, match: (p: string) => p.startsWith("/portal/formando/perfil") },
   { href: "/portal/formando/rgpd", label: "Privacidade", icon: Lock },
-  { href: "/portal/formando/perfil", label: "Perfil", icon: UserCircle },
+  { href: "/portal/formando/perfil", label: "Perfil", icon: UserCircle, match: (p: string) => p.startsWith("/portal/formando/perfil") && !p.includes("tab=documentos") },
 ] as const;
 
 function isActive(pathname: string, href: string, match?: (p: string) => boolean) {
@@ -21,8 +24,22 @@ function isActive(pathname: string, href: string, match?: (p: string) => boolean
 
 export function FormandoNav() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tab = searchParams.get("tab");
+  const { emFaltaCount, roleKind } = useDocumentosObrigatorios();
+  const docsPendentes = roleKind === "formando" && emFaltaCount > 0;
   const imersivo = /^\/portal\/formando\/aprendizagem\/[^/]+$/.test(pathname);
   if (imersivo) return null;
+
+  function itemActive(href: string, match?: (p: string) => boolean) {
+    if (href.includes("tab=documentos")) {
+      return pathname.startsWith("/portal/formando/perfil") && tab === "documentos";
+    }
+    if (href === "/portal/formando/perfil") {
+      return pathname.startsWith("/portal/formando/perfil") && tab !== "documentos";
+    }
+    return isActive(pathname, href, match);
+  }
 
   return (
     <nav
@@ -33,7 +50,7 @@ export function FormandoNav() {
         <ul className="flex gap-0.5 overflow-x-auto scrollbar-none py-2 -mx-1">
           {ITEMS.map((item) => {
             const Icon = item.icon;
-            const active = isActive(pathname, item.href, "match" in item ? item.match : undefined);
+            const active = itemActive(item.href, "match" in item ? item.match : undefined);
             return (
               <li key={item.href} className="flex-shrink-0">
                 <Link
@@ -47,6 +64,9 @@ export function FormandoNav() {
                 >
                   <Icon className="h-4 w-4 shrink-0" />
                   <span>{item.label}</span>
+                  {item.label === "Documentos" && docsPendentes ? (
+                    <DocPendenteNeonDot className="ml-0.5" />
+                  ) : null}
                 </Link>
               </li>
             );

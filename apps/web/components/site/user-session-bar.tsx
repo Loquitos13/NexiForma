@@ -11,6 +11,10 @@ import { logoutSession } from "@/lib/client/logout";
 import { subscribeSessionExpired } from "@/lib/client/session-lifecycle";
 import { sessionGoodbyeHref } from "@/components/site/session-goodbye";
 import {
+  avisarLogoutDocsObrigatorios,
+  fetchDocsObrigatoriosLogoutInfo,
+} from "@/lib/client/documentos-obrigatorios-logout";
+import {
   buildPendenciaSessaoHref,
   resolvePendenciaItemFocus,
 } from "@/lib/client/pendencias-documentacao-href";
@@ -219,6 +223,36 @@ export function UserSessionBar({
               });
               if (!ok) return;
               setBusy(true);
+            }
+          }
+        } catch {
+          // Não bloqueia logout se API indisponível.
+        }
+      }
+
+      const isFormandoOrFormador =
+        user?.role === "formando" || user?.role === "formador";
+      if (area === "portal" && isFormandoOrFormador) {
+        try {
+          const docsInfo = await fetchDocsObrigatoriosLogoutInfo(user?.role);
+          if (docsInfo?.sessoes.length) {
+            setBusy(false);
+            const ok = await confirmPendencias({
+              title: "Documentos obrigatórios em falta",
+              question: "Tens a certeza que queres sair (logout) na mesma?",
+              sectionTitle: "Documentos por enviar",
+              hint:
+                "Clica num documento para o enviar. Se saíres na mesma, receberás um email de lembrete e a entidade formadora será notificada.",
+              sessoes: docsInfo.sessoes,
+              confirmLabel: "Sair na mesma",
+              cancelLabel: "Ficar no portal",
+            });
+            if (!ok) return;
+            setBusy(true);
+            try {
+              await avisarLogoutDocsObrigatorios(docsInfo.roleKind);
+            } catch (err) {
+              console.warn("[logout] aviso documentos obrigatórios erro de rede:", err);
             }
           }
         } catch {

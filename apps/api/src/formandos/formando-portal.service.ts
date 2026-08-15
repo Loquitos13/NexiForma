@@ -15,6 +15,7 @@ import { syncPasswordHashByEmail } from "../auth/shared-password.util";
 import { StorageService } from "../storage/storage.service";
 import { DocumentAccessAuditService } from "../audit/document-access-audit.service";
 import { PortalNotificacoesService } from "../notificacoes/portal-notificacoes.service";
+import { NotificacoesExtendedService } from "../notificacoes/notificacoes-extended.service";
 import { isValidNifPt } from "../dossie-pedagogico/sigo-validation.util";
 import type { UpdateFormandoMeDto } from "./dto/update-formando-me.dto";
 import type { ChangeFormandoPasswordDto } from "./dto/change-formando-password.dto";
@@ -42,6 +43,7 @@ export class FormandoPortalService {
     private readonly storage: StorageService,
     private readonly documentAudit: DocumentAccessAuditService,
     private readonly portalNotificacoes: PortalNotificacoesService,
+    private readonly notificacoes: NotificacoesExtendedService,
   ) {}
 
   private async requireProfile(user: RequestUser) {
@@ -289,6 +291,39 @@ export class FormandoPortalService {
     return avaliarDocumentosObrigatorios(docs, politica.universaisObrigatorios);
   }
 
+  async avisarLogoutDocumentosObrigatorios(user: RequestUser) {
+    const { tenantId, profile } = await this.requireProfile(user);
+    const resumo = await this.documentosObrigatorios(user);
+    if (resumo.completo) {
+      return { ok: true, avisado: false, emails: 0, destinatarios: 0 };
+    }
+
+    const account = await this.prisma.user.findFirst({
+      where: { id: user.sub, tenantId },
+      select: { email: true },
+    });
+    const linhas = resumo.items.filter((i) => !i.completo).map((i) => i.label);
+    const portalPath = "/portal/formando/perfil?tab=documentos";
+
+    const result = await this.notificacoes.notificarLogoutDocumentosObrigatoriosEmFalta(tenantId, {
+      utilizadorUserId: user.sub,
+      utilizadorNome: profile.nome.trim() || user.email || "Formando",
+      roleKind: "formando",
+      linhas,
+      portalPath,
+      emailConta: account?.email ?? user.email,
+      emailContacto: profile.email,
+    });
+
+    return {
+      ok: true,
+      avisado: true,
+      emails: result.emails,
+      destinatarios: result.destinatarios,
+      documentos: linhas.length,
+    };
+  }
+
   private async requireOwnMatricula(user: RequestUser, matriculaId: string) {
     const { tenantId, profile } = await this.requireProfile(user);
     const matricula = await this.prisma.matricula.findFirst({
@@ -512,7 +547,7 @@ export class FormandoPortalService {
     });
     if (!item.documentoAnexoId && !template) {
       throw new BadRequestException(
-        "Documento ainda não disponível — a coordenação pedagógica irá publicá-lo em breve.",
+        "Documento ainda não disponível - a coordenação pedagógica irá publicá-lo em breve.",
       );
     }
 

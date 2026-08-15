@@ -815,7 +815,7 @@ export class ProposalService {
     });
 
     this.logger.log(
-      `✓ ${leads.length} lead(s) associado(s) à entidade após aceite (${entidade.nome}) — registo pendente de conclusão comercial`,
+      `✓ ${leads.length} lead(s) associado(s) à entidade após aceite (${entidade.nome}) - registo pendente de conclusão comercial`,
     );
   }
 }

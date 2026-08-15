@@ -22,6 +22,11 @@ import {
 import { PasswordInput } from "@/components/ui/password-input";
 import { DocumentPreviewModal } from "@/components/ui/document-preview-modal";
 import { notifyDocumentosObrigatoriosUpdated } from "@/components/portal/documentos-obrigatorios-gate";
+import { DocPendenteNeonDot } from "@/components/portal/doc-pendente-neon-dot";
+import {
+  PersonaIdVerification,
+  usePersonaEnabled,
+} from "@/components/persona/persona-id-verification";
 import {
   FORMADOR_DOC_CATEGORIAS_UPLOAD,
   type FormadorDocObrigatorioResumo,
@@ -111,6 +116,14 @@ export default function FormadorPerfilPage() {
     ccValidade: "",
     ccpValidade: "",
   });
+  const { enabled: personaEnabled, ready: personaReady } = usePersonaEnabled();
+  const idDocOk = obrigatorios?.items.find((i) => i.id === "documento_identificacao")?.completo;
+
+  useEffect(() => {
+    if (personaReady && personaEnabled && categoria === "documento_identificacao") {
+      setCategoria("cv");
+    }
+  }, [personaReady, personaEnabled, categoria]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -319,7 +332,7 @@ export default function FormadorPerfilPage() {
           >
             {t.label}
             {t.id === "documentos" && docsEmFalta ? (
-              <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-400 align-middle" />
+              <DocPendenteNeonDot className="ml-1.5 align-middle" />
             ) : null}
           </button>
         ))}
@@ -560,6 +573,27 @@ export default function FormadorPerfilPage() {
             </Card>
           ) : null}
 
+          <Card className="border-slate-700/30 bg-slate-900/40 border-sky-500/15">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileText className="h-4 w-4 text-sky-400" />
+                Documento de identificação
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PersonaIdVerification
+                roleKind="formador"
+                idCompleto={idDocOk}
+                onSynced={load}
+              />
+              {personaReady && personaEnabled ? (
+                <p className="mt-2 text-xs text-slate-500">
+                  Os restantes documentos obrigatórios podem ser enviados manualmente abaixo.
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
+
         <Card className="border-slate-700/30 bg-slate-900/40">
           <CardHeader className="border-b border-slate-700/40 flex flex-row flex-wrap items-center justify-between gap-3">
             <CardTitle className="text-base flex items-center gap-2">
@@ -572,7 +606,10 @@ export default function FormadorPerfilPage() {
                 onChange={(e) => setCategoria(e.target.value)}
                 className="h-9 rounded-lg border border-slate-600 bg-slate-900 px-2 text-sm text-slate-200"
               >
-                {DOC_CATEGORIAS.map((c) => {
+                {DOC_CATEGORIAS.filter(
+                  (c) =>
+                    !(personaReady && personaEnabled && c.value === "documento_identificacao"),
+                ).map((c) => {
                   const obr = obrigatorios?.items.find((i) => i.id === c.value);
                   const suffix = obr
                     ? obr.completo

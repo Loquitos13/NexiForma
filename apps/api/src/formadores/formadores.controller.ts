@@ -74,6 +74,12 @@ export class FormadoresController {
     return this.formadores.getMeDocumentosObrigatorios(user);
   }
 
+  @Post("me/documentos/obrigatorios/avisar-logout")
+  @Roles("formador")
+  avisarLogoutDocumentosObrigatorios(@CurrentUser() user: RequestUser) {
+    return this.formadores.avisarLogoutDocumentosObrigatorios(user);
+  }
+
   @Get("me/documentos/requisicoes")
   @Roles("formador")
   listMeDocumentoRequisicoes(@CurrentUser() user: RequestUser) {

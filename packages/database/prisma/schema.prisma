@@ -207,6 +207,7 @@ model Tenant {
   documentosAnexo DocumentoAnexo[]
   matriculaDocumentos MatriculaDocumento[]
   documentosRequisicao DocumentoRequisicao[]
+  personaInquiries PersonaInquiry[]
   matriculaUnidadeDesbloqueios MatriculaUnidadeDesbloqueio[]
   quizPerguntas QuizPergunta[]
   quizTentativas QuizTentativa[]
@@ -662,6 +663,7 @@ model FormandoProfile {
   matriculas      Matricula[]
   documentos      DocumentoAnexo[]
   documentosRequisicao DocumentoRequisicao[]
+  personaInquiries PersonaInquiry[]
 
   @@unique([tenantId, nif])
   @@index([tenantId])
@@ -694,6 +696,7 @@ model FormadorProfile {
   modulosUnidade  ModuloUnidade[]
   documentos      DocumentoAnexo[]
   documentosRequisicao DocumentoRequisicao[]
+  personaInquiries PersonaInquiry[]
 
   @@unique([tenantId, nif])
   @@index([tenantId])
@@ -2157,6 +2160,34 @@ model DocumentoRequisicao {
   @@index([formadorId, estado])
   @@index([acaoFormacaoId])
   @@map("documento_requisicoes")
+  @@schema("public")
+}
+
+/// Verificação de identidade Persona (formando / formador).
+model PersonaInquiry {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  roleKind         String    @map("role_kind") // formando | formador
+  formandoId       String?   @map("formando_id") @db.Uuid
+  formadorId       String?   @map("formador_id") @db.Uuid
+  personaInquiryId String    @unique @map("persona_inquiry_id")
+  status           String    @default("created") // created | pending | completed | failed | needs_review
+  personaStatus    String?   @map("persona_status")
+  extractedName    String?   @map("extracted_name")
+  extractedDocNumber String? @map("extracted_doc_number")
+  syncedAt         DateTime? @map("synced_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  formando FormandoProfile? @relation(fields: [formandoId], references: [id], onDelete: Cascade)
+  formador FormadorProfile? @relation(fields: [formadorId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@index([formandoId])
+  @@index([formadorId])
+  @@map("persona_inquiries")
   @@schema("public")
 }
 

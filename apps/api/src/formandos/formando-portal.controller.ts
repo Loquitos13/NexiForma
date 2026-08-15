@@ -93,6 +93,11 @@ export class FormandoPortalController {
     return this.portal.documentosObrigatorios(user);
   }
 
+  @Post("documentos/obrigatorios/avisar-logout")
+  avisarLogoutDocumentosObrigatorios(@CurrentUser() user: RequestUser) {
+    return this.portal.avisarLogoutDocumentosObrigatorios(user);
+  }
+
   @Get("documentos/requisicoes")
   listDocumentoRequisicoes(@CurrentUser() user: RequestUser) {
     return this.portal.listDocumentoRequisicoes(user);

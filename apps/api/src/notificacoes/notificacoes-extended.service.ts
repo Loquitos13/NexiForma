@@ -16,6 +16,7 @@ import {
   resolverEmailNotificacaoFormando,
   resolverEmailNotificacaoFormador,
   resolverEmailPresencaFormando,
+  resolverEmailEntregavel,
 } from "@nexiforma/shared";
 import {
   GESTOR_COORDENADOR_ROLES,
@@ -779,6 +780,166 @@ export class NotificacoesExtendedService {
 
     this.logger.log(
       `Pendências logout formador: ${destinatarios.length} destinatário(s), ${enviados} email(s)`,
+    );
+    return { destinatarios: destinatarios.length, emails: enviados };
+  }
+
+  /**
+   * Logout com documentos universais / do cargo em falta -
+   * avisa o utilizador, gestor e coordenador pedagógico.
+   */
+  async notificarLogoutDocumentosObrigatoriosEmFalta(
+    tenantId: string,
+    input: {
+      utilizadorUserId: string;
+      utilizadorNome: string;
+      roleKind: "formando" | "formador";
+      linhas: string[];
+      portalPath: string;
+      emailConta: string;
+      emailContacto?: string | null;
+      emailPerfil?: string | null;
+    },
+  ) {
+    if (!input.linhas.length) return { destinatarios: 0, emails: 0 };
+
+    const mailFallback =
+      this.config.get<string>("MAIL_REPLY_TO")?.trim() ||
+      this.config.get<string>("MAIL_PEDAGOGICO")?.trim() ||
+      null;
+
+    const [tenant, staff, utilizador] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { legalName: true },
+      }),
+      this.prisma.user.findMany({
+        where: { tenantId, active: true, role: { in: GESTOR_COORDENADOR_ROLES } },
+        select: { id: true, email: true, displayName: true, role: true },
+      }),
+      this.prisma.user.findFirst({
+        where: { id: input.utilizadorUserId, tenantId },
+        select: { id: true, email: true, displayName: true, role: true },
+      }),
+    ]);
+
+    const appUrl = resolveAppPublicUrlForLinks(this.config);
+    const portalUrl = `${appUrl}${input.portalPath.startsWith("/") ? input.portalPath : `/${input.portalPath}`}`;
+    const entidade = tenant?.legalName?.trim() || "Entidade formadora";
+    const roleLabel = input.roleKind === "formador" ? "Formador" : "Formando";
+    const titulo = `Documentos em falta – ${input.utilizadorNome} saiu do portal`;
+
+    const emailsEnviados = new Set<string>();
+    let enviados = 0;
+
+    const destinatarios: Array<{
+      id: string;
+      email: string | null;
+      displayName: string | null;
+      role: string;
+      paraUtilizador: boolean;
+      emailOverride?: string | null;
+    }> = [];
+
+    if (utilizador) {
+      const emailUtilizador =
+        input.roleKind === "formador"
+          ? resolverEmailNotificacaoFormador({
+              emailPerfil: input.emailPerfil,
+              emailConta: input.emailConta,
+            })
+          : resolverEmailNotificacaoFormando({
+              emailConta: input.emailConta,
+              emailContacto: input.emailContacto,
+            });
+      destinatarios.push({
+        id: utilizador.id,
+        email: emailUtilizador,
+        displayName: input.utilizadorNome,
+        role: utilizador.role,
+        paraUtilizador: true,
+      });
+    }
+
+    for (const dest of staff) {
+      if (dest.id === input.utilizadorUserId) continue;
+      destinatarios.push({
+        id: dest.id,
+        email: dest.email,
+        displayName: dest.displayName,
+        role: dest.role,
+        paraUtilizador: false,
+      });
+    }
+
+    for (const dest of destinatarios) {
+      const to = dest.paraUtilizador
+        ? resolverEmailEntregavel(dest.email, mailFallback)
+        : resolverEmailNotificacaoUtilizador(
+            dest.role as Parameters<typeof resolverEmailNotificacaoUtilizador>[0],
+            dest.email ?? "",
+            undefined,
+            mailFallback,
+          );
+
+      const tpl = EmailTemplates.logoutDocumentosObrigatoriosEmFalta({
+        nomeDestinatario: dest.displayName?.trim() || dest.email || roleLabel,
+        entidade,
+        utilizadorNome: input.utilizadorNome,
+        roleLabel,
+        linhas: input.linhas,
+        portalUrl,
+        paraUtilizador: dest.paraUtilizador,
+      });
+
+      if (!dest.paraUtilizador) {
+        try {
+          await this.prisma.notificacaoPortal.create({
+            data: {
+              tenantId,
+              userId: dest.id,
+              tipo: "logout_docs_obrigatorios",
+              titulo,
+              mensagem:
+                `${input.utilizadorNome} (${roleLabel}) saiu com documentos em falta: ` +
+                input.linhas.slice(0, 3).join(" | ") +
+                (input.linhas.length > 3 ? "…" : ""),
+              link: input.portalPath,
+            },
+          });
+        } catch (err) {
+          this.logger.warn(
+            `Falha notificação portal logout docs (${dest.id}): ${
+              err instanceof Error ? err.message : err
+            }`,
+          );
+        }
+      }
+
+      const toKey = to?.trim().toLowerCase();
+      if (to && toKey && !emailsEnviados.has(toKey)) {
+        try {
+          await this.mail.send({
+            to,
+            subject: tpl.subject,
+            text: tpl.text,
+            html: tpl.html,
+          });
+          emailsEnviados.add(toKey);
+          enviados += 1;
+          this.logger.log(`Email logout docs obrigatórios enviado a ${to}`);
+        } catch (err) {
+          this.logger.warn(
+            `Falha email logout docs obrigatórios (${to}): ${
+              err instanceof Error ? err.message : err
+            }`,
+          );
+        }
+      }
+    }
+
+    this.logger.log(
+      `Logout docs obrigatórios: ${destinatarios.length} destinatário(s), ${enviados} email(s)`,
     );
     return { destinatarios: destinatarios.length, emails: enviados };
   }

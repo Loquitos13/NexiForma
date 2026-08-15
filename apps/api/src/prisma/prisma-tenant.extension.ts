@@ -43,6 +43,7 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   "RgpdPedido",
   "DocumentoAnexo",
   "MatriculaDocumento",
+  "PersonaInquiry",
   "MatriculaUnidadeDesbloqueio",
   "AvaliacaoFormando",
   "TenantSubscription",

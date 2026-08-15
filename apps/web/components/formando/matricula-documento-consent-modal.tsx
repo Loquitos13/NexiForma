@@ -166,7 +166,7 @@ export function MatriculaDocumentoConsentModal({
         {loadError ? null : (
           <p className="text-xs text-slate-500">
             {scrollReady
-              ? "Chegou ao fim do documento — pode registar o consentimento."
+              ? "Chegou ao fim do documento - pode registar o consentimento."
               : "Deslize o painel até ao fim do PDF para activar o botão de consentimento."}
           </p>
         )}

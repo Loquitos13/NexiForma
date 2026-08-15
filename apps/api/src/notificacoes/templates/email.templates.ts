@@ -1365,6 +1365,50 @@ export class EmailTemplates {
     };
   }
 
+  /** Logout com documentos universais / do cargo em falta. */
+  static logoutDocumentosObrigatoriosEmFalta(params: {
+    nomeDestinatario: string;
+    entidade: string;
+    utilizadorNome: string;
+    roleLabel: string;
+    linhas: string[];
+    portalUrl: string;
+    paraUtilizador: boolean;
+  }): EmailTemplate {
+    const n = params.linhas.length;
+    const subject = params.paraUtilizador
+      ? `Lembrete – documentos obrigatórios em falta`
+      : `Documentos em falta – ${params.utilizadorNome} saiu do portal`;
+
+    const intro = params.paraUtilizador
+      ? `Saiu do portal com <strong>${n}</strong> documento(s) obrigatório(s) por enviar:`
+      : `O ${params.roleLabel.toLowerCase()} <strong>${escapeHtml(params.utilizadorNome)}</strong> saiu do portal ` +
+        `com <strong>${n}</strong> documento(s) obrigatório(s) em falta:`;
+
+    const info = params.paraUtilizador
+      ? "Envie os documentos em falta assim que possível para concluir o registo na entidade formadora."
+      : "É necessário que o utilizador envie os documentos em falta para cumprir os requisitos da entidade formadora.";
+
+    return {
+      subject,
+      text:
+        `Caro(a) ${params.nomeDestinatario},\n\n` +
+        (params.paraUtilizador
+          ? `Saiu do portal com ${n} documento(s) obrigatório(s) por enviar:\n\n`
+          : `O ${params.roleLabel.toLowerCase()} ${params.utilizadorNome} saiu do portal com ${n} documento(s) em falta:\n\n`) +
+        params.linhas.map((l) => `• ${l}`).join("\n") +
+        `\n\nPortal:\n${params.portalUrl}\n\n` +
+        `Com os melhores cumprimentos,\n${params.entidade}\n`,
+      html:
+        cumprimento(params.nomeDestinatario) +
+        emailParagraph(intro) +
+        listaHtml(params.linhas) +
+        emailInfoBox(info, "#d97706") +
+        emailButtonRow(emailButton("Abrir documentos no portal", params.portalUrl, "primary")) +
+        assinatura(params.entidade),
+    };
+  }
+
   /** Digest de alertas para gestores / formadores. */
   static digestAlertas(params: {
     entidade: string;
