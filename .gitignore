@@ -19,6 +19,7 @@ build/
 # DB dumps e backups (nunca no git)
 *.dump
 *.sql
+!packages/database/prisma/migrations/**/*.sql
 *.sql.gz
 *.tar.gz
 nexiforma.dump
