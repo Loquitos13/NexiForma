@@ -35,6 +35,7 @@ import {
 } from "./matricula-documentos.util";
 import { resolveDocumentosPolitica } from "./documentos-politica.util";
 import { opaqueStorageKey } from "../common/opaque-storage-key.util";
+import { buildDocumentoDisplayName } from "../common/documento-display-name.util";
 
 @Injectable()
 export class FormandoPortalService {
@@ -676,6 +677,7 @@ export class FormandoPortalService {
     file: Express.Multer.File,
     categoria?: string,
     lado?: string,
+    nomeDisplay?: string,
   ) {
     const { tenantId, profile } = await this.requireProfile(user);
 
@@ -709,17 +711,36 @@ export class FormandoPortalService {
       throw new BadRequestException("Para captura de cartão use JPG ou PNG (não PDF).");
     }
 
-    const existing = await this.prisma.documentoAnexo.findFirst({
-      where: {
-        tenantId,
-        formandoId: profile.id,
-        matriculaId: null,
-        categoria: cat,
-        lado: ladoNorm,
-      },
-    });
+    const existing =
+      cat === "outros"
+        ? null
+        : await this.prisma.documentoAnexo.findFirst({
+            where: {
+              tenantId,
+              formandoId: profile.id,
+              matriculaId: null,
+              categoria: cat,
+              lado: ladoNorm,
+            },
+          });
 
-    const storageKey = opaqueStorageKey(["docs", tenantId, "f", profile.id]);
+    let nomeFinal = file.originalname;
+    if (cat === "outros") {
+      if (!nomeDisplay?.trim()) {
+        throw new BadRequestException("Indique um nome para o documento adicional.");
+      }
+      try {
+        nomeFinal = buildDocumentoDisplayName({
+          nome: nomeDisplay,
+          originalFilename: file.originalname,
+          mimeType: file.mimetype,
+        });
+      } catch (e) {
+        throw new BadRequestException(e instanceof Error ? e.message : "Nome inválido.");
+      }
+    }
+
+    const storageKey = opaqueStorageKey(["docs", tenantId, "f", profile.id, cat, String(Date.now())]);
 
     try {
       await this.storage.putObject(storageKey, file.buffer, file.mimetype);
@@ -735,7 +756,7 @@ export class FormandoPortalService {
             matriculaId: null,
             categoria: cat,
             lado: ladoNorm,
-            nome: file.originalname,
+            nome: nomeFinal,
             storageKey,
             mimeType: file.mimetype,
             tamanhoBytes: file.size,

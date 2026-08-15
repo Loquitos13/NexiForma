@@ -1,5 +1,3 @@
-/** Aviso no upload de documentos «Outros» (formador e formando). */
+/** Orientação para documentos adicionais (categoria «outros»). */
 export const AVISO_NOME_DOCUMENTO_OUTROS =
-  "O nome do ficheiro deve identificar claramente o âmbito do documento " +
-  "(ex.: Certificado-UFCD-Gestao.pdf ou Comprovativo-IBAN-Nome.pdf). " +
-  "Evite nomes genéricos como documento.pdf ou scan001.pdf.";
+  "Atribua um nome claro ao documento (ex.: Certificado UFCD Gestão). Esse nome aparece no dossiê e ajuda a entidade formadora a identificar o ficheiro.";

@@ -75,6 +75,11 @@ function formatBytes(n: number) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function labelDocumentoListado(doc: Documento): string {
+  if (doc.categoria === "outros") return doc.nome;
+  return labelDocCategoria(doc.categoria ?? "", doc.lado);
+}
+
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "dados", label: "Dados" },
   { id: "seguranca", label: "Segurança" },
@@ -98,6 +103,8 @@ export default function FormandoPerfilPage() {
   const [uploading, setUploading] = useState(false);
   const [tipoDocumento, setTipoDocumento] = useState<TipoDocumento | "">("");
   const [idLadoUpload, setIdLadoUpload] = useState<"unico" | "frente" | "verso">("unico");
+  const [nomeAdicional, setNomeAdicional] = useState("");
+  const [ficheiroAdicional, setFicheiroAdicional] = useState<File | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { enabled: personaEnabled, ready: personaReady, environmentId: personaEnvironmentId } =
@@ -206,24 +213,52 @@ export default function FormandoPerfilPage() {
     file: File,
     categoria: string,
     lado: string,
-  ) {
+    nome?: string,
+  ): Promise<boolean> {
     setUploading(true);
     setError(null);
     setMsg(null);
     const fd = new FormData();
     fd.append("file", file);
-    const res = await bffFetch(
-      `/api/v1/formando-portal/documentos?categoria=${encodeURIComponent(categoria)}&lado=${encodeURIComponent(lado)}`,
-      { method: "POST", body: fd },
-    );
+    const params = new URLSearchParams({
+      categoria,
+      lado,
+    });
+    if (nome?.trim()) params.set("nome", nome.trim());
+    const res = await bffFetch(`/api/v1/formando-portal/documentos?${params.toString()}`, {
+      method: "POST",
+      body: fd,
+    });
     if (!res.ok) {
       setError(await parseApiError(res));
-    } else {
-      setMsg(`${labelDocCategoria(categoria, lado)} registado.`);
-      await load();
-      notifyDocumentosObrigatoriosUpdated();
+      setUploading(false);
+      return false;
     }
+    setMsg(
+      categoria === "outros" && nome?.trim()
+        ? `«${nome.trim()}» registado.`
+        : `${labelDocCategoria(categoria, lado)} registado.`,
+    );
+    await load();
+    notifyDocumentosObrigatoriosUpdated();
     setUploading(false);
+    return true;
+  }
+
+  async function enviarFicheiroAdicional() {
+    if (!ficheiroAdicional) {
+      setError("Seleccione um ficheiro para enviar.");
+      return;
+    }
+    if (!nomeAdicional.trim()) {
+      setError("Indique um nome para o documento.");
+      return;
+    }
+    const ok = await uploadFicheiro(ficheiroAdicional, "outros", "unico", nomeAdicional);
+    if (ok) {
+      setNomeAdicional("");
+      setFicheiroAdicional(null);
+    }
   }
 
   async function uploadDocumento(file: File, tipo: TipoDocumento, lado: LadoDocumento) {
@@ -670,24 +705,48 @@ export default function FormandoPerfilPage() {
               <p className="text-sm text-slate-400">
                 Documentos complementares que não fazem parte da checklist obrigatória.
               </p>
-              <Alert variant="warning">{AVISO_NOME_DOCUMENTO_OUTROS}</Alert>
-              <label className="inline-flex">
-                <input
-                  type="file"
-                  accept="application/pdf,image/jpeg,image/png"
-                  className="sr-only"
-                  disabled={uploading}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    e.target.value = "";
-                    if (!file) return;
-                    void uploadFicheiro(file, "outros", "unico");
-                  }}
-                />
-                <span className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-600 bg-transparent px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
+              <p className="text-xs text-slate-500 leading-relaxed">{AVISO_NOME_DOCUMENTO_OUTROS}</p>
+              <Input
+                label="Nome do documento"
+                placeholder="Ex.: Certificado UFCD Gestão"
+                value={nomeAdicional}
+                onChange={(e) => setNomeAdicional(e.target.value)}
+                disabled={uploading}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex">
+                  <input
+                    type="file"
+                    accept="application/pdf,image/jpeg,image/png"
+                    className="sr-only"
+                    disabled={uploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      e.target.value = "";
+                      setFicheiroAdicional(file);
+                    }}
+                  />
+                  <span className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-600 bg-transparent px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
+                    Escolher ficheiro
+                  </span>
+                </label>
+                {ficheiroAdicional ? (
+                  <span className="text-xs text-slate-400 truncate max-w-[220px]">
+                    {ficheiroAdicional.name}
+                  </span>
+                ) : (
+                  <span className="text-xs text-slate-500">Nenhum ficheiro seleccionado</span>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={uploading || !ficheiroAdicional || !nomeAdicional.trim()}
+                  onClick={() => void enviarFicheiroAdicional()}
+                >
                   {uploading ? "A enviar…" : "Enviar ficheiro adicional"}
-                </span>
-              </label>
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
@@ -754,7 +813,7 @@ export default function FormandoPerfilPage() {
                     >
                       <div className="min-w-0">
                         <p className="text-sm text-slate-200 truncate">
-                          {labelDocCategoria(doc.categoria ?? "", doc.lado)}
+                          {labelDocumentoListado(doc)}
                         </p>
                         <p className="text-xs text-slate-500">
                           {formatBytes(doc.tamanhoBytes)} · {formatDatePt(doc.createdAt)}

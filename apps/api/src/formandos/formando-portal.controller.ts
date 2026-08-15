@@ -120,8 +120,9 @@ export class FormandoPortalController {
     @UploadedFile() file: Express.Multer.File,
     @Query("categoria") categoria?: string,
     @Query("lado") lado?: string,
+    @Query("nome") nome?: string,
   ) {
-    return this.portal.uploadDocumento(user, file, categoria, lado);
+    return this.portal.uploadDocumento(user, file, categoria, lado, nome);
   }
 
   @Get("documentos/:id/download-url")
