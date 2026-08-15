@@ -110,7 +110,7 @@ export class PersonaApiClient {
       meta?: Record<string, string>;
       included?: PersonaJsonApiResource[];
     }>(
-      `/inquiries/${encodeURIComponent(inquiryId)}?include=verifications,document`,
+      `/inquiries/${encodeURIComponent(inquiryId)}?include=verifications`,
     );
     if (!json.data?.id) throw new Error("Inquiry Persona não encontrada.");
     return {
@@ -119,6 +119,16 @@ export class PersonaApiClient {
       status: String(json.data.attributes?.status ?? "unknown"),
       included: json.included ?? [],
     };
+  }
+
+  async retrieveGovernmentIdVerification(
+    verificationId: string,
+  ): Promise<PersonaJsonApiResource> {
+    const json = await this.request<{ data?: PersonaJsonApiResource }>(
+      `/verification/government-ids/${encodeURIComponent(verificationId)}`,
+    );
+    if (!json.data?.id) throw new Error("Verificação government-id Persona não encontrada.");
+    return json.data;
   }
 
   async downloadFile(url: string): Promise<{ buffer: Buffer; contentType: string }> {

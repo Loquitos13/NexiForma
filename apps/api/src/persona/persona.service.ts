@@ -164,20 +164,24 @@ export class PersonaService {
     });
     if (!row) throw new NotFoundException("Verificação Persona não encontrada.");
 
-    const result = await this.documentSync.syncFromPersonaInquiry({
-      tenantId,
-      userId: user.sub,
-      roleKind,
-      formandoId,
-      formadorId,
-      personaInquiryId,
-    });
+    try {
+      const result = await this.documentSync.syncFromPersonaInquiry({
+        tenantId,
+        userId: user.sub,
+        roleKind,
+        formandoId,
+        formadorId,
+        personaInquiryId,
+      });
 
-    return {
-      ok: true,
-      inquiryId: personaInquiryId,
-      ...result,
-    };
+      return {
+        ok: true,
+        inquiryId: personaInquiryId,
+        ...result,
+      };
+    } catch (err) {
+      throw this.mapPersonaApiError(err);
+    }
   }
 
   async handleWebhookEvent(body: Record<string, unknown>) {

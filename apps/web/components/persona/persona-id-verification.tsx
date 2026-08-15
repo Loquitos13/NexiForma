@@ -135,7 +135,9 @@ export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled,
                 setError(
                   sync.reason === "not_passed"
                     ? "Verificação não aprovada. Tente novamente."
-                    : "Verificação concluída mas o documento não foi sincronizado.",
+                    : sync.reason === "no_files"
+                      ? "Verificação concluída mas as imagens do documento ainda não estão disponíveis. Aguarde um momento e tente sincronizar novamente."
+                      : "Verificação concluída mas o documento não foi sincronizado.",
                 );
                 reject(new Error("not synced"));
               }

@@ -31,7 +31,17 @@ export class PersonaDocumentSyncService {
       inquiryStatus === "completed" ||
       inquiryStatus === "passed";
 
-    const gov = findPassedGovernmentIdVerification(payload.included);
+    let gov = findPassedGovernmentIdVerification(payload.included);
+    if (gov?.id && !hasDownloadablePhotos(gov)) {
+      try {
+        gov = await this.personaApi.retrieveGovernmentIdVerification(gov.id);
+      } catch (err) {
+        this.logger.warn(
+          `Falha ao obter detalhes da verificação ${gov.id}`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
     if (!gov && !passed) {
       await this.prisma.personaInquiry.updateMany({
         where: { personaInquiryId: input.personaInquiryId, tenantId: input.tenantId },
@@ -218,6 +228,14 @@ function findPassedGovernmentIdVerification(
     const status = String(item.attributes?.status ?? "").toLowerCase();
     return status === "passed" || status === "approved";
   });
+}
+
+function hasDownloadablePhotos(gov: PersonaJsonApiResource): boolean {
+  const attrs = gov.attributes ?? {};
+  const photoUrls = (attrs["photo-urls"] as PhotoUrl[] | undefined) ?? [];
+  if (photoUrls.some((p) => p["normalized-url"] || p.url)) return true;
+  const files = attrs.files as Array<{ url?: string }> | undefined;
+  return Boolean(files?.some((f) => f.url));
 }
 
 function extractDownloadables(
