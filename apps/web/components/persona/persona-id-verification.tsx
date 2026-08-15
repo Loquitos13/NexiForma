@@ -292,7 +292,7 @@ export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled,
           <Button
             type="button"
             size="sm"
-            variant="outline"
+            variant="ghost"
             disabled={busy || syncing}
             onClick={() => void resync()}
           >
