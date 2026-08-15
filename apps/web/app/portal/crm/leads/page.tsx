@@ -176,6 +176,7 @@ export default function CrmLeadsPage() {
   const [motivoPerda, setMotivoPerda] = useState("");
   const [convertNif, setConvertNif] = useState("");
   const [convertEmail, setConvertEmail] = useState("");
+  const [convertMorada, setConvertMorada] = useState("");
   const [form, setForm] = useState(emptyForm);
   const [customFields, setCustomFields] = useState<Record<string, unknown>>({});
   const [leadFieldDefs, setLeadFieldDefs] = useState<CrmCustomFieldDef[]>([]);
