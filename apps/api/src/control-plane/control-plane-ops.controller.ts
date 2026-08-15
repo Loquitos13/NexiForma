@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Header,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -21,7 +22,8 @@ import { Roles } from "../auth/decorators/roles.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { ControlPlaneOpsService } from "./control-plane-ops.service";
-import { ExternalServicesStatusService } from "./external-services-status.service";
+import { ExternalServicesStatusService, EXTERNAL_SERVICE_IDS } from "./external-services-status.service";
+import type { ExternalServiceId } from "../common/external-service-event.service";
 import { DbBackupService } from "../backup/db-backup.service";
 import { decryptIpWithSecret } from "../common/ip-encryption.util";
 
@@ -41,6 +43,24 @@ export class ControlPlaneOpsController {
     const hours = windowHours ? Number(windowHours) : undefined;
     return this.externalServices.getStatus(
       Number.isFinite(hours) && hours! > 0 ? hours : undefined,
+    );
+  }
+
+  @Get("external-services/:serviceId/logs")
+  externalServiceLogs(
+    @Param("serviceId") serviceId: string,
+    @Query("windowHours") windowHours?: string,
+    @Query("limit") limit?: string,
+  ) {
+    if (!EXTERNAL_SERVICE_IDS.includes(serviceId as ExternalServiceId)) {
+      throw new NotFoundException(`Serviço externo desconhecido: ${serviceId}`);
+    }
+    const hours = windowHours ? Number(windowHours) : undefined;
+    const lim = limit ? Number(limit) : undefined;
+    return this.externalServices.getServiceLogs(
+      serviceId as ExternalServiceId,
+      Number.isFinite(hours) && hours! > 0 ? hours : undefined,
+      Number.isFinite(lim) && lim! > 0 ? lim : undefined,
     );
   }
 

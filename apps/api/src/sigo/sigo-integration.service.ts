@@ -25,6 +25,7 @@ import { SigoTenantConfigService } from "./sigo-tenant-config.service";
 import { SigoAccessService } from "./sigo-access.service";
 
 import { SigoSoapService } from "./sigo-soap.service";
+import { ExternalServiceEventService } from "../common/external-service-event.service";
 
 export type SigoApiMode = "disabled" | "http" | "soap";
 
@@ -62,6 +63,7 @@ export class SigoIntegrationService {
     private readonly tenantConfig: SigoTenantConfigService,
     private readonly access: SigoAccessService,
     private readonly soap: SigoSoapService,
+    private readonly externalEvents: ExternalServiceEventService,
   ) {}
 
   async getConfig(user: RequestUser) {
@@ -320,6 +322,14 @@ export class SigoIntegrationService {
           targetTenantId: tenantId,
           payload: { referenceId: finalRef, submissaoId: submissao.id, transacaoId: soapResult.transacaoId },
         });
+        this.externalEvents.recordSuccess({
+          service: "sigo",
+          tenantId,
+          message: "Submissão SIGO concluída (SOAP).",
+          resourceRef: finalRef,
+          code: "SIGO_SUBMIT",
+          detail: `submissaoId=${submissao.id}`,
+        });
         return {
           mode: runtime.mode,
           success: true,
@@ -349,6 +359,14 @@ export class SigoIntegrationService {
         targetTenantId: tenantId,
         payload: { referenceId: finalRef, submissaoId: submissao.id },
       });
+      this.externalEvents.recordSuccess({
+        service: "sigo",
+        tenantId,
+        message: "Submissão SIGO concluída (HTTP).",
+        resourceRef: finalRef,
+        code: "SIGO_SUBMIT",
+        detail: `submissaoId=${submissao.id}`,
+      });
       return {
         mode: runtime.mode,
         success: true,
@@ -359,12 +377,21 @@ export class SigoIntegrationService {
       };
     } catch (e) {
       if (!(e instanceof BadRequestException)) {
+        const errMsg = e instanceof Error ? e.message : String(e);
         await this.prisma.sigoSubmissao.update({
           where: { id: submissao.id },
           data: {
             estado: "ERRO",
-            erros: [{ mensagem: e instanceof Error ? e.message : String(e) }],
+            erros: [{ mensagem: errMsg }],
           },
+        });
+        this.externalEvents.recordError({
+          service: "sigo",
+          tenantId,
+          message: "Submissão SIGO falhou.",
+          resourceRef: submissao.id,
+          code: "SIGO_SUBMIT",
+          detail: errMsg.slice(0, 500),
         });
       }
       throw e;

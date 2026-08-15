@@ -73,6 +73,7 @@ import {
   resolverEmailNotificacaoUtilizador,
 } from "../notificacoes/notificacao-roles.util";
 import { MailService } from "../mail/mail.service";
+import { ExternalServiceEventService } from "../common/external-service-event.service";
 import type {
   AnularFaturaDto,
   EnviarFaturaEmailDto,
@@ -135,6 +136,7 @@ export class FaturasService {
     private readonly mail: MailService,
     private readonly config: ConfigService,
     private readonly audit: AuditService,
+    private readonly externalEvents: ExternalServiceEventService,
   ) {}
 
   async list(
@@ -788,6 +790,7 @@ export class FaturasService {
     });
 
     const fatura = await this.getOne(user, id);
+    this.recordAtAudit(tenantId, id, resultado);
     void this.audit.log({
       actorType: "TENANT_USER",
       actorId: user.sub,
@@ -831,6 +834,7 @@ export class FaturasService {
     });
 
     const fatura = await this.getOne(user, id);
+    this.recordAtAudit(tenantId, id, resultado);
     void this.audit.log({
       actorType: "TENANT_USER",
       actorId: user.sub,
@@ -1960,6 +1964,33 @@ export class FaturasService {
           "Software não certificado pela AT - configure o número de certificação antes de comunicar em produção.",
         );
       }
+    }
+  }
+
+  private recordAtAudit(
+    tenantId: string,
+    faturaId: string,
+    resultado: {
+      sucesso: boolean;
+      codigoResposta?: string | null;
+      mensagemAt?: string | null;
+      mode?: string;
+    },
+  ) {
+    const payload = {
+      service: "at" as const,
+      tenantId,
+      message: resultado.sucesso
+        ? "Fatura comunicada à AT com sucesso."
+        : (resultado.mensagemAt ?? "Falha na comunicação à AT."),
+      resourceRef: faturaId,
+      code: resultado.codigoResposta ?? undefined,
+      detail: resultado.mode ? `mode=${resultado.mode}` : undefined,
+    };
+    if (resultado.sucesso) {
+      this.externalEvents.recordSuccess(payload);
+    } else {
+      this.externalEvents.recordError(payload);
     }
   }
 

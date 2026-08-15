@@ -24,6 +24,10 @@ import {
   StatusBarChart,
   StatusPieChart,
 } from "@/components/plataforma/plataforma-dashboard-charts";
+import {
+  ExternalServicesPanel,
+  type ExternalServicesStatus,
+} from "@/components/plataforma/external-services-panel";
 
 type Dashboard = {
   tenantsByStatus: { status: string; _count: number }[];
@@ -109,6 +113,7 @@ const statusColor: Record<string, string> = {
 
 export default function PlataformaDashboardPage() {
   const [dash, setDash] = useState<Dashboard | null>(null);
+  const [externalServices, setExternalServices] = useState<ExternalServicesStatus | null>(null);
   const [tickets, setTickets] = useState<TicketSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -122,9 +127,12 @@ export default function PlataformaDashboardPage() {
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setError(null);
-    const [dashR, ticketsR] = await Promise.all([
+    const [dashR, ticketsR, extR] = await Promise.all([
       bffFetch("/api/v1/control-plane/dashboard", { headers: { accept: "application/json" } }),
       bffFetch("/api/v1/control-plane/support-tickets?limit=8", {
+        headers: { accept: "application/json" },
+      }),
+      bffFetch("/api/v1/control-plane/ops/external-services?windowHours=168", {
         headers: { accept: "application/json" },
       }),
     ]);
@@ -136,6 +144,7 @@ export default function PlataformaDashboardPage() {
       setLastUpdate(new Date());
     }
     if (ticketsR.ok) setTickets((await ticketsR.json()) as TicketSummary[]);
+    if (extR.ok) setExternalServices((await extR.json()) as ExternalServicesStatus);
     setLoading(false);
   }, []);
 
@@ -313,6 +322,8 @@ export default function PlataformaDashboardPage() {
               hint="sessões activas"
             />
           </div>
+
+          {externalServices ? <ExternalServicesPanel data={externalServices} /> : null}
 
           <div className="grid gap-4 lg:grid-cols-2">
             <ChartCard title="Acessos - últimas 24 horas">

@@ -82,6 +82,22 @@ export class IntegracoesService {
     });
   }
 
+  private recordTeamsSuccess(
+    message: string,
+    tenantId: string | undefined,
+    meetingId: string,
+    detail?: string,
+  ) {
+    this.externalEvents.recordSuccess({
+      service: "teams",
+      tenantId,
+      message,
+      resourceRef: meetingId,
+      code: "MEETING_CREATED",
+      detail,
+    });
+  }
+
   /**
    * Cria reunião OAuth ao criar/activar sessão online. Sem credenciais → sessão fica sem sala (aviso na UI).
    */
@@ -999,6 +1015,12 @@ export class IntegracoesService {
     if (!data.joinWebUrl) {
       throw new BadRequestException("Graph não devolveu joinWebUrl – verifica permissões OnlineMeetings.ReadWrite.All.");
     }
+    this.recordTeamsSuccess(
+      "Reunião Teams criada.",
+      opts?.tenantId,
+      data.id,
+      opts?.subject,
+    );
     return { id: data.id, joinUrl: data.joinWebUrl, organizerObjectId: organizer.id };
   }
 

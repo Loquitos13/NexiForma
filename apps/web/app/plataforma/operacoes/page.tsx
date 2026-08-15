@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { cn } from "@/lib/ui/cn";
+import {
+  ExternalServicesPanel,
+  type ExternalServicesStatus,
+} from "@/components/plataforma/external-services-panel";
 
 type Dashboard = {
   summary: {
@@ -58,26 +62,6 @@ type TenantRow = {
     modulosLms: number;
     errosHttp: number;
   };
-};
-
-type ExternalServiceHealth = {
-  id: string;
-  label: string;
-  description: string;
-  status: "UP" | "DOWN" | "NOT_CONFIGURED";
-  configured: boolean;
-  failureCount: number;
-  tenantsAffected: number;
-  lastFailureAt: string | null;
-  lastFailureMessage: string | null;
-  detail: string | null;
-};
-
-type ExternalServicesStatus = {
-  windowHours: number;
-  evaluatedAt: string;
-  rule: string;
-  services: ExternalServiceHealth[];
 };
 
 export default function PlataformaOperacoesPage() {
@@ -194,26 +178,7 @@ export default function PlataformaOperacoesPage() {
         </div>
       ) : null}
 
-      {externalServices ? (
-        <section className="rounded-2xl bg-[#0c0a14]/80 border border-purple-500/10">
-          <div className="px-4 py-3 border-b border-purple-500/10 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-300">Serviços externos</h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Janela: {externalServices.windowHours}h · {externalServices.rule}
-              </p>
-            </div>
-            <span className="text-[11px] text-slate-600">
-              Actualizado {new Date(externalServices.evaluatedAt).toLocaleString("pt-PT")}
-            </span>
-          </div>
-          <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
-            {externalServices.services.map((svc) => (
-              <ExternalServiceCard key={svc.id} service={svc} />
-            ))}
-          </div>
-        </section>
-      ) : null}
+      {externalServices ? <ExternalServicesPanel data={externalServices} compact /> : null}
 
       {/* Tenants health table */}
       {data?.tenants?.length ? (
@@ -354,55 +319,6 @@ export default function PlataformaOperacoesPage() {
         <Modal onClose={() => { setSelectedTenant(null); setTenantDetail(null); }} title="Detalhe operacional">
           <TenantOpsDetail data={tenantDetail} tenantId={selectedTenant} />
         </Modal>
-      ) : null}
-    </div>
-  );
-}
-
-function ExternalServiceCard({ service }: { service: ExternalServiceHealth }) {
-  const statusStyles = {
-    UP: "border-green-500/25 bg-green-950/20",
-    DOWN: "border-red-500/30 bg-red-950/25",
-    NOT_CONFIGURED: "border-slate-600/40 bg-slate-900/40",
-  } as const;
-  const statusLabel = {
-    UP: "UP",
-    DOWN: "DOWN",
-    NOT_CONFIGURED: "Não configurado",
-  } as const;
-  const dotClass = {
-    UP: "bg-green-400",
-    DOWN: "bg-red-400",
-    NOT_CONFIGURED: "bg-slate-500",
-  } as const;
-
-  return (
-    <div className={cn("rounded-xl border p-4", statusStyles[service.status])}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-slate-100 truncate">{service.label}</h3>
-          <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{service.description}</p>
-        </div>
-        <span className="inline-flex items-center gap-1.5 shrink-0 text-xs font-medium text-slate-200">
-          <span className={cn("w-2 h-2 rounded-full", dotClass[service.status])} />
-          {statusLabel[service.status]}
-        </span>
-      </div>
-      <p className="text-xs text-slate-400 mt-3">{service.detail}</p>
-      {service.failureCount > 0 ? (
-        <div className="mt-2 text-[11px] text-red-300/90">
-          {service.failureCount} erro(s) · {service.tenantsAffected} tenant(s)
-          {service.lastFailureAt ? (
-            <span className="block text-slate-500 mt-1">
-              Último: {new Date(service.lastFailureAt).toLocaleString("pt-PT")}
-            </span>
-          ) : null}
-          {service.lastFailureMessage ? (
-            <span className="block text-slate-500 mt-0.5 truncate" title={service.lastFailureMessage}>
-              {service.lastFailureMessage}
-            </span>
-          ) : null}
-        </div>
       ) : null}
     </div>
   );

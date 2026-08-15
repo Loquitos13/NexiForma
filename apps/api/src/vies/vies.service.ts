@@ -104,7 +104,7 @@ export class ViesService {
     }
 
     try {
-      await this.assertConfirmado(rawVat, tipo, "PT");
+      await this.assertConfirmado(rawVat, tipo, "PT", this.tenantIdFromUser(user));
       return { valido: true };
     } catch (err) {
       const mensagem = mensagemDeExcecao(err);
@@ -125,6 +125,7 @@ export class ViesService {
     rawVat: string,
     tipo: NifConfirmTipo,
     countryHint: string | null = "PT",
+    tenantId?: string,
   ): Promise<ViesVerificacaoResult> {
     if (tipo === "pessoa") {
       const result = this.verificarPortugalNif(rawVat, countryHint);
@@ -156,10 +157,18 @@ export class ViesService {
       return result;
     }
 
-    const result = await this.verificar(rawVat, countryHint);
+    const result = await this.verificar(rawVat, countryHint, tenantId);
     const ev = evaluateNifConfirmation(result, tipo);
     if (!ev.ok) throw new BadRequestException(ev.mensagem);
     return result;
+  }
+
+  private tenantIdFromUser(user: RequestUser): string | undefined {
+    try {
+      return requireTenantId(user);
+    } catch {
+      return undefined;
+    }
   }
 
   /** Validação local Portugal NIF (particulares). */
@@ -181,7 +190,11 @@ export class ViesService {
   }
 
   /** Empresas: consulta NIF.PT (após checksum Portugal NIF). */
-  async verificar(rawVat: string, countryHint?: string | null): Promise<ViesVerificacaoResult> {
+  async verificar(
+    rawVat: string,
+    countryHint?: string | null,
+    tenantId?: string,
+  ): Promise<ViesVerificacaoResult> {
     const parsed = parseVatInput(rawVat, countryHint);
     if (!parsed) {
       return buildViesResult({
@@ -243,8 +256,10 @@ export class ViesService {
         this.logger.warn(`NIF.PT HTTP ${res.status} para ${vatNumber}`);
         this.externalEvents.recordError({
           service: "nif_pt",
+          tenantId,
           code: `HTTP_${res.status}`,
           message: `NIF.PT indisponível (HTTP ${res.status}).`,
+          nif: vatNumber,
         });
         return buildViesResult({
           countryCode: "PT",
@@ -265,15 +280,34 @@ export class ViesService {
           result: mapped,
         });
       }
+      this.externalEvents.recordSuccess({
+        service: "nif_pt",
+        tenantId,
+        message:
+          mapped.validoRegisto === true
+            ? "NIF confirmado no registo (NIF.PT)."
+            : mapped.validoRegisto === false
+              ? "NIF não confirmado no registo (NIF.PT)."
+              : "Consulta NIF.PT concluída.",
+        nif: vatNumber,
+        code:
+          mapped.validoRegisto === true
+            ? "CONFIRMED"
+            : mapped.validoRegisto === false
+              ? "NOT_CONFIRMED"
+              : "UNKNOWN",
+      });
       return mapped;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(`NIF.PT indisponível: ${msg}`);
       this.externalEvents.recordError({
         service: "nif_pt",
+        tenantId,
         code: "NETWORK_ERROR",
         message: "NIF.PT indisponível (erro de rede ou timeout).",
         detail: msg.slice(0, 500),
+        nif: vatNumber,
       });
       return buildViesResult({
         countryCode: "PT",

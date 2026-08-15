@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Prisma } from "@nexiforma/database";
 import { PrismaService } from "../prisma/prisma.service";
-import type { ExternalServiceId } from "../common/external-service-event.service";
+import type { ExternalServiceId, ExternalServiceEventOutcome } from "../common/external-service-event.service";
 
 export type ExternalServiceHealthStatus = "UP" | "DOWN" | "NOT_CONFIGURED";
 
@@ -25,6 +25,35 @@ export type ExternalServicesStatusResponse = {
   rule: string;
   services: ExternalServiceHealthItem[];
 };
+
+export type ExternalServiceLogEntry = {
+  id: string;
+  occurredAt: string;
+  source: "audit" | "http_alert" | "domain";
+  outcome: "success" | "error" | null;
+  message: string;
+  tenantId: string | null;
+  email: string | null;
+  nif: string | null;
+  code: string | null;
+  detail: string | null;
+  resourceRef: string | null;
+};
+
+export type ExternalServiceLogsResponse = {
+  serviceId: ExternalServiceId;
+  windowHours: number;
+  logs: ExternalServiceLogEntry[];
+};
+
+export const EXTERNAL_SERVICE_IDS: ExternalServiceId[] = [
+  "brevo",
+  "persona",
+  "teams",
+  "at",
+  "sigo",
+  "nif_pt",
+];
 
 type FailureAggregate = {
   count: number;
@@ -134,6 +163,258 @@ export class ExternalServicesStatusService {
         "UP quando não existem erros registados para o serviço em nenhum tenant na janela indicada; DOWN se houve falhas; NOT_CONFIGURED se credenciais/modo estão desactivados.",
       services,
     };
+  }
+
+  async getServiceLogs(
+    serviceId: ExternalServiceId,
+    windowHours = 168,
+    limit = 50,
+  ): Promise<ExternalServiceLogsResponse> {
+    const hours = Math.min(Math.max(windowHours, 1), 24 * 30);
+    const take = Math.min(Math.max(limit, 1), 200);
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+    const entries: ExternalServiceLogEntry[] = [];
+
+    const auditRows = await this.prisma.globalAuditLog.findMany({
+      where: {
+        occurredAt: { gte: since },
+        resourceType: "ExternalService",
+        resourceId: serviceId,
+        OR: [
+          { action: `external.error.${serviceId}` },
+          { action: `external.success.${serviceId}` },
+        ],
+      },
+      orderBy: { occurredAt: "desc" },
+      take,
+      select: {
+        id: true,
+        action: true,
+        occurredAt: true,
+        targetTenantId: true,
+        payload: true,
+      },
+    });
+
+    for (const row of auditRows) {
+      const payload = row.payload as {
+        message?: string;
+        outcome?: ExternalServiceEventOutcome;
+        code?: string;
+        detail?: string;
+        email?: string;
+        nif?: string;
+        resourceRef?: string;
+      } | null;
+      const outcome: "success" | "error" =
+        payload?.outcome ??
+        (row.action.startsWith("external.success.") ? "success" : "error");
+      entries.push({
+        id: `audit-${row.id.toString()}`,
+        occurredAt: row.occurredAt.toISOString(),
+        source: "audit",
+        outcome,
+        message: payload?.message?.slice(0, 500) ?? "Evento de serviço externo",
+        tenantId: row.targetTenantId,
+        email: payload?.email?.slice(0, 320) ?? null,
+        nif: payload?.nif?.slice(0, 20) ?? null,
+        code: payload?.code?.slice(0, 120) ?? null,
+        detail: payload?.detail?.slice(0, 1000) ?? null,
+        resourceRef: payload?.resourceRef?.slice(0, 120) ?? null,
+      });
+    }
+
+    const httpFilter = this.httpFilterForService(serviceId);
+    if (httpFilter) {
+      const alerts = await this.prisma.platformHttpAlert.findMany({
+        where: {
+          occurredAt: { gte: since },
+          OR: httpFilter,
+        },
+        orderBy: { occurredAt: "desc" },
+        take,
+        select: {
+          id: true,
+          occurredAt: true,
+          resumo: true,
+          statusCode: true,
+          httpMethod: true,
+          httpPath: true,
+          tenantId: true,
+          userEmail: true,
+        },
+      });
+
+      for (const row of alerts) {
+        entries.push({
+          id: `alert-${row.id}`,
+          occurredAt: row.occurredAt.toISOString(),
+          source: "http_alert",
+          outcome: "error",
+          message: row.resumo.slice(0, 500),
+          tenantId: row.tenantId,
+          email: row.userEmail,
+          nif: null,
+          code: `HTTP_${row.statusCode}`,
+          detail: [row.httpMethod, row.httpPath].filter(Boolean).join(" ") || null,
+          resourceRef: null,
+        });
+      }
+    }
+
+    const domainEntries = await this.loadDomainLogs(serviceId, since, take);
+    entries.push(...domainEntries);
+
+    entries.sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime());
+
+    return {
+      serviceId,
+      windowHours: hours,
+      logs: entries.slice(0, take),
+    };
+  }
+
+  private httpFilterForService(serviceId: ExternalServiceId): Prisma.PlatformHttpAlertWhereInput[] | null {
+    switch (serviceId) {
+      case "brevo":
+        return [
+          { modulo: { in: ["ext-brevo", "integration-brevo"] } },
+          { httpPath: { contains: "brevo", mode: "insensitive" } },
+          { resumo: { contains: "brevo", mode: "insensitive" } },
+          { resumo: { contains: "smtp/email", mode: "insensitive" } },
+        ];
+      case "persona":
+        return [
+          { modulo: { in: ["ext-persona", "integration-persona"] } },
+          { httpPath: { contains: "/persona/", mode: "insensitive" } },
+        ];
+      case "teams":
+        return [
+          { modulo: { in: ["ext-teams", "integration-teams"] } },
+          { httpPath: { contains: "graph.microsoft.com", mode: "insensitive" } },
+          { httpPath: { contains: "/integracoes", mode: "insensitive" } },
+        ];
+      case "nif_pt":
+        return [
+          { modulo: { in: ["ext-nif_pt", "integration-nif"] } },
+          { httpPath: { contains: "/nif/", mode: "insensitive" } },
+        ];
+      default:
+        return null;
+    }
+  }
+
+  private async loadDomainLogs(
+    serviceId: ExternalServiceId,
+    since: Date,
+    take: number,
+  ): Promise<ExternalServiceLogEntry[]> {
+    switch (serviceId) {
+      case "at": {
+        const rows = await this.prisma.faturaComunicacaoAt.findMany({
+          where: { sucesso: false, tentativaEm: { gte: since } },
+          orderBy: { tentativaEm: "desc" },
+          take,
+          select: {
+            id: true,
+            tentativaEm: true,
+            mensagemAt: true,
+            fatura: { select: { tenantId: true } },
+          },
+        });
+        return rows.map((row) => ({
+          id: `at-${row.id}`,
+          occurredAt: row.tentativaEm.toISOString(),
+          source: "domain" as const,
+          outcome: "error" as const,
+          message: row.mensagemAt?.slice(0, 500) ?? "Falha na comunicação à AT",
+          tenantId: row.fatura.tenantId,
+          email: null,
+          nif: null,
+          code: "AT_COMUNICACAO",
+          detail: null,
+          resourceRef: null,
+        }));
+      }
+      case "sigo": {
+        const [subs, syncs] = await Promise.all([
+          this.prisma.sigoSubmissao.findMany({
+            where: { estado: "ERRO", createdAt: { gte: since } },
+            orderBy: { createdAt: "desc" },
+            take,
+            select: { id: true, tenantId: true, createdAt: true, erros: true },
+          }),
+          this.prisma.sigoSincronizacaoFormando.findMany({
+            where: { estado: "ERRO", updatedAt: { gte: since } },
+            orderBy: { updatedAt: "desc" },
+            take,
+            select: {
+              id: true,
+              tenantId: true,
+              updatedAt: true,
+              soapFaultString: true,
+              responseResumo: true,
+            },
+          }),
+        ]);
+        const subEntries = subs.map((row) => ({
+          id: `sigo-sub-${row.id}`,
+          occurredAt: row.createdAt.toISOString(),
+          source: "domain" as const,
+          outcome: "error" as const,
+          message: this.sigoErroResumo(row.erros) ?? "Submissão SIGO com erro",
+          tenantId: row.tenantId,
+          email: null,
+          nif: null,
+          code: "SIGO_SUBMISSAO",
+          detail: null,
+          resourceRef: row.id,
+        }));
+        const syncEntries = syncs.map((row) => ({
+          id: `sigo-sync-${row.id}`,
+          occurredAt: row.updatedAt.toISOString(),
+          source: "domain" as const,
+          outcome: "error" as const,
+          message:
+            row.soapFaultString?.slice(0, 500) ??
+            row.responseResumo?.slice(0, 500) ??
+            "Sincronização SIGO com erro",
+          tenantId: row.tenantId,
+          email: null,
+          nif: null,
+          code: "SIGO_SYNC",
+          detail: null,
+          resourceRef: row.id,
+        }));
+        return [...subEntries, ...syncEntries];
+      }
+      case "persona": {
+        const rows = await this.prisma.personaInquiry.findMany({
+          where: { status: "failed", updatedAt: { gte: since } },
+          orderBy: { updatedAt: "desc" },
+          take,
+          select: { id: true, tenantId: true, updatedAt: true, personaStatus: true },
+        });
+        return rows.map((row) => ({
+          id: `persona-inq-${row.id}`,
+          occurredAt: row.updatedAt.toISOString(),
+          source: "domain" as const,
+          outcome: "error" as const,
+          message: row.personaStatus
+            ? `Inquiry Persona falhou (${row.personaStatus})`
+            : "Inquiry Persona falhou",
+          tenantId: row.tenantId,
+          email: null,
+          nif: null,
+          code: "PERSONA_INQUIRY",
+          detail: null,
+          resourceRef: row.id,
+        }));
+      }
+      default:
+        return [];
+    }
   }
 
   private buildItem(input: {

@@ -111,11 +111,36 @@ export class PersonaService {
       );
     }
 
+    this.recordPersonaSuccess(
+      tenantId,
+      "Verificação de identidade iniciada (Persona).",
+      created.inquiryId,
+      "INQUIRY_CREATED",
+      created.status,
+    );
+
     return {
       inquiryId: created.inquiryId,
       sessionToken: created.sessionToken,
       status: created.status,
     };
+  }
+
+  private recordPersonaSuccess(
+    tenantId: string,
+    message: string,
+    inquiryId: string,
+    code?: string,
+    detail?: string,
+  ) {
+    this.externalEvents.recordSuccess({
+      service: "persona",
+      tenantId,
+      message,
+      resourceRef: inquiryId,
+      code,
+      detail,
+    });
   }
 
   private mapPersonaApiError(
@@ -133,6 +158,14 @@ export class PersonaService {
         tenantId,
         code: `HTTP_${err.status}`,
         message: err.message,
+      });
+    } else if (err.status === 404 || err.status === 400) {
+      this.externalEvents.recordError({
+        service: "persona",
+        tenantId,
+        code: `HTTP_${err.status}`,
+        message: err.message,
+        detail: "Erro de configuração ou pedido Persona.",
       });
     }
     if (err.status === 401 || err.status === 403) {
@@ -187,6 +220,13 @@ export class PersonaService {
         personaInquiryId,
       });
 
+      this.recordPersonaSuccess(
+        tenantId,
+        "Verificação de identidade sincronizada (Persona).",
+        personaInquiryId,
+        "INQUIRY_SYNCED",
+      );
+
       return {
         ok: true,
         inquiryId: personaInquiryId,
@@ -223,14 +263,30 @@ export class PersonaService {
       eventName.includes("approved") ||
       eventName.includes("passed");
 
+    const isFailure =
+      eventName.includes("failed") ||
+      eventName.includes("declined") ||
+      eventName.includes("expired");
+
     if (!shouldSync) {
+      const nextStatus = isFailure ? "failed" : "pending";
       await this.prisma.personaInquiry.update({
         where: { id: row.id },
         data: {
           personaStatus: String(data?.attributes?.status ?? row.personaStatus ?? ""),
-          status: "pending",
+          status: nextStatus,
         },
       });
+      if (isFailure) {
+        this.externalEvents.recordError({
+          service: "persona",
+          tenantId: row.tenantId,
+          message: "Verificação de identidade falhou (Persona).",
+          resourceRef: personaInquiryId,
+          code: "INQUIRY_FAILED",
+          detail: eventName,
+        });
+      }
       return { ok: true, handled: true, synced: false };
     }
 
@@ -242,6 +298,14 @@ export class PersonaService {
       formadorId: row.formadorId,
       personaInquiryId,
     });
+
+    this.recordPersonaSuccess(
+      row.tenantId,
+      "Verificação de identidade concluída via webhook (Persona).",
+      personaInquiryId,
+      "INQUIRY_WEBHOOK",
+      eventName,
+    );
 
     return { ok: true, handled: true, ...result };
   }

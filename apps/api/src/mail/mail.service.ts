@@ -20,6 +20,7 @@ export type SendMailInput = {
   text: string;
   html?: string;
   attachments?: MailAttachment[];
+  tenantId?: string;
 };
 
 export type MailDeliveryStatus = {
@@ -154,12 +155,14 @@ export class MailService implements OnModuleInit {
       this.logger.log(
         `[email] To: ${mail.to} | ${mail.subject}${attachInfo}${replyTo ? ` | Reply-To: ${replyTo}` : ""}\n${mail.text}`,
       );
+      this.recordEmailAudit(mail, "log");
       return;
     }
 
     if (this.provider === "ses" && this.ses) {
       if (mail.attachments?.length) {
         await this.sendSesRaw(from, replyTo, mail);
+        this.recordEmailAudit(mail, "ses");
         return;
       }
       const fromEmail = from.match(/<([^>]+)>/)?.[1] ?? from;
@@ -180,16 +183,19 @@ export class MailService implements OnModuleInit {
           },
         }),
       );
+      this.recordEmailAudit(mail, "ses");
       return;
     }
 
     if (this.provider === "brevo" && this.brevoApiKey) {
       await this.sendViaBrevo(from, replyTo, mail);
+      this.recordEmailAudit(mail, "brevo");
       return;
     }
 
     if (!this.transporter) {
       this.logger.log(`[email] To: ${mail.to} | ${mail.subject}\n${mail.text}`);
+      this.recordEmailAudit(mail, "log");
       return;
     }
 
@@ -201,6 +207,18 @@ export class MailService implements OnModuleInit {
       text: mail.text,
       html,
       attachments: this.nodemailerAttachments(mail.attachments),
+    });
+    this.recordEmailAudit(mail, "smtp");
+  }
+
+  private recordEmailAudit(mail: SendMailInput, provider: string) {
+    this.externalEvents.recordSuccess({
+      service: "brevo",
+      tenantId: mail.tenantId,
+      message: `Email enviado: ${mail.subject}`,
+      email: mail.to,
+      code: "EMAIL_SENT",
+      detail: `provider=${provider}`,
     });
   }
 
@@ -349,6 +367,8 @@ export class MailService implements OnModuleInit {
         code: `HTTP_${res.status}`,
         message: "Falha ao enviar email via Brevo API.",
         detail: err.slice(0, 500),
+        email: input.to,
+        tenantId: input.tenantId,
       });
       throw new Error("Falha ao enviar email via Brevo API.");
     }
