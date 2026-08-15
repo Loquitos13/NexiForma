@@ -1,6 +1,17 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
+/** Erro upstream da API Persona (status HTTP + mensagem legível). */
+export class PersonaApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "PersonaApiError";
+  }
+}
+
 export type PersonaJsonApiResource = {
   id?: string;
   type?: string;
@@ -54,7 +65,7 @@ export class PersonaApiClient {
     const text = await res.text();
     if (!res.ok) {
       this.logger.warn(`Persona API ${path} → ${res.status}: ${text.slice(0, 400)}`);
-      throw new Error(`Persona API error (${res.status})`);
+      throw new PersonaApiError(res.status, parsePersonaErrorMessage(text, res.status));
     }
     return JSON.parse(text) as T;
   }
@@ -64,8 +75,11 @@ export class PersonaApiClient {
       data: {
         attributes: {
           "inquiry-template-id": templateId,
-          "reference-id": referenceId,
         },
+      },
+      meta: {
+        "auto-create-inquiry-session": true,
+        "auto-create-account-reference-id": referenceId,
       },
     };
     const json = await this.request<{
@@ -117,6 +131,21 @@ export class PersonaApiClient {
       res.headers.get("content-type")?.split(";")[0]?.trim() || guessMimeFromUrl(url);
     return { buffer: Buffer.from(arrayBuffer), contentType };
   }
+}
+
+function parsePersonaErrorMessage(text: string, status: number): string {
+  try {
+    const json = JSON.parse(text) as {
+      errors?: Array<{ title?: string; detail?: string; description?: string }>;
+      message?: string;
+    };
+    const first = json.errors?.[0];
+    const detail = first?.detail ?? first?.description ?? first?.title ?? json.message;
+    if (detail && typeof detail === "string") return detail;
+  } catch {
+    /* resposta não-JSON */
+  }
+  return `Persona API error (${status})`;
 }
 
 function guessMimeFromUrl(url: string): string {

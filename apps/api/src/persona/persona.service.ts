@@ -1,7 +1,10 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
@@ -9,11 +12,13 @@ import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
-import { PersonaApiClient } from "./persona-api.client";
+import { PersonaApiClient, PersonaApiError } from "./persona-api.client";
 import { PersonaDocumentSyncService } from "./persona-document-sync.service";
 
 @Injectable()
 export class PersonaService {
+  private readonly logger = new Logger(PersonaService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
@@ -73,26 +78,64 @@ export class PersonaService {
     }
 
     const referenceId = `${tenantId}:${user.sub}:${Date.now()}`;
-    const created = await this.personaApi.createInquiry(templateId, referenceId);
 
-    await this.prisma.personaInquiry.create({
-      data: {
-        tenantId,
-        userId: user.sub,
-        roleKind,
-        formandoId,
-        formadorId,
-        personaInquiryId: created.inquiryId,
-        status: "created",
-        personaStatus: created.status,
-      },
-    });
+    let created;
+    try {
+      created = await this.personaApi.createInquiry(templateId, referenceId);
+    } catch (err) {
+      throw this.mapPersonaApiError(err);
+    }
+
+    try {
+      await this.prisma.personaInquiry.create({
+        data: {
+          tenantId,
+          userId: user.sub,
+          roleKind,
+          formandoId,
+          formadorId,
+          personaInquiryId: created.inquiryId,
+          status: "created",
+          personaStatus: created.status,
+        },
+      });
+    } catch (err) {
+      this.logger.error(
+        `Falha ao guardar persona_inquiry ${created.inquiryId}`,
+        err instanceof Error ? err.stack : String(err),
+      );
+      throw new InternalServerErrorException(
+        "Verificação Persona iniciada mas não foi possível registar na plataforma. Confirme que a migration persona_inquiries foi aplicada.",
+      );
+    }
 
     return {
       inquiryId: created.inquiryId,
       sessionToken: created.sessionToken,
       status: created.status,
     };
+  }
+
+  private mapPersonaApiError(err: unknown): BadGatewayException | BadRequestException | ServiceUnavailableException | InternalServerErrorException {
+    if (!(err instanceof PersonaApiError)) {
+      return new InternalServerErrorException(
+        err instanceof Error ? err.message : "Erro Persona inesperado.",
+      );
+    }
+    if (err.status === 401 || err.status === 403) {
+      return new ServiceUnavailableException(
+        "Chave Persona inválida ou sem permissões para criar verificações.",
+      );
+    }
+    if (err.status === 404) {
+      return new BadRequestException(
+        "Template Persona não encontrado. Verifique PERSONA_TEMPLATE_ID_FORMANDO / FORMADOR.",
+      );
+    }
+    if (err.status === 400) {
+      return new BadRequestException(err.message);
+    }
+    return new BadGatewayException(err.message);
   }
 
   async getLatestInquiry(user: RequestUser) {
