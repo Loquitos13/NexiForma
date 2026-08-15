@@ -116,7 +116,8 @@ export default function FormadorPerfilPage() {
     ccValidade: "",
     ccpValidade: "",
   });
-  const { enabled: personaEnabled, ready: personaReady } = usePersonaEnabled();
+  const { enabled: personaEnabled, ready: personaReady, environmentId: personaEnvironmentId } =
+    usePersonaEnabled();
   const idDocOk = obrigatorios?.items.find((i) => i.id === "documento_identificacao")?.completo;
 
   useEffect(() => {
@@ -587,6 +588,7 @@ export default function FormadorPerfilPage() {
                 onSynced={load}
                 enabled={personaEnabled}
                 ready={personaReady}
+                environmentId={personaEnvironmentId}
               />
               {personaReady && personaEnabled ? (
                 <p className="mt-2 text-xs text-slate-500">

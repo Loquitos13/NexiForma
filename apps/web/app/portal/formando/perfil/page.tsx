@@ -100,7 +100,8 @@ export default function FormandoPerfilPage() {
   const [idLadoUpload, setIdLadoUpload] = useState<"unico" | "frente" | "verso">("unico");
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { enabled: personaEnabled, ready: personaReady } = usePersonaEnabled();
+  const { enabled: personaEnabled, ready: personaReady, environmentId: personaEnvironmentId } =
+    usePersonaEnabled();
 
   const load = useCallback(async () => {
     setError(null);
@@ -609,6 +610,7 @@ export default function FormandoPerfilPage() {
                             onSynced={load}
                             enabled={personaEnabled}
                             ready={personaReady}
+                            environmentId={personaEnvironmentId}
                           />
                           {personaReady && personaEnabled ? null : (
                             <Select

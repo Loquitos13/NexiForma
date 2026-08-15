@@ -54,8 +54,9 @@ export class PersonaController {
   syncInquiry(
     @CurrentUser() user: RequestUser,
     @Param("personaInquiryId") personaInquiryId: string,
+    @Body() body: { force?: boolean },
   ) {
-    return this.persona.syncInquiry(user, personaInquiryId);
+    return this.persona.syncInquiry(user, personaInquiryId, body?.force === true);
   }
 
   @Public()

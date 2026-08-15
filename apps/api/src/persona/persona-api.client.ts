@@ -110,7 +110,7 @@ export class PersonaApiClient {
       meta?: Record<string, string>;
       included?: PersonaJsonApiResource[];
     }>(
-      `/inquiries/${encodeURIComponent(inquiryId)}?include=verifications`,
+      `/inquiries/${encodeURIComponent(inquiryId)}?include=verifications,documents`,
     );
     if (!json.data?.id) throw new Error("Inquiry Persona não encontrada.");
     return {

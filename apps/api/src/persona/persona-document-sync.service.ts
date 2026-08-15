@@ -2,10 +2,13 @@ import { Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { opaqueStorageKey } from "../common/opaque-storage-key.util";
-import { PersonaApiClient, type PersonaJsonApiResource } from "./persona-api.client";
+import { PersonaApiClient } from "./persona-api.client";
 import { buildPersonaIdPdf, orderPersonaIdFiles, type DownloadedIdPart } from "./persona-id-pdf.util";
-
-type PhotoUrl = { page?: string; url?: string; "normalized-url"?: string };
+import {
+  isInquiryPassed,
+  resolvePersonaIdFiles,
+  type PersonaIdFile,
+} from "./persona-id-files.util";
 
 const PERSONA_ID_PDF_NAME = "documento-identificacao-persona.pdf";
 
@@ -28,24 +31,10 @@ export class PersonaDocumentSyncService {
     personaInquiryId: string;
   }): Promise<{ synced: boolean; documents: number; reason?: string }> {
     const payload = await this.personaApi.retrieveInquiry(input.personaInquiryId);
-    const inquiryStatus = payload.status.toLowerCase();
-    const passed =
-      inquiryStatus === "approved" ||
-      inquiryStatus === "completed" ||
-      inquiryStatus === "passed";
+    const inquiryPassed = isInquiryPassed(payload.status);
 
-    let gov = findPassedGovernmentIdVerification(payload.included);
-    if (gov?.id && !hasDownloadablePhotos(gov)) {
-      try {
-        gov = await this.personaApi.retrieveGovernmentIdVerification(gov.id);
-      } catch (err) {
-        this.logger.warn(
-          `Falha ao obter detalhes da verificação ${gov.id}`,
-          err instanceof Error ? err.message : String(err),
-        );
-      }
-    }
-    if (!gov && !passed) {
+    const resolved = await resolvePersonaIdFiles(payload.included, this.personaApi);
+    if (!resolved) {
       await this.prisma.personaInquiry.updateMany({
         where: { personaInquiryId: input.personaInquiryId, tenantId: input.tenantId },
         data: {
@@ -53,15 +42,11 @@ export class PersonaDocumentSyncService {
           status: mapInquiryStatus(payload.status),
         },
       });
-      return { synced: false, documents: 0, reason: "not_passed" };
-    }
-
-    const attrs = gov?.attributes ?? {};
-    const photoUrls = (attrs["photo-urls"] as PhotoUrl[] | undefined) ?? [];
-    const files = extractDownloadables(photoUrls, attrs);
-
-    if (!files.length) {
-      return { synced: false, documents: 0, reason: "no_files" };
+      return {
+        synced: false,
+        documents: 0,
+        reason: inquiryPassed ? "no_files" : "not_passed",
+      };
     }
 
     let saved = 0;
@@ -70,17 +55,22 @@ export class PersonaDocumentSyncService {
         tenantId: input.tenantId,
         userId: input.userId,
         formandoId: input.formandoId,
-        files,
+        files: resolved.files,
       });
     } else if (input.roleKind === "formador" && input.formadorId) {
       saved = await this.saveFormadorIdPdf({
         tenantId: input.tenantId,
         userId: input.userId,
         formadorId: input.formadorId,
-        files,
+        files: resolved.files,
       });
     }
 
+    if (!saved) {
+      return { synced: false, documents: 0, reason: "pdf_failed" };
+    }
+
+    const attrs = resolved.attrs;
     const extractedName = [attrs["name-first"], attrs["name-last"]]
       .filter(Boolean)
       .join(" ")
@@ -91,19 +81,17 @@ export class PersonaDocumentSyncService {
       where: { personaInquiryId: input.personaInquiryId, tenantId: input.tenantId },
       data: {
         personaStatus: payload.status,
-        status: saved > 0 ? "completed" : mapInquiryStatus(payload.status),
-        syncedAt: saved > 0 ? new Date() : undefined,
+        status: "completed",
+        syncedAt: new Date(),
         extractedName: extractedName || undefined,
         extractedDocNumber: extractedDocNumber || undefined,
       },
     });
 
-    return { synced: saved > 0, documents: saved };
+    return { synced: true, documents: saved };
   }
 
-  private async buildIdPdfBuffer(
-    files: Array<{ url: string; page: string; filename: string }>,
-  ): Promise<Buffer | null> {
+  private async buildIdPdfBuffer(files: PersonaIdFile[]): Promise<Buffer | null> {
     const ordered = orderPersonaIdFiles(files);
     const parts: DownloadedIdPart[] = [];
 
@@ -129,7 +117,7 @@ export class PersonaDocumentSyncService {
     tenantId: string;
     userId: string;
     formandoId: string;
-    files: Array<{ url: string; page: string; filename: string }>;
+    files: PersonaIdFile[];
   }): Promise<number> {
     const pdfBuffer = await this.buildIdPdfBuffer(input.files);
     if (!pdfBuffer) return 0;
@@ -140,7 +128,7 @@ export class PersonaDocumentSyncService {
     tenantId: string;
     userId: string;
     formadorId: string;
-    files: Array<{ url: string; page: string; filename: string }>;
+    files: PersonaIdFile[];
   }): Promise<number> {
     const pdfBuffer = await this.buildIdPdfBuffer(input.files);
     if (!pdfBuffer) return 0;
@@ -167,6 +155,7 @@ export class PersonaDocumentSyncService {
       "f",
       input.formandoId,
       "persona-id",
+      String(Date.now()),
     ]);
     await this.storage.putObject(storageKey, input.pdfBuffer, "application/pdf");
     await this.prisma.$transaction(async (tx) => {
@@ -214,6 +203,7 @@ export class PersonaDocumentSyncService {
       "formador",
       input.formadorId,
       "persona-id",
+      String(Date.now()),
     ]);
     await this.storage.putObject(storageKey, input.pdfBuffer, "application/pdf");
     await this.prisma.$transaction(async (tx) => {
@@ -240,61 +230,6 @@ export class PersonaDocumentSyncService {
     }
     return 1;
   }
-}
-
-function findPassedGovernmentIdVerification(
-  included: PersonaJsonApiResource[],
-): PersonaJsonApiResource | undefined {
-  return included.find((item) => {
-    if (item.type !== "verification/government-id") return false;
-    const status = String(item.attributes?.status ?? "").toLowerCase();
-    return status === "passed" || status === "approved";
-  });
-}
-
-function hasDownloadablePhotos(gov: PersonaJsonApiResource): boolean {
-  const attrs = gov.attributes ?? {};
-  const photoUrls = (attrs["photo-urls"] as PhotoUrl[] | undefined) ?? [];
-  if (photoUrls.some((p) => p["normalized-url"] || p.url)) return true;
-  const files = attrs.files as Array<{ url?: string }> | undefined;
-  return Boolean(files?.some((f) => f.url));
-}
-
-function extractDownloadables(
-  photoUrls: PhotoUrl[],
-  attrs: Record<string, unknown>,
-): Array<{ url: string; page: string; filename: string }> {
-  const out: Array<{ url: string; page: string; filename: string }> = [];
-  for (const p of photoUrls) {
-    const url = p["normalized-url"] || p.url;
-    if (!url) continue;
-    const page = p.page ?? "front";
-    out.push({
-      url,
-      page,
-      filename: `persona-id-${page}${extensionFromUrl(url)}`,
-    });
-  }
-  const files = attrs.files as Array<{ url?: string; filename?: string }> | undefined;
-  if (!out.length && files?.length) {
-    for (const f of files) {
-      if (!f.url) continue;
-      out.push({
-        url: f.url,
-        page: "front",
-        filename: f.filename ?? `persona-id-front${extensionFromUrl(f.url)}`,
-      });
-    }
-  }
-  return out;
-}
-
-function extensionFromUrl(url: string): string {
-  const path = url.split("?")[0]?.toLowerCase() ?? "";
-  if (path.endsWith(".pdf")) return ".pdf";
-  if (path.endsWith(".png")) return ".png";
-  if (path.endsWith(".heic")) return ".heic";
-  return ".jpg";
 }
 
 function mapInquiryStatus(status: string): string {

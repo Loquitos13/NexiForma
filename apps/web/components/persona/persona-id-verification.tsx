@@ -31,22 +31,28 @@ declare global {
 export function usePersonaEnabled() {
   const [enabled, setEnabled] = useState(false);
   const [ready, setReady] = useState(false);
+  const [environmentId, setEnvironmentId] = useState<string | null>(null);
 
   useEffect(() => {
     void bffFetch("/api/v1/persona/config", { headers: { accept: "application/json" } })
       .then(async (r) => {
         if (!r.ok) {
           setEnabled(false);
+          setEnvironmentId(null);
           return;
         }
-        const data = (await r.json()) as { enabled?: boolean };
+        const data = (await r.json()) as { enabled?: boolean; environmentId?: string | null };
         setEnabled(Boolean(data.enabled));
+        setEnvironmentId(data.environmentId?.trim() || null);
       })
-      .catch(() => setEnabled(false))
+      .catch(() => {
+        setEnabled(false);
+        setEnvironmentId(null);
+      })
       .finally(() => setReady(true));
   }, []);
 
-  return { enabled, ready };
+  return { enabled, ready, environmentId };
 }
 
 type Props = {
@@ -56,6 +62,7 @@ type Props = {
   /** Estado partilhado do hook `usePersonaEnabled` na página (evita pedidos duplicados). */
   enabled: boolean;
   ready: boolean;
+  environmentId?: string | null;
 };
 
 function loadPersonaScript(): Promise<void> {
@@ -80,22 +87,40 @@ function loadPersonaScript(): Promise<void> {
 
 function syncErrorMessage(reason?: string): string {
   if (reason === "not_passed") {
-    return "Verificação não aprovada. Tente novamente.";
+    return "Verificação ainda não aprovada na Persona. Conclua o fluxo antes de gerar o PDF.";
   }
   if (reason === "no_files") {
-    return "Verificação concluída mas as imagens do documento ainda não estão disponíveis. Aguarde um momento e tente sincronizar novamente.";
+    return "Não foi possível obter as imagens na Persona. Aguarde um momento e tente gerar o PDF novamente.";
   }
-  return "Verificação concluída mas o documento não foi sincronizado.";
+  if (reason === "pdf_failed") {
+    return "As imagens foram obtidas mas falhou a geração do PDF. Tente novamente.";
+  }
+  return "Não foi possível gerar o PDF do documento.";
+}
+
+function inquiryLooksCompleted(inquiry: LatestInquiry): boolean {
+  const persona = (inquiry.personaStatus ?? "").toLowerCase();
+  const status = inquiry.status.toLowerCase();
+  return (
+    status === "completed" ||
+    persona === "approved" ||
+    persona === "completed" ||
+    persona === "passed" ||
+    persona === "needs_review" ||
+    persona === "marked-for-review"
+  );
 }
 
 function canShowResync(inquiry: LatestInquiry | null, idCompleto?: boolean): boolean {
   if (!inquiry?.personaInquiryId || idCompleto) return false;
   if (inquiry.status === "failed") return false;
-  if (inquiry.syncedAt) return false;
-  return true;
+  return inquiryLooksCompleted(inquiry) || !inquiry.syncedAt;
 }
 
-async function postSync(inquiryId: string): Promise<{ ok: true; sync: SyncResult } | { ok: false; error: string }> {
+async function postSync(
+  inquiryId: string,
+  force = false,
+): Promise<{ ok: true; sync: SyncResult } | { ok: false; error: string }> {
   const syncRes = await bffFetch(
     `/api/v1/persona/inquiries/${encodeURIComponent(inquiryId)}/sync`,
     {
@@ -104,7 +129,7 @@ async function postSync(inquiryId: string): Promise<{ ok: true; sync: SyncResult
         accept: "application/json",
         "content-type": "application/json",
       },
-      body: "{}",
+      body: JSON.stringify(force ? { force: true } : {}),
     },
   );
   if (!syncRes.ok) {
@@ -114,7 +139,14 @@ async function postSync(inquiryId: string): Promise<{ ok: true; sync: SyncResult
 }
 
 /** Verificação de identidade via Persona; descarrega imagens para o dossiê ao concluir. */
-export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled, ready }: Props) {
+export function PersonaIdVerification({
+  roleKind,
+  idCompleto,
+  onSynced,
+  enabled,
+  ready,
+  environmentId,
+}: Props) {
   const [busy, setBusy] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -146,23 +178,30 @@ export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled,
     void refreshLatestInquiry();
   }, [ready, enabled, idCompleto, refreshLatestInquiry]);
 
-  const handleSyncSuccess = useCallback(async () => {
-    setMsg("Identidade verificada. PDF do documento guardado no dossiê.");
-    setError(null);
-    notifyDocumentosObrigatoriosUpdated();
-    await onSynced?.();
-    await refreshLatestInquiry();
-  }, [onSynced, refreshLatestInquiry]);
+  const handleSyncSuccess = useCallback(
+    async (regenerated = false) => {
+      setMsg(
+        regenerated
+          ? "PDF do documento gerado novamente e anexado ao dossiê."
+          : "PDF do documento gerado e anexado ao dossiê.",
+      );
+      setError(null);
+      notifyDocumentosObrigatoriosUpdated();
+      await onSynced?.();
+      await refreshLatestInquiry();
+    },
+    [onSynced, refreshLatestInquiry],
+  );
 
   const runSync = useCallback(
-    async (inquiryId: string) => {
-      const result = await postSync(inquiryId);
+    async (inquiryId: string, force = false) => {
+      const result = await postSync(inquiryId, force);
       if (!result.ok) {
         setError(result.error);
         return false;
       }
       if (result.sync.synced) {
-        await handleSyncSuccess();
+        await handleSyncSuccess(force);
         return true;
       }
       setError(syncErrorMessage(result.sync.reason));
@@ -176,9 +215,9 @@ export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled,
     if (!latestInquiry?.personaInquiryId) return;
     setSyncing(true);
     setError(null);
-    setMsg(null);
+    setMsg("A gerar PDF a partir das imagens Persona…");
     try {
-      await runSync(latestInquiry.personaInquiryId);
+      await runSync(latestInquiry.personaInquiryId, true);
     } finally {
       setSyncing(false);
     }
@@ -219,9 +258,11 @@ export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled,
       });
 
       await new Promise<void>((resolve, reject) => {
-        const client = new window.Persona!.Client({
+        const clientOpts: Record<string, unknown> = {
           inquiryId: data.inquiryId,
           sessionToken: data.sessionToken ?? undefined,
+          frameWidth: "min(768px, 100vw)",
+          frameHeight: "min(720px, 90vh)",
           onReady: () => client.open(),
           onComplete: async ({ inquiryId }: { inquiryId: string; status: string }) => {
             try {
@@ -240,7 +281,11 @@ export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled,
             setError(err.message ?? "Erro na verificação Persona.");
             reject(new Error(err.message ?? "persona error"));
           },
-        });
+        };
+        if (environmentId) {
+          clientOpts.environmentId = environmentId;
+        }
+        const client = new window.Persona!.Client(clientOpts);
       });
     } catch (e) {
       if (!(e instanceof Error && e.message === "not synced")) {
@@ -250,7 +295,7 @@ export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled,
       setBusy(false);
       await refreshLatestInquiry();
     }
-  }, [refreshLatestInquiry, runSync]);
+  }, [environmentId, refreshLatestInquiry, runSync]);
 
   if (!ready || !enabled) return null;
 
@@ -273,8 +318,8 @@ export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled,
       </p>
       {showResync ? (
         <p className="text-xs text-sky-200/70 leading-relaxed">
-          Já concluiu a verificação na Persona? Sincronize novamente para anexar o documento ao
-          dossiê.
+          Já concluiu a verificação na Persona? Gere o PDF a partir das imagens capturadas e
+          anexe-o ao dossiê.
         </p>
       ) : null}
       {error ? <p className="text-xs text-red-400">{error}</p> : null}
@@ -301,7 +346,7 @@ export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled,
             ) : (
               <RefreshCw className="h-3.5 w-3.5" />
             )}
-            Sincronizar novamente
+            Sincronizar e gerar PDF
           </Button>
         ) : null}
       </div>

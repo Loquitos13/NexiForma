@@ -1,4 +1,4 @@
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, type PDFImage } from "pdf-lib";
 
 export type DownloadedIdPart = {
   buffer: Buffer;
@@ -6,6 +6,11 @@ export type DownloadedIdPart = {
 };
 
 const PAGE_ORDER = ["front", "back", "unico"];
+
+/** A4 em points (72 dpi). */
+export const A4_WIDTH_PT = 595.28;
+export const A4_HEIGHT_PT = 841.89;
+export const PDF_PAGE_MARGIN_PT = 40;
 
 export function orderPersonaIdFiles<T extends { page: string }>(files: T[]): T[] {
   return [...files].sort((a, b) => {
@@ -15,7 +20,38 @@ export function orderPersonaIdFiles<T extends { page: string }>(files: T[]): T[]
   });
 }
 
-/** Junta imagens (ou PDFs) num único PDF - frente, verso, etc. */
+export function computeImageFitOnPage(input: {
+  imageWidth: number;
+  imageHeight: number;
+  pageWidth?: number;
+  pageHeight?: number;
+  margin?: number;
+}): { x: number; y: number; width: number; height: number } {
+  const pageWidth = input.pageWidth ?? A4_WIDTH_PT;
+  const pageHeight = input.pageHeight ?? A4_HEIGHT_PT;
+  const margin = input.margin ?? PDF_PAGE_MARGIN_PT;
+  const maxW = pageWidth - 2 * margin;
+  const maxH = pageHeight - 2 * margin;
+  const scale = Math.min(maxW / input.imageWidth, maxH / input.imageHeight);
+  const width = input.imageWidth * scale;
+  const height = input.imageHeight * scale;
+  return {
+    x: (pageWidth - width) / 2,
+    y: (pageHeight - height) / 2,
+    width,
+    height,
+  };
+}
+
+function drawImageOnA4Page(page: ReturnType<PDFDocument["addPage"]>, image: PDFImage) {
+  const fit = computeImageFitOnPage({
+    imageWidth: image.width,
+    imageHeight: image.height,
+  });
+  page.drawImage(image, fit);
+}
+
+/** Junta imagens (ou PDFs) num único PDF A4 - frente, verso, etc. */
 export async function buildPersonaIdPdf(parts: DownloadedIdPart[]): Promise<Buffer> {
   if (!parts.length) {
     throw new Error("Sem ficheiros para gerar PDF.");
@@ -40,9 +76,8 @@ export async function buildPersonaIdPdf(parts: DownloadedIdPart[]): Promise<Buff
       ? await pdfDoc.embedPng(part.buffer)
       : await pdfDoc.embedJpg(part.buffer);
 
-    const { width, height } = image.scale(1);
-    const page = pdfDoc.addPage([width, height]);
-    page.drawImage(image, { x: 0, y: 0, width, height });
+    const page = pdfDoc.addPage([A4_WIDTH_PT, A4_HEIGHT_PT]);
+    drawImageOnA4Page(page, image);
   }
 
   return Buffer.from(await pdfDoc.save());

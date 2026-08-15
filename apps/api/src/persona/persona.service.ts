@@ -156,7 +156,7 @@ export class PersonaService {
     return row ?? null;
   }
 
-  async syncInquiry(user: RequestUser, personaInquiryId: string) {
+  async syncInquiry(user: RequestUser, personaInquiryId: string, forceRegenerate = false) {
     this.assertEnabled();
     const { tenantId, roleKind, formandoId, formadorId } = await this.resolveProfile(user);
     const row = await this.prisma.personaInquiry.findFirst({
