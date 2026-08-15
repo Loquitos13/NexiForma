@@ -44,7 +44,7 @@ export function buildContentSecurityPolicy(): string {
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
     connectSrc,
-    `frame-src https://www.youtube.com https://youtube.com https://player.vimeo.com https://vimeo.com ${PERSONA_FRAME_ORIGINS}`,
+    `frame-src blob: https://www.youtube.com https://youtube.com https://player.vimeo.com https://vimeo.com ${PERSONA_FRAME_ORIGINS}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

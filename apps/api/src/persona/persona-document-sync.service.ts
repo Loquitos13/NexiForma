@@ -3,8 +3,11 @@ import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { opaqueStorageKey } from "../common/opaque-storage-key.util";
 import { PersonaApiClient, type PersonaJsonApiResource } from "./persona-api.client";
+import { buildPersonaIdPdf, orderPersonaIdFiles, type DownloadedIdPart } from "./persona-id-pdf.util";
 
 type PhotoUrl = { page?: string; url?: string; "normalized-url"?: string };
+
+const PERSONA_ID_PDF_NAME = "documento-identificacao-persona.pdf";
 
 @Injectable()
 export class PersonaDocumentSyncService {
@@ -63,14 +66,14 @@ export class PersonaDocumentSyncService {
 
     let saved = 0;
     if (input.roleKind === "formando" && input.formandoId) {
-      saved = await this.saveFormandoIdPhotos({
+      saved = await this.saveFormandoIdPdf({
         tenantId: input.tenantId,
         userId: input.userId,
         formandoId: input.formandoId,
         files,
       });
     } else if (input.roleKind === "formador" && input.formadorId) {
-      saved = await this.saveFormadorIdPhoto({
+      saved = await this.saveFormadorIdPdf({
         tenantId: input.tenantId,
         userId: input.userId,
         formadorId: input.formadorId,
@@ -98,78 +101,77 @@ export class PersonaDocumentSyncService {
     return { synced: saved > 0, documents: saved };
   }
 
-  private async saveFormandoIdPhotos(input: {
+  private async buildIdPdfBuffer(
+    files: Array<{ url: string; page: string; filename: string }>,
+  ): Promise<Buffer | null> {
+    const ordered = orderPersonaIdFiles(files);
+    const parts: DownloadedIdPart[] = [];
+
+    for (const file of ordered) {
+      const { buffer, contentType } = await this.personaApi.downloadFile(file.url);
+      parts.push({ buffer, contentType });
+    }
+
+    if (!parts.length) return null;
+
+    try {
+      return await buildPersonaIdPdf(parts);
+    } catch (err) {
+      this.logger.error(
+        "Falha ao gerar PDF do documento Persona",
+        err instanceof Error ? err.stack : String(err),
+      );
+      return null;
+    }
+  }
+
+  private async saveFormandoIdPdf(input: {
     tenantId: string;
     userId: string;
     formandoId: string;
     files: Array<{ url: string; page: string; filename: string }>;
   }): Promise<number> {
-    const front = input.files.find((f) => f.page === "front");
-    const back = input.files.find((f) => f.page === "back");
-    const single = input.files.length === 1 ? input.files[0] : null;
-
-    let saved = 0;
-    if (single && !back) {
-      saved += await this.upsertFormandoDoc({
-        ...input,
-        lado: "unico",
-        file: single,
-      });
-    } else {
-      if (front) {
-        saved += await this.upsertFormandoDoc({
-          ...input,
-          lado: "frente",
-          file: front,
-        });
-      }
-      if (back) {
-        saved += await this.upsertFormandoDoc({
-          ...input,
-          lado: "verso",
-          file: back,
-        });
-      }
-    }
-    return saved;
+    const pdfBuffer = await this.buildIdPdfBuffer(input.files);
+    if (!pdfBuffer) return 0;
+    return this.upsertFormandoIdPdf({ ...input, pdfBuffer });
   }
 
-  private async saveFormadorIdPhoto(input: {
+  private async saveFormadorIdPdf(input: {
     tenantId: string;
     userId: string;
     formadorId: string;
     files: Array<{ url: string; page: string; filename: string }>;
   }): Promise<number> {
-    const preferred =
-      input.files.find((f) => f.page === "front") ??
-      input.files.find((f) => f.page === "back") ??
-      input.files[0];
-    if (!preferred) return 0;
-    return this.upsertFormadorDoc({ ...input, file: preferred });
+    const pdfBuffer = await this.buildIdPdfBuffer(input.files);
+    if (!pdfBuffer) return 0;
+    return this.upsertFormadorIdPdf({ ...input, pdfBuffer });
   }
 
-  private async upsertFormandoDoc(input: {
+  private async upsertFormandoIdPdf(input: {
     tenantId: string;
     userId: string;
     formandoId: string;
-    lado: string;
-    file: { url: string; filename: string };
+    pdfBuffer: Buffer;
   }): Promise<number> {
-    const { buffer, contentType } = await this.personaApi.downloadFile(input.file.url);
-    const existing = await this.prisma.documentoAnexo.findFirst({
+    const existing = await this.prisma.documentoAnexo.findMany({
       where: {
         tenantId: input.tenantId,
         formandoId: input.formandoId,
         matriculaId: null,
         categoria: "documento_identificacao",
-        lado: input.lado,
       },
     });
-    const storageKey = opaqueStorageKey(["docs", input.tenantId, "f", input.formandoId]);
-    await this.storage.putObject(storageKey, buffer, contentType);
+    const storageKey = opaqueStorageKey([
+      "docs",
+      input.tenantId,
+      "f",
+      input.formandoId,
+      "persona-id",
+    ]);
+    await this.storage.putObject(storageKey, input.pdfBuffer, "application/pdf");
     await this.prisma.$transaction(async (tx) => {
-      if (existing) {
-        await tx.documentoAnexo.delete({ where: { id: existing.id } });
+      for (const doc of existing) {
+        await tx.documentoAnexo.delete({ where: { id: doc.id } });
       }
       await tx.documentoAnexo.create({
         data: {
@@ -177,45 +179,65 @@ export class PersonaDocumentSyncService {
           formandoId: input.formandoId,
           matriculaId: null,
           categoria: "documento_identificacao",
-          lado: input.lado,
-          nome: input.file.filename,
+          lado: "unico",
+          nome: PERSONA_ID_PDF_NAME,
           storageKey,
-          mimeType: contentType,
-          tamanhoBytes: buffer.length,
+          mimeType: "application/pdf",
+          tamanhoBytes: input.pdfBuffer.length,
           createdByUserId: input.userId,
           visivelFormando: true,
         },
       });
     });
-    if (existing) {
-      await this.storage.deleteObject(existing.storageKey).catch(() => undefined);
+    for (const doc of existing) {
+      await this.storage.deleteObject(doc.storageKey).catch(() => undefined);
     }
     return 1;
   }
 
-  private async upsertFormadorDoc(input: {
+  private async upsertFormadorIdPdf(input: {
     tenantId: string;
     userId: string;
     formadorId: string;
-    file: { url: string; filename: string };
+    pdfBuffer: Buffer;
   }): Promise<number> {
-    const { buffer, contentType } = await this.personaApi.downloadFile(input.file.url);
-    const storageKey = opaqueStorageKey(["docs", input.tenantId, "formador", input.formadorId]);
-    await this.storage.putObject(storageKey, buffer, contentType);
-    await this.prisma.documentoAnexo.create({
-      data: {
+    const existing = await this.prisma.documentoAnexo.findMany({
+      where: {
         tenantId: input.tenantId,
         formadorId: input.formadorId,
         categoria: "documento_identificacao",
-        lado: "unico",
-        nome: input.file.filename,
-        storageKey,
-        mimeType: contentType,
-        tamanhoBytes: buffer.length,
-        createdByUserId: input.userId,
-        visivelFormador: true,
       },
     });
+    const storageKey = opaqueStorageKey([
+      "docs",
+      input.tenantId,
+      "formador",
+      input.formadorId,
+      "persona-id",
+    ]);
+    await this.storage.putObject(storageKey, input.pdfBuffer, "application/pdf");
+    await this.prisma.$transaction(async (tx) => {
+      for (const doc of existing) {
+        await tx.documentoAnexo.delete({ where: { id: doc.id } });
+      }
+      await tx.documentoAnexo.create({
+        data: {
+          tenantId: input.tenantId,
+          formadorId: input.formadorId,
+          categoria: "documento_identificacao",
+          lado: "unico",
+          nome: PERSONA_ID_PDF_NAME,
+          storageKey,
+          mimeType: "application/pdf",
+          tamanhoBytes: input.pdfBuffer.length,
+          createdByUserId: input.userId,
+          visivelFormador: true,
+        },
+      });
+    });
+    for (const doc of existing) {
+      await this.storage.deleteObject(doc.storageKey).catch(() => undefined);
+    }
     return 1;
   }
 }

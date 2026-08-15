@@ -147,7 +147,7 @@ export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled,
   }, [ready, enabled, idCompleto, refreshLatestInquiry]);
 
   const handleSyncSuccess = useCallback(async () => {
-    setMsg("Identidade verificada. Cópia do documento guardada no dossiê.");
+    setMsg("Identidade verificada. PDF do documento guardado no dossiê.");
     setError(null);
     notifyDocumentosObrigatoriosUpdated();
     await onSynced?.();
@@ -268,8 +268,8 @@ export function PersonaIdVerification({ roleKind, idCompleto, onSynced, enabled,
   return (
     <div className="space-y-2 rounded-xl border border-sky-500/30 bg-sky-950/25 px-3 py-3">
       <p className="text-xs text-sky-100/90 leading-relaxed">
-        Use a câmara para verificar o seu documento de identificação. A NexiForma guarda a cópia
-        no dossiê após aprovação.
+        Use a câmara para verificar o seu documento de identificação. A NexiForma gera um PDF com
+        as imagens capturadas e anexa-o ao dossiê após aprovação.
       </p>
       {showResync ? (
         <p className="text-xs text-sky-200/70 leading-relaxed">

@@ -42,7 +42,7 @@ const CORE_FORMATION_API = [
   "quizzes",
   "verificacao",
   "rgpd",
-  /** Verificação de identidade (Persona) — dossiê formandos/formadores. */
+  /** Verificação de identidade (Persona) - dossiê formandos/formadores. */
   "persona",
 ] as const;
 
