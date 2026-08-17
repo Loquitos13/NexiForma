@@ -31,6 +31,15 @@ import {
   type AvaliacaoParametrosTenant,
   type AvaliacaoTipoId,
 } from "../avaliacoes/avaliacao-parametros.util";
+import {
+  getModuloTemplates,
+  mergeTenantDocumentTemplates,
+  TEMPLATE_TYPES,
+  TEMPLATE_VARIABLES,
+  variablesForModulo,
+  type TemplateModulo,
+  type TenantTemplateEntry,
+} from "@nexiforma/shared";
 
 export type TenantBrandingPayload = {
   logoUrl?: string;
@@ -418,6 +427,77 @@ export class TenantSettingsService {
     });
 
     return { sucesso: true, parametros };
+  }
+
+  private assertTemplateModulo(modulo: string): TemplateModulo {
+    const allowed: TemplateModulo[] = ["geral", "formacao", "crm", "faturacao"];
+    if (!allowed.includes(modulo as TemplateModulo)) {
+      throw new BadRequestException("Módulo de template inválido.");
+    }
+    return modulo as TemplateModulo;
+  }
+
+  async getDocumentTemplates(user: RequestUser, moduloRaw: string) {
+    const modulo = this.assertTemplateModulo(moduloRaw);
+    const tenantId = requireTenantId(user);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true, legalName: true, nif: true },
+    });
+    if (!tenant) throw new BadRequestException("Tenant não encontrado.");
+    const templates = getModuloTemplates(tenant.metadata, modulo);
+    return {
+      modulo,
+      templates,
+      tipos: TEMPLATE_TYPES[modulo] ?? [],
+      variaveis: variablesForModulo(modulo),
+      variaveisPorModulo: TEMPLATE_VARIABLES,
+      ajuda:
+        "Use {{variavel}} no texto. Na emissão do documento, cada token é substituído pelos dados reais do formando, acção, cliente, etc.",
+    };
+  }
+
+  async updateDocumentTemplates(
+    user: RequestUser,
+    body: { modulo: string; templates: Record<string, TenantTemplateEntry> },
+  ) {
+    const modulo = this.assertTemplateModulo(body.modulo);
+    const tenantId = requireTenantId(user);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true },
+    });
+    if (!tenant) throw new BadRequestException("Tenant não encontrado.");
+
+    const allowedIds = new Set((TEMPLATE_TYPES[modulo] ?? []).map((t) => t.id));
+    const clean: Record<string, TenantTemplateEntry> = {};
+    for (const [id, entry] of Object.entries(body.templates ?? {})) {
+      if (!allowedIds.has(id)) continue;
+      if (!entry || typeof entry.conteudo !== "string") continue;
+      clean[id] = {
+        conteudo: entry.conteudo.slice(0, 200_000),
+        ...(typeof entry.nome === "string" ? { nome: entry.nome.slice(0, 200) } : {}),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    const next = mergeTenantDocumentTemplates(tenant.metadata, modulo, clean);
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { metadata: next as Prisma.InputJsonValue },
+    });
+
+    void this.audit.log({
+      actorType: "TENANT_USER",
+      actorId: user.sub,
+      action: "tenant.document_templates.update",
+      resourceType: "tenant",
+      resourceId: tenantId,
+      targetTenantId: tenantId,
+      payload: { modulo, count: Object.keys(clean).length },
+    });
+
+    return { sucesso: true, modulo, templates: clean };
   }
 
   async streamLogo(user: RequestUser) {

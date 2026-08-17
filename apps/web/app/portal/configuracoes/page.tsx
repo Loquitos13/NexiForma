@@ -1,11 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
 import { DgertRequisitoBanner, DgertTarget } from "@/components/portal/dgert-requisito-banner";
 import { publicTenantLogoUrl } from "@/lib/client/tenant-logo-url";
+import {
+  ConfiguracoesModuloNav,
+  resolveConfigModulos,
+  type ConfigModuloId,
+} from "@/components/settings/configuracoes-modulo-nav";
+import { ConfiguracoesFormacaoPanel } from "@/components/settings/configuracoes-formacao-panel";
+import { ConfiguracoesCrmPanel } from "@/components/settings/configuracoes-crm-panel";
+import { TemplateEditorPanel } from "@/components/settings/template-editor-panel";
 
 type TenantInfo = {
   slug: string;
@@ -23,6 +32,8 @@ type Branding = {
   supportEmail?: string;
   supportPhone?: string;
   footerText?: string;
+  logoCabecalho?: { posicao?: string; larguraPx?: number; alturaPx?: number };
+  logoRodape?: { posicao?: string; larguraPx?: number; alturaPx?: number };
 };
 
 type PlanInfo = {
@@ -36,6 +47,9 @@ const inputClass =
 
 export default function ConfiguracoesPage() {
   const { canManage } = useTenantRole();
+  const { entitlements } = useTenantEntitlements();
+  const modulos = useMemo(() => resolveConfigModulos(entitlements), [entitlements]);
+  const [modulo, setModulo] = useState<ConfigModuloId>("geral");
   const logoRef = useRef<HTMLInputElement>(null);
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
   const [branding, setBranding] = useState<Branding | null>(null);
@@ -69,6 +83,12 @@ export default function ConfiguracoesPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!modulos.some((m) => m.id === modulo)) {
+      setModulo(modulos[0]?.id ?? "geral");
+    }
+  }, [modulos, modulo]);
 
   async function saveEntidade() {
     if (!canManage) return;
@@ -162,35 +182,15 @@ export default function ConfiguracoesPage() {
   })();
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="max-w-5xl space-y-6">
       <header className="ui-settings-hero space-y-2 border-b border-slate-700/30 pb-5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
           Administração
         </p>
         <h1 className="text-2xl font-bold tracking-tight text-slate-50">Configurações</h1>
         <p className="max-w-2xl text-sm leading-relaxed text-slate-500">
-          Identidade da entidade, logótipo nos documentos e preferências operacionais.
+          Opções da entidade organizadas por módulo contratado no plano.
         </p>
-        {canManage ? (
-          <nav
-            aria-label="Secções de configuração"
-            className="flex flex-wrap gap-2 pt-2"
-          >
-            {[
-              { href: "#entidade", label: "Entidade" },
-              { href: "#branding", label: "Branding" },
-              { href: "#cnaef", label: "CNAEF" },
-            ].map((item) => (
-              <a
-                key={item.href}
-                href={item.href}
-                className="rounded-full border border-slate-700/50 bg-slate-900/60 px-3 py-1 text-xs font-medium text-slate-300 hover:border-blue-500/40 hover:text-slate-100 transition-colors"
-              >
-                {item.label}
-              </a>
-            ))}
-          </nav>
-        ) : null}
       </header>
 
       {error ? (
@@ -204,6 +204,23 @@ export default function ConfiguracoesPage() {
         </div>
       ) : null}
 
+      <div className="grid gap-6 lg:grid-cols-[14rem_minmax(0,1fr)]">
+        {canManage && modulos.length > 1 ? (
+          <ConfiguracoesModuloNav modulos={modulos} active={modulo} onChange={setModulo} />
+        ) : null}
+
+        <div className="min-w-0 space-y-6">
+          {modulo === "formacao" ? <ConfiguracoesFormacaoPanel /> : null}
+          {modulo === "crm" ? <ConfiguracoesCrmPanel /> : null}
+          {modulo === "faturacao" ? (
+            <TemplateEditorPanel
+              modulo="faturacao"
+              title="Templates de faturação"
+              description="Recibos, notas de crédito e documentos fiscais com variáveis do cliente e da fatura."
+            />
+          ) : null}
+          {modulo === "geral" ? (
+            <>
       <DgertRequisitoBanner backHref="/portal/dossie" />
 
       {tenant ? (
@@ -373,6 +390,139 @@ export default function ConfiguracoesPage() {
             </div>
           </div>
 
+          <div className="grid sm:grid-cols-2 gap-3 pt-2 border-t border-slate-700/30">
+            <div>
+              <p className="text-xs font-medium text-slate-400 mb-2">Logótipo no cabeçalho</p>
+              <select
+                className={inputClass}
+                value={branding?.logoCabecalho?.posicao ?? "left"}
+                onChange={(e) =>
+                  setBranding((p) =>
+                    p
+                      ? {
+                          ...p,
+                          logoCabecalho: { ...(p.logoCabecalho ?? {}), posicao: e.target.value },
+                        }
+                      : p,
+                  )
+                }
+              >
+                <option value="left">Esquerda</option>
+                <option value="center">Centro</option>
+                <option value="right">Direita</option>
+              </select>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  min={24}
+                  max={400}
+                  placeholder="Largura px"
+                  className={inputClass}
+                  value={branding?.logoCabecalho?.larguraPx ?? ""}
+                  onChange={(e) =>
+                    setBranding((p) =>
+                      p
+                        ? {
+                            ...p,
+                            logoCabecalho: {
+                              ...(p.logoCabecalho ?? {}),
+                              larguraPx: Number(e.target.value) || undefined,
+                            },
+                          }
+                        : p,
+                    )
+                  }
+                />
+                <input
+                  type="number"
+                  min={16}
+                  max={200}
+                  placeholder="Altura px"
+                  className={inputClass}
+                  value={branding?.logoCabecalho?.alturaPx ?? ""}
+                  onChange={(e) =>
+                    setBranding((p) =>
+                      p
+                        ? {
+                            ...p,
+                            logoCabecalho: {
+                              ...(p.logoCabecalho ?? {}),
+                              alturaPx: Number(e.target.value) || undefined,
+                            },
+                          }
+                        : p,
+                    )
+                  }
+                />
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-400 mb-2">Logótipo no rodapé</p>
+              <select
+                className={inputClass}
+                value={branding?.logoRodape?.posicao ?? "center"}
+                onChange={(e) =>
+                  setBranding((p) =>
+                    p
+                      ? {
+                          ...p,
+                          logoRodape: { ...(p.logoRodape ?? {}), posicao: e.target.value },
+                        }
+                      : p,
+                  )
+                }
+              >
+                <option value="left">Esquerda</option>
+                <option value="center">Centro</option>
+                <option value="right">Direita</option>
+              </select>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  min={24}
+                  max={400}
+                  placeholder="Largura px"
+                  className={inputClass}
+                  value={branding?.logoRodape?.larguraPx ?? ""}
+                  onChange={(e) =>
+                    setBranding((p) =>
+                      p
+                        ? {
+                            ...p,
+                            logoRodape: {
+                              ...(p.logoRodape ?? {}),
+                              larguraPx: Number(e.target.value) || undefined,
+                            },
+                          }
+                        : p,
+                    )
+                  }
+                />
+                <input
+                  type="number"
+                  min={16}
+                  max={200}
+                  placeholder="Altura px"
+                  className={inputClass}
+                  value={branding?.logoRodape?.alturaPx ?? ""}
+                  onChange={(e) =>
+                    setBranding((p) =>
+                      p
+                        ? {
+                            ...p,
+                            logoRodape: {
+                              ...(p.logoRodape ?? {}),
+                              alturaPx: Number(e.target.value) || undefined,
+                            },
+                          }
+                        : p,
+                    )
+                  }
+                />
+              </div>
+            </div>
+          </div>
+
           <button
             onClick={() => void saveBranding()}
             disabled={busy}
@@ -431,6 +581,10 @@ export default function ConfiguracoesPage() {
           </div>
         </div>
       ) : null}
+            </>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

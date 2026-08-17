@@ -4,6 +4,7 @@ import {
   Get,
   Put,
   Post,
+  Query,
   Res,
   UploadedFile,
   UseGuards,
@@ -140,6 +141,27 @@ export class PortalController {
     },
   ) {
     return this.tenantSettings.updateAvaliacaoParametros(user, body);
+  }
+
+  @Get("tenant/document-templates")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager", "coordenador_pedagogico", "comercial", "coordenador_comercial")
+  documentTemplates(@CurrentUser() user: RequestUser, @Query("modulo") modulo: string) {
+    return this.tenantSettings.getDocumentTemplates(user, modulo || "formacao");
+  }
+
+  @Put("tenant/document-templates")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager", "coordenador_pedagogico", "comercial", "coordenador_comercial")
+  updateDocumentTemplates(
+    @CurrentUser() user: RequestUser,
+    @Body()
+    body: {
+      modulo: string;
+      templates: Record<string, { conteudo: string; nome?: string; updatedAt?: string }>;
+    },
+  ) {
+    return this.tenantSettings.updateDocumentTemplates(user, body);
   }
 
   @Get("tenant/logo")

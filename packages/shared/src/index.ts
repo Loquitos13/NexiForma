@@ -203,6 +203,41 @@ export {
 } from "./dossie/documentos-dgert";
 
 export {
+  DTP_QUADRO_SECOES,
+  listarDtpItens,
+  type DtpItemDef,
+  type DtpSecaoDef,
+  type TipoFinanciamentoDtp,
+} from "./dossie/dtp-quadro-verificacao";
+
+export {
+  TEMPLATE_MODULO_LABELS,
+  TEMPLATE_TYPES,
+  TEMPLATE_VARIABLES,
+  groupVariables,
+  variableToken,
+  variablesForModulo,
+  type TemplateModulo,
+  type TemplateTypeDef,
+  type TemplateVariableDef,
+} from "./templates/variables";
+
+export {
+  emptyTenantDocumentTemplates,
+  getModuloTemplates,
+  mergeTenantDocumentTemplates,
+  parseTenantDocumentTemplates,
+  type TenantDocumentTemplates,
+  type TenantTemplateEntry,
+} from "./templates/tenant-templates.util";
+
+export {
+  extractTemplateTokens,
+  mergeTemplateContent,
+  mergeTemplateHtml,
+} from "./templates/merge";
+
+export {
   AT_MOTIVOS_ISENCAO,
   AT_MOTIVOS_ISENCAO_LABELS,
   AT_MOTIVOS_ISENCAO_NORMA,
