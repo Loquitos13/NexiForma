@@ -3,6 +3,7 @@ import {
   parseDocumentLogoPlacements,
   type DocumentLogoPlacement,
 } from "./module-logos.util";
+import type { DocumentOrientacao, DocumentVerticalAlign } from "./document-page.util";
 
 export type TemplateFormato = "texto" | "html";
 
@@ -13,6 +14,8 @@ export type TenantTemplateEntry = {
   custom?: boolean;
   formato?: TemplateFormato;
   logos?: DocumentLogoPlacement[];
+  orientacao?: DocumentOrientacao;
+  alinhamentoVertical?: DocumentVerticalAlign;
 };
 
 export const CUSTOM_TEMPLATE_ID_PREFIX = "custom_";
@@ -85,6 +88,14 @@ export function parseTenantDocumentTemplates(raw: unknown): TenantDocumentTempla
         ...(typeof e.updatedAt === "string" ? { updatedAt: e.updatedAt } : {}),
         ...(e.custom === true ? { custom: true } : {}),
         ...(e.formato === "texto" || e.formato === "html" ? { formato: e.formato } : {}),
+        ...(e.orientacao === "portrait" || e.orientacao === "landscape"
+          ? { orientacao: e.orientacao }
+          : {}),
+        ...(e.alinhamentoVertical === "top" ||
+        e.alinhamentoVertical === "middle" ||
+        e.alinhamentoVertical === "bottom"
+          ? { alinhamentoVertical: e.alinhamentoVertical }
+          : {}),
         ...(e.logos?.length ? { logos: parseDocumentLogoPlacements(e.logos) } : {}),
       };
     }

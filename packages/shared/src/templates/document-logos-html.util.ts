@@ -31,7 +31,8 @@ function absoluteLogoHtml(p: ResolvedDocumentLogo): string {
 /** CSS base para documentos com logos posicionados. */
 export function documentLogosCss(): string {
   return `
-    .doc-page-canvas { position: relative; min-height: 277mm; }
+    .doc-page-shell { position: relative; }
+    .doc-page-canvas { position: absolute; inset: 0; min-height: 100%; }
     .doc-content-layer { position: relative; z-index: 1; }
     .doc-logo-abs { pointer-events: none; }
   `.trim();
@@ -68,6 +69,15 @@ export function applyDocumentLogosToHtml(html: string, logos: ResolvedDocumentLo
       out = out.replace(
         /<div class="doc-page-canvas">/i,
         `<div class="doc-page-canvas">${absoluteImgs}`,
+      );
+    } else if (/doc-page-shell/.test(out) && /doc-page-body/.test(out)) {
+      out = out.replace(
+        /(<div class="doc-page-shell">\s*)(<div class="doc-page-body"[^>]*>)/i,
+        `$1<div class="doc-page-canvas">${absoluteImgs}$2`,
+      );
+      out = out.replace(
+        /(<\/div>\s*<\/div>\s*)(<\/div>\s*<\/body>)/i,
+        `$1${canvasClose}$2`,
       );
     } else if (/doc-content-layer/.test(out)) {
       out = out.replace(

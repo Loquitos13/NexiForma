@@ -62,11 +62,15 @@ export class MatriculasController {
         opacidade?: number;
         ordem?: number;
       }>;
+      orientacao?: "portrait" | "landscape";
+      alinhamentoVertical?: "top" | "middle" | "bottom";
     },
   ) {
     return this.matriculas.previewDocumentoHtml(user, id, templateId, {
       bodyHtmlOverride: body.bodyHtml,
       logoPlacements: body.logoPlacements as never,
+      orientacao: body.orientacao,
+      alinhamentoVertical: body.alinhamentoVertical,
     });
   }
 
@@ -100,6 +104,8 @@ export class MatriculasController {
       }>;
       anexar?: boolean;
       download?: boolean;
+      orientacao?: "portrait" | "landscape";
+      alinhamentoVertical?: "top" | "middle" | "bottom";
     },
     @Res() res: Response,
   ) {
@@ -107,6 +113,8 @@ export class MatriculasController {
       anexar: body.anexar === true,
       bodyHtmlOverride: body.bodyHtml,
       logoPlacements: body.logoPlacements as never,
+      orientacao: body.orientacao,
+      alinhamentoVertical: body.alinhamentoVertical,
     });
     const asAttachment = body.download !== false;
     res.setHeader("Content-Type", "application/pdf");

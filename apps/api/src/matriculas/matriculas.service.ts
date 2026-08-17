@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Matricula } from "@nexiforma/database";
-import { getModuloLogos, resolverEmailNotificacaoFormando, type DocumentLogoPlacement } from "@nexiforma/shared";
+import { getModuloLogos, resolverEmailNotificacaoFormando, type DocumentLogoPlacement, type DocumentOrientacao, type DocumentVerticalAlign } from "@nexiforma/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import {
@@ -265,13 +265,20 @@ export class MatriculasService {
     user: RequestUser,
     matriculaId: string,
     templateId: string,
-    opts?: { bodyHtmlOverride?: string; logoPlacements?: DocumentLogoPlacement[] },
+    opts?: {
+      bodyHtmlOverride?: string;
+      logoPlacements?: DocumentLogoPlacement[];
+      alinhamentoVertical?: DocumentVerticalAlign;
+      orientacao?: DocumentOrientacao;
+    },
   ): Promise<{
     html: string;
     bodyHtml: string;
     label: string;
     logoPlacements: DocumentLogoPlacement[];
     moduleLogos: ReturnType<typeof getModuloLogos>;
+    orientacao: DocumentOrientacao;
+    alinhamentoVertical: DocumentVerticalAlign;
   }> {
     const ctx = await this.loadMatriculaDocumentContext(user, matriculaId, templateId);
     try {
@@ -283,6 +290,8 @@ export class MatriculasService {
         storage: this.storage,
         bodyHtmlOverride: opts?.bodyHtmlOverride,
         logoPlacements: opts?.logoPlacements,
+        orientacaoOverride: opts?.orientacao,
+        alinhamentoVerticalOverride: opts?.alinhamentoVertical,
       });
       return {
         ...rendered,
@@ -307,6 +316,8 @@ export class MatriculasService {
       anexar?: boolean;
       bodyHtmlOverride?: string;
       logoPlacements?: DocumentLogoPlacement[];
+      alinhamentoVertical?: DocumentVerticalAlign;
+      orientacao?: DocumentOrientacao;
     },
   ): Promise<{ pdf: Buffer; filename: string; documentoId?: string }> {
     const ctx = await this.loadMatriculaDocumentContext(user, matriculaId, templateId);
@@ -320,6 +331,8 @@ export class MatriculasService {
         storage: this.storage,
         bodyHtmlOverride: opts?.bodyHtmlOverride,
         logoPlacements: opts?.logoPlacements,
+        orientacaoOverride: opts?.orientacao,
+        alinhamentoVerticalOverride: opts?.alinhamentoVertical,
       });
     } catch (e) {
       if (e instanceof Error && e.message === "EMPTY_TEMPLATE") {
@@ -330,7 +343,9 @@ export class MatriculasService {
       throw e;
     }
 
-    const pdf = await this.htmlPdf.htmlToPdfBuffer(rendered.html);
+    const pdf = await this.htmlPdf.htmlToPdfBuffer(rendered.html, {
+      landscape: rendered.orientacao === "landscape",
+    });
     const filename =
       `${rendered.label} - ${ctx.matricula.formando.nome}`.replace(/[\\/:*?"<>|]/g, "-") + ".pdf";
 

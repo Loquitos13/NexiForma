@@ -2,6 +2,9 @@ import {
   getModuloTemplates,
   isCustomTemplateId,
   TEMPLATE_TYPES,
+  documentPageCss,
+  type DocumentOrientacao,
+  type DocumentVerticalAlign,
   type TemplateModulo,
 } from "@nexiforma/shared";
 import { tenantDocumentBrandingCss } from "../common/tenant-logo-embed.util";
@@ -53,31 +56,46 @@ export function ensureFullDocumentHtml(
   title: string,
   bodyHtml: string,
   metadata?: unknown,
+  opts?: {
+    orientacao?: DocumentOrientacao;
+    verticalAlign?: DocumentVerticalAlign;
+  },
 ): string {
   if (/<!DOCTYPE\s+html/i.test(bodyHtml) || /<html[\s>]/i.test(bodyHtml)) {
     return bodyHtml;
   }
-  return wrapTenantDocumentHtml(title, bodyHtml, metadata);
+  return wrapTenantDocumentHtml(title, bodyHtml, metadata, opts);
 }
 
-function wrapTenantDocumentHtml(title: string, bodyHtml: string, metadata?: unknown): string {
+function wrapTenantDocumentHtml(
+  title: string,
+  bodyHtml: string,
+  metadata?: unknown,
+  opts?: {
+    orientacao?: DocumentOrientacao;
+    verticalAlign?: DocumentVerticalAlign;
+  },
+): string {
   const safeTitle = escapeHtml(title);
   const brandingCss = metadata ? tenantDocumentBrandingCss(metadata) : "";
+  const orientacao = opts?.orientacao ?? "portrait";
+  const verticalAlign = opts?.verticalAlign ?? "top";
+  const pageCss = documentPageCss(orientacao, brandingCss);
   return `<!DOCTYPE html>
 <html lang="pt">
 <head>
   <meta charset="utf-8" />
   <title>${safeTitle}</title>
-  <style>
-    body { font-family: Georgia, "Times New Roman", serif; color: #111; line-height: 1.45; padding: 24px; font-size: 13px; }
-    h1, h2, h3 { margin: 16px 0 8px; }
-    p { margin: 0 0 10px; }
-    table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-    ${brandingCss}
-  </style>
+  <style>${pageCss}</style>
 </head>
 <body>
+  <div class="doc-page-shell">
+    <div class="doc-page-body" data-v-align="${verticalAlign}">
+      <div class="doc-content-layer">
 ${bodyHtml}
+      </div>
+    </div>
+  </div>
 </body>
 </html>`;
 }

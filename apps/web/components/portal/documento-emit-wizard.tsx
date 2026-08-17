@@ -1,14 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, FileDown, Loader2 } from "lucide-react";
-import type { DocumentLogoPlacement, ModuleLogoAsset } from "@nexiforma/shared";
+import type {
+  DocumentLogoPlacement,
+  DocumentOrientacao,
+  DocumentVerticalAlign,
+  ModuleLogoAsset,
+} from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { downloadResponseAsFile } from "@/lib/client/download-response";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { Button } from "@/components/ui";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { RichTemplateEditor } from "@/components/settings/rich-template-editor";
+import { DocumentPagePreview } from "@/components/settings/document-page-preview";
+import {
+  RichTemplateEditor,
+  type RichTemplateEditorHandle,
+} from "@/components/settings/rich-template-editor";
 import { TemplateLogoPresets } from "@/components/settings/template-logo-presets";
 
 type PreviewPayload = {
@@ -17,6 +26,8 @@ type PreviewPayload = {
   label: string;
   logoPlacements: DocumentLogoPlacement[];
   moduleLogos: ModuleLogoAsset[];
+  orientacao?: DocumentOrientacao;
+  alinhamentoVertical?: DocumentVerticalAlign;
 };
 
 type Props = {
@@ -40,24 +51,34 @@ export function DocumentoEmitWizard({
 }: Props) {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [bodyHtml, setBodyHtml] = useState("");
   const [previewHtml, setPreviewHtml] = useState("");
   const [logoPlacements, setLogoPlacements] = useState<DocumentLogoPlacement[]>([]);
   const [moduleLogos, setModuleLogos] = useState<ModuleLogoAsset[]>([]);
+  const [orientacao, setOrientacao] = useState<DocumentOrientacao>("portrait");
+  const [alinhamentoVertical, setAlinhamentoVertical] = useState<DocumentVerticalAlign>("top");
   const [anexar, setAnexar] = useState(true);
+  const editorRef = useRef<RichTemplateEditorHandle>(null);
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refreshPreview = useCallback(async () => {
-    setLoading(true);
+    setPreviewLoading(true);
     const r = await bffFetch(
       `/api/v1/matriculas/${encodeURIComponent(matriculaId)}/documentos/${encodeURIComponent(templateId)}/preview`,
       {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({ bodyHtml, logoPlacements }),
+        body: JSON.stringify({
+          bodyHtml,
+          logoPlacements,
+          orientacao,
+          alinhamentoVertical,
+        }),
       },
     );
-    setLoading(false);
+    setPreviewLoading(false);
     if (!r.ok) {
       onError?.(await parseApiError(r));
       return null;
@@ -65,12 +86,14 @@ export function DocumentoEmitWizard({
     const data = (await r.json()) as PreviewPayload;
     setPreviewHtml(data.html);
     setModuleLogos(data.moduleLogos ?? []);
+    if (data.orientacao) setOrientacao(data.orientacao);
+    if (data.alinhamentoVertical) setAlinhamentoVertical(data.alinhamentoVertical);
     if (!bodyHtml && data.bodyHtml) setBodyHtml(data.bodyHtml);
     if (!logoPlacements.length && data.logoPlacements?.length) {
       setLogoPlacements(data.logoPlacements);
     }
     return data;
-  }, [matriculaId, templateId, bodyHtml, logoPlacements, onError]);
+  }, [matriculaId, templateId, bodyHtml, logoPlacements, orientacao, alinhamentoVertical, onError]);
 
   useEffect(() => {
     if (!open) {
@@ -97,8 +120,21 @@ export function DocumentoEmitWizard({
       setPreviewHtml(data.html);
       setLogoPlacements(data.logoPlacements ?? []);
       setModuleLogos(data.moduleLogos ?? []);
+      if (data.orientacao) setOrientacao(data.orientacao);
+      if (data.alinhamentoVertical) setAlinhamentoVertical(data.alinhamentoVertical);
     })();
   }, [open, matriculaId, templateId, onError, onOpenChange]);
+
+  useEffect(() => {
+    if (!open || loading) return;
+    if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    previewTimerRef.current = setTimeout(() => {
+      void refreshPreview();
+    }, 400);
+    return () => {
+      if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    };
+  }, [open, loading, bodyHtml, logoPlacements, orientacao, alinhamentoVertical, refreshPreview]);
 
   async function nextStep() {
     if (step === 0 || step === 1) {
@@ -120,6 +156,8 @@ export function DocumentoEmitWizard({
           logoPlacements,
           anexar,
           download: true,
+          orientacao,
+          alinhamentoVertical,
         }),
       },
     );
@@ -141,7 +179,7 @@ export function DocumentoEmitWizard({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent title={`Emitir: ${templateLabel}`} className="max-w-5xl max-h-[90vh] overflow-y-auto">
+      <DialogContent title={`Emitir: ${templateLabel}`} className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <div className="mb-4 flex flex-wrap gap-2">
           {steps.map((label, i) => (
             <span
@@ -167,20 +205,45 @@ export function DocumentoEmitWizard({
         ) : null}
 
         {!loading && step === 0 ? (
-          <div className="space-y-3">
-            <p className="text-xs text-slate-500">
-              Revise o texto com os dados do formando já aplicados. A formatação (negrito, fontes,
-              tamanhos) mantém-se no PDF final.
-            </p>
-            <RichTemplateEditor value={bodyHtml} onChange={setBodyHtml} formato="html" />
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,420px)]">
+            <div className="space-y-3 min-w-0">
+              <p className="text-xs text-slate-500">
+                Revise o texto com os dados do formando já aplicados. A formatação mantém-se no PDF
+                final.
+              </p>
+              <RichTemplateEditor
+                ref={editorRef}
+                value={bodyHtml}
+                onChange={setBodyHtml}
+                formato="html"
+                pageLayout="a4"
+                orientacao={orientacao}
+                verticalAlign={alinhamentoVertical}
+                onVerticalAlignChange={setAlinhamentoVertical}
+              />
+            </div>
+            <div className="space-y-2">
+              {previewLoading ? (
+                <p className="flex items-center gap-2 text-xs text-slate-500">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  A actualizar pré-visualização…
+                </p>
+              ) : null}
+              <DocumentPagePreview
+                srcDoc={previewHtml}
+                orientacao={orientacao}
+                title={templateLabel}
+                maxWidth={420}
+              />
+            </div>
           </div>
         ) : null}
 
         {!loading && step === 1 ? (
           <div className="space-y-3">
             <p className="text-xs text-slate-500">
-              Posicione os logótipos (entidade, DGERT, etc.). Use marca d&apos;água para fundo
-              sem comprometer a legibilidade do texto.
+              Posicione os logótipos (entidade, DGERT, etc.). Use marca d&apos;água para fundo sem
+              comprometer a legibilidade do texto.
             </p>
             <TemplateLogoPresets
               modulo="formacao"
@@ -188,21 +251,20 @@ export function DocumentoEmitWizard({
               placements={logoPlacements}
               onChange={setLogoPlacements}
               previewHtml={bodyHtml}
+              orientacao={orientacao}
+              verticalAlign={alinhamentoVertical}
             />
           </div>
         ) : null}
 
         {!loading && step === 2 ? (
           <div className="space-y-3">
-            <section className="overflow-hidden rounded-xl border border-slate-700/50 bg-white">
-              <iframe
-                title="Pré-visualização final"
-                srcDoc={previewHtml}
-                className="block w-full min-h-[480px] border-0 bg-white"
-                sandbox=""
-                referrerPolicy="no-referrer"
-              />
-            </section>
+            <DocumentPagePreview
+              srcDoc={previewHtml}
+              orientacao={orientacao}
+              title={templateLabel}
+              maxWidth={640}
+            />
             <label className="flex items-center gap-2 text-xs text-slate-400">
               <input
                 type="checkbox"

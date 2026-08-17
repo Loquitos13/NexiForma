@@ -264,6 +264,18 @@ export {
 } from "./templates/document-logos-html.util";
 
 export {
+  A4_HEIGHT_MM,
+  A4_WIDTH_MM,
+  DOCUMENT_MARGIN_MM,
+  a4AspectRatio,
+  buildDocumentPreviewHtml,
+  documentPageCss,
+  pageDimensionsMm,
+  type DocumentOrientacao,
+  type DocumentVerticalAlign,
+} from "./templates/document-page.util";
+
+export {
   extractTemplateTokens,
   mergeTemplateContent,
   mergeTemplateHtml,

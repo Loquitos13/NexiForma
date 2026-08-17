@@ -6,6 +6,8 @@ import {
   mergeTemplatePlainTextToHtml,
   parseDocumentLogoPlacements,
   type DocumentLogoPlacement,
+  type DocumentOrientacao,
+  type DocumentVerticalAlign,
   type ResolvedDocumentLogo,
   type TemplateModulo,
 } from "@nexiforma/shared";
@@ -35,6 +37,9 @@ export type RenderMatriculaDocumentInput = {
   logoPlacements?: DocumentLogoPlacement[];
   /** false = não injeta logo global legacy se o template tiver logos próprios */
   includeLegacyBranding?: boolean;
+  /** Overrides temporários na emissão (não alteram o template guardado). */
+  orientacaoOverride?: DocumentOrientacao;
+  alinhamentoVerticalOverride?: DocumentVerticalAlign;
 };
 
 export type RenderMatriculaDocumentResult = {
@@ -42,6 +47,8 @@ export type RenderMatriculaDocumentResult = {
   bodyHtml: string;
   label: string;
   logoPlacements: DocumentLogoPlacement[];
+  orientacao: DocumentOrientacao;
+  alinhamentoVertical: DocumentVerticalAlign;
 };
 
 async function resolveLogoDataUris(
@@ -90,7 +97,11 @@ export async function renderMatriculaDocumentHtml(
         : mergeTemplateHtml(rawTemplate, input.context);
   }
 
-  let html = ensureFullDocumentHtml(label, mergedBody, input.metadata);
+  let html = ensureFullDocumentHtml(label, mergedBody, input.metadata, {
+    orientacao: input.orientacaoOverride ?? entry?.orientacao ?? "portrait",
+    verticalAlign:
+      input.alinhamentoVerticalOverride ?? entry?.alinhamentoVertical ?? "top",
+  });
 
   const templateLogos = parseDocumentLogoPlacements(entry?.logos);
   const logoPlacements = input.logoPlacements?.length
@@ -110,5 +121,14 @@ export async function renderMatriculaDocumentHtml(
     html = applyTenantDocumentBranding(html, logoSrc, input.metadata);
   }
 
-  return { html, bodyHtml: mergedBody, label, logoPlacements };
+  return {
+    html,
+    bodyHtml: mergedBody,
+    label,
+    logoPlacements,
+    orientacao: (input.orientacaoOverride ?? entry?.orientacao ?? "portrait") as DocumentOrientacao,
+    alinhamentoVertical: (input.alinhamentoVerticalOverride ??
+      entry?.alinhamentoVertical ??
+      "top") as DocumentVerticalAlign,
+  };
 }

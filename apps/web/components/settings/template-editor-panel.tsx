@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, FilePlus, FileUp, Plus, Save, Trash2 } from "lucide-react";
 import {
   TEMPLATE_TYPES,
+  buildDocumentPreviewHtml,
   groupVariables,
   isCustomTemplateId,
   normalizeLogoPlacement,
@@ -13,6 +14,8 @@ import {
   variableToken,
   variablesForModulo,
   type DocumentLogoPlacement,
+  type DocumentOrientacao,
+  type DocumentVerticalAlign,
   type ModuleLogoAsset,
   type TemplateFormato,
   type TemplateModulo,
@@ -25,6 +28,7 @@ import {
   type RichTemplateEditorHandle,
 } from "@/components/settings/rich-template-editor";
 import { TemplateLogoPresets } from "@/components/settings/template-logo-presets";
+import { DocumentPagePreview } from "@/components/settings/document-page-preview";
 import { convertDocxFileToHtml } from "@/lib/client/docx-to-html";
 
 type SavedEntry = {
@@ -34,6 +38,8 @@ type SavedEntry = {
   custom?: boolean;
   formato?: TemplateFormato;
   logos?: DocumentLogoPlacement[];
+  orientacao?: DocumentOrientacao;
+  alinhamentoVertical?: DocumentVerticalAlign;
 };
 
 type Props = {
@@ -51,6 +57,8 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
   const [activeId, setActiveId] = useState(types[0]?.id ?? "");
   const [nome, setNome] = useState("");
   const [formato, setFormato] = useState<TemplateFormato>("html");
+  const [orientacao, setOrientacao] = useState<DocumentOrientacao>("portrait");
+  const [alinhamentoVertical, setAlinhamentoVertical] = useState<DocumentVerticalAlign>("top");
   const [conteudo, setConteudo] = useState("");
   const [logoPlacements, setLogoPlacements] = useState<DocumentLogoPlacement[]>([]);
   const [moduleLogos, setModuleLogos] = useState<ModuleLogoAsset[]>([]);
@@ -64,6 +72,22 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
   const docxInputRef = useRef<HTMLInputElement>(null);
   const richEditorRef = useRef<RichTemplateEditorHandle>(null);
   const [importandoDocx, setImportandoDocx] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState("");
+
+  useEffect(() => {
+    const body =
+      formato === "texto" ? plainTextToEditorHtml(conteudo) : conteudo;
+    const t = window.setTimeout(() => {
+      setPreviewHtml(
+        buildDocumentPreviewHtml(body, {
+          title: nome || "Template",
+          orientacao,
+          verticalAlign: alinhamentoVertical,
+        }),
+      );
+    }, 250);
+    return () => window.clearTimeout(t);
+  }, [conteudo, formato, nome, orientacao, alinhamentoVertical]);
 
   const catalogById = useMemo(
     () => new Map(types.map((t) => [t.id, t] as const)),
@@ -105,6 +129,8 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
     setConteudo(entry?.conteudo ?? catalog?.conteudoDefault ?? "");
     setNome(entry?.nome ?? catalog?.label ?? "");
     setFormato(entry?.formato ?? "html");
+    setOrientacao(entry?.orientacao ?? "portrait");
+    setAlinhamentoVertical(entry?.alinhamentoVertical ?? "top");
     setLogoPlacements(entry?.logos ?? []);
   }, [activeId, saved, catalogById]);
 
@@ -143,6 +169,8 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
         nome: label,
         ...(isCustomActive ? { custom: true as const } : {}),
         formato,
+        orientacao,
+        alinhamentoVertical,
         ...(logosNorm.length ? { logos: logosNorm } : {}),
         updatedAt: new Date().toISOString(),
       },
@@ -328,7 +356,7 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
         <p className="text-[11px] text-slate-500">{activeCatalog.descricao}</p>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         <label className="block space-y-1 sm:col-span-2">
           <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
             Nome do template
@@ -340,6 +368,34 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
             className="w-full rounded-lg border border-slate-600/60 bg-slate-950 px-3 py-2 text-xs text-slate-200"
           />
         </label>
+        <label className="block space-y-1">
+          <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+            Orientação
+          </span>
+          <select
+            value={orientacao}
+            onChange={(e) => setOrientacao(e.target.value as DocumentOrientacao)}
+            className="w-full rounded-lg border border-slate-600/60 bg-slate-950 px-3 py-2 text-xs text-slate-200"
+          >
+            <option value="portrait">Vertical (A4)</option>
+            <option value="landscape">Horizontal (A4)</option>
+          </select>
+        </label>
+        {isCustomActive ? (
+          <label className="block space-y-1 sm:col-span-3 sm:max-w-xs">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+              Formato de armazenamento
+            </span>
+            <select
+              value={formato}
+              onChange={(e) => setFormato(e.target.value as TemplateFormato)}
+              className="w-full rounded-lg border border-slate-600/60 bg-slate-950 px-3 py-2 text-xs text-slate-200"
+            >
+              <option value="html">HTML (com formatação)</option>
+              <option value="texto">Texto simples</option>
+            </select>
+          </label>
+        ) : null}
       </div>
 
       <div className="space-y-2">
@@ -352,14 +408,16 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
           placements={logoPlacements}
           onChange={setLogoPlacements}
           previewHtml={logoPreviewHtml}
+          orientacao={orientacao}
+          verticalAlign={alinhamentoVertical}
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_14rem]">
-        <div className="min-w-0 space-y-2">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,520px)_14rem]">
+        <div className="min-w-0 space-y-2 xl:col-span-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <label className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-              Conteúdo do documento (pré-visualização WYSIWYG)
+              Editor (tamanho A4 real)
             </label>
             <div className="flex items-center gap-2">
               <input
@@ -386,13 +444,23 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
             </div>
           </div>
           <RichTemplateEditor
-            key={`${activeId}-${formato}`}
+            key={`${activeId}-${formato}-${orientacao}`}
             ref={richEditorRef}
             value={conteudo}
             onChange={setConteudo}
             formato={formato}
-            onFormatoChange={setFormato}
+            pageLayout="a4"
+            orientacao={orientacao}
+            verticalAlign={alinhamentoVertical}
+            onVerticalAlignChange={setAlinhamentoVertical}
           />
+          <div className="xl:hidden">
+            <DocumentPagePreview
+              srcDoc={previewHtml}
+              orientacao={orientacao}
+              title={nome || "Template"}
+            />
+          </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" disabled={busy} onClick={() => void guardar()}>
               <Save className="h-3.5 w-3.5" />
@@ -417,6 +485,13 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
             ) : null}
           </div>
         </div>
+
+        <DocumentPagePreview
+          srcDoc={previewHtml}
+          orientacao={orientacao}
+          title={nome || "Template"}
+          className="hidden xl:block"
+        />
 
         <aside className="space-y-2">
           <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">

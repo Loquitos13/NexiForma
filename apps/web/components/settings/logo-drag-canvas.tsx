@@ -6,8 +6,12 @@ import {
   defaultLogoOpacity,
   defaultLogoPlacementCoords,
   normalizeLogoPlacement,
+  a4AspectRatio,
+  buildDocumentPreviewHtml,
   type DocumentLogoPlacement,
   type DocumentLogoZona,
+  type DocumentOrientacao,
+  type DocumentVerticalAlign,
   type ModuleLogoAsset,
 } from "@nexiforma/shared";
 import { Button } from "@/components/ui";
@@ -26,6 +30,8 @@ type Props = {
   onChange: (next: DocumentLogoPlacement[]) => void;
   modulo: string;
   previewHtml?: string;
+  orientacao?: DocumentOrientacao;
+  verticalAlign?: DocumentVerticalAlign;
 };
 
 type DragState = {
@@ -36,7 +42,15 @@ type DragState = {
   origW: number;
 };
 
-export function LogoDragCanvas({ logos, placements, onChange, modulo, previewHtml }: Props) {
+export function LogoDragCanvas({
+  logos,
+  placements,
+  onChange,
+  modulo,
+  previewHtml,
+  orientacao = "portrait",
+  verticalAlign = "top",
+}: Props) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -127,6 +141,14 @@ export function LogoDragCanvas({ logos, placements, onChange, modulo, previewHtm
     };
   }, [drag, normalized, pctFromEvent]);
 
+  const previewDoc = useMemo(
+    () =>
+      previewHtml
+        ? buildDocumentPreviewHtml(previewHtml, { orientacao, verticalAlign })
+        : "",
+    [previewHtml, orientacao, verticalAlign],
+  );
+
   if (!logos.length) {
     return (
       <p className="text-[11px] text-slate-500">
@@ -162,13 +184,16 @@ export function LogoDragCanvas({ logos, placements, onChange, modulo, previewHtm
       <div
         ref={canvasRef}
         className="relative mx-auto w-full max-w-[520px] overflow-hidden rounded-lg border border-slate-600/50 bg-white shadow-inner"
-        style={{ aspectRatio: "210 / 297" }}
+        style={{ aspectRatio: a4AspectRatio(orientacao) }}
         onClick={() => setSelected(null)}
       >
-        {previewHtml ? (
-          <div
-            className="pointer-events-none absolute inset-0 z-[2] overflow-hidden p-6 text-[9px] leading-snug text-slate-800"
-            dangerouslySetInnerHTML={{ __html: previewHtml }}
+        {previewDoc ? (
+          <iframe
+            title="Pré-visualização do documento"
+            srcDoc={previewDoc}
+            className="pointer-events-none absolute inset-0 z-[2] h-full w-full border-0 bg-white"
+            sandbox=""
+            referrerPolicy="no-referrer"
           />
         ) : (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-8 text-center text-[10px] text-slate-400">

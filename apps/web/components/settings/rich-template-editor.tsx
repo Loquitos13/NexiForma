@@ -13,6 +13,9 @@ import {
   AlignCenter,
   AlignLeft,
   AlignRight,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  AlignVerticalJustifyStart,
   Bold,
   Code,
   Eye,
@@ -21,11 +24,14 @@ import {
   Underline,
 } from "lucide-react";
 import {
+  documentPageCss,
   editorHtmlToPlainText,
+  pageDimensionsMm,
   plainTextToEditorHtml,
   sanitizeDocumentEditorHtml,
+  type DocumentOrientacao,
+  type DocumentVerticalAlign,
 } from "@nexiforma/shared";
-import { Button } from "@/components/ui";
 import { cn } from "@/lib/ui/cn";
 
 const FONT_FAMILIES = [
@@ -48,9 +54,12 @@ export type RichTemplateEditorHandle = {
 type Props = {
   value: string;
   onChange: (html: string) => void;
+  /** Indicador do formato guardado (texto vs HTML) — não alterna modo de edição. */
   formato?: "texto" | "html";
-  onFormatoChange?: (formato: "texto" | "html") => void;
-  minHeight?: number;
+  pageLayout?: "a4" | "fluid";
+  orientacao?: DocumentOrientacao;
+  verticalAlign?: DocumentVerticalAlign;
+  onVerticalAlignChange?: (align: DocumentVerticalAlign) => void;
   placeholder?: string;
 };
 
@@ -76,6 +85,48 @@ function restoreSelection(range: Range | null) {
   if (!sel) return;
   sel.removeAllRanges();
   sel.addRange(range);
+}
+
+function applyInlineStyle(
+  editorEl: HTMLDivElement,
+  styles: Record<string, string>,
+  range: Range | null,
+) {
+  editorEl.focus();
+  restoreSelection(range ?? saveSelection(editorEl));
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+
+  const r = sel.getRangeAt(0);
+  const span = document.createElement("span");
+  for (const [key, val] of Object.entries(styles)) {
+    span.style.setProperty(key, val);
+  }
+
+  if (r.collapsed) {
+    span.appendChild(document.createTextNode("\u200B"));
+    r.insertNode(span);
+    const caret = document.createRange();
+    caret.setStart(span.firstChild!, 1);
+    caret.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(caret);
+    return;
+  }
+
+  try {
+    r.surroundContents(span);
+  } catch {
+    document.execCommand("styleWithCSS", false, "true");
+    const css = Object.entries(styles)
+      .map(([k, v]) => `${k.replace(/([A-Z])/g, "-$1").toLowerCase()}:${v}`)
+      .join(";");
+    document.execCommand(
+      "insertHTML",
+      false,
+      `<span style="${css}">${r.toString()}</span>`,
+    );
+  }
 }
 
 function insertAtCursor(
@@ -105,8 +156,10 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
       value,
       onChange,
       formato = "html",
-      onFormatoChange,
-      minHeight = 360,
+      pageLayout = "a4",
+      orientacao = "portrait",
+      verticalAlign = "top",
+      onVerticalAlignChange,
       placeholder = "Escreva o conteúdo do documento…",
     },
     ref,
@@ -119,6 +172,9 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
     const textareaSelRef = useRef<{ start: number; end: number } | null>(null);
     const lastEmittedValueRef = useRef<string | null>(null);
     const hydratedRef = useRef(false);
+
+    const pageMm = pageDimensionsMm(orientacao);
+    const pageCss = documentPageCss(orientacao);
 
     const emitChange = useCallback(
       (nextHtml: string) => {
@@ -143,6 +199,41 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
       if (!ta) return;
       textareaSelRef.current = { start: ta.selectionStart, end: ta.selectionEnd };
     }, []);
+
+    const runExec = useCallback(
+      (cmd: string, val?: string) => {
+        const el = editorRef.current;
+        if (!el) return;
+        el.focus();
+        restoreSelection(savedRangeRef.current);
+        document.execCommand(cmd, false, val);
+        emitChange(el.innerHTML);
+        captureSelection();
+      },
+      [captureSelection, emitChange],
+    );
+
+    const applyFont = useCallback(
+      (fontFamily: string) => {
+        const el = editorRef.current;
+        if (!el) return;
+        applyInlineStyle(el, { "font-family": fontFamily }, savedRangeRef.current);
+        emitChange(el.innerHTML);
+        captureSelection();
+      },
+      [captureSelection, emitChange],
+    );
+
+    const applySize = useCallback(
+      (fontSize: string) => {
+        const el = editorRef.current;
+        if (!el) return;
+        applyInlineStyle(el, { "font-size": fontSize }, savedRangeRef.current);
+        emitChange(el.innerHTML);
+        captureSelection();
+      },
+      [captureSelection, emitChange],
+    );
 
     const insertInTextarea = useCallback(
       (token: string) => {
@@ -184,29 +275,25 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
       [captureSelection, emitFromVisualEditor, insertInTextarea, mode],
     );
 
-    // Hidrata o DOM uma vez por montagem (evita contentEditable vazio no 1.º frame)
     useLayoutEffect(() => {
       hydratedRef.current = false;
-    }, [formato]);
+    }, [formato, orientacao]);
 
     useLayoutEffect(() => {
       if (mode !== "visual") return;
       const el = editorRef.current;
       if (!el || hydratedRef.current) return;
-      const html = valueToEditorHtml(value, formato);
-      el.innerHTML = html;
+      el.innerHTML = valueToEditorHtml(value, formato);
       lastEmittedValueRef.current = value;
       hydratedRef.current = true;
-    }, [formato, mode, value]);
+    }, [formato, mode, orientacao, value]);
 
-    // Só repõe o DOM quando o valor muda externamente e o editor não está activo
     useEffect(() => {
       if (mode !== "visual") return;
       const el = editorRef.current;
       if (!el) return;
       if (document.activeElement === el) return;
       if (value === lastEmittedValueRef.current) return;
-
       lastEmittedValueRef.current = value;
       const html = valueToEditorHtml(value, formato);
       setHtmlSource(html);
@@ -217,27 +304,17 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
     useEffect(() => {
       const el = editorRef.current;
       if (!el || mode !== "visual") return;
-
       function onSelectionChange() {
         if (document.activeElement === el) captureSelection();
       }
-
       document.addEventListener("selectionchange", onSelectionChange);
       return () => document.removeEventListener("selectionchange", onSelectionChange);
     }, [captureSelection, mode]);
 
-    function exec(cmd: string, val?: string) {
-      editorRef.current?.focus();
-      document.execCommand(cmd, false, val);
-      if (editorRef.current) emitChange(editorRef.current.innerHTML);
-      captureSelection();
-    }
-
     function switchMode(next: EditorMode) {
       if (next === mode) return;
       if (next === "html") {
-        const current = editorRef.current?.innerHTML ?? htmlSource;
-        setHtmlSource(current);
+        setHtmlSource(editorRef.current?.innerHTML ?? htmlSource);
         setMode("html");
         return;
       }
@@ -253,157 +330,169 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
       });
     }
 
-    function toggleFormato() {
-      const next = formato === "html" ? "texto" : "html";
-      if (next === "texto" && editorRef.current) {
-        const plain = editorHtmlToPlainText(editorRef.current.innerHTML);
-        lastEmittedValueRef.current = plain;
-        onChange(plain);
-      } else if (next === "html") {
-        const html = plainTextToEditorHtml(value || "");
-        lastEmittedValueRef.current = value;
-        onChange(html);
-      }
-      onFormatoChange?.(next);
-    }
+    const editorSurface = (
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        dir="ltr"
+        lang="pt"
+        spellCheck
+        data-placeholder={placeholder}
+        className={cn(
+          "doc-content-layer rich-template-editor outline-none text-slate-900",
+          pageLayout === "a4" ? "min-h-0 flex-1" : "min-h-[360px] w-full rounded-lg px-4 py-3 text-[13px]",
+          pageLayout !== "a4" &&
+            "rounded-lg border border-slate-600/60 bg-white leading-relaxed font-[Georgia,'Times_New_Roman',serif]",
+          "[&:empty]:before:text-slate-400 [&:empty]:before:content-[attr(data-placeholder)]",
+        )}
+        onBlur={captureSelection}
+        onKeyUp={captureSelection}
+        onMouseUp={captureSelection}
+        onInput={emitFromVisualEditor}
+      />
+    );
 
     return (
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-700/50 bg-slate-950/80 p-1.5">
-          <ToolbarBtn title="Negrito" onClick={() => exec("bold")} disabled={mode === "html"}>
+          <ToolbarBtn title="Negrito" onClick={() => runExec("bold")} disabled={mode === "html"}>
             <Bold className="h-3.5 w-3.5" />
           </ToolbarBtn>
-          <ToolbarBtn title="Itálico" onClick={() => exec("italic")} disabled={mode === "html"}>
+          <ToolbarBtn title="Itálico" onClick={() => runExec("italic")} disabled={mode === "html"}>
             <Italic className="h-3.5 w-3.5" />
           </ToolbarBtn>
-          <ToolbarBtn title="Sublinhado" onClick={() => exec("underline")} disabled={mode === "html"}>
+          <ToolbarBtn title="Sublinhado" onClick={() => runExec("underline")} disabled={mode === "html"}>
             <Underline className="h-3.5 w-3.5" />
           </ToolbarBtn>
-          <ToolbarBtn title="Rasurado" onClick={() => exec("strikeThrough")} disabled={mode === "html"}>
+          <ToolbarBtn title="Rasurado" onClick={() => runExec("strikeThrough")} disabled={mode === "html"}>
             <Strikethrough className="h-3.5 w-3.5" />
           </ToolbarBtn>
           <span className="mx-1 h-5 w-px bg-slate-700" />
-          <ToolbarBtn title="Alinhar à esquerda" onClick={() => exec("justifyLeft")} disabled={mode === "html"}>
+          <ToolbarBtn title="Alinhar à esquerda" onClick={() => runExec("justifyLeft")} disabled={mode === "html"}>
             <AlignLeft className="h-3.5 w-3.5" />
           </ToolbarBtn>
-          <ToolbarBtn title="Centrar" onClick={() => exec("justifyCenter")} disabled={mode === "html"}>
+          <ToolbarBtn title="Centrar horizontalmente" onClick={() => runExec("justifyCenter")} disabled={mode === "html"}>
             <AlignCenter className="h-3.5 w-3.5" />
           </ToolbarBtn>
-          <ToolbarBtn title="Alinhar à direita" onClick={() => exec("justifyRight")} disabled={mode === "html"}>
+          <ToolbarBtn title="Alinhar à direita" onClick={() => runExec("justifyRight")} disabled={mode === "html"}>
             <AlignRight className="h-3.5 w-3.5" />
           </ToolbarBtn>
+          {onVerticalAlignChange ? (
+            <>
+              <span className="mx-1 h-5 w-px bg-slate-700" />
+              <ToolbarBtn
+                title="Alinhar ao topo da página"
+                active={verticalAlign === "top"}
+                onClick={() => onVerticalAlignChange("top")}
+                disabled={mode === "html"}
+              >
+                <AlignVerticalJustifyStart className="h-3.5 w-3.5" />
+              </ToolbarBtn>
+              <ToolbarBtn
+                title="Centrar verticalmente na página"
+                active={verticalAlign === "middle"}
+                onClick={() => onVerticalAlignChange("middle")}
+                disabled={mode === "html"}
+              >
+                <AlignVerticalJustifyCenter className="h-3.5 w-3.5" />
+              </ToolbarBtn>
+              <ToolbarBtn
+                title="Alinhar ao fundo da página"
+                active={verticalAlign === "bottom"}
+                onClick={() => onVerticalAlignChange("bottom")}
+                disabled={mode === "html"}
+              >
+                <AlignVerticalJustifyEnd className="h-3.5 w-3.5" />
+              </ToolbarBtn>
+            </>
+          ) : null}
           <span className="mx-1 h-5 w-px bg-slate-700" />
-          <select
+          <ToolbarSelect
             disabled={mode === "html"}
-            className="h-7 max-w-[9rem] rounded border border-slate-600/60 bg-slate-900 px-1.5 text-[10px] text-slate-200"
-            defaultValue=""
-            onChange={(e) => {
-              if (e.target.value) exec("fontName", e.target.value);
-              e.target.value = "";
-            }}
-          >
-            <option value="">Fonte…</option>
-            {FONT_FAMILIES.map((f) => (
-              <option key={f.value} value={f.value}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-          <select
+            onOpen={captureSelection}
+            onPick={(v) => applyFont(v)}
+            placeholder="Fonte…"
+            options={FONT_FAMILIES.map((f) => ({ value: f.value, label: f.label }))}
+          />
+          <ToolbarSelect
             disabled={mode === "html"}
-            className="h-7 w-[4.5rem] rounded border border-slate-600/60 bg-slate-900 px-1.5 text-[10px] text-slate-200"
-            defaultValue=""
-            onChange={(e) => {
-              if (e.target.value) exec("fontSize", e.target.value.replace("px", ""));
-              e.target.value = "";
-            }}
-          >
-            <option value="">Tamanho…</option>
-            {FONT_SIZES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-          <select
+            onOpen={captureSelection}
+            onPick={(v) => applySize(v)}
+            placeholder="Tamanho…"
+            options={FONT_SIZES.map((s) => ({ value: s, label: s }))}
+            className="w-[4.5rem]"
+          />
+          <ToolbarSelect
             disabled={mode === "html"}
-            className="h-7 max-w-[6rem] rounded border border-slate-600/60 bg-slate-900 px-1.5 text-[10px] text-slate-200"
-            defaultValue=""
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v) exec("formatBlock", v);
-              e.target.value = "";
-            }}
-          >
-            <option value="">Bloco…</option>
-            <option value="p">Parágrafo</option>
-            <option value="h1">Título 1</option>
-            <option value="h2">Título 2</option>
-            <option value="h3">Título 3</option>
-          </select>
+            onOpen={captureSelection}
+            onPick={(v) => runExec("formatBlock", v)}
+            placeholder="Bloco…"
+            options={[
+              { value: "p", label: "Parágrafo" },
+              { value: "h1", label: "Título 1" },
+              { value: "h2", label: "Título 2" },
+              { value: "h3", label: "Título 3" },
+            ]}
+            className="max-w-[6rem]"
+          />
           <span className="mx-1 h-5 w-px bg-slate-700" />
-          <ToolbarBtn
-            title="Modo visual"
-            active={mode === "visual"}
-            onClick={() => switchMode("visual")}
-          >
+          <ToolbarBtn title="Modo visual" active={mode === "visual"} onClick={() => switchMode("visual")}>
             <Eye className="h-3.5 w-3.5" />
           </ToolbarBtn>
           <ToolbarBtn title="Código HTML" active={mode === "html"} onClick={() => switchMode("html")}>
             <Code className="h-3.5 w-3.5" />
           </ToolbarBtn>
-          {onFormatoChange ? (
-            <>
-              <span className="mx-1 h-5 w-px bg-slate-700" />
-              <button
-                type="button"
-                role="switch"
-                aria-checked={formato === "html"}
-                title={formato === "html" ? "Formato HTML" : "Texto simples"}
-                className={cn(
-                  "rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors",
-                  formato === "html"
-                    ? "bg-blue-950/50 text-blue-200"
-                    : "bg-slate-800 text-slate-400",
-                )}
-                onClick={toggleFormato}
-              >
-                {formato === "html" ? "HTML" : "Texto"}
-              </button>
-            </>
-          ) : null}
+          <span className="mx-1 h-5 w-px bg-slate-700" />
+          <span
+            title={formato === "html" ? "Formato de armazenamento: HTML" : "Formato de armazenamento: texto simples"}
+            className={cn(
+              "cursor-default rounded-full px-2 py-0.5 text-[10px] font-medium",
+              formato === "html" ? "bg-blue-950/50 text-blue-200" : "bg-slate-800 text-slate-400",
+            )}
+          >
+            {formato === "html" ? "HTML" : "Texto"}
+          </span>
         </div>
 
         {mode === "visual" ? (
-          <>
-            <style>{`
-              .rich-template-editor h1 { font-size: 1.6em; font-weight: 700; margin: 0.6em 0 0.3em; }
-              .rich-template-editor h2 { font-size: 1.35em; font-weight: 700; margin: 0.5em 0 0.25em; }
-              .rich-template-editor h3 { font-size: 1.15em; font-weight: 600; margin: 0.45em 0 0.2em; }
-              .rich-template-editor p { margin: 0 0 0.65em; }
-              .rich-template-editor ul, .rich-template-editor ol { margin: 0 0 0.65em 1.25em; }
-            `}</style>
-            <div
-              ref={editorRef}
-              contentEditable
-              suppressContentEditableWarning
+          pageLayout === "a4" ? (
+            <div className="overflow-x-auto rounded-lg border border-slate-700/40 bg-slate-800/30 p-3">
+              <style>{pageCss}</style>
+              <div
+                className="doc-page-shell mx-auto shadow-md"
+                style={{ width: `${pageMm.width}mm`, minHeight: `${pageMm.height}mm`, maxWidth: "100%" }}
+              >
+                <div className="doc-page-body" data-v-align={verticalAlign}>
+                  {editorSurface}
+                </div>
+              </div>
+            </div>
+          ) : (
+            editorSurface
+          )
+        ) : pageLayout === "a4" ? (
+          <div className="overflow-x-auto rounded-lg border border-slate-700/40 bg-slate-800/30 p-3">
+            <textarea
+              ref={textareaRef}
+              rows={28}
               dir="ltr"
               lang="pt"
-              spellCheck
-              data-placeholder={placeholder}
-              className={cn(
-                "rich-template-editor w-full rounded-lg border border-slate-600/60 bg-white px-4 py-3",
-                "text-[13px] leading-relaxed text-slate-900 outline-none",
-                "min-h-[var(--editor-min-h)] font-[Georgia,'Times_New_Roman',serif]",
-                "[&:empty]:before:text-slate-400 [&:empty]:before:content-[attr(data-placeholder)]",
-              )}
-              style={{ "--editor-min-h": `${minHeight}px` } as React.CSSProperties}
-              onBlur={captureSelection}
-              onKeyUp={captureSelection}
-              onMouseUp={captureSelection}
-              onInput={emitFromVisualEditor}
+              value={htmlSource}
+              onSelect={captureTextareaSelection}
+              onKeyUp={captureTextareaSelection}
+              onMouseUp={captureTextareaSelection}
+              onBlur={captureTextareaSelection}
+              onChange={(e) => {
+                setHtmlSource(e.target.value);
+                emitChange(e.target.value);
+                captureTextareaSelection();
+              }}
+              className="mx-auto block w-full max-w-full rounded border border-slate-600/60 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-200 leading-relaxed"
+              style={{ width: `${pageMm.width}mm`, minHeight: `${pageMm.height}mm`, maxWidth: "100%" }}
+              spellCheck={false}
             />
-          </>
+          </div>
         ) : (
           <textarea
             ref={textareaRef}
@@ -459,11 +548,49 @@ function ToolbarBtn({
   );
 }
 
+function ToolbarSelect({
+  disabled,
+  onOpen,
+  onPick,
+  placeholder,
+  options,
+  className,
+}: {
+  disabled?: boolean;
+  onOpen: () => void;
+  onPick: (value: string) => void;
+  placeholder: string;
+  options: Array<{ value: string; label: string }>;
+  className?: string;
+}) {
+  return (
+    <select
+      disabled={disabled}
+      className={cn(
+        "h-7 max-w-[9rem] rounded border border-slate-600/60 bg-slate-900 px-1.5 text-[10px] text-slate-200",
+        className,
+      )}
+      defaultValue=""
+      onMouseDown={() => onOpen()}
+      onChange={(e) => {
+        const v = e.target.value;
+        if (v) onPick(v);
+        e.target.value = "";
+      }}
+    >
+      <option value="">{placeholder}</option>
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 /** @deprecated Use ref insertToken no RichTemplateEditor */
 export function insertIntoRichEditor(editorEl: HTMLDivElement | null, token: string) {
   insertAtCursor(editorEl, token, saveSelection(editorEl), () => {
-    if (editorEl) {
-      editorEl.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    }
+    editorEl?.dispatchEvent(new InputEvent("input", { bubbles: true }));
   });
 }

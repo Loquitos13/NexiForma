@@ -99,6 +99,7 @@ export class HtmlPdfExportService implements OnModuleDestroy {
     opts?: {
       margin?: { top?: string; right?: string; bottom?: string; left?: string };
       preferCSSPageSize?: boolean;
+      landscape?: boolean;
     },
   ): Promise<Buffer> {
     const browser = await this.getBrowser();
@@ -109,9 +110,10 @@ export class HtmlPdfExportService implements OnModuleDestroy {
       await page.setContent(html, { waitUntil: ["load", "domcontentloaded"], timeout: 30_000 });
       const pdf = await page.pdf({
         format: "A4",
+        landscape: opts?.landscape ?? false,
         printBackground: true,
         timeout: 30_000,
-        preferCSSPageSize: opts?.preferCSSPageSize ?? false,
+        preferCSSPageSize: opts?.preferCSSPageSize ?? true,
         margin: opts?.margin ?? { top: "8mm", right: "8mm", bottom: "8mm", left: "8mm" },
       });
       return Buffer.from(pdf);
