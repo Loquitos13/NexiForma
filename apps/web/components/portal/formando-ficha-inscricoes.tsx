@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { GraduationCap, FileText, Plus, UserPlus } from "lucide-react";
-import { listEmitivelTemplateOptions } from "@nexiforma/shared";
+import { listEmitivelTemplateOptions, type TenantTemplateEntry } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { downloadResponseAsFile } from "@/lib/client/download-response";
 import { formatDatePt } from "@/lib/calendar-date";
@@ -318,7 +318,7 @@ export function FormandoFichaInscricoes({
       );
       if (!r.ok) return;
       const data = (await r.json()) as {
-        templates?: Record<string, { nome?: string; custom?: boolean }>;
+        templates?: Record<string, TenantTemplateEntry>;
       };
       setTemplatesEmitivel(listEmitivelTemplateOptions(data.templates ?? {}));
     })();
