@@ -20,7 +20,10 @@ import {
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/ui/cn";
-import { RichTemplateEditor } from "@/components/settings/rich-template-editor";
+import {
+  RichTemplateEditor,
+  type RichTemplateEditorHandle,
+} from "@/components/settings/rich-template-editor";
 import { TemplateLogoPresets } from "@/components/settings/template-logo-presets";
 import { convertDocxFileToHtml } from "@/lib/client/docx-to-html";
 
@@ -59,6 +62,7 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
   const [newNome, setNewNome] = useState("");
   const [newFormato, setNewFormato] = useState<TemplateFormato>("html");
   const docxInputRef = useRef<HTMLInputElement>(null);
+  const richEditorRef = useRef<RichTemplateEditorHandle>(null);
   const [importandoDocx, setImportandoDocx] = useState(false);
 
   const catalogById = useMemo(
@@ -106,7 +110,7 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
 
   function insertVariable(key: string) {
     const token = variableToken(key);
-    setConteudo((c) => c + token);
+    richEditorRef.current?.insertToken(token);
   }
 
   async function persistTemplates(next: Record<string, SavedEntry>, successMsg: string) {
@@ -382,6 +386,8 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
             </div>
           </div>
           <RichTemplateEditor
+            key={`${activeId}-${formato}`}
+            ref={richEditorRef}
             value={conteudo}
             onChange={setConteudo}
             formato={formato}
@@ -441,6 +447,7 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
                             type="button"
                             title={v.exemplo ? `Ex.: ${v.exemplo}` : variableToken(v.key)}
                             className="flex w-full items-start gap-1 rounded px-1.5 py-1 text-left text-[10px] text-slate-300 hover:bg-blue-950/40 hover:text-blue-200"
+                            onMouseDown={(e) => e.preventDefault()}
                             onClick={() => insertVariable(v.key)}
                           >
                             <Plus className="h-3 w-3 shrink-0 mt-0.5 opacity-60" />
