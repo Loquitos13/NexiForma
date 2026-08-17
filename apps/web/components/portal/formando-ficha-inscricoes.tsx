@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { GraduationCap, Plus, UserPlus } from "lucide-react";
+import { GraduationCap, FileText, Plus, UserPlus } from "lucide-react";
+import { TEMPLATE_TYPES } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
+import { downloadResponseAsFile } from "@/lib/client/download-response";
 import { formatDatePt } from "@/lib/calendar-date";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { cn } from "@/lib/ui/cn";
@@ -126,6 +128,8 @@ type Props = {
 
 const ESTADOS = ["ATIVA", "CONCLUSAO", "DESISTENCIA"] as const;
 
+const TEMPLATES_EMITIVEL = TEMPLATE_TYPES.formacao;
+
 export function FormandoFichaInscricoes({
   formandoId,
   inscricoes,
@@ -144,6 +148,8 @@ export function FormandoFichaInscricoes({
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [emitindo, setEmitindo] = useState<string | null>(null);
+  const [templatePorMatricula, setTemplatePorMatricula] = useState<Record<string, string>>({});
 
   const sorted = useMemo(
     () =>
@@ -400,6 +406,36 @@ export function FormandoFichaInscricoes({
       await onChanged();
     } finally {
       setBusy(false);
+    }
+  }
+
+  function templateIdPara(matriculaId: string): string {
+    return templatePorMatricula[matriculaId] ?? "declaracao_frequencia";
+  }
+
+  async function emitirDocumento(matriculaId: string) {
+    if (!canManage) return;
+    const templateId = templateIdPara(matriculaId);
+    const label =
+      TEMPLATES_EMITIVEL.find((t) => t.id === templateId)?.label ?? "Documento";
+    setEmitindo(matriculaId);
+    setErr(null);
+    setMsg(null);
+    try {
+      const res = await bffFetch(
+        `/api/v1/matriculas/${encodeURIComponent(matriculaId)}/documentos/${encodeURIComponent(templateId)}/pdf?anexar=1&download=1`,
+      );
+      if (!res.ok) {
+        setErr(await parseApiError(res));
+        return;
+      }
+      await downloadResponseAsFile(res, `${templateId}.pdf`);
+      setMsg(`«${label}» emitido e anexado à ficha.`);
+      await onChanged();
+    } catch {
+      setErr(`Falha ao emitir «${label}».`);
+    } finally {
+      setEmitindo(null);
     }
   }
 
@@ -681,6 +717,44 @@ export function FormandoFichaInscricoes({
                       : "Sem dados de progresso LMS."}
                   </p>
                 )}
+
+                {canManage ? (
+                  <div
+                    className="flex flex-wrap items-end gap-2 pt-1"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <Select
+                      label="Template"
+                      value={templateIdPara(ins.matriculaId)}
+                      disabled={busy || emitindo === ins.matriculaId}
+                      className="h-8 max-w-[14rem] text-xs"
+                      onChange={(e) =>
+                        setTemplatePorMatricula((prev) => ({
+                          ...prev,
+                          [ins.matriculaId]: e.target.value,
+                        }))
+                      }
+                    >
+                      {TEMPLATES_EMITIVEL.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </Select>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={busy || emitindo === ins.matriculaId}
+                      className="h-8 text-xs"
+                      onClick={() => void emitirDocumento(ins.matriculaId)}
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      {emitindo === ins.matriculaId ? "A emitir…" : "Emitir PDF"}
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             );
           })

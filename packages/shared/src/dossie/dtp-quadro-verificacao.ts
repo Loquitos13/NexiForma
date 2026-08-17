@@ -13,7 +13,7 @@ export type DtpSecaoDef = {
   itens: DtpItemDef[];
 };
 
-/** Quadro de verificação DTP — presencial (financiada vs autofinanciada). */
+/** Quadro de verificação DTP - presencial (financiada vs autofinanciada). */
 export const DTP_QUADRO_SECOES: Record<TipoFinanciamentoDtp, DtpSecaoDef[]> = {
   FINANCIADA: [
     {

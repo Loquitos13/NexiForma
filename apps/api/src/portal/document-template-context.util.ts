@@ -19,7 +19,7 @@ function modalidadeLabel(modalidade: string | null | undefined): string {
     case "e-learning":
       return "E-learning";
     default:
-      return modalidade ?? "—";
+      return modalidade ?? "-";
   }
 }
 
@@ -36,7 +36,7 @@ function parseFormandoSigo(metadata: unknown): SigoMeta {
 }
 
 function fmtIsoDate(iso: string | undefined | null): string {
-  if (!iso?.trim()) return "—";
+  if (!iso?.trim()) return "-";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("pt-PT");
 }
@@ -144,7 +144,7 @@ export async function buildFormacaoTemplateContext(
   const sigo = parseFormandoSigo(matricula?.formando.metadata);
 
   const fmt = (d: Date | null | undefined) =>
-    d ? d.toLocaleDateString("pt-PT") : "—";
+    d ? d.toLocaleDateString("pt-PT") : "-";
 
   return {
     "entidade.nome_legal": tenant?.legalName ?? "",

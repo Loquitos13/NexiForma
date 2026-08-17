@@ -16,7 +16,7 @@ describe("injectTenantLogoIntoHtml", () => {
   it("insere logo após body", () => {
     const html = "<html><body><h1>Doc</h1></body></html>";
     const out = injectTenantLogoIntoHtml(html, "data:image/png;base64,xx");
-    expect(out).toContain('class="tenant-logo"');
+    expect(out).toContain('class="tenant-logo-header"');
     expect(out).toContain("<h1>Doc</h1>");
   });
 

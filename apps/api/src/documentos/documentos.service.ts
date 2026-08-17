@@ -250,7 +250,7 @@ export class DocumentosService {
     if (!doc) throw new NotFoundException("Documento não encontrado.");
     if (doc.categoria && TEMPLATE_CATEGORIAS.has(doc.categoria)) {
       throw new BadRequestException(
-        "Templates de inscrição não podem ser eliminados por aqui — use a secção de templates.",
+        "Templates de inscrição não podem ser eliminados por aqui - use a secção de templates.",
       );
     }
     await this.prisma.documentoAnexo.delete({ where: { id } });

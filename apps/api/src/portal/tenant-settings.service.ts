@@ -50,6 +50,16 @@ export type TenantBrandingPayload = {
   supportEmail?: string;
   supportPhone?: string;
   footerText?: string;
+  logoCabecalho?: {
+    posicao?: "left" | "center" | "right";
+    larguraPx?: number;
+    alturaPx?: number;
+  };
+  logoRodape?: {
+    posicao?: "left" | "center" | "right";
+    larguraPx?: number;
+    alturaPx?: number;
+  };
 };
 
 export type TenantCronogramaConfig = {

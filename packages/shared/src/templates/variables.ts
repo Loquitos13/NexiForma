@@ -123,16 +123,16 @@ export const TEMPLATE_TYPES: Record<TemplateModulo, TemplateTypeDef[]> = {
     },
     {
       id: "relatorio_abertura",
-      label: "Relatório de acompanhamento — Abertura",
+      label: "Relatório de acompanhamento - Abertura",
       descricao: "Incluir variável {{acao.regime_ensino}} consoante o regime.",
     },
     {
       id: "relatorio_intermedio",
-      label: "Relatório de acompanhamento — Intermédio",
+      label: "Relatório de acompanhamento - Intermédio",
     },
     {
       id: "relatorio_encerramento",
-      label: "Relatório de acompanhamento — Encerramento",
+      label: "Relatório de acompanhamento - Encerramento",
     },
   ],
   crm: [

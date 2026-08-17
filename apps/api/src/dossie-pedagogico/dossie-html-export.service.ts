@@ -1,8 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import {
+  applyTenantDocumentBranding,
   resolveTenantLogoDataUri,
-  tenantLogoImgHtml,
+  tenantDocumentBrandingCss,
 } from "../common/tenant-logo-embed.util";
 import { requireTenantId } from "../common/tenant-scope";
 import { PrismaService } from "../prisma/prisma.service";
@@ -39,9 +40,7 @@ export class DossieHtmlExportService {
     ]);
     const sigoPkg = await this.sigo.buildSigoJsonPackage(user, acaoId);
     const validacao = validateSigoPayload(sigoPkg.body as Parameters<typeof validateSigoPayload>[0]);
-    const logoHtml = tenantLogoImgHtml(
-      await resolveTenantLogoDataUri(this.storage, tenantMeta?.metadata),
-    );
+    const logoSrc = await resolveTenantLogoDataUri(this.storage, tenantMeta?.metadata);
 
     const acao = dossie.acaoFormacao as Record<string, unknown>;
     const curso = dossie.curso as Record<string, unknown>;
@@ -103,7 +102,38 @@ export class DossieHtmlExportService {
       .map((a) => `<li class="warn">${escapeHtml(a.mensagem)}</li>`)
       .join("");
 
-    const html = `<!DOCTYPE html>
+    const dtp = (dossie as { dtp?: {
+      tipoLabel: string;
+      scorePercent: number;
+      concluidos: number;
+      total: number;
+      secoes: Array<{
+        titulo: string;
+        concluidos: number;
+        total: number;
+        itens: Array<{ label: string; ok: boolean; detalhe?: string }>;
+      }>;
+    } }).dtp;
+
+    const dtpHtml = dtp
+      ? `<h2>Quadro de verificação DTP (${escapeHtml(dtp.tipoLabel)})</h2>
+  <p>Completude: <strong>${dtp.scorePercent}%</strong> (${dtp.concluidos}/${dtp.total} itens)</p>
+  ${dtp.secoes
+    .map(
+      (sec) => `<div class="dtp-sec">
+    <h3 style="font-size:0.95rem;margin-bottom:0.35rem;">${escapeHtml(sec.titulo)} (${sec.concluidos}/${sec.total})</h3>
+    ${sec.itens
+      .map(
+        (item) =>
+          `<p class="dtp-item">${item.ok ? "✓" : "○"} ${escapeHtml(item.label)}${item.detalhe ? ` <span style="color:#666">(${escapeHtml(item.detalhe)})</span>` : ""}</p>`,
+      )
+      .join("")}
+  </div>`,
+    )
+    .join("")}`
+      : "";
+
+    let html = `<!DOCTYPE html>
 <html lang="pt">
 <head>
   <meta charset="utf-8"/>
@@ -122,6 +152,9 @@ export class DossieHtmlExportService {
     .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; }
     .ok { background: #dcfce7; color: #166534; }
     .bad { background: #fee2e2; color: #991b1b; }
+    .dtp-sec { margin-top: 1rem; }
+    .dtp-item { font-size: 10pt; margin: 0.2rem 0; }
+    ${tenantDocumentBrandingCss(tenantMeta?.metadata)}
     @media print {
       body { margin: 1cm; }
       .no-print { display: none; }
@@ -132,7 +165,6 @@ export class DossieHtmlExportService {
   <p class="no-print" style="background:#eff6ff;padding:0.75rem;border-radius:6px;">
     <strong>Imprimir / PDF:</strong> Ctrl+P (ou Cmd+P) → «Guardar como PDF».
   </p>
-  ${logoHtml}
   <h1>Dossiê pedagógico</h1>
   <p class="meta">
     ${escapeHtml(String(acao.titulo ?? ""))} · ${escapeHtml(codigo)}<br/>
@@ -171,11 +203,15 @@ export class DossieHtmlExportService {
   <h2>Assiduidade</h2>
   <p>Taxa global: ${dossie.assiduidade.taxaPresenca != null ? `${dossie.assiduidade.taxaPresenca}%` : "–"} (${dossie.assiduidade.presencasMarcadas}/${dossie.assiduidade.presencasRegistadas} registos)</p>
 
+  ${dtpHtml}
+
   <p class="meta" style="margin-top:2rem;font-size:0.8rem;">
     Documento gerado por NexiForma – não substitui arquivo oficial SIGO/DGERT.
   </p>
 </body>
 </html>`;
+
+    html = applyTenantDocumentBranding(html, logoSrc, tenantMeta?.metadata);
 
     return { filename, html };
   }

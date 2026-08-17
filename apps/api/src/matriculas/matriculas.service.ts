@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Matricula } from "@nexiforma/database";
-import { resolverEmailNotificacaoFormando } from "@nexiforma/shared";
+import { mergeTemplateHtml, resolverEmailNotificacaoFormando } from "@nexiforma/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import {
@@ -15,11 +15,26 @@ import {
   turmaExigeEmailPresenca,
 } from "../common/formando-presenca.util";
 import { FormadorScopeService } from "../common/formador-scope.service";
+import { HtmlPdfExportService } from "../common/html-pdf-export.service";
+import { opaqueStorageKey } from "../common/opaque-storage-key.util";
 import { requireTenantId } from "../common/tenant-scope";
+import {
+  applyTenantDocumentBranding,
+  resolveTenantLogoDataUri,
+} from "../common/tenant-logo-embed.util";
 import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 import { MailService } from "../mail/mail.service";
 import { FormadorNotificacoesService } from "../notificacoes/formador-notificacoes.service";
 import { EmailTemplates } from "../notificacoes/templates/email.templates";
+import { StorageService } from "../storage/storage.service";
+import { buildFormacaoTemplateContext } from "../portal/document-template-context.util";
+import {
+  ensureFullDocumentHtml,
+  isEmitivelTemplateId,
+  resolveTenantTemplateContent,
+  templateLabelForId,
+  templateModuloForId,
+} from "../portal/tenant-document-pdf.util";
 import type { CreateMatriculaDto } from "./dto/create-matricula.dto";
 import type { UpdateMatriculaDto } from "./dto/update-matricula.dto";
 import {
@@ -41,6 +56,8 @@ export class MatriculasService {
     private readonly mail: MailService,
     private readonly formadorNotificacoes: FormadorNotificacoesService,
     private readonly formadorScope: FormadorScopeService,
+    private readonly storage: StorageService,
+    private readonly htmlPdf: HtmlPdfExportService,
   ) {}
 
   /** Lista matrículas de uma turma (gestor ou formador da acção - só leitura). */
@@ -246,5 +263,136 @@ export class MatriculasService {
         formando: { select: { nome: true, nif: true } },
       },
     });
+  }
+
+  /** Gera PDF a partir de template tenant (ex.: declaração de frequência) para uma inscrição. */
+  async emitirDocumentoPdf(
+    user: RequestUser,
+    matriculaId: string,
+    templateId: string,
+    opts?: { anexar?: boolean },
+  ): Promise<{ pdf: Buffer; filename: string; documentoId?: string }> {
+    const tenantId = requireTenantId(user);
+    if (!isEmitivelTemplateId(templateId)) {
+      throw new BadRequestException("Tipo de documento inválido.");
+    }
+    const modulo = templateModuloForId(templateId);
+    if (!modulo) {
+      throw new BadRequestException("Tipo de documento inválido.");
+    }
+
+    const matricula = await this.prisma.matricula.findFirst({
+      where: { id: matriculaId, tenantId },
+      select: {
+        id: true,
+        formandoId: true,
+        formando: { select: { nome: true } },
+        turma: { select: { acaoFormacaoId: true } },
+      },
+    });
+    if (!matricula) {
+      throw new NotFoundException("Inscrição não encontrada.");
+    }
+
+    await this.formadorScope.assertCanAccessAcao(user, matricula.turma.acaoFormacaoId);
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true },
+    });
+
+    const label = templateLabelForId(templateId);
+    const rawTemplate = resolveTenantTemplateContent(tenant?.metadata, modulo, templateId);
+    if (!rawTemplate.trim()) {
+      throw new BadRequestException(
+        `Template «${label}» vazio. Configura o texto em Configurações → Templates de formação.`,
+      );
+    }
+
+    const context = await buildFormacaoTemplateContext(this.prisma, tenantId, {
+      matriculaId,
+    });
+    const mergedBody = mergeTemplateHtml(rawTemplate, context);
+    const logoSrc = await resolveTenantLogoDataUri(this.storage, tenant?.metadata);
+    let html = ensureFullDocumentHtml(label, mergedBody, tenant?.metadata);
+    html = applyTenantDocumentBranding(html, logoSrc, tenant?.metadata);
+
+    const pdf = await this.htmlPdf.htmlToPdfBuffer(html);
+    const filename = `${label} - ${matricula.formando.nome}`.replace(/[\\/:*?"<>|]/g, "-") + ".pdf";
+
+    let documentoId: string | undefined;
+    if (opts?.anexar) {
+      documentoId = await this.anexarDocumentoEmitido(user, {
+        tenantId,
+        matriculaId: matricula.id,
+        formandoId: matricula.formandoId,
+        acaoFormacaoId: matricula.turma.acaoFormacaoId,
+        categoria: templateId,
+        filename,
+        pdf,
+      });
+    }
+
+    return { pdf, filename, documentoId };
+  }
+
+  private async anexarDocumentoEmitido(
+    user: RequestUser,
+    params: {
+      tenantId: string;
+      matriculaId: string;
+      formandoId: string;
+      acaoFormacaoId: string;
+      categoria: string;
+      filename: string;
+      pdf: Buffer;
+    },
+  ): Promise<string> {
+    const storageKey = opaqueStorageKey([
+      "docs",
+      params.tenantId,
+      params.formandoId,
+      params.matriculaId,
+      params.categoria,
+    ]);
+
+    try {
+      await this.storage.putObject(storageKey, params.pdf, "application/pdf");
+      const doc = await this.prisma.$transaction(async (tx) => {
+        const prev = await tx.documentoAnexo.findMany({
+          where: {
+            tenantId: params.tenantId,
+            matriculaId: params.matriculaId,
+            categoria: params.categoria,
+          },
+        });
+        for (const p of prev) {
+          await tx.documentoAnexo.delete({ where: { id: p.id } });
+          await this.storage.deleteObject(p.storageKey).catch(() => undefined);
+        }
+        return tx.documentoAnexo.create({
+          data: {
+            tenantId: params.tenantId,
+            matriculaId: params.matriculaId,
+            formandoId: params.formandoId,
+            acaoFormacaoId: params.acaoFormacaoId,
+            categoria: params.categoria,
+            lado: "unico",
+            nome: params.filename,
+            storageKey,
+            mimeType: "application/pdf",
+            tamanhoBytes: params.pdf.byteLength,
+            createdByUserId: user.sub,
+            visivelFormando: true,
+            visivelFormador: true,
+          },
+          select: { id: true },
+        });
+      });
+      return doc.id;
+    } catch (err) {
+      await this.storage.deleteObject(storageKey).catch(() => undefined);
+      throw err;
+    }
   }
 }

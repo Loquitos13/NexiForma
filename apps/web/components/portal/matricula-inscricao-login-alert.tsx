@@ -42,7 +42,7 @@ export function MatriculaInscricaoLoginAlert() {
         pendentes.push({
           matriculaId: ins.matriculaId,
           acaoTitulo: ins.acao ?? "Acção de formação",
-          turmaCodigo: ins.turma ?? "—",
+          turmaCodigo: ins.turma ?? "-",
           pendentes: count,
         });
       }

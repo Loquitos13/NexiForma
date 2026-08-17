@@ -7,8 +7,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import type { Matricula } from "@nexiforma/database";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
@@ -40,6 +42,32 @@ export class MatriculasController {
     @Body() dto: CreateMatriculaDto,
   ): Promise<Matricula> {
     return this.matriculas.create(user, dto);
+  }
+
+  @Get(":id/documentos/:templateId/pdf")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
+  async emitirDocumentoPdf(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("templateId") templateId: string,
+    @Query("anexar") anexar: string | undefined,
+    @Query("download") download: string | undefined,
+    @Res() res: Response,
+  ) {
+    const pkg = await this.matriculas.emitirDocumentoPdf(user, id, templateId, {
+      anexar: anexar === "1" || anexar === "true",
+    });
+    const asAttachment = download === "1" || download === "true";
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `${asAttachment ? "attachment" : "inline"}; filename="${encodeURIComponent(pkg.filename)}"`,
+    );
+    if (pkg.documentoId) {
+      res.setHeader("X-Documento-Anexo-Id", pkg.documentoId);
+    }
+    res.setHeader("Cache-Control", "private, no-store");
+    res.send(pkg.pdf);
   }
 
   @Patch(":id")

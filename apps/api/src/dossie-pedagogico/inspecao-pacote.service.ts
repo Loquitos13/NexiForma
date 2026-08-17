@@ -135,6 +135,7 @@ export class InspecaoPacoteService {
       "sigo/formandos.csv",
       "compliance/compliance-dgert.json",
       "compliance/validacao-sigo.json",
+      "compliance/dtp-quadro.json",
       "evidencias/presencas.csv",
       "evidencias/lms-progresso.json",
       "evidencias/avaliacoes.json",
@@ -224,6 +225,13 @@ export class InspecaoPacoteService {
       "compliance/validacao-sigo.json",
       Buffer.from(JSON.stringify(validacaoSigo, null, 2), "utf8"),
     );
+    const dtpPayload = (dossieInner as { dtp?: unknown }).dtp;
+    if (dtpPayload) {
+      zip.addFile(
+        "compliance/dtp-quadro.json",
+        Buffer.from(JSON.stringify(dtpPayload, null, 2), "utf8"),
+      );
+    }
     zip.addFile("evidencias/presencas.csv", Buffer.from(presencasCsv, "utf8"));
     zip.addFile("evidencias/lms-progresso.json", Buffer.from(lmsJson, "utf8"));
     zip.addFile("evidencias/avaliacoes.json", Buffer.from(avaliacoesJson, "utf8"));

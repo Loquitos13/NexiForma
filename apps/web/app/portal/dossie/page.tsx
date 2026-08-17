@@ -60,6 +60,36 @@ type DossiePayload = {
   formadores: Array<{ nomeCompleto: string; nif: string }>;
   assiduidade: { taxaPresenca: number | null; presencasMarcadas: number; presencasRegistadas: number };
   checklist: { items: ChecklistItem[]; grupos?: Array<{ id: string; label: string; concluidos: number; total: number }>; scorePercent: number; scoreObrigatorioPercent?: number; prontoInspecao?: boolean; concluidosObrigatorios?: number; totalObrigatorios?: number; concluidos: number; total: number };
+  dtp?: {
+    tipoFinanciamento: string;
+    tipoLabel: string;
+    scorePercent: number;
+    concluidos: number;
+    total: number;
+    secoes: Array<{
+      ordem: number;
+      titulo: string;
+      concluidos: number;
+      total: number;
+      itens: Array<{
+        id: string;
+        label: string;
+        ok: boolean;
+        detalhe?: string;
+        manual?: boolean;
+        accaoSugerida?: string;
+      }>;
+    }>;
+    items: Array<{
+      id: string;
+      label: string;
+      ok: boolean;
+      detalhe?: string;
+      manual?: boolean;
+      accaoSugerida?: string;
+      secaoTitulo: string;
+    }>;
+  };
 };
 
 export default function DossiePedagogicoPage() {
@@ -609,6 +639,67 @@ export default function DossiePedagogicoPage() {
             </div>
             </CardContent>
           </Card>
+
+          {dossie.dtp ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  Quadro de verificação DTP ({dossie.dtp.tipoLabel})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <p className="text-3xl font-bold mb-1 text-sky-400">{dossie.dtp.scorePercent}%</p>
+                <p className="text-xs text-slate-500 mb-4">
+                  {dossie.dtp.concluidos}/{dossie.dtp.total} itens do quadro presencial
+                </p>
+                {dossie.dtp.secoes.map((sec) => (
+                  <div key={sec.ordem} className="mb-4">
+                    <p className="text-sm font-medium text-slate-200 mb-2">
+                      {sec.titulo}{" "}
+                      <span className="text-slate-500 font-normal">
+                        ({sec.concluidos}/{sec.total})
+                      </span>
+                    </p>
+                    <div className="space-y-1.5">
+                      {sec.itens.map((item) => (
+                        <div
+                          key={item.id}
+                          className={`flex items-start gap-2 text-sm rounded-lg px-2 py-1.5 -mx-2 ${
+                            item.ok ? "text-slate-200" : "text-slate-300"
+                          }`}
+                        >
+                          <span
+                            className={`mt-0.5 flex-shrink-0 ${item.ok ? "text-green-400" : "text-amber-400"}`}
+                          >
+                            {item.ok ? "✓" : "○"}
+                          </span>
+                          <div className="min-w-0">
+                            <span>{item.label}</span>
+                            {item.manual && !item.ok ? (
+                              <span className="ml-1.5 text-[10px] uppercase tracking-wide text-slate-500">
+                                anexo manual
+                              </span>
+                            ) : null}
+                            {item.detalhe ? (
+                              <span className="text-slate-600 text-xs ml-1">({item.detalhe})</span>
+                            ) : null}
+                            {!item.ok && item.accaoSugerida ? (
+                              <p className="text-slate-500 text-xs mt-0.5">→ {item.accaoSugerida}</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <p className="text-[11px] text-slate-600 mt-2">
+                  Tipo de financiamento definido na acção. Itens manuais: anexar na acção com categoria{" "}
+                  <code className="text-slate-400">dtp_&lt;id&gt;</code> (ex.:{" "}
+                  <code className="text-slate-400">dtp_notificacao_aprovacao</code>).
+                </p>
+              </CardContent>
+            </Card>
+          ) : null}
 
           {/* Curso / acção */}
           <Card>

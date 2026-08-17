@@ -30,7 +30,7 @@ import {
 } from "../formandos/matricula-documentos.util";
 import { defaultTemplateHtml } from "./acao-template-html.util";
 import {
-  injectTenantLogoIntoHtml,
+  applyTenantDocumentBranding,
   resolveTenantLogoDataUri,
 } from "../common/tenant-logo-embed.util";
 import { assertAllowedUpload } from "../common/upload-mime.util";
@@ -972,7 +972,7 @@ export class AcoesFormacaoService {
         cargaHoras: acao.curso.cargaHoras,
         notas: cfg.notas,
       });
-    const html = injectTenantLogoIntoHtml(templateHtml, logoSrc);
+    const html = applyTenantDocumentBranding(templateHtml, logoSrc, tenantMeta?.metadata);
 
     const pdf = await this.htmlPdf.htmlToPdfBuffer(html);
     const nextCfg = normalizeConfiguracaoMatriculaDocs({

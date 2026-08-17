@@ -7,6 +7,7 @@ import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
 
 import { buildDgertChecklist } from "./dgert-checklist.util";
+import { buildDtpChecklist, dtpTipoFromAcao } from "./dtp-checklist.util";
 
 
 
@@ -268,14 +269,90 @@ export class DossiePedagogicoService {
 
     }
 
+    const formandoIds = [...new Set(formandosAtivos.map((f) => f.id))];
+
     const matriculaWhere = { tenantId, turma: { acaoFormacaoId: acaoId }, estado: "ATIVA" as const };
-    const [totalAvaliacoes, totalCertificados, totalDocumentosMatricula] = await Promise.all([
+    const [
+      totalAvaliacoes,
+      totalCertificados,
+      totalDocumentosMatricula,
+      modulosCurso,
+      acaoAnexosRows,
+      formandoAnexosRows,
+      matriculaDocsRows,
+      emitidosRows,
+    ] = await Promise.all([
       this.prisma.avaliacaoFormando.count({ where: { tenantId, matricula: matriculaWhere } }),
       this.prisma.certificadoVerificacao.count({
         where: { tenantId, revogadoEm: null, matricula: matriculaWhere },
       }),
       this.prisma.matriculaDocumento.count({ where: { tenantId, matricula: matriculaWhere } }),
+      this.prisma.moduloUnidade.count({ where: { tenantId, cursoId: acao.cursoId } }),
+      this.prisma.documentoAnexo.findMany({
+        where: { tenantId, acaoFormacaoId: acaoId, formandoId: null },
+        select: { categoria: true },
+      }),
+      formandoIds.length
+        ? this.prisma.documentoAnexo.findMany({
+            where: { tenantId, formandoId: { in: formandoIds } },
+            select: { formandoId: true, categoria: true },
+          })
+        : Promise.resolve([] as Array<{ formandoId: string; categoria: string | null }>),
+      this.prisma.matriculaDocumento.findMany({
+        where: { tenantId, matricula: matriculaWhere },
+        select: { categoria: true, estado: true },
+      }),
+      this.prisma.documentoAnexo.findMany({
+        where: { tenantId, acaoFormacaoId: acaoId, matriculaId: { not: null } },
+        select: { categoria: true },
+      }),
     ]);
+
+    const acaoDocumentos = new Set(
+      acaoAnexosRows.map((a) => a.categoria).filter((c): c is string => Boolean(c?.trim())),
+    );
+    const dtpAnexos = new Set<string>();
+    for (const cat of acaoDocumentos) {
+      if (cat.startsWith("dtp_")) dtpAnexos.add(cat.slice(4));
+      dtpAnexos.add(cat);
+    }
+    const emitidosMatricula = new Set(
+      emitidosRows.map((e) => e.categoria).filter((c): c is string => Boolean(c?.trim())),
+    );
+
+    const docOk = (categoria: string) =>
+      matriculaDocsRows.filter(
+        (d) => d.categoria === categoria && (d.estado === "aceite" || d.estado === "enviado"),
+      ).length;
+
+    const countFormandosDoc = (categoria: string) => {
+      const ids = new Set<string>();
+      for (const row of formandoAnexosRows) {
+        if (row.categoria === categoria && row.formandoId) ids.add(row.formandoId);
+      }
+      return ids.size;
+    };
+
+    const dtp = buildDtpChecklist({
+      tipoFinanciamento: dtpTipoFromAcao(acao.tipoFinanciamento),
+      cronograma: cronograma
+        ? { versao: cronograma.versao, aprovadoEm: cronograma.aprovadoEm }
+        : null,
+      modulosCurso,
+      acaoDocumentos,
+      dtpAnexos,
+      emitidosMatricula,
+      totalMatriculas,
+      totalFormandos: formandoIds.length,
+      matriculasContratoOk: docOk("contrato_formacao"),
+      matriculasInscricaoOk: docOk("declaracao_inscricao"),
+      matriculasRegulamentoOk: docOk("regulamento_formacao"),
+      formandosComCc: countFormandosDoc("documento_identificacao"),
+      formandosComHabilitacoes: countFormandosDoc("certificado_habilitacoes"),
+      formandosComPatronal: countFormandosDoc("declaracao_entidade_patronal"),
+      formandosComMorada: countFormandosDoc("comprovativo_morada"),
+      formandosComIban: countFormandosDoc("comprovativo_iban"),
+    });
 
     const dgert = buildDgertChecklist({
 
@@ -338,6 +415,8 @@ export class DossiePedagogicoService {
         dataInicio: acao.dataInicio,
 
         dataFim: acao.dataFim,
+
+        tipoFinanciamento: acao.tipoFinanciamento,
 
       },
 
@@ -473,6 +552,16 @@ export class DossiePedagogicoService {
 
         prontoInspecao: dgert.prontoInspecao,
 
+      },
+
+      dtp: {
+        tipoFinanciamento: dtp.tipoFinanciamento,
+        tipoLabel: dtp.tipoLabel,
+        secoes: dtp.secoes,
+        items: dtp.items,
+        concluidos: dtp.concluidos,
+        total: dtp.total,
+        scorePercent: dtp.scorePercent,
       },
 
     };
