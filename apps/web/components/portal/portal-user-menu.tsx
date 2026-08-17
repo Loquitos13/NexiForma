@@ -110,6 +110,7 @@ export function PortalUserMenu({ open, onClose, user }: Props) {
     user?.role === "tenant_manager" ||
     user?.role === "comercial" ||
     user?.role === "formador" ||
+    user?.role === "formando" ||
     user?.role === "coordenador_pedagogico" ||
     user?.role === "coordenador_comercial" ||
     user?.role === "coordenador_financeiro";
@@ -507,48 +508,24 @@ export function PortalUserMenu({ open, onClose, user }: Props) {
                       </p>
                       <div className="flex items-center gap-2">
                         <PortalNotificationsBell />
-                        <Link
-                          href="/portal/notificacoes"
-                          onClick={requestClose}
-                          className="text-xs font-medium text-[color:var(--ui-accent)]"
-                        >
-                          Ver todas
-                        </Link>
+                        {user?.role !== "formando" ? (
+                          <Link
+                            href="/portal/notificacoes"
+                            onClick={requestClose}
+                            className="text-xs font-medium text-[color:var(--ui-accent)]"
+                          >
+                            Ver todas
+                          </Link>
+                        ) : null}
                       </div>
-                      <div className="mt-2 empty:hidden">
-                        <PortalBackgroundJobsList onAction={requestClose} />
-                      </div>
+                      {user?.role !== "formando" ? (
+                        <div className="mt-2 empty:hidden">
+                          <PortalBackgroundJobsList onAction={requestClose} />
+                        </div>
+                      ) : null}
                     </div>
                   </div>
-                ) : (
-                  <Link
-                    href="/portal/notificacoes"
-                    onClick={requestClose}
-                    className="portal-user-menu-item justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="portal-user-menu-icon relative">
-                        <Bell className="h-4 w-4" />
-                        {hasActivity ? (
-                          <span className="pointer-events-none absolute -top-0.5 -right-0.5 flex h-2 w-2">
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-pink-400 opacity-75" />
-                            <span className="relative inline-flex h-2 w-2 rounded-full bg-pink-500" />
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="text-sm font-medium">Notificações</span>
-                    </div>
-                    {hasActivity ? (
-                      <span className="flex items-center gap-1.5 rounded-full bg-pink-500/20 border border-pink-500/40 px-2 py-0.5 text-[10px] font-semibold text-pink-300">
-                        <span className="relative flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75" />
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-pink-500 shadow-[0_0_6px_rgba(244,63,94,0.9)]" />
-                        </span>
-                        {totalBadgeCount} nova{totalBadgeCount > 1 ? "s" : ""}
-                      </span>
-                    ) : null}
-                  </Link>
-                )}
+                ) : null}
                 <Link
                   href={rgpdHref(user?.role)}
                   onClick={requestClose}

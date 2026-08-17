@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { PortalNotificationsBell } from "@/components/portal/portal-notifications-bell";
 import { PortalBackgroundJobsCenter } from "@/components/portal/portal-background-jobs-center";
+import { DocPendenteNeonDot } from "@/components/portal/doc-pendente-neon-dot";
+import { useDocumentosObrigatorios } from "@/components/portal/documentos-obrigatorios-gate";
 import { usePendenciasDocumentacaoConfirm } from "@/components/portal/pendencias-documentacao-dialog";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { logoutSession } from "@/lib/client/logout";
@@ -54,6 +56,11 @@ export function UserSessionBar({
   const [busy, setBusy] = useState(false);
   const { dialog: pendenciasDialog, confirm: confirmPendencias } =
     usePendenciasDocumentacaoConfirm();
+  const { emFaltaCount, roleKind } = useDocumentosObrigatorios();
+  const docsPendentesPerfil =
+    area === "portal" &&
+    emFaltaCount > 0 &&
+    (roleKind === "formando" || roleKind === "formador");
 
   const loadMe = useCallback(async () => {
     const res = await bffFetch("/api/auth/me", { headers: { accept: "application/json" } });
@@ -274,6 +281,7 @@ export function UserSessionBar({
     (user?.role === "tenant_manager" ||
       user?.role === "comercial" ||
       user?.role === "formador" ||
+      user?.role === "formando" ||
       user?.role === "coordenador_pedagogico" ||
       user?.role === "coordenador_comercial" ||
       user?.role === "coordenador_financeiro");
@@ -305,12 +313,15 @@ export function UserSessionBar({
                     ? "/portal/formando/perfil"
                     : "/portal/perfil"
             }
-            className="group inline-flex min-w-0 max-w-full items-center gap-2 rounded-full border border-slate-700/60 bg-slate-900/60 py-1 pl-1.5 pr-2.5 text-xs text-slate-200 shadow-sm backdrop-blur-md transition-all hover:border-blue-500/50 hover:bg-slate-800/80 hover:text-white hover:shadow-md hover:ring-1 hover:ring-blue-500/20 active:scale-[0.99]"
+            className="group relative inline-flex min-w-0 max-w-full items-center gap-2 rounded-full border border-slate-700/60 bg-slate-900/60 py-1 pl-1.5 pr-2.5 text-xs text-slate-200 shadow-sm backdrop-blur-md transition-all hover:border-blue-500/50 hover:bg-slate-800/80 hover:text-white hover:shadow-md hover:ring-1 hover:ring-blue-500/20 active:scale-[0.99]"
             title="Abrir o meu perfil"
             aria-label="Abrir o meu perfil"
           >
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-[10px] font-bold text-white shadow-xs ring-1 ring-blue-400/30 group-hover:ring-blue-400/60">
+            <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-[10px] font-bold text-white shadow-xs ring-1 ring-blue-400/30 group-hover:ring-blue-400/60">
               {(user?.displayName || user?.email || "U").slice(0, 1).toUpperCase()}
+              {docsPendentesPerfil ? (
+                <DocPendenteNeonDot className="absolute -top-0.5 -right-0.5 h-2 w-2" />
+              ) : null}
             </span>
             <span className="truncate font-medium text-slate-200 group-hover:text-white">
               {user?.displayName || user?.email || "A carregar…"}

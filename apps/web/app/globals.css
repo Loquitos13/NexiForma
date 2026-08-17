@@ -1454,6 +1454,16 @@ textarea:focus-visible,
   background: transparent;
 }
 
+.ui-header-mobile-row {
+  position: relative;
+  min-height: 3.25rem;
+  background: transparent;
+}
+
+.ui-header-mobile-row .ui-session-bar {
+  background: transparent !important;
+}
+
 .ui-header-desktop-row .ui-session-bar {
   background: transparent !important;
 }

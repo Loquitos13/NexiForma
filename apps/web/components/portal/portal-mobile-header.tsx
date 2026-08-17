@@ -11,6 +11,8 @@ import {
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { subscribeSessionExpired } from "@/lib/client/session-lifecycle";
 import { usePortalNotifications } from "@/lib/client/use-portal-notifications";
+import { DocPendenteNeonDot } from "@/components/portal/doc-pendente-neon-dot";
+import { useDocumentosObrigatorios } from "@/components/portal/documentos-obrigatorios-gate";
 import { resolvePortalBreadcrumb } from "@/lib/ui/nav-items";
 import { cn } from "@/lib/ui/cn";
 import type { JwtRole, TenantEntitlements } from "@nexiforma/shared";
@@ -39,6 +41,9 @@ export function PortalMobileHeader({
   const [user, setUser] = useState<MeUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const { hasActivity, totalBadgeCount } = usePortalNotifications();
+  const { emFaltaCount, roleKind } = useDocumentosObrigatorios();
+  const docsPendentes =
+    emFaltaCount > 0 && (roleKind === "formando" || roleKind === "formador");
 
   const loadMe = useCallback(async () => {
     const res = await bffFetch("/api/auth/me", { headers: { accept: "application/json" } });
@@ -96,6 +101,14 @@ export function PortalMobileHeader({
           onClick={() => setMenuOpen(true)}
         >
           {portalUserInitials(user)}
+          {docsPendentes ? (
+            <span
+              className="pointer-events-none absolute -bottom-0.5 -left-0.5 flex h-2.5 w-2.5"
+              title="Documentos obrigatórios em falta"
+            >
+              <DocPendenteNeonDot className="h-2 w-2" />
+            </span>
+          ) : null}
           {hasActivity ? (
             <span
               className="pointer-events-none absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center"

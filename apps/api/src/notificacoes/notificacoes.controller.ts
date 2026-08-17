@@ -20,25 +20,25 @@ export class NotificacoesController {
   ) {}
 
   @Get("portal")
-  @Roles("tenant_manager", "comercial", "formador")
+  @Roles("tenant_manager", "comercial", "formador", "formando")
   listPortal(@CurrentUser() user: RequestUser) {
     return this.portal.listForUser(user);
   }
 
   @Get("portal/nao-lidas")
-  @Roles("tenant_manager", "comercial", "formador")
+  @Roles("tenant_manager", "comercial", "formador", "formando")
   countUnread(@CurrentUser() user: RequestUser) {
     return this.portal.countUnreadForUser(user).then((count) => ({ count }));
   }
 
   @Patch("portal/:id/lida")
-  @Roles("tenant_manager", "comercial", "formador")
+  @Roles("tenant_manager", "comercial", "formador", "formando")
   markRead(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
     return this.portal.markRead(user, id);
   }
 
   @Post("portal/marcar-todas-lidas")
-  @Roles("tenant_manager", "comercial", "formador")
+  @Roles("tenant_manager", "comercial", "formador", "formando")
   markAllRead(@CurrentUser() user: RequestUser) {
     return this.portal.markAllRead(user);
   }

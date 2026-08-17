@@ -3,16 +3,16 @@
 import { Suspense, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { WifiOff } from "lucide-react";
-import { NexiFormaLogoAnimated } from "@/components/brand/NexiFormaLogoAnimated";
 import { UserSessionBar } from "@/components/site/user-session-bar";
 import { PortalGlobalSearch } from "@/components/portal/portal-global-search";
 import { NavAtmosphere } from "@/components/portal/nav-atmosphere";
-import { PortalMobileHeader } from "@/components/portal/portal-mobile-header";
 import {
   MobileBottomNav,
   MOBILE_BOTTOM_NAV_TEST,
 } from "@/components/portal/mobile-bottom-nav";
 import { FormandoNav } from "@/components/formando/formando-nav";
+import { DocumentosEmFaltaLoginAlert } from "@/components/portal/documentos-em-falta-login-alert";
+import { MatriculaInscricaoLoginAlert } from "@/components/portal/matricula-inscricao-login-alert";
 import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
 import type { JwtRole } from "@nexiforma/shared";
 
@@ -53,31 +53,25 @@ export function FormandoShell({
   return (
     <div className="portal-app-shell ui-shell-atmosphere-host flex min-h-0 flex-col">
       <NavAtmosphere variant="shell" />
-      <header className="ui-portal-top-cluster shrink-0">
-        <div className="lg:hidden">
-          <Suspense fallback={null}>
-            <PortalMobileHeader pathname={pathname} role={role} entitlements={entitlements} />
-          </Suspense>
-        </div>
-
-        <div className="hidden lg:block">
-          <div className="ui-themed-topbar relative z-[1] border-b border-slate-700/30 bg-transparent px-3 py-3 sm:px-5 sm:py-3.5">
-            <div className={`${contentWidth} mx-auto`}>
-              <div className="flex items-center gap-2.5">
-                <NexiFormaLogoAnimated
-                  size={28}
-                  variant="reveal"
-                  loop
-                  className="shrink-0 drop-shadow-[0_0_12px_rgba(255,71,171,0.3)]"
-                />
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-bold text-slate-100">NexiForma</div>
-                  <div className="text-[10px] text-slate-500">Portal do formando</div>
-                </div>
-              </div>
+      <DocumentosEmFaltaLoginAlert />
+      <MatriculaInscricaoLoginAlert />
+      <div className="ui-portal-top-cluster shrink-0">
+        <div className="ui-header-mobile-row relative z-40 border-b lg:hidden">
+          <UserSessionBar area="portal" embeddedInAtmosphere />
+          <div className="ui-search-strip pointer-events-none absolute inset-x-14 top-1/2 z-[2] flex -translate-y-1/2 justify-center px-2">
+            <div className="pointer-events-auto w-full max-w-xs">
+              <PortalGlobalSearch pathname={pathname} />
             </div>
           </div>
+        </div>
+
+        <div className="ui-header-desktop-row relative z-40 hidden border-b lg:block">
           <UserSessionBar area="portal" embeddedInAtmosphere />
+          <div className="ui-search-strip pointer-events-none absolute inset-x-0 top-1/2 z-[2] flex -translate-y-1/2 justify-center px-5">
+            <div className={`pointer-events-auto w-full ${contentWidth} max-w-md mx-auto`}>
+              <PortalGlobalSearch pathname={pathname} />
+            </div>
+          </div>
         </div>
 
         {offline ? (
@@ -86,13 +80,7 @@ export function FormandoShell({
             Sem ligação - páginas já visitadas podem continuar disponíveis offline.
           </div>
         ) : null}
-
-        <div className="ui-themed-topbar ui-search-strip relative z-[1] border-b bg-transparent px-3 py-2 sm:px-5">
-          <div className={`mx-auto ${contentWidth}`}>
-            <PortalGlobalSearch pathname={pathname} className="lg:max-w-xl" />
-          </div>
-        </div>
-      </header>
+      </div>
 
       <div className="hidden shrink-0 lg:block">
         <Suspense fallback={null}>
