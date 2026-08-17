@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Matricula } from "@nexiforma/database";
-import { mergeTemplateHtml, mergeTemplatePlainTextToHtml, getModuloTemplates, resolverEmailNotificacaoFormando } from "@nexiforma/shared";
+import { getModuloLogos, resolverEmailNotificacaoFormando, type DocumentLogoPlacement } from "@nexiforma/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import {
@@ -18,10 +18,7 @@ import { FormadorScopeService } from "../common/formador-scope.service";
 import { HtmlPdfExportService } from "../common/html-pdf-export.service";
 import { opaqueStorageKey } from "../common/opaque-storage-key.util";
 import { requireTenantId } from "../common/tenant-scope";
-import {
-  applyTenantDocumentBranding,
-  resolveTenantLogoDataUri,
-} from "../common/tenant-logo-embed.util";
+import { renderMatriculaDocumentHtml } from "../portal/document-render.util";
 import { resolveAppPublicUrlForLinks } from "../common/app-public-url.util";
 import { MailService } from "../mail/mail.service";
 import { FormadorNotificacoesService } from "../notificacoes/formador-notificacoes.service";
@@ -29,9 +26,7 @@ import { EmailTemplates } from "../notificacoes/templates/email.templates";
 import { StorageService } from "../storage/storage.service";
 import { buildFormacaoTemplateContext } from "../portal/document-template-context.util";
 import {
-  ensureFullDocumentHtml,
   isEmitivelTemplateId,
-  resolveTenantTemplateContent,
   templateLabelForId,
   templateModuloForId,
 } from "../portal/tenant-document-pdf.util";
@@ -265,13 +260,101 @@ export class MatriculasService {
     });
   }
 
+  /** Pré-visualização HTML do documento mergeado (antes da emissão PDF). */
+  async previewDocumentoHtml(
+    user: RequestUser,
+    matriculaId: string,
+    templateId: string,
+    opts?: { bodyHtmlOverride?: string; logoPlacements?: DocumentLogoPlacement[] },
+  ): Promise<{
+    html: string;
+    bodyHtml: string;
+    label: string;
+    logoPlacements: DocumentLogoPlacement[];
+    moduleLogos: ReturnType<typeof getModuloLogos>;
+  }> {
+    const ctx = await this.loadMatriculaDocumentContext(user, matriculaId, templateId);
+    try {
+      const rendered = await renderMatriculaDocumentHtml({
+        metadata: ctx.tenant.metadata,
+        modulo: ctx.modulo,
+        templateId,
+        context: ctx.context,
+        storage: this.storage,
+        bodyHtmlOverride: opts?.bodyHtmlOverride,
+        logoPlacements: opts?.logoPlacements,
+      });
+      return {
+        ...rendered,
+        moduleLogos: getModuloLogos(ctx.tenant.metadata, ctx.modulo),
+      };
+    } catch (e) {
+      if (e instanceof Error && e.message === "EMPTY_TEMPLATE") {
+        throw new BadRequestException(
+          `Template «${templateLabelForId(templateId, ctx.tenant.metadata)}» vazio. Configura o texto em Configurações → Templates de formação.`,
+        );
+      }
+      throw e;
+    }
+  }
+
   /** Gera PDF a partir de template tenant (ex.: declaração de frequência) para uma inscrição. */
   async emitirDocumentoPdf(
     user: RequestUser,
     matriculaId: string,
     templateId: string,
-    opts?: { anexar?: boolean },
+    opts?: {
+      anexar?: boolean;
+      bodyHtmlOverride?: string;
+      logoPlacements?: DocumentLogoPlacement[];
+    },
   ): Promise<{ pdf: Buffer; filename: string; documentoId?: string }> {
+    const ctx = await this.loadMatriculaDocumentContext(user, matriculaId, templateId);
+    let rendered;
+    try {
+      rendered = await renderMatriculaDocumentHtml({
+        metadata: ctx.tenant.metadata,
+        modulo: ctx.modulo,
+        templateId,
+        context: ctx.context,
+        storage: this.storage,
+        bodyHtmlOverride: opts?.bodyHtmlOverride,
+        logoPlacements: opts?.logoPlacements,
+      });
+    } catch (e) {
+      if (e instanceof Error && e.message === "EMPTY_TEMPLATE") {
+        throw new BadRequestException(
+          `Template «${templateLabelForId(templateId, ctx.tenant.metadata)}» vazio. Configura o texto em Configurações → Templates de formação.`,
+        );
+      }
+      throw e;
+    }
+
+    const pdf = await this.htmlPdf.htmlToPdfBuffer(rendered.html);
+    const filename =
+      `${rendered.label} - ${ctx.matricula.formando.nome}`.replace(/[\\/:*?"<>|]/g, "-") + ".pdf";
+
+    let documentoId: string | undefined;
+    if (opts?.anexar) {
+      documentoId = await this.anexarDocumentoEmitido(user, {
+        tenantId: ctx.tenantId,
+        matriculaId: ctx.matricula.id,
+        formandoId: ctx.matricula.formandoId,
+        acaoFormacaoId: ctx.matricula.turma.acaoFormacaoId,
+        categoria: templateId,
+        filename,
+        pdf,
+      });
+    }
+
+    return { pdf, filename, documentoId };
+  }
+
+  private async loadMatriculaDocumentContext(
+    user: RequestUser,
+    matriculaId: string,
+    templateId: string,
+  ) {
     const tenantId = requireTenantId(user);
     if (!isEmitivelTemplateId(templateId)) {
       throw new BadRequestException("Tipo de documento inválido.");
@@ -301,43 +384,11 @@ export class MatriculasService {
       select: { metadata: true },
     });
 
-    const label = templateLabelForId(templateId, tenant?.metadata);
-    const entry = getModuloTemplates(tenant?.metadata, modulo)[templateId];
-    const rawTemplate = resolveTenantTemplateContent(tenant?.metadata, modulo, templateId);
-    if (!rawTemplate.trim()) {
-      throw new BadRequestException(
-        `Template «${label}» vazio. Configura o texto em Configurações → Templates de formação.`,
-      );
-    }
-
     const context = await buildFormacaoTemplateContext(this.prisma, tenantId, {
       matriculaId,
     });
-    const mergedBody =
-      entry?.formato === "texto"
-        ? mergeTemplatePlainTextToHtml(rawTemplate, context)
-        : mergeTemplateHtml(rawTemplate, context);
-    const logoSrc = await resolveTenantLogoDataUri(this.storage, tenant?.metadata);
-    let html = ensureFullDocumentHtml(label, mergedBody, tenant?.metadata);
-    html = applyTenantDocumentBranding(html, logoSrc, tenant?.metadata);
 
-    const pdf = await this.htmlPdf.htmlToPdfBuffer(html);
-    const filename = `${label} - ${matricula.formando.nome}`.replace(/[\\/:*?"<>|]/g, "-") + ".pdf";
-
-    let documentoId: string | undefined;
-    if (opts?.anexar) {
-      documentoId = await this.anexarDocumentoEmitido(user, {
-        tenantId,
-        matriculaId: matricula.id,
-        formandoId: matricula.formandoId,
-        acaoFormacaoId: matricula.turma.acaoFormacaoId,
-        categoria: templateId,
-        filename,
-        pdf,
-      });
-    }
-
-    return { pdf, filename, documentoId };
+    return { tenantId, tenant: { metadata: tenant?.metadata }, matricula, modulo, context };
   }
 
   private async anexarDocumentoEmitido(

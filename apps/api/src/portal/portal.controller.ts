@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  Param,
   Put,
   Post,
   Query,
@@ -17,6 +19,7 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/access-token-payload";
+import type { TenantTemplateEntry } from "@nexiforma/shared";
 import { PortalService } from "./portal.service";
 import { TenantSettingsService } from "./tenant-settings.service";
 
@@ -168,10 +171,60 @@ export class PortalController {
     @Body()
     body: {
       modulo: string;
-      templates: Record<string, { conteudo: string; nome?: string; updatedAt?: string }>;
+      templates: Record<string, TenantTemplateEntry>;
     },
   ) {
     return this.tenantSettings.updateDocumentTemplates(user, body);
+  }
+
+  @Get("tenant/module-logos")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager", "coordenador_pedagogico", "comercial", "coordenador_comercial")
+  moduleLogos(@CurrentUser() user: RequestUser, @Query("modulo") modulo: string) {
+    return this.tenantSettings.getModuleLogos(user, modulo || "formacao");
+  }
+
+  @Post("tenant/module-logos")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 2 * 1024 * 1024 } }))
+  uploadModuleLogo(
+    @CurrentUser() user: RequestUser,
+    @Query("modulo") modulo: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body("nome") nome?: string,
+  ) {
+    return this.tenantSettings.uploadModuleLogo(user, modulo || "formacao", file, nome);
+  }
+
+  @Delete("tenant/module-logos/:logoId")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  deleteModuleLogo(
+    @CurrentUser() user: RequestUser,
+    @Query("modulo") modulo: string,
+    @Param("logoId") logoId: string,
+  ) {
+    return this.tenantSettings.deleteModuleLogo(user, modulo || "formacao", logoId);
+  }
+
+  @Get("tenant/module-logos/:logoId/file")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador", "comercial")
+  async streamModuleLogo(
+    @CurrentUser() user: RequestUser,
+    @Query("modulo") modulo: string,
+    @Param("logoId") logoId: string,
+    @Res() res: Response,
+  ) {
+    const obj = await this.tenantSettings.streamModuleLogo(user, modulo || "formacao", logoId);
+    if (!obj) {
+      res.status(404).send("Logótipo não encontrado.");
+      return;
+    }
+    res.setHeader("Content-Type", obj.contentType);
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.send(obj.body);
   }
 
   @Get("tenant/logo")

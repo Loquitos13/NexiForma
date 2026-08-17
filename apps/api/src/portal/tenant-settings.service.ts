@@ -33,14 +33,19 @@ import {
 } from "../avaliacoes/avaliacao-parametros.util";
 import {
   getModuloTemplates,
+  getModuloLogos,
   isAllowedTemplateId,
   isCustomTemplateId,
   mergeTenantDocumentTemplates,
+  mergeTenantModuleLogos,
+  parseDocumentLogoPlacements,
+  slugifyModuleLogoId,
   TEMPLATE_TYPES,
   TEMPLATE_VARIABLES,
   variablesForModulo,
   type TemplateModulo,
   type TenantTemplateEntry,
+  type ModuleLogoAsset,
 } from "@nexiforma/shared";
 
 export type TenantBrandingPayload = {
@@ -458,9 +463,11 @@ export class TenantSettingsService {
     });
     if (!tenant) throw new BadRequestException("Tenant não encontrado.");
     const templates = getModuloTemplates(tenant.metadata, modulo);
+    const moduleLogos = getModuloLogos(tenant.metadata, modulo);
     return {
       modulo,
       templates,
+      moduleLogos,
       tipos: TEMPLATE_TYPES[modulo] ?? [],
       variaveis: variablesForModulo(modulo),
       variaveisPorModulo: TEMPLATE_VARIABLES,
@@ -496,6 +503,9 @@ export class TenantSettingsService {
         ...(entry.formato === "texto" || entry.formato === "html"
           ? { formato: entry.formato }
           : {}),
+        ...(entry.logos?.length
+          ? { logos: parseDocumentLogoPlacements(entry.logos) }
+          : {}),
         updatedAt: new Date().toISOString(),
       };
     }
@@ -517,6 +527,101 @@ export class TenantSettingsService {
     });
 
     return { sucesso: true, modulo, templates: clean };
+  }
+
+  async getModuleLogos(user: RequestUser, moduloRaw: string) {
+    const modulo = this.assertTemplateModulo(moduloRaw);
+    const tenantId = requireTenantId(user);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true },
+    });
+    if (!tenant) throw new BadRequestException("Tenant não encontrado.");
+    return { modulo, logos: getModuloLogos(tenant.metadata, modulo) };
+  }
+
+  async uploadModuleLogo(user: RequestUser, moduloRaw: string, file: Express.Multer.File, nomeRaw?: string) {
+    const modulo = this.assertTemplateModulo(moduloRaw);
+    const tenantId = requireTenantId(user);
+    if (!file?.buffer?.length) {
+      throw new BadRequestException("Ficheiro em falta.");
+    }
+    const allowed = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
+    if (!allowed.includes(file.mimetype)) {
+      throw new BadRequestException("Formato inválido. Use PNG, JPEG, WebP ou SVG.");
+    }
+    const nome = (nomeRaw?.trim() || file.originalname || "Logo").slice(0, 120);
+    const ext =
+      file.mimetype === "image/png"
+        ? "png"
+        : file.mimetype === "image/jpeg"
+          ? "jpg"
+          : file.mimetype === "image/webp"
+            ? "webp"
+            : "svg";
+    const logoId = slugifyModuleLogoId(nome);
+    const key = `tenants/${tenantId}/module-logos/${modulo}/${logoId}.${ext}`;
+    await this.storage.putObject(key, file.buffer, file.mimetype);
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true },
+    });
+    if (!tenant) throw new BadRequestException("Tenant não encontrado.");
+
+    const current = getModuloLogos(tenant.metadata, modulo);
+    const asset: ModuleLogoAsset = {
+      id: logoId,
+      nome,
+      storageKey: key,
+      createdAt: new Date().toISOString(),
+    };
+    const next = mergeTenantModuleLogos(tenant.metadata, modulo, [...current, asset]);
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { metadata: next as Prisma.InputJsonValue },
+    });
+
+    return { sucesso: true, logo: asset };
+  }
+
+  async deleteModuleLogo(user: RequestUser, moduloRaw: string, logoId: string) {
+    const modulo = this.assertTemplateModulo(moduloRaw);
+    const tenantId = requireTenantId(user);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true },
+    });
+    if (!tenant) throw new BadRequestException("Tenant não encontrado.");
+
+    const current = getModuloLogos(tenant.metadata, modulo);
+    const hit = current.find((l) => l.id === logoId);
+    if (!hit) throw new NotFoundException("Logótipo não encontrado.");
+
+    await this.storage.deleteObject(hit.storageKey).catch(() => undefined);
+    const next = mergeTenantModuleLogos(
+      tenant.metadata,
+      modulo,
+      current.filter((l) => l.id !== logoId),
+    );
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { metadata: next as Prisma.InputJsonValue },
+    });
+    return { sucesso: true };
+  }
+
+  async streamModuleLogo(user: RequestUser, moduloRaw: string, logoId: string) {
+    const modulo = this.assertTemplateModulo(moduloRaw);
+    const tenantId = requireTenantId(user);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true },
+    });
+    if (!tenant) throw new BadRequestException("Tenant não encontrado.");
+    const hit = getModuloLogos(tenant.metadata, modulo).find((l) => l.id === logoId);
+    if (!hit) return null;
+    return this.storage.getObject(hit.storageKey);
   }
 
   async streamLogo(user: RequestUser) {

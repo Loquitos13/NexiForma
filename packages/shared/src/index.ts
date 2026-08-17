@@ -238,6 +238,32 @@ export {
 } from "./templates/tenant-templates.util";
 
 export {
+  defaultLogoOpacity,
+  defaultLogoPlacementCoords,
+  emptyTenantModuleLogos,
+  getModuloLogos,
+  mergeTenantModuleLogos,
+  normalizeLogoPlacement,
+  parseDocumentLogoPlacements,
+  parseTenantModuleLogos,
+  slugifyModuleLogoId,
+  type DocumentLogoPlacement,
+  type DocumentLogoZona,
+  type ModuleLogoAsset,
+  type TenantModuleLogos,
+} from "./templates/module-logos.util";
+
+export {
+  applyDocumentLogosToHtml,
+  documentLogosCss,
+  editorHtmlToPlainText,
+  plainTextToEditorHtml,
+  sanitizeDocumentEditorHtml,
+  sanitizeImportedDocxHtml,
+  type ResolvedDocumentLogo,
+} from "./templates/document-logos-html.util";
+
+export {
   extractTemplateTokens,
   mergeTemplateContent,
   mergeTemplateHtml,

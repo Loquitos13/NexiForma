@@ -1,4 +1,8 @@
 import { TEMPLATE_TYPES, type TemplateModulo } from "./variables";
+import {
+  parseDocumentLogoPlacements,
+  type DocumentLogoPlacement,
+} from "./module-logos.util";
 
 export type TemplateFormato = "texto" | "html";
 
@@ -8,6 +12,7 @@ export type TenantTemplateEntry = {
   updatedAt?: string;
   custom?: boolean;
   formato?: TemplateFormato;
+  logos?: DocumentLogoPlacement[];
 };
 
 export const CUSTOM_TEMPLATE_ID_PREFIX = "custom_";
@@ -80,6 +85,7 @@ export function parseTenantDocumentTemplates(raw: unknown): TenantDocumentTempla
         ...(typeof e.updatedAt === "string" ? { updatedAt: e.updatedAt } : {}),
         ...(e.custom === true ? { custom: true } : {}),
         ...(e.formato === "texto" || e.formato === "html" ? { formato: e.formato } : {}),
+        ...(e.logos?.length ? { logos: parseDocumentLogoPlacements(e.logos) } : {}),
       };
     }
     modulos[mod as TemplateModulo] = clean;

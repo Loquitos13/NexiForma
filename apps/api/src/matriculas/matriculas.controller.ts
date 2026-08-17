@@ -44,6 +44,83 @@ export class MatriculasController {
     return this.matriculas.create(user, dto);
   }
 
+  @Post(":id/documentos/:templateId/preview")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
+  async previewDocumentoPost(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("templateId") templateId: string,
+    @Body()
+    body: {
+      bodyHtml?: string;
+      logoPlacements?: Array<{
+        logoId: string;
+        zona: string;
+        posicao?: string;
+        larguraPx?: number;
+        alturaPx?: number;
+        opacidade?: number;
+        ordem?: number;
+      }>;
+    },
+  ) {
+    return this.matriculas.previewDocumentoHtml(user, id, templateId, {
+      bodyHtmlOverride: body.bodyHtml,
+      logoPlacements: body.logoPlacements as never,
+    });
+  }
+
+  @Get(":id/documentos/:templateId/preview")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
+  async previewDocumento(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("templateId") templateId: string,
+  ) {
+    return this.matriculas.previewDocumentoHtml(user, id, templateId);
+  }
+
+  @Post(":id/documentos/:templateId/pdf")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
+  async emitirDocumentoPdfPost(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("templateId") templateId: string,
+    @Body()
+    body: {
+      bodyHtml?: string;
+      logoPlacements?: Array<{
+        logoId: string;
+        zona: string;
+        posicao?: string;
+        larguraPx?: number;
+        alturaPx?: number;
+        opacidade?: number;
+        ordem?: number;
+      }>;
+      anexar?: boolean;
+      download?: boolean;
+    },
+    @Res() res: Response,
+  ) {
+    const pkg = await this.matriculas.emitirDocumentoPdf(user, id, templateId, {
+      anexar: body.anexar === true,
+      bodyHtmlOverride: body.bodyHtml,
+      logoPlacements: body.logoPlacements as never,
+    });
+    const asAttachment = body.download !== false;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `${asAttachment ? "attachment" : "inline"}; filename="${encodeURIComponent(pkg.filename)}"`,
+    );
+    if (pkg.documentoId) {
+      res.setHeader("X-Documento-Anexo-Id", pkg.documentoId);
+    }
+    res.setHeader("Cache-Control", "private, no-store");
+    res.send(pkg.pdf);
+  }
+
   @Get(":id/documentos/:templateId/pdf")
   @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   async emitirDocumentoPdf(

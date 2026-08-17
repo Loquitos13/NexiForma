@@ -6,7 +6,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { GraduationCap, FileText, Plus, UserPlus } from "lucide-react";
 import { listEmitivelTemplateOptions, type TenantTemplateEntry } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
-import { downloadResponseAsFile } from "@/lib/client/download-response";
+import { DocumentoEmitWizard } from "@/components/portal/documento-emit-wizard";
 import { formatDatePt } from "@/lib/calendar-date";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { cn } from "@/lib/ui/cn";
@@ -148,9 +148,9 @@ export function FormandoFichaInscricoes({
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [emitindo, setEmitindo] = useState<string | null>(null);
   const [templatePorMatricula, setTemplatePorMatricula] = useState<Record<string, string>>({});
   const [templatesEmitivel, setTemplatesEmitivel] = useState(TEMPLATES_EMITIVEL_DEFAULT);
+  const [wizardMatriculaId, setWizardMatriculaId] = useState<string | null>(null);
 
   const sorted = useMemo(
     () =>
@@ -429,33 +429,35 @@ export function FormandoFichaInscricoes({
     return templatePorMatricula[matriculaId] ?? "declaracao_frequencia";
   }
 
-  async function emitirDocumento(matriculaId: string) {
+  function abrirWizardEmissao(matriculaId: string) {
     if (!canManage) return;
-    const templateId = templateIdPara(matriculaId);
-    const label =
-      templatesEmitivel.find((t) => t.id === templateId)?.label ?? "Documento";
-    setEmitindo(matriculaId);
     setErr(null);
     setMsg(null);
-    try {
-      const res = await bffFetch(
-        `/api/v1/matriculas/${encodeURIComponent(matriculaId)}/documentos/${encodeURIComponent(templateId)}/pdf?anexar=1&download=1`,
-      );
-      if (!res.ok) {
-        setErr(await parseApiError(res));
-        return;
-      }
-      await downloadResponseAsFile(res, `${templateId}.pdf`);
-      setMsg(`«${label}» emitido e anexado à ficha.`);
-      await onChanged();
-    } catch {
-      setErr(`Falha ao emitir «${label}».`);
-    } finally {
-      setEmitindo(null);
-    }
+    setWizardMatriculaId(matriculaId);
   }
 
+  const wizardTemplateId = wizardMatriculaId ? templateIdPara(wizardMatriculaId) : "";
+  const wizardLabel =
+    templatesEmitivel.find((t) => t.id === wizardTemplateId)?.label ?? "Documento";
+
   return (
+    <>
+      {wizardMatriculaId ? (
+        <DocumentoEmitWizard
+          open={Boolean(wizardMatriculaId)}
+          onOpenChange={(open) => {
+            if (!open) setWizardMatriculaId(null);
+          }}
+          matriculaId={wizardMatriculaId}
+          templateId={wizardTemplateId}
+          templateLabel={wizardLabel}
+          onSuccess={(m) => {
+            setMsg(m);
+            void onChanged();
+          }}
+          onError={setErr}
+        />
+      ) : null}
     <Card className="mb-6">
       <CardHeader className="border-b border-slate-700/40">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -743,7 +745,7 @@ export function FormandoFichaInscricoes({
                     <Select
                       label="Template"
                       value={templateIdPara(ins.matriculaId)}
-                      disabled={busy || emitindo === ins.matriculaId}
+                      disabled={busy || wizardMatriculaId === ins.matriculaId}
                       className="h-8 max-w-[14rem] text-xs"
                       onChange={(e) =>
                         setTemplatePorMatricula((prev) => ({
@@ -762,12 +764,12 @@ export function FormandoFichaInscricoes({
                       type="button"
                       size="sm"
                       variant="secondary"
-                      disabled={busy || emitindo === ins.matriculaId}
+                      disabled={busy || wizardMatriculaId === ins.matriculaId}
                       className="h-8 text-xs"
-                      onClick={() => void emitirDocumento(ins.matriculaId)}
+                      onClick={() => abrirWizardEmissao(ins.matriculaId)}
                     >
                       <FileText className="h-3.5 w-3.5" />
-                      {emitindo === ins.matriculaId ? "A emitir…" : "Emitir PDF"}
+                      Pré-visualizar e emitir
                     </Button>
                   </div>
                 ) : null}
@@ -777,5 +779,6 @@ export function FormandoFichaInscricoes({
         )}
       </CardContent>
     </Card>
+    </>
   );
 }

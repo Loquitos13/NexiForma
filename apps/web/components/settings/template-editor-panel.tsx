@@ -1,20 +1,28 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, FilePlus, Plus, Save, Trash2 } from "lucide-react";
+import { ChevronDown, FilePlus, FileUp, Plus, Save, Trash2 } from "lucide-react";
 import {
   TEMPLATE_TYPES,
   groupVariables,
   isCustomTemplateId,
+  normalizeLogoPlacement,
+  plainTextToEditorHtml,
+  sanitizeImportedDocxHtml,
   slugifyTemplateId,
   variableToken,
   variablesForModulo,
+  type DocumentLogoPlacement,
+  type ModuleLogoAsset,
   type TemplateFormato,
   type TemplateModulo,
 } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/ui/cn";
+import { RichTemplateEditor } from "@/components/settings/rich-template-editor";
+import { TemplateLogoPresets } from "@/components/settings/template-logo-presets";
+import { convertDocxFileToHtml } from "@/lib/client/docx-to-html";
 
 type SavedEntry = {
   conteudo: string;
@@ -22,6 +30,7 @@ type SavedEntry = {
   updatedAt?: string;
   custom?: boolean;
   formato?: TemplateFormato;
+  logos?: DocumentLogoPlacement[];
 };
 
 type Props = {
@@ -40,6 +49,8 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
   const [nome, setNome] = useState("");
   const [formato, setFormato] = useState<TemplateFormato>("html");
   const [conteudo, setConteudo] = useState("");
+  const [logoPlacements, setLogoPlacements] = useState<DocumentLogoPlacement[]>([]);
+  const [moduleLogos, setModuleLogos] = useState<ModuleLogoAsset[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +58,8 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
   const [showNewForm, setShowNewForm] = useState(false);
   const [newNome, setNewNome] = useState("");
   const [newFormato, setNewFormato] = useState<TemplateFormato>("html");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const docxInputRef = useRef<HTMLInputElement>(null);
+  const [importandoDocx, setImportandoDocx] = useState(false);
 
   const catalogById = useMemo(
     () => new Map(types.map((t) => [t.id, t] as const)),
@@ -71,8 +83,12 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
       { headers: { accept: "application/json" } },
     );
     if (!r.ok) return;
-    const data = (await r.json()) as { templates?: Record<string, SavedEntry> };
+    const data = (await r.json()) as {
+      templates?: Record<string, SavedEntry>;
+      moduleLogos?: ModuleLogoAsset[];
+    };
     setSaved(data.templates ?? {});
+    setModuleLogos(data.moduleLogos ?? []);
   }, [modulo]);
 
   useEffect(() => {
@@ -85,24 +101,12 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
     setConteudo(entry?.conteudo ?? catalog?.conteudoDefault ?? "");
     setNome(entry?.nome ?? catalog?.label ?? "");
     setFormato(entry?.formato ?? "html");
+    setLogoPlacements(entry?.logos ?? []);
   }, [activeId, saved, catalogById]);
 
   function insertVariable(key: string) {
     const token = variableToken(key);
-    const el = textareaRef.current;
-    if (!el) {
-      setConteudo((c) => c + token);
-      return;
-    }
-    const start = el.selectionStart ?? conteudo.length;
-    const end = el.selectionEnd ?? start;
-    const next = conteudo.slice(0, start) + token + conteudo.slice(end);
-    setConteudo(next);
-    requestAnimationFrame(() => {
-      el.focus();
-      const pos = start + token.length;
-      el.setSelectionRange(pos, pos);
-    });
+    setConteudo((c) => c + token);
   }
 
   async function persistTemplates(next: Record<string, SavedEntry>, successMsg: string) {
@@ -127,6 +131,7 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
   async function guardar() {
     if (!activeId) return;
     const label = nome.trim() || activeCatalog?.label || activeId;
+    const logosNorm = logoPlacements.map((p, i) => normalizeLogoPlacement(p, i));
     const next = {
       ...saved,
       [activeId]: {
@@ -134,6 +139,7 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
         nome: label,
         ...(isCustomActive ? { custom: true as const } : {}),
         formato,
+        ...(logosNorm.length ? { logos: logosNorm } : {}),
         updatedAt: new Date().toISOString(),
       },
     };
@@ -185,6 +191,30 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
     if (!activeCatalog?.conteudoDefault) return;
     setConteudo(activeCatalog.conteudoDefault);
   }
+
+  async function importarDocx(file: File) {
+    setImportandoDocx(true);
+    setError(null);
+    setMsg(null);
+    try {
+      const { html, warnings } = await convertDocxFileToHtml(file);
+      const clean = sanitizeImportedDocxHtml(html);
+      setConteudo(clean);
+      setFormato("html");
+      setMsg(
+        warnings.length
+          ? `DOCX importado (${warnings.length} aviso(s) de conversão). Revise o texto e substitua campos fixos por {{variáveis}}.`
+          : "DOCX importado. Revise o texto e substitua campos fixos por {{variáveis}}.",
+      );
+    } catch {
+      setError("Não foi possível ler o ficheiro DOCX.");
+    } finally {
+      setImportandoDocx(false);
+    }
+  }
+
+  const logoPreviewHtml =
+    formato === "texto" ? plainTextToEditorHtml(conteudo) : conteudo;
 
   if (!types.length && customTemplates.length === 0) {
     return (
@@ -295,7 +325,7 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block space-y-1">
+        <label className="block space-y-1 sm:col-span-2">
           <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
             Nome do template
           </span>
@@ -306,35 +336,56 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
             className="w-full rounded-lg border border-slate-600/60 bg-slate-950 px-3 py-2 text-xs text-slate-200"
           />
         </label>
-        <label className="block space-y-1">
-          <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-            Formato do conteúdo
-          </span>
-          <select
-            value={formato}
-            onChange={(e) => setFormato(e.target.value as TemplateFormato)}
-            className="w-full rounded-lg border border-slate-600/60 bg-slate-950 px-3 py-2 text-xs text-slate-200"
-          >
-            <option value="html">HTML (com formatação)</option>
-            <option value="texto">Texto simples</option>
-          </select>
-        </label>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+          Logótipos predefinidos neste template
+        </p>
+        <TemplateLogoPresets
+          modulo={modulo}
+          logos={moduleLogos}
+          placements={logoPlacements}
+          onChange={setLogoPlacements}
+          previewHtml={logoPreviewHtml}
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_14rem]">
         <div className="min-w-0 space-y-2">
-          <label className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-            {formato === "html"
-              ? "Conteúdo do template (HTML permitido)"
-              : "Conteúdo do template (texto simples)"}
-          </label>
-          <textarea
-            ref={textareaRef}
-            rows={16}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+              Conteúdo do documento (pré-visualização WYSIWYG)
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                ref={docxInputRef}
+                type="file"
+                accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void importarDocx(f);
+                  e.target.value = "";
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={busy || importandoDocx}
+                onClick={() => docxInputRef.current?.click()}
+              >
+                <FileUp className="h-3.5 w-3.5" />
+                {importandoDocx ? "A importar…" : "Importar DOCX"}
+              </Button>
+            </div>
+          </div>
+          <RichTemplateEditor
             value={conteudo}
-            onChange={(e) => setConteudo(e.target.value)}
-            className="w-full rounded-lg border border-slate-600/60 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-200 leading-relaxed"
-            spellCheck={false}
+            onChange={setConteudo}
+            formato={formato}
+            onFormatoChange={setFormato}
           />
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" disabled={busy} onClick={() => void guardar()}>
