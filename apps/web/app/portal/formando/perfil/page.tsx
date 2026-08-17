@@ -594,25 +594,13 @@ export default function FormandoPerfilPage() {
               </p>
 
               <ul className="space-y-3">
-                {(
-                  obrigatorios?.items ??
-                  DOCS_OBRIGATORIOS_META.filter((m) =>
-                    (
-                      [
-                        "documento_identificacao",
-                        "certificado_habilitacoes",
-                        "declaracao_entidade_patronal",
-                        "domicilio_fiscal",
-                        "comprovativo_iban",
-                      ] as DocObrigatorioId[]
-                    ).includes(m.id),
-                  ).map((m) => ({
-                    id: m.id,
-                    label: m.label,
-                    completo: false,
-                    detalhe: m.ajuda,
-                  }))
-                ).map((status) => {
+                {(obrigatorios?.items ?? DOCS_OBRIGATORIOS_META.map((m) => ({
+                  id: m.id,
+                  label: m.label,
+                  completo: false,
+                  detalhe: m.ajuda,
+                  obrigatorio: false,
+                }))).map((status) => {
                   const meta = DOCS_OBRIGATORIOS_META.find((m) => m.id === status.id);
                   const ok = status.completo;
                   const label = meta?.label ?? status.label;
@@ -634,7 +622,9 @@ export default function FormandoPerfilPage() {
                           </p>
                           <p className="text-xs text-slate-500 mt-1">{ajuda}</p>
                         </div>
-                        <Badge variant={ok ? "green" : "yellow"}>{ok ? "OK" : "Em falta"}</Badge>
+                        <Badge variant={ok ? "green" : status.obrigatorio ? "yellow" : "default"}>
+                          {ok ? "OK" : status.obrigatorio ? "Em falta" : "Opcional"}
+                        </Badge>
                       </div>
 
                       {status.id === "documento_identificacao" ? (

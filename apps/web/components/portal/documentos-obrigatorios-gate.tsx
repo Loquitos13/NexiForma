@@ -27,6 +27,7 @@ type GateItem = {
   label: string;
   completo: boolean;
   detalhe: string;
+  obrigatorio?: boolean;
 };
 
 export type DocumentosObrigatoriosState = {
@@ -77,7 +78,7 @@ export function DocumentosObrigatoriosProvider({ children }: { children: React.R
         return;
       }
       const data = (await r.json()) as FormadorDocObrigatorioResumo;
-      const emFalta = data.items.filter((i) => !i.completo);
+      const emFalta = data.items.filter((i) => i.obrigatorio && !i.completo);
       setState({
         ready: true,
         roleKind: "formador",
@@ -97,7 +98,7 @@ export function DocumentosObrigatoriosProvider({ children }: { children: React.R
         return;
       }
       const data = (await r.json()) as DocObrigatorioResumo;
-      const emFalta = data.items.filter((i) => !i.completo);
+      const emFalta = data.items.filter((i) => i.obrigatorio && !i.completo);
       setState({
         ready: true,
         roleKind: "formando",

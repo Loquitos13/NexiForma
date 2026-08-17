@@ -12,6 +12,7 @@ export type DocObrigatorioItem = {
   label: string;
   completo: boolean;
   detalhe: string;
+  obrigatorio: boolean;
 };
 
 export type DocObrigatorioResumo = {

@@ -8,6 +8,7 @@ import { parseApiError } from "@/lib/ui/backoffice";
 import { FORMADOR_DOC_CATEGORIAS_UPLOAD } from "@/lib/formador/documentos-obrigatorios";
 import type { FormadorDocObrigatorioResumo } from "@/lib/formador/documentos-obrigatorios";
 import { AVISO_NOME_DOCUMENTO_OUTROS } from "@/lib/documentos/nome-ficheiro-aviso";
+import { ChecklistDocumentalCard } from "@/components/portal/checklist-documental-card";
 import {
   Alert,
   Badge,
@@ -135,30 +136,21 @@ export function FormadorDocumentosGestor({
       {error ? <Alert variant="error" className="mb-4">{error}</Alert> : null}
       {msg ? <Alert variant="success" className="mb-4">{msg}</Alert> : null}
 
-      <Card className="mb-6">
-        <CardHeader className="border-b border-slate-700/40">
-          <CardTitle className="text-base">Checklist documental</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-4">
-          {obrigatorios ? (
-            <ul className="space-y-1.5">
-              {obrigatorios.items.map((item) => (
-                <li key={item.id} className="flex items-center justify-between gap-2 text-sm">
-                  <span className="text-slate-200">{item.label}</span>
-                  <Badge variant={item.completo ? "green" : "yellow"}>
-                    {item.completo ? "OK" : "Em falta"}
-                  </Badge>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-slate-500">A carregar checklist…</p>
-          )}
-          <p className="mt-3 text-xs text-slate-500">
-            Opcional: certificados de formação complementar e outros documentos relevantes.
-          </p>
-        </CardContent>
-      </Card>
+      <ChecklistDocumentalCard
+        imponivelIds={["cv", "documento_identificacao"]}
+        lockedRequiredIds={["ccp", "ficha_dgert"]}
+        canManageImposicao={canManage}
+        loadChecklist={async () => {
+          const r = await bffFetch(`/api/v1/formadores/${formadorId}/documentos/obrigatorios`, {
+            headers: { accept: "application/json" },
+          });
+          if (!r.ok) return null;
+          const data = (await r.json()) as FormadorDocObrigatorioResumo;
+          setObrigatorios(data);
+          return data.items;
+        }}
+        onSaved={() => void loadObrigatorios()}
+      />
 
       <Card className="mb-6">
         <CardHeader className="border-b border-slate-700/40 flex flex-row flex-wrap items-center justify-between gap-3">

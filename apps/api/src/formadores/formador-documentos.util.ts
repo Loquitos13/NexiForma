@@ -40,19 +40,22 @@ export type FormadorDocObrigatorioId =
   | "cv"
   | "documento_identificacao"
   | "ccp"
-  | "ficha_dgert";
+  | "ficha_dgert"
+  | "certificados_formacao"
+  | "carta_conducao";
 
 export type FormadorDocObrigatorioItem = {
   id: FormadorDocObrigatorioId;
   label: string;
   completo: boolean;
   detalhe: string;
-  origem: "universal" | "cargo";
+  origem: "universal" | "cargo" | "opcional";
+  obrigatorio: boolean;
 };
 
 const OBRIGATORIO_META: Record<
   FormadorDocObrigatorioId,
-  { label: string; detalheFalta: string; origem: "universal" | "cargo" }
+  { label: string; detalheFalta: string; origem: "universal" | "cargo" | "opcional" }
 > = {
   cv: {
     label: "Curriculum Vitae",
@@ -73,6 +76,16 @@ const OBRIGATORIO_META: Record<
     label: "Ficha Curricular DGERT",
     detalheFalta: "Ficha curricular DGERT preenchida e assinada (PDF ou imagem)",
     origem: "cargo",
+  },
+  certificados_formacao: {
+    label: "Certificados de formação complementar",
+    detalheFalta: "Certificados de formação complementar (quando existirem)",
+    origem: "opcional",
+  },
+  carta_conducao: {
+    label: "Carta de condução",
+    detalheFalta: "Carta de condução (quando aplicável)",
+    origem: "opcional",
   },
 };
 
@@ -106,23 +119,28 @@ export function avaliarDocumentosObrigatoriosFormador(
   totalDocumentos: number;
 } {
   const required = resolveFormadorObrigatorios(tenantUniversais);
+  const requiredSet = new Set(required);
   const categorias = new Set(
     docs.map((d) => d.categoria).filter((c): c is string => Boolean(c)),
   );
 
-  const items: FormadorDocObrigatorioItem[] = required.map((id) => {
+  const allIds = Object.keys(OBRIGATORIO_META) as FormadorDocObrigatorioId[];
+
+  const items: FormadorDocObrigatorioItem[] = allIds.map((id) => {
     const meta = OBRIGATORIO_META[id];
     const ok = categorias.has(id);
+    const isRequired = requiredSet.has(id);
     return {
       id,
       label: meta.label,
       completo: ok,
       detalhe: ok ? "Ficheiro registado" : meta.detalheFalta,
       origem: meta.origem,
+      obrigatorio: isRequired,
     };
   });
 
-  const emFalta = items.filter((i) => !i.completo).map((i) => i.id);
+  const emFalta = items.filter((i) => i.obrigatorio && !i.completo).map((i) => i.id);
   return {
     items,
     completo: emFalta.length === 0,

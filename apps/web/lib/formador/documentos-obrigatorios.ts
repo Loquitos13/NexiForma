@@ -2,14 +2,17 @@ export type FormadorDocObrigatorioId =
   | "cv"
   | "documento_identificacao"
   | "ccp"
-  | "ficha_dgert";
+  | "ficha_dgert"
+  | "certificados_formacao"
+  | "carta_conducao";
 
 export type FormadorDocObrigatorioItem = {
   id: FormadorDocObrigatorioId;
   label: string;
   completo: boolean;
   detalhe: string;
-  origem: "universal" | "cargo";
+  origem: "universal" | "cargo" | "opcional";
+  obrigatorio: boolean;
 };
 
 export type FormadorDocObrigatorioResumo = {

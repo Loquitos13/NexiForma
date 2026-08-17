@@ -1,4 +1,6 @@
 /** Categorias de documentos do portal formando (universais - reutilizáveis em todos os cursos). */
+import { DEFAULT_UNIVERSAL_REQUIRED } from "./documentos-politica.util";
+
 export const FORMANDO_DOC_TIPOS = new Set([
   "cc",
   "bi",
@@ -51,6 +53,8 @@ export type FormandoDocObrigatorioItem = {
   label: string;
   completo: boolean;
   detalhe: string;
+  /** Se o tenant exige este documento na ficha universal. */
+  obrigatorio: boolean;
 };
 
 export type FormandoDocRow = {
@@ -123,27 +127,31 @@ export function avaliarDocumentosObrigatorios(
   emFalta: FormandoDocObrigatorioId[];
 } {
   const required =
-    obrigatorios && obrigatorios.length > 0
-      ? obrigatorios
-      : (Object.keys(OBRIGATORIO_META) as FormandoDocObrigatorioId[]);
+    obrigatorios && obrigatorios.length > 0 ? obrigatorios : [...DEFAULT_UNIVERSAL_REQUIRED];
+
+  const requiredSet = new Set(required);
 
   const completoDe = (id: FormandoDocObrigatorioId): boolean => {
     if (id === "documento_identificacao") return identificacaoCompleta(docs);
     return temCategoria(docs, id);
   };
 
-  const items: FormandoDocObrigatorioItem[] = required.map((id) => {
+  const allIds = Object.keys(OBRIGATORIO_META) as FormandoDocObrigatorioId[];
+
+  const items: FormandoDocObrigatorioItem[] = allIds.map((id) => {
     const meta = OBRIGATORIO_META[id];
     const ok = completoDe(id);
+    const isRequired = requiredSet.has(id);
     return {
       id,
       label: meta.label,
       completo: ok,
       detalhe: ok ? "Ficheiro registado" : meta.detalheFalta,
+      obrigatorio: isRequired,
     };
   });
 
-  const emFalta = items.filter((i) => !i.completo).map((i) => i.id);
+  const emFalta = items.filter((i) => i.obrigatorio && !i.completo).map((i) => i.id);
   return { items, completo: emFalta.length === 0, emFalta };
 }
 
