@@ -223,10 +223,16 @@ export {
 } from "./templates/variables";
 
 export {
+  CUSTOM_TEMPLATE_ID_PREFIX,
   emptyTenantDocumentTemplates,
   getModuloTemplates,
+  isAllowedTemplateId,
+  isCustomTemplateId,
+  listEmitivelTemplateOptions,
   mergeTenantDocumentTemplates,
   parseTenantDocumentTemplates,
+  slugifyTemplateId,
+  type TemplateFormato,
   type TenantDocumentTemplates,
   type TenantTemplateEntry,
 } from "./templates/tenant-templates.util";
@@ -235,6 +241,7 @@ export {
   extractTemplateTokens,
   mergeTemplateContent,
   mergeTemplateHtml,
+  mergeTemplatePlainTextToHtml,
 } from "./templates/merge";
 
 export {

@@ -1,10 +1,55 @@
-import type { TemplateModulo } from "./variables";
+import { TEMPLATE_TYPES, type TemplateModulo } from "./variables";
+
+export type TemplateFormato = "texto" | "html";
 
 export type TenantTemplateEntry = {
   conteudo: string;
   nome?: string;
   updatedAt?: string;
+  custom?: boolean;
+  formato?: TemplateFormato;
 };
+
+export const CUSTOM_TEMPLATE_ID_PREFIX = "custom_";
+
+export function isCustomTemplateId(id: string): boolean {
+  return id.startsWith(CUSTOM_TEMPLATE_ID_PREFIX);
+}
+
+/** Gera ID único e seguro para template personalizado. */
+export function slugifyTemplateId(nome: string): string {
+  const base = nome
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 60);
+  const suffix = Date.now().toString(36).slice(-6);
+  return `${CUSTOM_TEMPLATE_ID_PREFIX}${base || "template"}_${suffix}`;
+}
+
+export function isAllowedTemplateId(modulo: TemplateModulo, id: string): boolean {
+  if ((TEMPLATE_TYPES[modulo] ?? []).some((t) => t.id === id)) return true;
+  return /^custom_[a-z0-9][a-z0-9_]{0,89}$/.test(id);
+}
+
+export function listEmitivelTemplateOptions(
+  saved: Record<string, TenantTemplateEntry>,
+): Array<{ id: string; label: string }> {
+  const catalog = TEMPLATE_TYPES.formacao;
+  const options = catalog.map((t) => ({
+    id: t.id,
+    label: saved[t.id]?.nome?.trim() || t.label,
+  }));
+  for (const [id, entry] of Object.entries(saved)) {
+    if (catalog.some((t) => t.id === id)) continue;
+    if (entry.custom || isCustomTemplateId(id)) {
+      options.push({ id, label: entry.nome?.trim() || id });
+    }
+  }
+  return options;
+}
 
 export type TenantDocumentTemplates = {
   version: 1;
@@ -33,6 +78,8 @@ export function parseTenantDocumentTemplates(raw: unknown): TenantDocumentTempla
         conteudo: e.conteudo,
         ...(typeof e.nome === "string" ? { nome: e.nome } : {}),
         ...(typeof e.updatedAt === "string" ? { updatedAt: e.updatedAt } : {}),
+        ...(e.custom === true ? { custom: true } : {}),
+        ...(e.formato === "texto" || e.formato === "html" ? { formato: e.formato } : {}),
       };
     }
     modulos[mod as TemplateModulo] = clean;

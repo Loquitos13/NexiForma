@@ -33,6 +33,8 @@ import {
 } from "../avaliacoes/avaliacao-parametros.util";
 import {
   getModuloTemplates,
+  isAllowedTemplateId,
+  isCustomTemplateId,
   mergeTenantDocumentTemplates,
   TEMPLATE_TYPES,
   TEMPLATE_VARIABLES,
@@ -479,14 +481,21 @@ export class TenantSettingsService {
     });
     if (!tenant) throw new BadRequestException("Tenant não encontrado.");
 
-    const allowedIds = new Set((TEMPLATE_TYPES[modulo] ?? []).map((t) => t.id));
     const clean: Record<string, TenantTemplateEntry> = {};
     for (const [id, entry] of Object.entries(body.templates ?? {})) {
-      if (!allowedIds.has(id)) continue;
+      if (!isAllowedTemplateId(modulo, id)) continue;
       if (!entry || typeof entry.conteudo !== "string") continue;
+      const isCustom = isCustomTemplateId(id) || entry.custom === true;
+      if (isCustom && !isCustomTemplateId(id)) continue;
       clean[id] = {
         conteudo: entry.conteudo.slice(0, 200_000),
-        ...(typeof entry.nome === "string" ? { nome: entry.nome.slice(0, 200) } : {}),
+        ...(typeof entry.nome === "string" && entry.nome.trim()
+          ? { nome: entry.nome.trim().slice(0, 200) }
+          : {}),
+        ...(isCustom ? { custom: true as const } : {}),
+        ...(entry.formato === "texto" || entry.formato === "html"
+          ? { formato: entry.formato }
+          : {}),
         updatedAt: new Date().toISOString(),
       };
     }

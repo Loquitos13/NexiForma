@@ -45,3 +45,32 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+/** Template em texto simples → HTML seguro para PDF (variáveis escapadas). */
+export function mergeTemplatePlainTextToHtml(
+  template: string,
+  context: Record<string, string | number | null | undefined>,
+): string {
+  const parts: string[] = [];
+  let lastIndex = 0;
+  const re = new RegExp(TOKEN_RE.source, "g");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(template)) !== null) {
+    parts.push(escapeHtml(template.slice(lastIndex, m.index)));
+    const key = m[1]!;
+    const val = context[key];
+    if (val === null || val === undefined || val === "") {
+      parts.push(`{{${key}}}`);
+    } else {
+      parts.push(escapeHtml(String(val)));
+    }
+    lastIndex = m.index + m[0].length;
+  }
+  parts.push(escapeHtml(template.slice(lastIndex)));
+  const plain = parts.join("");
+  if (!plain.trim()) return "";
+  return plain
+    .split("\n")
+    .map((line) => `<p>${line || "&nbsp;"}</p>`)
+    .join("");
+}

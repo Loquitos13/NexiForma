@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Matricula } from "@nexiforma/database";
-import { mergeTemplateHtml, resolverEmailNotificacaoFormando } from "@nexiforma/shared";
+import { mergeTemplateHtml, mergeTemplatePlainTextToHtml, getModuloTemplates, resolverEmailNotificacaoFormando } from "@nexiforma/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import {
@@ -301,7 +301,8 @@ export class MatriculasService {
       select: { metadata: true },
     });
 
-    const label = templateLabelForId(templateId);
+    const label = templateLabelForId(templateId, tenant?.metadata);
+    const entry = getModuloTemplates(tenant?.metadata, modulo)[templateId];
     const rawTemplate = resolveTenantTemplateContent(tenant?.metadata, modulo, templateId);
     if (!rawTemplate.trim()) {
       throw new BadRequestException(
@@ -312,7 +313,10 @@ export class MatriculasService {
     const context = await buildFormacaoTemplateContext(this.prisma, tenantId, {
       matriculaId,
     });
-    const mergedBody = mergeTemplateHtml(rawTemplate, context);
+    const mergedBody =
+      entry?.formato === "texto"
+        ? mergeTemplatePlainTextToHtml(rawTemplate, context)
+        : mergeTemplateHtml(rawTemplate, context);
     const logoSrc = await resolveTenantLogoDataUri(this.storage, tenant?.metadata);
     let html = ensureFullDocumentHtml(label, mergedBody, tenant?.metadata);
     html = applyTenantDocumentBranding(html, logoSrc, tenant?.metadata);

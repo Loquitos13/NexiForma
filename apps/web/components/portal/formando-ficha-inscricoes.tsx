@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { GraduationCap, FileText, Plus, UserPlus } from "lucide-react";
-import { TEMPLATE_TYPES } from "@nexiforma/shared";
+import { listEmitivelTemplateOptions } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { downloadResponseAsFile } from "@/lib/client/download-response";
 import { formatDatePt } from "@/lib/calendar-date";
@@ -128,7 +128,7 @@ type Props = {
 
 const ESTADOS = ["ATIVA", "CONCLUSAO", "DESISTENCIA"] as const;
 
-const TEMPLATES_EMITIVEL = TEMPLATE_TYPES.formacao;
+const TEMPLATES_EMITIVEL_DEFAULT = [{ id: "declaracao_frequencia", label: "Declaração de frequência" }];
 
 export function FormandoFichaInscricoes({
   formandoId,
@@ -150,6 +150,7 @@ export function FormandoFichaInscricoes({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [emitindo, setEmitindo] = useState<string | null>(null);
   const [templatePorMatricula, setTemplatePorMatricula] = useState<Record<string, string>>({});
+  const [templatesEmitivel, setTemplatesEmitivel] = useState(TEMPLATES_EMITIVEL_DEFAULT);
 
   const sorted = useMemo(
     () =>
@@ -309,6 +310,21 @@ export function FormandoFichaInscricoes({
   }, []);
 
   useEffect(() => {
+    if (!canManage) return;
+    void (async () => {
+      const r = await bffFetch(
+        "/api/v1/portal/tenant/document-templates?modulo=formacao",
+        { headers: { accept: "application/json" } },
+      );
+      if (!r.ok) return;
+      const data = (await r.json()) as {
+        templates?: Record<string, { nome?: string; custom?: boolean }>;
+      };
+      setTemplatesEmitivel(listEmitivelTemplateOptions(data.templates ?? {}));
+    })();
+  }, [canManage]);
+
+  useEffect(() => {
     if (!matriculaIdsKey) {
       setProgressos({});
       return;
@@ -417,7 +433,7 @@ export function FormandoFichaInscricoes({
     if (!canManage) return;
     const templateId = templateIdPara(matriculaId);
     const label =
-      TEMPLATES_EMITIVEL.find((t) => t.id === templateId)?.label ?? "Documento";
+      templatesEmitivel.find((t) => t.id === templateId)?.label ?? "Documento";
     setEmitindo(matriculaId);
     setErr(null);
     setMsg(null);
@@ -736,7 +752,7 @@ export function FormandoFichaInscricoes({
                         }))
                       }
                     >
-                      {TEMPLATES_EMITIVEL.map((t) => (
+                      {templatesEmitivel.map((t) => (
                         <option key={t.id} value={t.id}>
                           {t.label}
                         </option>

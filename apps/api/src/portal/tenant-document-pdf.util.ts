@@ -1,5 +1,6 @@
 import {
   getModuloTemplates,
+  isCustomTemplateId,
   TEMPLATE_TYPES,
   type TemplateModulo,
 } from "@nexiforma/shared";
@@ -8,19 +9,27 @@ import { tenantDocumentBrandingCss } from "../common/tenant-logo-embed.util";
 const EMITIVEL_MODULOS: TemplateModulo[] = ["formacao"];
 
 export function isEmitivelTemplateId(templateId: string): boolean {
+  if (isCustomTemplateId(templateId)) return true;
   return EMITIVEL_MODULOS.some((mod) =>
     TEMPLATE_TYPES[mod].some((t) => t.id === templateId),
   );
 }
 
 export function templateModuloForId(templateId: string): TemplateModulo | null {
+  if (isCustomTemplateId(templateId)) return "formacao";
   for (const mod of EMITIVEL_MODULOS) {
     if (TEMPLATE_TYPES[mod].some((t) => t.id === templateId)) return mod;
   }
   return null;
 }
 
-export function templateLabelForId(templateId: string): string {
+export function templateLabelForId(templateId: string, metadata?: unknown): string {
+  if (metadata) {
+    for (const mod of EMITIVEL_MODULOS) {
+      const nome = getModuloTemplates(metadata, mod)[templateId]?.nome?.trim();
+      if (nome) return nome;
+    }
+  }
   for (const mod of EMITIVEL_MODULOS) {
     const hit = TEMPLATE_TYPES[mod].find((t) => t.id === templateId);
     if (hit) return hit.label;
