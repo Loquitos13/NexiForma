@@ -32,6 +32,7 @@ export class DocumentosService {
       acaoFormacaoId?: string;
       formandoId?: string;
       formadorId?: string;
+      categoria?: string;
     },
   ) {
     const tenantId = requireTenantId(user);
@@ -42,6 +43,7 @@ export class DocumentosService {
         ...(opts?.acaoFormacaoId ? { acaoFormacaoId: opts.acaoFormacaoId } : {}),
         ...(opts?.formandoId ? { formandoId: opts.formandoId } : {}),
         ...(opts?.formadorId ? { formadorId: opts.formadorId } : {}),
+        ...(opts?.categoria ? { categoria: opts.categoria } : {}),
       },
       orderBy: { createdAt: "desc" },
       include: {
@@ -221,6 +223,39 @@ export class DocumentosService {
       contentType: doc.mimeType || obj.contentType,
       nome: doc.nome,
     };
+  }
+
+  async rename(user: RequestUser, id: string, nome: string) {
+    const tenantId = requireTenantId(user);
+    const trimmed = nome.trim();
+    if (!trimmed) throw new BadRequestException("Nome em falta.");
+    const doc = await this.prisma.documentoAnexo.findFirst({ where: { id, tenantId } });
+    if (!doc) throw new NotFoundException("Documento não encontrado.");
+    return this.prisma.documentoAnexo.update({
+      where: { id },
+      data: { nome: trimmed },
+      select: {
+        id: true,
+        nome: true,
+        mimeType: true,
+        tamanhoBytes: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  async remove(user: RequestUser, id: string) {
+    const tenantId = requireTenantId(user);
+    const doc = await this.prisma.documentoAnexo.findFirst({ where: { id, tenantId } });
+    if (!doc) throw new NotFoundException("Documento não encontrado.");
+    if (doc.categoria && TEMPLATE_CATEGORIAS.has(doc.categoria)) {
+      throw new BadRequestException(
+        "Templates de inscrição não podem ser eliminados por aqui — use a secção de templates.",
+      );
+    }
+    await this.prisma.documentoAnexo.delete({ where: { id } });
+    await this.storage.deleteObject(doc.storageKey).catch(() => undefined);
+    return { ok: true };
   }
 
   listRequisicoes(user: RequestUser, opts?: { estado?: string; formandoId?: string; formadorId?: string }) {

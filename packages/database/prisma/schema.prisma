@@ -517,6 +517,13 @@ enum InscricoesEstado {
   @@schema("public")
 }
 
+enum TipoFinanciamentoAcao {
+  FINANCIADA
+  AUTO_FINANCIADA
+
+  @@schema("public")
+}
+
 enum SessaoEstado {
   AGENDADA
   REALIZADA
@@ -745,6 +752,8 @@ model AcaoFormacao {
   prazoConclusaoLms DateTime?       @map("prazo_conclusao_lms") @db.Date
   estado          AcaoEstado        @default(PLANEADA)
   inscricoesEstado InscricoesEstado @default(FECHADAS) @map("inscricoes_estado")
+  /// Financiada (DTP completo) vs autofinanciada — afecta dossiê pedagógico e documentos exigidos.
+  tipoFinanciamento TipoFinanciamentoAcao @default(AUTO_FINANCIADA) @map("tipo_financiamento")
   publicado       Boolean          @default(false)
   /// Configuração original de agenda (repetição, horários) para sync com website.
   agendaTemplate  Json?            @map("agenda_template")

@@ -4,21 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { Eye, Pencil, Upload } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { parseApiError } from "@/lib/ui/backoffice";
-import { Button, Dialog, DialogContent } from "@/components/ui";
-
-const UNIVERSAL_OPTS = [
-  { id: "documento_identificacao", label: "Cópia CC" },
-  { id: "certificado_habilitacoes", label: "Habilitações" },
-  { id: "comprovativo_iban", label: "Comprovativo IBAN" },
-  { id: "cv", label: "CV" },
-  { id: "certidao_grau", label: "Certidão de grau" },
-  { id: "domicilio_fiscal", label: "Domicílio fiscal" },
-] as const;
+import { Badge, Button, Dialog, DialogContent } from "@/components/ui";
 
 type Cfg = {
   version: 1;
   inscricaoObrigatorios: string[];
-  universaisObrigatorios?: string[];
   notas?: string;
   templatesConteudo?: Record<string, string>;
 };
@@ -38,23 +28,30 @@ type TemplateRow = {
   } | null;
 };
 
+export type TurmaConsentimentoResumo = {
+  turmaId: string;
+  codigo: string;
+  nome: string;
+  matriculas: number;
+  consentimentosCompletos: number;
+  percentagem: number;
+};
+
 type Props = {
   acaoId: string;
   cargaHoras?: number;
   initial?: unknown;
+  turmasConsentimento?: TurmaConsentimentoResumo[];
   onSaved?: (cfg: Cfg | null) => void;
 };
 
 function parseCfg(raw: unknown): Cfg {
-  const o = (raw ?? {}) as Partial<Cfg>;
+  const o = (raw ?? {}) as Partial<Cfg & { universaisObrigatorios?: string[] }>;
   return {
     version: 1,
     inscricaoObrigatorios: Array.isArray(o.inscricaoObrigatorios)
       ? o.inscricaoObrigatorios.filter((x): x is string => typeof x === "string")
       : ["declaracao_inscricao", "contrato_formacao", "regulamento_formacao"],
-    universaisObrigatorios: Array.isArray(o.universaisObrigatorios)
-      ? o.universaisObrigatorios.filter((x): x is string => typeof x === "string")
-      : undefined,
     notas: typeof o.notas === "string" ? o.notas : "",
     templatesConteudo:
       o.templatesConteudo && typeof o.templatesConteudo === "object"
@@ -63,10 +60,15 @@ function parseCfg(raw: unknown): Cfg {
   };
 }
 
-export function AcaoDocumentosConfig({ acaoId, cargaHoras, initial, onSaved }: Props) {
+export function AcaoDocumentosConfig({
+  acaoId,
+  cargaHoras,
+  initial,
+  turmasConsentimento = [],
+  onSaved,
+}: Props) {
   const [cfg, setCfg] = useState<Cfg>(() => parseCfg(initial));
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
-  const [overrideUniv, setOverrideUniv] = useState(!!parseCfg(initial).universaisObrigatorios?.length);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -84,9 +86,7 @@ export function AcaoDocumentosConfig({ acaoId, cargaHoras, initial, onSaved }: P
   }, [acaoId]);
 
   useEffect(() => {
-    const p = parseCfg(initial);
-    setCfg(p);
-    setOverrideUniv(!!p.universaisObrigatorios?.length);
+    setCfg(parseCfg(initial));
   }, [initial]);
 
   useEffect(() => {
@@ -108,16 +108,6 @@ export function AcaoDocumentosConfig({ acaoId, cargaHoras, initial, onSaved }: P
     }));
   }, []);
 
-  const toggleUniv = useCallback((id: string) => {
-    setCfg((c) => {
-      const cur = c.universaisObrigatorios ?? [];
-      return {
-        ...c,
-        universaisObrigatorios: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
-      };
-    });
-  }, []);
-
   async function save() {
     setBusy(true);
     setError(null);
@@ -127,7 +117,6 @@ export function AcaoDocumentosConfig({ acaoId, cargaHoras, initial, onSaved }: P
       inscricaoObrigatorios: cfg.inscricaoObrigatorios,
       notas: cfg.notas?.trim() || undefined,
       ...(cfg.templatesConteudo ? { templatesConteudo: cfg.templatesConteudo } : {}),
-      ...(overrideUniv ? { universaisObrigatorios: cfg.universaisObrigatorios ?? [] } : {}),
     };
     const r = await bffFetch(`/api/v1/acoes-formacao/${acaoId}`, {
       method: "PATCH",
@@ -206,136 +195,118 @@ export function AcaoDocumentosConfig({ acaoId, cargaHoras, initial, onSaved }: P
     await loadTemplates();
   }
 
+  const rows =
+    templates.length > 0
+      ? templates
+      : cfg.inscricaoObrigatorios.map((id) => ({
+          categoria: id,
+          label: id,
+          obrigatorio: true,
+          conteudoHtml: null,
+          documento: null,
+          templateCategoria: id,
+        }));
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div>
         <h3 className="text-sm font-semibold text-slate-100">Documentos desta edição</h3>
-        <p className="text-xs text-slate-500 mt-1">
-          Seleccione os obrigatórios, carregue o PDF ou edite o conteúdo para gerar um novo PDF
-          {cargaHoras != null ? ` (${cargaHoras}h)` : ""}. Os ficheiros só são acessíveis com login.
-        </p>
-      </div>
-
-      {error ? <p className="text-xs text-red-300">{error}</p> : null}
-      {msg ? <p className="text-xs text-green-300">{msg}</p> : null}
-
-      <div className="space-y-3">
-        <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">
+        <p className="text-xs text-slate-500 mt-0.5">
           Obrigatórios na inscrição
+          {cargaHoras != null ? ` · ${cargaHoras}h` : ""}. PDF autenticado (login obrigatório).
         </p>
-        {(templates.length
-          ? templates
-          : cfg.inscricaoObrigatorios.map((id) => ({
-              categoria: id,
-              label: id,
-              obrigatorio: true,
-              conteudoHtml: null,
-              documento: null,
-              templateCategoria: id,
-            }))
-        ).map((row) => (
-          <div
-            key={row.categoria}
-            className="rounded-lg border border-slate-700/40 bg-slate-900/40 px-3 py-3 space-y-2"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="flex items-center gap-2 text-sm text-slate-200">
-                <input
-                  type="checkbox"
-                  checked={cfg.inscricaoObrigatorios.includes(row.categoria)}
-                  onChange={() => toggleInscricao(row.categoria)}
-                />
-                {row.label}
-              </label>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  disabled={!row.documento}
-                  onClick={() => void verDocumento(row.categoria, row.label)}
-                >
-                  <Eye className="h-3.5 w-3.5" />
-                  Ver
-                </Button>
-                <Button type="button" size="sm" variant="secondary" onClick={() => openEdit(row)}>
-                  <Pencil className="h-3.5 w-3.5" />
-                  Editar
-                </Button>
-                <label className="inline-flex">
-                  <input
-                    type="file"
-                    accept="application/pdf"
-                    className="sr-only"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      e.target.value = "";
-                      if (f) void uploadTemplate(row.categoria, f);
-                    }}
-                  />
-                  <span className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-600 px-2.5 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
-                    <Upload className="h-3.5 w-3.5" />
-                    Upload PDF
-                  </span>
-                </label>
-              </div>
-            </div>
-            <p className="text-[11px] text-slate-500">
-              {row.documento
-                ? `PDF: ${row.documento.nome}`
-                : "Sem PDF - faça upload ou edite para gerar."}
-            </p>
-          </div>
-        ))}
       </div>
 
-      <label className="flex items-start gap-2 text-sm text-slate-300 cursor-pointer">
-        <input
-          type="checkbox"
-          className="mt-1"
-          checked={overrideUniv}
-          onChange={(e) => {
-            setOverrideUniv(e.target.checked);
-            if (e.target.checked && !cfg.universaisObrigatorios) {
-              setCfg((c) => ({ ...c, universaisObrigatorios: UNIVERSAL_OPTS.map((u) => u.id) }));
-            }
-          }}
-        />
-        <span>
-          Sobrepor documentos universais só nesta acção
-          <span className="block text-[11px] text-slate-500">
-            Se desligado, usa a política do tenant (Configurações).
-          </span>
-        </span>
-      </label>
-
-      {overrideUniv ? (
-        <div className="grid grid-cols-2 gap-2 pl-1">
-          {UNIVERSAL_OPTS.map((opt) => (
-            <label key={opt.id} className="flex items-center gap-2 text-xs text-slate-300">
-              <input
-                type="checkbox"
-                checked={(cfg.universaisObrigatorios ?? []).includes(opt.id)}
-                onChange={() => toggleUniv(opt.id)}
-              />
-              {opt.label}
-            </label>
+      {turmasConsentimento.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {turmasConsentimento.map((t) => (
+            <Badge
+              key={t.turmaId}
+              variant={t.percentagem >= 100 ? "green" : t.percentagem > 0 ? "yellow" : "default"}
+              className="text-[11px]"
+            >
+              {t.codigo}: {t.percentagem}% consentimento ({t.consentimentosCompletos}/{t.matriculas})
+            </Badge>
           ))}
         </div>
       ) : null}
 
+      {error ? <p className="text-xs text-red-300">{error}</p> : null}
+      {msg ? <p className="text-xs text-green-300">{msg}</p> : null}
+
+      <div className="space-y-1.5">
+        <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">
+          Obrigatórios na inscrição
+        </p>
+        {rows.map((row) => (
+          <div
+            key={row.categoria}
+            className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-slate-700/40 bg-slate-900/40 px-2 py-1.5"
+          >
+            <label className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-slate-200">
+              <input
+                type="checkbox"
+                className="shrink-0"
+                checked={cfg.inscricaoObrigatorios.includes(row.categoria)}
+                onChange={() => toggleInscricao(row.categoria)}
+              />
+              <span className="truncate font-medium">{row.label}</span>
+            </label>
+            <span className="hidden sm:inline text-[10px] text-slate-500 truncate max-w-[140px]">
+              {row.documento ? row.documento.nome : "Sem PDF"}
+            </span>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-7 px-1.5 text-[10px]"
+                disabled={!row.documento}
+                onClick={() => void verDocumento(row.categoria, row.label)}
+              >
+                <Eye className="h-3 w-3" />
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-7 px-1.5 text-[10px]"
+                onClick={() => openEdit(row)}
+              >
+                <Pencil className="h-3 w-3" />
+              </Button>
+              <label className="inline-flex">
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  className="sr-only"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (f) void uploadTemplate(row.categoria, f);
+                  }}
+                />
+                <span className="inline-flex h-7 cursor-pointer items-center gap-0.5 rounded-lg border border-slate-600 px-1.5 text-[10px] font-semibold text-slate-300 hover:bg-slate-800">
+                  <Upload className="h-3 w-3" />
+                </span>
+              </label>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <label className="block">
-        <span className="text-xs text-slate-400 mb-1 block">Notas internas (ex.: valor, condições)</span>
+        <span className="text-[10px] text-slate-500 mb-0.5 block">Notas internas</span>
         <textarea
-          rows={3}
-          className="w-full rounded-lg border border-slate-600/60 bg-slate-900/80 px-3 py-2 text-sm text-slate-200"
+          rows={2}
+          className="w-full rounded-lg border border-slate-600/60 bg-slate-900/80 px-2 py-1.5 text-xs text-slate-200"
           value={cfg.notas ?? ""}
           onChange={(e) => setCfg((c) => ({ ...c, notas: e.target.value }))}
           placeholder="Ex.: Contrato com 200h e valor X€"
         />
       </label>
 
-      <Button type="button" disabled={busy} onClick={() => void save()}>
+      <Button type="button" size="sm" disabled={busy} onClick={() => void save()}>
         {busy ? "A guardar…" : "Guardar documentos da acção"}
       </Button>
 
@@ -349,9 +320,6 @@ export function AcaoDocumentosConfig({ acaoId, cargaHoras, initial, onSaved }: P
 
       <Dialog open={!!editCat} onOpenChange={(open) => !open && setEditCat(null)}>
         <DialogContent title="Editar conteúdo do documento" className="max-w-3xl">
-          <p className="text-xs text-slate-500 mb-2">
-            Edite o HTML do documento. Ao gerar, cria um novo PDF autenticado (sem URL pública).
-          </p>
           <textarea
             rows={16}
             className="w-full rounded-lg border border-slate-600/60 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-200"

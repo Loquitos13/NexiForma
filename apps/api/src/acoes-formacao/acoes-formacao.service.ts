@@ -130,6 +130,7 @@ export class AcoesFormacaoService {
         dataInicio,
         dataFim,
         estado,
+        tipoFinanciamento: dto.tipoFinanciamento ?? "AUTO_FINANCIADA",
         ...(cursoCfg
           ? {
               configuracaoMatricula: normalizeConfiguracaoMatriculaDocs(
@@ -244,6 +245,9 @@ export class AcoesFormacaoService {
                       ...(dto.configuracaoMatricula as object),
                     }) as Prisma.InputJsonValue),
             }
+          : {}),
+        ...(dto.tipoFinanciamento !== undefined
+          ? { tipoFinanciamento: dto.tipoFinanciamento }
           : {}),
       },
       include: {
@@ -687,10 +691,17 @@ export class AcoesFormacaoService {
             temFicheiro: Boolean(row?.documentoAnexoId),
           };
         });
+        const inscricaoCompleta =
+          politica.inscricaoObrigatorios.length === 0 ||
+          politica.inscricaoObrigatorios.every((cat) => {
+            const row = m.documentosMatricula.find((d) => d.categoria === cat);
+            return row?.estado === "aceite";
+          });
         return {
           matriculaId: m.id,
           estado: m.estado,
           turma: m.turma,
+          inscricaoCompleta,
           formando: {
             id: m.formando.id,
             nome: m.formando.nome,
@@ -704,6 +715,37 @@ export class AcoesFormacaoService {
         };
       }),
     );
+
+    const turmasConsentimentoMap = new Map<
+      string,
+      {
+        turmaId: string;
+        codigo: string;
+        nome: string;
+        matriculas: number;
+        consentimentosCompletos: number;
+      }
+    >();
+    for (const f of formandos) {
+      const key = f.turma.id;
+      const cur = turmasConsentimentoMap.get(key) ?? {
+        turmaId: f.turma.id,
+        codigo: f.turma.codigo,
+        nome: f.turma.nome,
+        matriculas: 0,
+        consentimentosCompletos: 0,
+      };
+      cur.matriculas += 1;
+      if (f.inscricaoCompleta) cur.consentimentosCompletos += 1;
+      turmasConsentimentoMap.set(key, cur);
+    }
+    const turmasConsentimento = [...turmasConsentimentoMap.values()].map((t) => ({
+      ...t,
+      percentagem:
+        t.matriculas === 0
+          ? 0
+          : Math.round((t.consentimentosCompletos / t.matriculas) * 100),
+    }));
 
     const sessoes = await this.prisma.sessaoFormacao.findMany({
       where: {
@@ -769,6 +811,7 @@ export class AcoesFormacaoService {
         universaisObrigatorios: politica.universaisObrigatorios,
       },
       documentosAcao: templates,
+      turmasConsentimento,
       formandos,
       formadores,
     };

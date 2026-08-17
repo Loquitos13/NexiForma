@@ -103,6 +103,7 @@ export default function AcoesPage() {
     dataInicio: "",
     dataFim: "",
     estado: "PLANEADA",
+    tipoFinanciamento: "AUTO_FINANCIADA" as "FINANCIADA" | "AUTO_FINANCIADA",
   });
   const [cronogramaFile, setCronogramaFile] = useState<File | null>(null);
 
@@ -325,6 +326,25 @@ export default function AcoesPage() {
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </Select>
+              </div>
+              <div className="sm:col-span-2">
+                <Select
+                  label="Tipo de financiamento *"
+                  required
+                  value={form.tipoFinanciamento}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      tipoFinanciamento: e.target.value as "FINANCIADA" | "AUTO_FINANCIADA",
+                    }))
+                  }
+                >
+                  <option value="AUTO_FINANCIADA">Autofinanciada</option>
+                  <option value="FINANCIADA">Financiada</option>
+                </Select>
+                <p className="mt-1 text-xs text-slate-500">
+                  Define o quadro de verificação DTP e documentos do dossiê pedagógico aplicáveis.
+                </p>
               </div>
 
               <div className="sm:col-span-2 space-y-2 rounded-xl border border-slate-700/50 bg-slate-900/40 p-4">

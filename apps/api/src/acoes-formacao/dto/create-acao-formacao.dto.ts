@@ -1,4 +1,6 @@
-import { IsDateString, IsOptional, IsString, MaxLength, IsUUID } from "class-validator";
+import { IsDateString, IsIn, IsOptional, IsString, MaxLength, IsUUID } from "class-validator";
+
+const TIPOS_FINANCIAMENTO = ["FINANCIADA", "AUTO_FINANCIADA"] as const;
 
 export class CreateAcaoFormacaoDto {
   @IsUUID()
@@ -22,4 +24,8 @@ export class CreateAcaoFormacaoDto {
   @IsString()
   @MaxLength(32)
   estado?: string;
+
+  @IsOptional()
+  @IsIn(TIPOS_FINANCIAMENTO)
+  tipoFinanciamento?: (typeof TIPOS_FINANCIAMENTO)[number];
 }

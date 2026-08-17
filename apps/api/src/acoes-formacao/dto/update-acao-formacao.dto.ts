@@ -38,4 +38,8 @@ export class UpdateAcaoFormacaoDto {
   @IsOptional()
   @IsObject()
   configuracaoMatricula?: Record<string, unknown> | null;
+
+  @IsOptional()
+  @IsIn(["FINANCIADA", "AUTO_FINANCIADA"])
+  tipoFinanciamento?: "FINANCIADA" | "AUTO_FINANCIADA";
 }

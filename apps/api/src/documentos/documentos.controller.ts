@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -12,11 +13,18 @@ import {
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
-import { IsUUID } from "class-validator";
+import { IsString, IsUUID, MaxLength, MinLength } from "class-validator";
 
 class AssociarFormandoDto {
   @IsUUID()
   formandoId!: string;
+}
+
+class RenameDocumentoDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(280)
+  nome!: string;
 }
 
 class AssociarFormadorDto {
@@ -46,12 +54,14 @@ export class DocumentosController {
     @Query("acaoFormacaoId") acaoFormacaoId?: string,
     @Query("formandoId") formandoId?: string,
     @Query("formadorId") formadorId?: string,
+    @Query("categoria") categoria?: string,
   ) {
     return this.documentos.list(user, {
       entidadeClienteId,
       acaoFormacaoId,
       formandoId,
       formadorId,
+      categoria,
     });
   }
 
@@ -121,6 +131,22 @@ export class DocumentosController {
       visivelFormador: visivelFormador === "true" || visivelFormador === "1",
       visivelFormando: visivelFormando === "true" || visivelFormando === "1",
     });
+  }
+
+  @Patch(":id")
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  rename(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() body: RenameDocumentoDto,
+  ) {
+    return this.documentos.rename(user, id, body.nome);
+  }
+
+  @Delete(":id")
+  @Roles("tenant_manager", "coordenador_pedagogico")
+  remove(@CurrentUser() user: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
+    return this.documentos.remove(user, id);
   }
 
   @Get(":id/download-url")

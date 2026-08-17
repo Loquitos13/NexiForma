@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, Circle, FileText, GraduationCap, Users } from "lucide-react";
-import { AcaoDocumentosConfig } from "@/components/portal/acao-documentos-config";
+import { AcaoDocumentosConfig, type TurmaConsentimentoResumo } from "@/components/portal/acao-documentos-config";
+import { AcaoDocumentosAnexoGrid } from "@/components/portal/acao-documentos-anexo-grid";
 import { DocumentosPoliticaSettings } from "@/components/settings/documentos-politica-settings";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { parseApiError } from "@/lib/ui/backoffice";
@@ -10,6 +11,7 @@ import { Alert, Badge, Card, CardContent, CardHeader, CardTitle } from "@/compon
 import { cn } from "@/lib/ui/cn";
 
 type DocsResumo = {
+  turmasConsentimento?: TurmaConsentimentoResumo[];
   formandos: Array<{
     matriculaId: string;
     estado: string;
@@ -111,16 +113,18 @@ export function AcaoDocumentosOverview({
             Documentos obrigatórios da acção
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <AcaoDocumentosConfig
             acaoId={acaoId}
             cargaHoras={cargaHoras}
             initial={initial}
+            turmasConsentimento={resumo?.turmasConsentimento}
             onSaved={(cfg) => {
               onSaved?.(cfg);
               void load();
             }}
           />
+          <AcaoDocumentosAnexoGrid acaoId={acaoId} />
         </CardContent>
       </Card>
 
