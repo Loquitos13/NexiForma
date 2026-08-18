@@ -242,57 +242,57 @@ export function AcaoDocumentosConfig({
           {rows.map((row) => (
             <div
               key={row.categoria}
-              className="rounded-md border border-slate-700/40 bg-slate-900/40 px-2 py-1.5 space-y-1"
+              className="flex items-center gap-2 rounded-md border border-slate-700/40 bg-slate-900/40 px-2 py-1.5"
             >
-              <label className="flex items-center gap-1.5 text-xs text-slate-200">
+              <label className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-slate-200">
                 <input
                   type="checkbox"
                   className="shrink-0"
                   checked={cfg.inscricaoObrigatorios.includes(row.categoria)}
                   onChange={() => toggleInscricao(row.categoria)}
                 />
-                <span className="truncate font-medium">{row.label}</span>
-              </label>
-              <div className="flex flex-wrap items-center gap-1 pl-5">
-                <span className="text-[10px] text-slate-500 truncate max-w-[8rem] sm:max-w-[10rem]">
-                  {row.documento ? row.documento.nome : "Sem PDF"}
+                <span className="min-w-0">
+                  <span className="block truncate font-medium">{row.label}</span>
+                  <span className="block truncate text-[10px] font-normal text-slate-500">
+                    {row.documento ? row.documento.nome : "Sem PDF"}
+                  </span>
                 </span>
-                <div className="flex shrink-0 items-center gap-0.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className="h-7 px-1.5 text-[10px]"
-                    disabled={!row.documento}
-                    onClick={() => void verDocumento(row.categoria, row.label)}
-                  >
-                    <Eye className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className="h-7 px-1.5 text-[10px]"
-                    onClick={() => openEdit(row)}
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </Button>
-                  <label className="inline-flex">
-                    <input
-                      type="file"
-                      accept="application/pdf"
-                      className="sr-only"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        e.target.value = "";
-                        if (f) void uploadTemplate(row.categoria, f);
-                      }}
-                    />
-                    <span className="inline-flex h-7 cursor-pointer items-center gap-0.5 rounded-lg border border-slate-600 px-1.5 text-[10px] font-semibold text-slate-300 hover:bg-slate-800">
-                      <Upload className="h-3 w-3" />
-                    </span>
-                  </label>
-                </div>
+              </label>
+              <div className="flex shrink-0 items-center gap-0.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 px-1.5 text-[10px]"
+                  disabled={!row.documento}
+                  onClick={() => void verDocumento(row.categoria, row.label)}
+                >
+                  <Eye className="h-3 w-3" />
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 px-1.5 text-[10px]"
+                  onClick={() => openEdit(row)}
+                >
+                  <Pencil className="h-3 w-3" />
+                </Button>
+                <label className="inline-flex">
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    className="sr-only"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (f) void uploadTemplate(row.categoria, f);
+                    }}
+                  />
+                  <span className="inline-flex h-7 cursor-pointer items-center gap-0.5 rounded-lg border border-slate-600 px-1.5 text-[10px] font-semibold text-slate-300 hover:bg-slate-800">
+                    <Upload className="h-3 w-3" />
+                  </span>
+                </label>
               </div>
             </div>
           ))}
