@@ -234,77 +234,83 @@ export function AcaoDocumentosConfig({
       {error ? <p className="text-xs text-red-300">{error}</p> : null}
       {msg ? <p className="text-xs text-green-300">{msg}</p> : null}
 
-      <div className="space-y-1.5">
-        <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">
-          Obrigatórios na inscrição
-        </p>
-        {rows.map((row) => (
-          <div
-            key={row.categoria}
-            className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-slate-700/40 bg-slate-900/40 px-2 py-1.5"
-          >
-            <label className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-slate-200">
-              <input
-                type="checkbox"
-                className="shrink-0"
-                checked={cfg.inscricaoObrigatorios.includes(row.categoria)}
-                onChange={() => toggleInscricao(row.categoria)}
-              />
-              <span className="truncate font-medium">{row.label}</span>
-            </label>
-            <span className="hidden sm:inline text-[10px] text-slate-500 truncate max-w-[140px]">
-              {row.documento ? row.documento.nome : "Sem PDF"}
-            </span>
-            <div className="flex shrink-0 items-center gap-0.5">
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="h-7 px-1.5 text-[10px]"
-                disabled={!row.documento}
-                onClick={() => void verDocumento(row.categoria, row.label)}
-              >
-                <Eye className="h-3 w-3" />
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="h-7 px-1.5 text-[10px]"
-                onClick={() => openEdit(row)}
-              >
-                <Pencil className="h-3 w-3" />
-              </Button>
-              <label className="inline-flex">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-stretch">
+        <div className="min-w-0 space-y-1.5">
+          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">
+            Obrigatórios na inscrição
+          </p>
+          {rows.map((row) => (
+            <div
+              key={row.categoria}
+              className="rounded-md border border-slate-700/40 bg-slate-900/40 px-2 py-1.5 space-y-1"
+            >
+              <label className="flex items-center gap-1.5 text-xs text-slate-200">
                 <input
-                  type="file"
-                  accept="application/pdf"
-                  className="sr-only"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    e.target.value = "";
-                    if (f) void uploadTemplate(row.categoria, f);
-                  }}
+                  type="checkbox"
+                  className="shrink-0"
+                  checked={cfg.inscricaoObrigatorios.includes(row.categoria)}
+                  onChange={() => toggleInscricao(row.categoria)}
                 />
-                <span className="inline-flex h-7 cursor-pointer items-center gap-0.5 rounded-lg border border-slate-600 px-1.5 text-[10px] font-semibold text-slate-300 hover:bg-slate-800">
-                  <Upload className="h-3 w-3" />
-                </span>
+                <span className="truncate font-medium">{row.label}</span>
               </label>
+              <div className="flex flex-wrap items-center gap-1 pl-5">
+                <span className="text-[10px] text-slate-500 truncate max-w-[8rem] sm:max-w-[10rem]">
+                  {row.documento ? row.documento.nome : "Sem PDF"}
+                </span>
+                <div className="flex shrink-0 items-center gap-0.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="h-7 px-1.5 text-[10px]"
+                    disabled={!row.documento}
+                    onClick={() => void verDocumento(row.categoria, row.label)}
+                  >
+                    <Eye className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="h-7 px-1.5 text-[10px]"
+                    onClick={() => openEdit(row)}
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </Button>
+                  <label className="inline-flex">
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = "";
+                        if (f) void uploadTemplate(row.categoria, f);
+                      }}
+                    />
+                    <span className="inline-flex h-7 cursor-pointer items-center gap-0.5 rounded-lg border border-slate-600 px-1.5 text-[10px] font-semibold text-slate-300 hover:bg-slate-800">
+                      <Upload className="h-3 w-3" />
+                    </span>
+                  </label>
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
-      <label className="block">
-        <span className="text-[10px] text-slate-500 mb-0.5 block">Notas internas</span>
-        <textarea
-          rows={2}
-          className="w-full rounded-lg border border-slate-600/60 bg-slate-900/80 px-2 py-1.5 text-xs text-slate-200"
-          value={cfg.notas ?? ""}
-          onChange={(e) => setCfg((c) => ({ ...c, notas: e.target.value }))}
-          placeholder="Ex.: Contrato com 200h e valor X€"
-        />
-      </label>
+        <label className="flex min-h-[9.5rem] flex-col">
+          <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide mb-1">
+            Notas internas
+          </span>
+          <textarea
+            rows={5}
+            className="min-h-[9.5rem] flex-1 w-full rounded-lg border border-slate-600/60 bg-slate-900/80 px-2 py-1.5 text-xs text-slate-200 resize-y"
+            value={cfg.notas ?? ""}
+            onChange={(e) => setCfg((c) => ({ ...c, notas: e.target.value }))}
+            placeholder="Ex.: Contrato com 200h e valor X€"
+          />
+        </label>
+      </div>
 
       <Button type="button" size="sm" disabled={busy} onClick={() => void save()}>
         {busy ? "A guardar…" : "Guardar documentos da acção"}

@@ -55,6 +55,7 @@ function DocumentPagePreviewInner({
   if (srcDoc !== lastSrcRef.current) {
     lastSrcRef.current = srcDoc;
   }
+  const iframeKey = srcDoc ? `${srcDoc.length}:${srcDoc.slice(-40)}` : "empty";
 
   return (
     <div ref={containerRef} className={cn("space-y-1.5", className)}>
@@ -70,7 +71,7 @@ function DocumentPagePreviewInner({
         <div className="relative w-full bg-white" style={{ aspectRatio: aspect }}>
           {mounted && srcDoc ? (
             <iframe
-              key={lastSrcRef.current.slice(0, 64)}
+              key={iframeKey}
               title={title}
               srcDoc={srcDoc}
               className="absolute inset-0 h-full w-full border-0 bg-white"

@@ -125,9 +125,13 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
   useEffect(() => {
     const entry = saved[activeId];
     const catalog = catalogById.get(activeId);
-    setConteudo(entry?.conteudo ?? catalog?.conteudoDefault ?? "");
+    let raw = entry?.conteudo ?? catalog?.conteudoDefault ?? "";
+    if (raw && !/<[a-z][\s\S]*>/i.test(raw)) {
+      raw = plainTextToEditorHtml(raw);
+    }
+    setConteudo(raw);
     setNome(entry?.nome ?? catalog?.label ?? "");
-    setFormato(entry?.formato ?? "html");
+    setFormato("html");
     setOrientacao(entry?.orientacao ?? "portrait");
     setAlinhamentoVertical(entry?.alinhamentoVertical ?? "top");
     setLogoPlacements(entry?.logos ?? []);
@@ -168,7 +172,7 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
         conteudo: latestConteudo,
         nome: label,
         ...(isCustomActive ? { custom: true as const } : {}),
-        formato,
+        formato: "html" as const,
         orientacao,
         alinhamentoVertical,
         ...(logosNorm.length ? { logos: logosNorm } : {}),
@@ -457,11 +461,11 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
             </div>
           </div>
           <RichTemplateEditor
-            key={`${activeId}-${formato}`}
+            key={activeId}
             ref={richEditorRef}
             value={conteudo}
             onChange={setConteudo}
-            formato={formato}
+            formato="html"
             pageLayout="a4"
             orientacao={orientacao}
             verticalAlign={alinhamentoVertical}

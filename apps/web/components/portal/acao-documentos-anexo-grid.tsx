@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FileText, Trash2, Upload } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/ui/cn";
+import { AcaoDocumentosUploadModal } from "@/components/portal/acao-documentos-upload-modal";
 
 const ACAO_ANEXO_CATEGORIA = "acao_anexo";
 
@@ -23,13 +24,13 @@ type Props = {
 };
 
 export function AcaoDocumentosAnexoGrid({ acaoId, canManage = true }: Props) {
-  const fileRef = useRef<HTMLInputElement>(null);
   const [docs, setDocs] = useState<DocRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const load = useCallback(async () => {
     const r = await bffFetch(
@@ -47,32 +48,6 @@ export function AcaoDocumentosAnexoGrid({ acaoId, canManage = true }: Props) {
     const sel = docs.find((d) => d.id === selectedId);
     setRenameDraft(sel?.nome ?? "");
   }, [selectedId, docs]);
-
-  async function uploadFiles(files: FileList | File[]) {
-    if (!canManage) return;
-    setBusy(true);
-    setError(null);
-    setMsg(null);
-    for (const file of Array.from(files)) {
-      const fd = new FormData();
-      fd.append("file", file);
-      const qs = new URLSearchParams({
-        acaoFormacaoId: acaoId,
-        categoria: ACAO_ANEXO_CATEGORIA,
-        visivelFormando: "false",
-        visivelFormador: "false",
-      });
-      const r = await bffFetch(`/api/v1/documentos/upload?${qs}`, { method: "POST", body: fd });
-      if (!r.ok) {
-        setError(await parseApiError(r));
-        setBusy(false);
-        return;
-      }
-    }
-    setBusy(false);
-    setMsg(`${Array.from(files).length} ficheiro(s) adicionado(s).`);
-    await load();
-  }
 
   async function guardarNome() {
     if (!selectedId || !canManage) return;
@@ -123,41 +98,40 @@ export function AcaoDocumentosAnexoGrid({ acaoId, canManage = true }: Props) {
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
+    <div className="space-y-3 border-t border-slate-700/30 pt-4">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="min-w-0">
           <h3 className="text-sm font-semibold text-slate-100">Documentos da acção</h3>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-xs text-slate-500 mt-0.5 max-w-xl">
             Ficheiros específicos desta edição (gestor e coordenação pedagógica). Clique para
             renomear; duplo clique para abrir.
           </p>
         </div>
         {canManage ? (
-          <>
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                const list = e.target.files;
-                e.target.value = "";
-                if (list?.length) void uploadFiles(list);
-              }}
-            />
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={busy}
-              onClick={() => fileRef.current?.click()}
-            >
-              <Upload className="h-3.5 w-3.5" />
-              Adicionar ficheiros
-            </Button>
-          </>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={busy}
+            className="shrink-0"
+            onClick={() => setUploadOpen(true)}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Adicionar ficheiros
+          </Button>
         ) : null}
       </div>
+
+      <AcaoDocumentosUploadModal
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        acaoId={acaoId}
+        docs={docs}
+        onUploaded={async () => {
+          setMsg("Ficheiro(s) adicionado(s).");
+          await load();
+        }}
+      />
 
       {error ? <p className="text-xs text-red-300">{error}</p> : null}
       {msg ? <p className="text-xs text-green-300">{msg}</p> : null}

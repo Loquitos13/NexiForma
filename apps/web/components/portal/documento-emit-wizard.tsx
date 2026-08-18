@@ -126,9 +126,11 @@ export function DocumentoEmitWizard({
     if (!bodyEditedRef.current && data.bodyHtml) {
       setBodyHtml(data.bodyHtml);
     }
-    if (!logoPlacements.length && data.logoPlacements?.length) {
+    if (data.logoPlacements?.length) {
       setLogoPlacements(data.logoPlacements);
     }
+    if (data.orientacao) setOrientacao(data.orientacao);
+    if (data.alinhamentoVertical) setAlinhamentoVertical(data.alinhamentoVertical);
     return data;
   }, [matriculaId, templateId, bodyHtml, logoPlacements, orientacao, alinhamentoVertical, onError]);
 

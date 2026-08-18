@@ -91,6 +91,12 @@ function extractEntidadeMorada(metadata: unknown): string {
   return "";
 }
 
+/** Formato legível de horas para documentos (ex.: «0 Horas», «1 Hora»). */
+export function formatCargaHorasLabel(horas: number): string {
+  const n = Math.max(0, Math.round(Number(horas) || 0));
+  return n === 1 ? "1 Hora" : `${n} Horas`;
+}
+
 /** Gera bloco HTML de módulos com carga horária. */
 export function renderModulosConteudoHtml(
   modulos: Array<{ titulo: string; cargaHoras?: number | null }>,
@@ -106,9 +112,9 @@ export function renderModulosConteudoHtml(
       if (isPresencial) {
         const teoria = Math.round(horas * 0.4);
         const pratica = horas - teoria;
-        return `<tr><td style="padding:4px 8px;border:1px solid #ccc">${escapeHtml(m.titulo)}</td><td style="padding:4px 8px;border:1px solid #ccc;text-align:center">${teoria}h</td><td style="padding:4px 8px;border:1px solid #ccc;text-align:center">${pratica}h</td></tr>`;
+        return `<tr><td style="padding:4px 8px;border:1px solid #ccc">${escapeHtml(m.titulo)}</td><td style="padding:4px 8px;border:1px solid #ccc;text-align:center">${formatCargaHorasLabel(teoria)}</td><td style="padding:4px 8px;border:1px solid #ccc;text-align:center">${formatCargaHorasLabel(pratica)}</td></tr>`;
       }
-      return `<tr><td style="padding:4px 8px;border:1px solid #ccc">${escapeHtml(m.titulo)}</td><td style="padding:4px 8px;border:1px solid #ccc;text-align:center" colspan="2">${horas}h · ${escapeHtml(modalidadeLabel(modalidade))}</td></tr>`;
+      return `<tr><td style="padding:4px 8px;border:1px solid #ccc">${escapeHtml(m.titulo)}</td><td style="padding:4px 8px;border:1px solid #ccc;text-align:center" colspan="2">${formatCargaHorasLabel(horas)} · ${escapeHtml(modalidadeLabel(modalidade))}</td></tr>`;
     })
     .join("");
   const header = isPresencial
