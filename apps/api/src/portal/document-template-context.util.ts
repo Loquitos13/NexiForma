@@ -1,5 +1,9 @@
 import type { PrismaClient } from "@nexiforma/database";
-import { extrairSigoFormandoMetadata } from "@nexiforma/shared";
+import {
+  extrairSigoFormandoMetadata,
+  resolverEmailPresencaFormando,
+} from "@nexiforma/shared";
+import { extractFormandoMorada } from "../formandos/formando-sigo-metadata.util";
 
 /** Formata data por extenso em pt-PT (ex.: 11 de março de 2026). */
 export function formatDateExtensoPt(date: Date, local?: string | null): string {
@@ -28,6 +32,9 @@ type SigoMeta = {
   dataNascimento?: string;
   numDocIdentificacao?: string;
   validadeDocumento?: string;
+  tipoDocIdentificacao?: string;
+  nacionalidade?: string;
+  habilitacaoLiteraria?: string;
   /** @deprecated nomes antigos  fallback de leitura */
   numeroDocumento?: string;
 };
@@ -40,6 +47,9 @@ function parseFormandoSigo(metadata: unknown): SigoMeta {
       : {};
   return {
     dataNascimento: sigo.dataNascimento,
+    tipoDocIdentificacao: sigo.tipoDocIdentificacao,
+    nacionalidade: sigo.nacionalidade,
+    habilitacaoLiteraria: sigo.habilitacaoLiteraria,
     numDocIdentificacao:
       sigo.numDocIdentificacao ??
       (typeof raw.numeroDocumento === "string" ? raw.numeroDocumento : undefined),
@@ -53,6 +63,32 @@ function fmtIsoDate(iso: string | undefined | null): string {
   if (!iso?.trim()) return "-";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("pt-PT");
+}
+
+function fmtDate(d: Date | null | undefined): string {
+  return d ? d.toLocaleDateString("pt-PT") : "-";
+}
+
+type TenantBrandingMeta = {
+  companyName?: string;
+  supportEmail?: string;
+  supportPhone?: string;
+  footerText?: string;
+};
+
+function extractEntidadeMorada(metadata: unknown): string {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return "";
+  const m = metadata as Record<string, unknown>;
+  for (const key of ["morada", "moradaFiscal", "moradaDgert"]) {
+    const v = m[key];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  const dgert = m.dgert;
+  if (dgert && typeof dgert === "object" && !Array.isArray(dgert)) {
+    const morada = (dgert as Record<string, unknown>).morada;
+    if (typeof morada === "string" && morada.trim()) return morada.trim();
+  }
+  return "";
 }
 
 /** Gera bloco HTML de módulos com carga horária. */
@@ -97,8 +133,12 @@ export async function buildFormacaoTemplateContext(
     where: { id: tenantId },
     select: { legalName: true, nif: true, metadata: true },
   });
-  const meta = (tenant?.metadata ?? {}) as { cronograma?: { local?: string } };
+  const meta = (tenant?.metadata ?? {}) as {
+    cronograma?: { local?: string };
+    branding?: TenantBrandingMeta;
+  };
   const localDefault = meta.cronograma?.local ?? null;
+  const branding = meta.branding;
 
   const matricula = opts.matriculaId
     ? await prisma.matricula.findFirst({
@@ -109,12 +149,15 @@ export async function buildFormacaoTemplateContext(
               nome: true,
               nif: true,
               email: true,
+              telefone: true,
+              emailPresenca: true,
               metadata: true,
               user: { select: { email: true } },
             },
           },
           turma: {
             select: {
+              id: true,
               codigo: true,
               nome: true,
               acaoFormacao: {
@@ -153,29 +196,77 @@ export async function buildFormacaoTemplateContext(
         })
       : [];
 
+  const sessaoFormador = matricula?.turma.id
+    ? await prisma.sessaoFormacao.findFirst({
+        where: { tenantId, turmaId: matricula.turma.id, formadorId: { not: null } },
+        orderBy: { numeroSessao: "asc" },
+        select: {
+          formador: {
+            select: {
+              nomeCompleto: true,
+              nif: true,
+              email: true,
+              emailPresenca: true,
+              telefone: true,
+              morada: true,
+              ccNumero: true,
+              ccValidade: true,
+              ccpNumero: true,
+              ccpValidade: true,
+            },
+          },
+        },
+      })
+    : null;
+
+  const formador = sessaoFormador?.formador;
   const curso = acao?.curso;
   const modalidade = curso?.modalidade ?? null;
   const sigo = parseFormandoSigo(matricula?.formando.metadata);
-
-  const fmt = (d: Date | null | undefined) =>
-    d ? d.toLocaleDateString("pt-PT") : "-";
+  const formando = matricula?.formando;
 
   return {
     "entidade.nome_legal": tenant?.legalName ?? "",
     "entidade.nif": tenant?.nif ?? "",
-    "formando.nome_completo": matricula?.formando.nome ?? "",
-    "formando.nif": matricula?.formando.nif ?? "",
+    "entidade.nome_comercial": branding?.companyName?.trim() ?? tenant?.legalName ?? "",
+    "entidade.morada": extractEntidadeMorada(tenant?.metadata),
+    "entidade.email": branding?.supportEmail?.trim() ?? "",
+    "entidade.telefone": branding?.supportPhone?.trim() ?? "",
+    "formando.nome_completo": formando?.nome ?? "",
+    "formando.nif": formando?.nif ?? "",
     "formando.data_nascimento": fmtIsoDate(sigo.dataNascimento),
+    "formando.tipo_documento": sigo.tipoDocIdentificacao ?? "",
     "formando.numero_identificacao": sigo.numDocIdentificacao ?? "",
     "formando.validade_identificacao": fmtIsoDate(sigo.validadeDocumento),
-    "formando.email": matricula?.formando.user?.email ?? matricula?.formando.email ?? "",
+    "formando.nacionalidade": sigo.nacionalidade ?? "",
+    "formando.habilitacao_literaria": sigo.habilitacaoLiteraria ?? "",
+    "formando.email":
+      formando?.user?.email ?? formando?.email ?? "",
+    "formando.email_presenca":
+      resolverEmailPresencaFormando({
+        emailPresenca: formando?.emailPresenca,
+        emailConta: formando?.user?.email,
+        emailContacto: formando?.email,
+      }) ?? "",
+    "formando.telefone": formando?.telefone?.trim() ?? "",
+    "formando.morada": extractFormandoMorada(formando?.metadata) ?? "",
+    "formador.nome_completo": formador?.nomeCompleto ?? "",
+    "formador.nif": formador?.nif ?? "",
+    "formador.email": formador?.email ?? "",
+    "formador.email_presenca": formador?.emailPresenca?.trim() ?? formador?.email ?? "",
+    "formador.telefone": formador?.telefone?.trim() ?? "",
+    "formador.morada": formador?.morada?.trim() ?? "",
+    "formador.cc_numero": formador?.ccNumero?.trim() ?? "",
+    "formador.cc_validade": fmtDate(formador?.ccValidade),
+    "formador.ccp_numero": formador?.ccpNumero?.trim() ?? "",
+    "formador.ccp_validade": fmtDate(formador?.ccpValidade),
     "curso.designacao": curso?.designacao ?? "",
     "curso.codigo_ufcd": curso?.codigoUfcd ?? "",
     "curso.modalidade": modalidadeLabel(modalidade),
     "acao.titulo": acao?.titulo ?? "",
     "acao.codigo_interno": acao?.codigoInterno ?? "",
-    "acao.data_inicio": fmt(acao?.dataInicio),
-    "acao.data_fim": fmt(acao?.dataFim),
+    "acao.data_inicio": fmtDate(acao?.dataInicio),
+    "acao.data_fim": fmtDate(acao?.dataFim),
     "acao.carga_horas": String(curso?.cargaHoras ?? ""),
     "acao.regime_ensino": modalidadeLabel(modalidade),
     "acao.conteudos_modulos": renderModulosConteudoHtml(modulos, modalidade),

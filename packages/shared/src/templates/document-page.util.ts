@@ -104,7 +104,12 @@ export function documentPageEditorCss(
   orientacao: DocumentOrientacao = "portrait",
   rootSelector = ".doc-editor-root",
 ): string {
-  return documentPageLayoutRules(orientacao, rootSelector, "editor");
+  return `
+    ${rootSelector} {
+      overflow-x: hidden;
+    }
+    ${documentPageLayoutRules(orientacao, rootSelector, "editor")}
+  `.trim();
 }
 
 function escapeHtml(s: string): string {

@@ -123,6 +123,55 @@ function restoreSelection(range: Range | null) {
   sel.addRange(range);
 }
 
+/** Sem selecção activa → aplica formatação a todo o conteúdo do editor. */
+function resolveRangeForFormatting(editorEl: HTMLDivElement, range: Range | null): Range {
+  if (range && !range.collapsed && editorEl.contains(range.commonAncestorContainer)) {
+    return range.cloneRange();
+  }
+  const sel = window.getSelection();
+  if (!range && sel && sel.rangeCount > 0) {
+    const live = sel.getRangeAt(0);
+    if (!live.collapsed && editorEl.contains(live.commonAncestorContainer)) {
+      return live.cloneRange();
+    }
+  }
+  const all = document.createRange();
+  all.selectNodeContents(editorEl);
+  return all;
+}
+
+function rangeCoversEditor(editorEl: HTMLDivElement, range: Range): boolean {
+  const all = document.createRange();
+  all.selectNodeContents(editorEl);
+  return (
+    range.compareBoundaryPoints(Range.START_TO_START, all) <= 0 &&
+    range.compareBoundaryPoints(Range.END_TO_END, all) >= 0
+  );
+}
+
+const BLOCK_TAGS = new Set(["p", "h1", "h2", "h3", "div", "li"]);
+
+function applyBlockTagToAll(editorEl: HTMLDivElement, tag: string) {
+  for (const child of Array.from(editorEl.childNodes)) {
+    if (child.nodeType !== Node.ELEMENT_NODE) continue;
+    const el = child as HTMLElement;
+    const name = el.tagName.toLowerCase();
+    if (!BLOCK_TAGS.has(name) || name === tag) continue;
+    const next = document.createElement(tag);
+    next.innerHTML = el.innerHTML;
+    const style = el.getAttribute("style");
+    if (style) next.setAttribute("style", style);
+    el.replaceWith(next);
+  }
+}
+
+function setSelectionRange(range: Range) {
+  const sel = window.getSelection();
+  if (!sel) return;
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
 function normalizeFontFamily(raw: string): string {
   const needle = raw.replace(/["']/g, "").toLowerCase();
   for (const f of FONT_FAMILIES) {
@@ -205,17 +254,39 @@ function readFormatState(editorEl: HTMLDivElement): FormatState {
   };
 }
 
+function applyStyleToElement(el: HTMLElement, styles: Record<string, string>) {
+  for (const [key, val] of Object.entries(styles)) {
+    el.style.setProperty(key, val);
+  }
+}
+
+/** Fonte/tamanho em todo o documento  estilos nos blocos (herdam ao texto). */
+function applyInlineStyleToAllBlocks(editorEl: HTMLDivElement, styles: Record<string, string>) {
+  for (const child of Array.from(editorEl.childNodes)) {
+    if (child.nodeType !== Node.ELEMENT_NODE) continue;
+    const el = child as HTMLElement;
+    const tag = el.tagName.toLowerCase();
+    if (BLOCK_TAGS.has(tag) || tag === "table") {
+      applyStyleToElement(el, styles);
+    }
+  }
+}
+
 function applyInlineStyle(
   editorEl: HTMLDivElement,
   styles: Record<string, string>,
   range: Range | null,
 ) {
   editorEl.focus();
-  restoreSelection(range ?? saveSelection(editorEl));
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return;
+  const r = resolveRangeForFormatting(editorEl, range ?? saveSelection(editorEl));
 
-  const r = sel.getRangeAt(0);
+  if (rangeCoversEditor(editorEl, r)) {
+    applyInlineStyleToAllBlocks(editorEl, styles);
+    return;
+  }
+
+  setSelectionRange(r);
+
   const span = document.createElement("span");
   for (const [key, val] of Object.entries(styles)) {
     span.style.setProperty(key, val);
@@ -227,20 +298,52 @@ function applyInlineStyle(
     const caret = document.createRange();
     caret.setStart(span.firstChild!, 1);
     caret.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(caret);
+    setSelectionRange(caret);
     return;
   }
 
   try {
-    r.surroundContents(span);
+    const fragment = r.extractContents();
+    span.appendChild(fragment);
+    r.insertNode(span);
+    const wrapped = document.createRange();
+    wrapped.selectNodeContents(span);
+    setSelectionRange(wrapped);
   } catch {
-    document.execCommand("styleWithCSS", false, "true");
     const css = Object.entries(styles)
       .map(([k, v]) => `${k.replace(/([A-Z])/g, "-$1").toLowerCase()}:${v}`)
       .join(";");
     document.execCommand("insertHTML", false, `<span style="${css}">${r.toString()}</span>`);
   }
+}
+
+const BLOCK_INLINE_STYLES: Record<string, Record<string, string>> = {
+  h1: { "font-size": "1.6em", "font-weight": "700", display: "inline" },
+  h2: { "font-size": "1.35em", "font-weight": "700", display: "inline" },
+  h3: { "font-size": "1.15em", "font-weight": "600", display: "inline" },
+  p: { "font-size": "13px", "font-weight": "400", display: "inline" },
+};
+
+function blockElementForRange(editorEl: HTMLDivElement, range: Range): HTMLElement | null {
+  let node: Node | null = range.commonAncestorContainer;
+  if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+  while (node && node !== editorEl) {
+    const tag = (node as HTMLElement).tagName?.toLowerCase();
+    if (tag === "p" || tag === "h1" || tag === "h2" || tag === "h3" || tag === "div" || tag === "li") {
+      return node as HTMLElement;
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
+function selectionCoversBlock(editorEl: HTMLDivElement, range: Range, block: HTMLElement): boolean {
+  const blockRange = document.createRange();
+  blockRange.selectNodeContents(block);
+  const startsBeforeOrAt =
+    range.compareBoundaryPoints(Range.START_TO_START, blockRange) <= 0;
+  const endsAfterOrAt = range.compareBoundaryPoints(Range.END_TO_END, blockRange) >= 0;
+  return startsBeforeOrAt && endsAfterOrAt;
 }
 
 function insertAtCursor(
@@ -334,12 +437,14 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
         const el = editorRef.current;
         if (!el) return;
         el.focus();
-        restoreSelection(savedRangeRef.current);
+        const range = resolveRangeForFormatting(el, savedRangeRef.current);
+        setSelectionRange(range);
         document.execCommand(cmd, false, val);
         emitChange(el.innerHTML);
-        captureSelection();
+        savedRangeRef.current = saveSelection(el);
+        refreshFormatState();
       },
-      [captureSelection, emitChange],
+      [emitChange, refreshFormatState],
     );
 
     const applyFont = useCallback(
@@ -348,9 +453,10 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
         if (!el) return;
         applyInlineStyle(el, { "font-family": fontFamily }, savedRangeRef.current);
         emitChange(el.innerHTML);
-        captureSelection();
+        savedRangeRef.current = saveSelection(el);
+        refreshFormatState();
       },
-      [captureSelection, emitChange],
+      [emitChange, refreshFormatState],
     );
 
     const applySize = useCallback(
@@ -359,16 +465,35 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
         if (!el) return;
         applyInlineStyle(el, { "font-size": fontSize }, savedRangeRef.current);
         emitChange(el.innerHTML);
-        captureSelection();
+        savedRangeRef.current = saveSelection(el);
+        refreshFormatState();
       },
-      [captureSelection, emitChange],
+      [emitChange, refreshFormatState],
     );
 
     const applyBlock = useCallback(
       (tag: string) => {
-        runExec("formatBlock", `<${tag}>`);
+        const el = editorRef.current;
+        if (!el) return;
+        el.focus();
+        const range = resolveRangeForFormatting(el, savedRangeRef.current);
+        if (rangeCoversEditor(el, range)) {
+          applyBlockTagToAll(el, tag);
+        } else {
+          setSelectionRange(range);
+          const block = blockElementForRange(el, range);
+          const inlineStyles = BLOCK_INLINE_STYLES[tag];
+          if (inlineStyles && block && !selectionCoversBlock(el, range, block)) {
+            applyInlineStyle(el, inlineStyles, range);
+          } else {
+            document.execCommand("formatBlock", false, `<${tag}>`);
+          }
+        }
+        emitChange(el.innerHTML);
+        savedRangeRef.current = saveSelection(el);
+        refreshFormatState();
       },
-      [runExec],
+      [emitChange, refreshFormatState],
     );
 
     const insertInTextarea = useCallback(
@@ -444,7 +569,7 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
       const wrap = pageWrapRef.current;
       if (!wrap) return;
       const update = () => {
-        const avail = wrap.clientWidth - 8;
+        const avail = wrap.clientWidth;
         setPageScale(Math.min(1, avail / pageWidthPx));
       };
       update();
@@ -666,7 +791,7 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
           pageLayout === "a4" ? (
             <div
               ref={pageWrapRef}
-              className="doc-editor-root overflow-x-auto overflow-y-auto rounded-lg border border-slate-700/40 bg-slate-800/30 p-3"
+              className="doc-editor-root overflow-x-hidden overflow-y-auto rounded-lg border border-slate-700/40 bg-slate-800/30"
               style={{ maxHeight: "min(85vh, 920px)" }}
             >
               <style>{editorCss}</style>
@@ -696,7 +821,7 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
             editorSurface
           )
         ) : pageLayout === "a4" ? (
-          <div className="overflow-x-auto rounded-lg border border-slate-700/40 bg-slate-800/30 p-3">
+          <div className="overflow-x-hidden rounded-lg border border-slate-700/40 bg-slate-800/30">
             <textarea
               ref={textareaRef}
               rows={22}
@@ -802,7 +927,10 @@ function ToolbarSelect({
         "h-7 max-w-[9rem] rounded border border-slate-600/60 bg-slate-900 px-1.5 text-[10px] text-slate-200",
         className,
       )}
-      onMouseDown={() => onOpen()}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        onOpen();
+      }}
       onChange={(e) => {
         const v = e.target.value;
         if (v) onPick(v);

@@ -62,20 +62,26 @@ export function DocumentoEmitWizard({
   const [anexar, setAnexar] = useState(true);
   const editorRef = useRef<RichTemplateEditorHandle>(null);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bodyEditedRef = useRef(false);
+  const [initialLoaded, setInitialLoaded] = useState(false);
+  const [bodyEdited, setBodyEdited] = useState(false);
 
   const refreshPreview = useCallback(async () => {
     setPreviewLoading(true);
+    const payload: Record<string, unknown> = {
+      logoPlacements,
+      orientacao,
+      alinhamentoVertical,
+    };
+    if (bodyEditedRef.current && bodyHtml.trim()) {
+      payload.bodyHtml = bodyHtml;
+    }
     const r = await bffFetch(
       `/api/v1/matriculas/${encodeURIComponent(matriculaId)}/documentos/${encodeURIComponent(templateId)}/preview`,
       {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          bodyHtml,
-          logoPlacements,
-          orientacao,
-          alinhamentoVertical,
-        }),
+        body: JSON.stringify(payload),
       },
     );
     setPreviewLoading(false);
@@ -86,7 +92,9 @@ export function DocumentoEmitWizard({
     const data = (await r.json()) as PreviewPayload;
     setPreviewHtml(data.html);
     setModuleLogos(data.moduleLogos ?? []);
-    if (!bodyHtml && data.bodyHtml) setBodyHtml(data.bodyHtml);
+    if (!bodyEditedRef.current && data.bodyHtml) {
+      setBodyHtml(data.bodyHtml);
+    }
     if (!logoPlacements.length && data.logoPlacements?.length) {
       setLogoPlacements(data.logoPlacements);
     }
@@ -99,13 +107,19 @@ export function DocumentoEmitWizard({
       setBodyHtml("");
       setPreviewHtml("");
       setLogoPlacements([]);
+      setInitialLoaded(false);
+      setBodyEdited(false);
+      bodyEditedRef.current = false;
       return;
     }
     void (async () => {
       setLoading(true);
+      setInitialLoaded(false);
+      bodyEditedRef.current = false;
+      setBodyEdited(false);
       const r = await bffFetch(
-        `/api/v1/matriculas/${encodeURIComponent(matriculaId)}/documentos/${encodeURIComponent(templateId)}/preview`,
-        { headers: { accept: "application/json" } },
+        `/api/v1/matriculas/${encodeURIComponent(matriculaId)}/documentos/${encodeURIComponent(templateId)}/preview?v=${Date.now()}`,
+        { headers: { accept: "application/json", "cache-control": "no-cache" } },
       );
       setLoading(false);
       if (!r.ok) {
@@ -120,11 +134,12 @@ export function DocumentoEmitWizard({
       setModuleLogos(data.moduleLogos ?? []);
       if (data.orientacao) setOrientacao(data.orientacao);
       if (data.alinhamentoVertical) setAlinhamentoVertical(data.alinhamentoVertical);
+      setInitialLoaded(true);
     })();
   }, [open, matriculaId, templateId, onError, onOpenChange]);
 
   useEffect(() => {
-    if (!open || loading) return;
+    if (!open || loading || !initialLoaded) return;
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
     previewTimerRef.current = setTimeout(() => {
       void refreshPreview();
@@ -132,7 +147,18 @@ export function DocumentoEmitWizard({
     return () => {
       if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
     };
-  }, [open, loading, bodyHtml, logoPlacements, orientacao, alinhamentoVertical, refreshPreview]);
+  }, [open, loading, initialLoaded, logoPlacements, orientacao, alinhamentoVertical, refreshPreview]);
+
+  useEffect(() => {
+    if (!open || loading || !initialLoaded || !bodyEdited) return;
+    if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    previewTimerRef.current = setTimeout(() => {
+      void refreshPreview();
+    }, 400);
+    return () => {
+      if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    };
+  }, [open, loading, initialLoaded, bodyEdited, bodyHtml, refreshPreview]);
 
   async function nextStep() {
     if (step === 0 || step === 1) {
@@ -150,7 +176,7 @@ export function DocumentoEmitWizard({
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/pdf" },
         body: JSON.stringify({
-          bodyHtml,
+          ...(bodyEditedRef.current && bodyHtml.trim() ? { bodyHtml } : {}),
           logoPlacements,
           anexar,
           download: true,
@@ -211,7 +237,11 @@ export function DocumentoEmitWizard({
             <RichTemplateEditor
               ref={editorRef}
               value={bodyHtml}
-              onChange={setBodyHtml}
+              onChange={(html) => {
+                bodyEditedRef.current = true;
+                setBodyEdited(true);
+                setBodyHtml(html);
+              }}
               formato="html"
               pageLayout="a4"
               orientacao={orientacao}
