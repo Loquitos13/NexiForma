@@ -30,6 +30,7 @@
     "test:at-sandbox": "npx tsx scripts/test-at-sandbox.ts",
     "generate:at-csr": "node scripts/generate-at-csr.mjs",
     "generate:at-pfx": "node scripts/generate-at-pfx.mjs",
+    "verify:at-cert-key": "node scripts/verify-at-cert-key.mjs",
     "test:teams-meeting": "node scripts/test-teams-meeting.mjs",
     "lint": "npm run lint -w @nexiforma/web --if-present"
   },

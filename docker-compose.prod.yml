@@ -50,6 +50,8 @@ services:
       - redis
     volumes:
       - api_storage:/app/storage
+      - ./certs:/app/certs:ro
+      - ./chaveprivada.txt:/app/chaveprivada.txt:ro
     ports:
       - "4000:4000"
     healthcheck:

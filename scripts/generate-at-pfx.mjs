@@ -7,14 +7,13 @@
  *   npm run generate:at-pfx -- --nif 123456789 --crt ./certs/adesao/123456789.crt --passphrase "sua-password"
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import forge from "node-forge";
+import { createPublicKey, X509Certificate } from "node:crypto";
+import { loadNodeForge, root } from "./at-forge.mjs";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = resolve(__dirname, "..");
+const forge = loadNodeForge();
 
 function parseArgs(argv) {
   const out = {};
@@ -47,9 +46,9 @@ function loadCert(pemOrPath) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const nif = String(args.nif ?? "").replace(/\D/g, "");
+  const nif = String(args["cert-number"] ?? args.nif ?? "").replace(/\D/g, "");
   if (!/^\d{9}$/.test(nif)) {
-    console.error("Erro: --nif deve ter 9 dígitos.");
+    console.error("Erro: --cert-number (CN) deve ter 9 dígitos.");
     process.exit(1);
   }
   if (!args.crt) {
@@ -81,8 +80,17 @@ async function main() {
     process.exit(1);
   }
 
-  const privateKey = forge.pki.privateKeyFromPem(readPem(keyPath));
+  const keyPem = readPem(keyPath);
+  const privateKey = forge.pki.privateKeyFromPem(keyPem);
   const cert = loadCert(crtPath);
+  const certPem = forge.pki.certificateToPem(cert);
+  const x509 = new X509Certificate(certPem);
+  const certPub = x509.publicKey.export({ type: "spki", format: "der" });
+  const keyPub = createPublicKey(keyPem).export({ type: "spki", format: "der" });
+  if (!certPub.equals(keyPub)) {
+    console.error("Erro: a chave privada não corresponde ao certificado recebido da AT.");
+    process.exit(1);
+  }
 
   const p12Asn1 = forge.pkcs12.toPkcs12Asn1(privateKey, [cert], passphrase, {
     algorithm: "3des",
@@ -91,9 +99,13 @@ async function main() {
   writeFileSync(outPath, Buffer.from(pfxDer, "binary"));
 
   console.log("PFX criado:", outPath);
-  console.log("\nConfigure no .env:");
+  console.log("\nConfigure no .env (produção):");
+  console.log("AT_FATURAS_MODE=production");
+  console.log("AT_SERIES_MODE=production");
   console.log(`AT_FATURAS_CLIENT_CERT_PFX_PATH=./certs/at-producer-${nif}.pfx`);
-  console.log(`AT_FATURAS_CLIENT_CERT_PASSPHRASE=<a password que definiu>`);
+  console.log("AT_FATURAS_CLIENT_CERT_PASSPHRASE=<a password que definiu>");
+  console.log("AT_FATURAS_PUBLIC_KEY_PATH=./certs/at-public-key-prod.pem");
+  console.log(`AT_SOFTWARE_CERT_NUMBER=${nif}`);
 }
 
 main().catch((err) => {

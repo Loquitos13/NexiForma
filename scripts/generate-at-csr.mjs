@@ -4,16 +4,14 @@
  * Não requer OpenSSL instalado - usa node-forge.
  *
  * Uso:
- *   npm run generate:at-csr -- --nif 123456789 --st Lisboa --city Lisboa \
+ *   npm run generate:at-csr -- --cert-number 515834963 --st Lisboa --city Lisboa \
  *     --org "A Sua Empresa Lda" --ou "Formacao" --email admin@exemplo.pt
  */
 import { mkdirSync, writeFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import forge from "node-forge";
+import { resolve } from "node:path";
+import { loadNodeForge, root } from "./at-forge.mjs";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = resolve(__dirname, "..");
+const forge = loadNodeForge();
 
 const LIMITS = { C: 2, ST: 32, L: 32, O: 180, OU: 180, CN: 9, email: 80 };
 
@@ -53,7 +51,7 @@ function usage() {
 Gera chave privada RSA 4096 + CSR para o portal AT (Produtores de Software).
 
 npm run generate:at-csr -- \\
-  --nif 123456789 \\
+  --cert-number 515834963 \\
   --st Lisboa \\
   --city Lisboa \\
   --org "A Sua Empresa Lda" \\
@@ -61,7 +59,8 @@ npm run generate:at-csr -- \\
   --email admin@exemplo.pt \\
   [--out ./certs/adesao]
 
-Campos obrigatórios: --nif --st --city --org --ou --email
+Campos obrigatórios: --cert-number (CN, 9 dígitos) --st --city --org --ou --email
+Pode gerar o par .key/.csr ANTES da revogação do certificado antigo; submeta o .csr no portal só depois.
 Sem acentos nos valores (serão removidos automaticamente se existirem).
 `);
 }
@@ -73,9 +72,9 @@ function main() {
     process.exit(0);
   }
 
-  const nifRaw = String(args.nif ?? "").replace(/\D/g, "");
+  const nifRaw = String(args["cert-number"] ?? args.nif ?? "").replace(/\D/g, "");
   if (!/^\d{9}$/.test(nifRaw)) {
-    console.error("Erro: --nif deve ter 9 dígitos.");
+    console.error("Erro: --cert-number (CN) deve ter 9 dígitos.");
     usage();
     process.exit(1);
   }
@@ -140,7 +139,7 @@ function main() {
   console.log("--- fim ---\n");
   console.warn(
     "IMPORTANTE: Guarde o .key em local seguro. Quando a AT enviar o .crt:\n" +
-      `  npm run generate:at-pfx -- --nif ${nifRaw} --crt ./certs/adesao/${nifRaw}.crt`,
+      `  npm run generate:at-pfx -- --cert-number ${nifRaw} --crt ./certs/adesao/${nifRaw}.crt`,
   );
 }
 
