@@ -15,6 +15,7 @@ type Props = {
   maxWidth?: number;
   /** Adia montagem do iframe (melhora performance inicial). */
   lazy?: boolean;
+  hideLabel?: boolean;
 };
 
 function DocumentPagePreviewInner({
@@ -24,6 +25,7 @@ function DocumentPagePreviewInner({
   className,
   maxWidth = 520,
   lazy = false,
+  hideLabel = false,
 }: Props) {
   const aspect = a4AspectRatio(orientacao);
   const [mounted, setMounted] = useState(!lazy);
@@ -56,9 +58,11 @@ function DocumentPagePreviewInner({
 
   return (
     <div ref={containerRef} className={cn("space-y-1.5", className)}>
-      <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-        Pré-visualização A4 {orientacao === "landscape" ? "horizontal" : "vertical"}
-      </p>
+      {!hideLabel ? (
+        <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+          Pré-visualização A4 {orientacao === "landscape" ? "horizontal" : "vertical"}
+        </p>
+      ) : null}
       <div
         className="mx-auto overflow-hidden rounded-lg border border-slate-600/50 bg-slate-800/40 shadow-inner"
         style={{ maxWidth }}

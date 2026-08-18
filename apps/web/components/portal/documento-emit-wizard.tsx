@@ -86,8 +86,6 @@ export function DocumentoEmitWizard({
     const data = (await r.json()) as PreviewPayload;
     setPreviewHtml(data.html);
     setModuleLogos(data.moduleLogos ?? []);
-    if (data.orientacao) setOrientacao(data.orientacao);
-    if (data.alinhamentoVertical) setAlinhamentoVertical(data.alinhamentoVertical);
     if (!bodyHtml && data.bodyHtml) setBodyHtml(data.bodyHtml);
     if (!logoPlacements.length && data.logoPlacements?.length) {
       setLogoPlacements(data.logoPlacements);
@@ -251,7 +249,7 @@ export function DocumentoEmitWizard({
               logos={moduleLogos}
               placements={logoPlacements}
               onChange={setLogoPlacements}
-              previewHtml={bodyHtml}
+              previewSrcDoc={previewHtml}
               orientacao={orientacao}
               verticalAlign={alinhamentoVertical}
             />

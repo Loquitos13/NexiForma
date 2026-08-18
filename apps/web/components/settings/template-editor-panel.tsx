@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, FilePlus, FileUp, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, Eye, FilePlus, FileUp, Plus, Save, Trash2 } from "lucide-react";
 import {
   TEMPLATE_TYPES,
   buildDocumentPreviewHtml,
@@ -123,6 +123,10 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setShowPreview(false);
+  }, [activeId]);
 
   useEffect(() => {
     const entry = saved[activeId];
@@ -420,105 +424,119 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
         ) : null}
       </div>
 
-      <div
-        className={cn(
-          "grid gap-4 lg:grid-cols-[minmax(0,1fr)_14rem]",
-          showPreview && "xl:grid-cols-[minmax(0,1fr)_minmax(260px,420px)_14rem]",
-        )}
-      >
-        <div className="min-w-0 space-y-2 xl:col-span-1">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <label className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-              Editor (tamanho A4)
-            </label>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                onClick={() => setShowPreview((v) => !v)}
-              >
-                {showPreview ? "Ocultar preview" : "Mostrar preview"}
-              </Button>
-              <input
-                ref={docxInputRef}
-                type="file"
-                accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void importarDocx(f);
-                  e.target.value = "";
-                }}
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled={busy || importandoDocx}
-                onClick={() => docxInputRef.current?.click()}
-              >
-                <FileUp className="h-3.5 w-3.5" />
-                {importandoDocx ? "A importar…" : "Importar DOCX"}
-              </Button>
-            </div>
-          </div>
-          <RichTemplateEditor
-            key={`${activeId}-${formato}`}
-            ref={richEditorRef}
-            value={conteudo}
-            onChange={setConteudo}
-            formato={formato}
-            pageLayout="a4"
-            orientacao={orientacao}
-            verticalAlign={alinhamentoVertical}
-            onVerticalAlignChange={setAlinhamentoVertical}
-          />
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_14rem]">
+        <div className="min-w-0 space-y-2">
           {showPreview ? (
-            <DocumentPagePreview
-              srcDoc={previewHtml}
-              orientacao={orientacao}
-              title={nome || "Template"}
-              className="lg:hidden"
-              lazy
-            />
-          ) : null}
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" size="sm" disabled={busy} onClick={() => void guardar()}>
-              <Save className="h-3.5 w-3.5" />
-              {busy ? "A guardar…" : "Guardar template"}
-            </Button>
-            {activeCatalog?.conteudoDefault ? (
-              <Button type="button" size="sm" variant="secondary" onClick={restaurarDefault}>
-                Restaurar modelo
-              </Button>
-            ) : null}
-            {isCustomActive ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled={busy}
-                onClick={() => void eliminarTemplate()}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Eliminar
-              </Button>
-            ) : null}
-          </div>
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                  Pré-visualização A4
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowPreview(false)}
+                  className="template-preview-back inline-flex items-center gap-2 rounded-lg border border-blue-500/50 bg-blue-950/50 px-3 py-1.5 text-xs font-medium text-blue-200 shadow-[0_0_12px_rgba(59,130,246,0.35)] transition-colors hover:bg-blue-900/60 hover:text-blue-100"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Voltar ao editor
+                </button>
+              </div>
+              <style>{`
+                @keyframes template-preview-pulse {
+                  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.55); }
+                  50% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+                }
+                .template-preview-back {
+                  animation: template-preview-pulse 2s ease-in-out infinite;
+                }
+              `}</style>
+              <DocumentPagePreview
+                srcDoc={previewHtml}
+                orientacao={orientacao}
+                title={nome || "Template"}
+                maxWidth={640}
+                hideLabel
+              />
+            </>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                  Editor (tamanho A4)
+                </label>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setShowPreview(true)}
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    Pré-visualizar
+                  </Button>
+                  <input
+                    ref={docxInputRef}
+                    type="file"
+                    accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void importarDocx(f);
+                      e.target.value = "";
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy || importandoDocx}
+                    onClick={() => docxInputRef.current?.click()}
+                  >
+                    <FileUp className="h-3.5 w-3.5" />
+                    {importandoDocx ? "A importar…" : "Importar DOCX"}
+                  </Button>
+                </div>
+              </div>
+              <RichTemplateEditor
+                key={`${activeId}-${formato}`}
+                ref={richEditorRef}
+                value={conteudo}
+                onChange={setConteudo}
+                formato={formato}
+                pageLayout="a4"
+                orientacao={orientacao}
+                verticalAlign={alinhamentoVertical}
+                onVerticalAlignChange={setAlinhamentoVertical}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" disabled={busy} onClick={() => void guardar()}>
+                  <Save className="h-3.5 w-3.5" />
+                  {busy ? "A guardar…" : "Guardar template"}
+                </Button>
+                {activeCatalog?.conteudoDefault ? (
+                  <Button type="button" size="sm" variant="secondary" onClick={restaurarDefault}>
+                    Restaurar modelo
+                  </Button>
+                ) : null}
+                {isCustomActive ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => void eliminarTemplate()}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Eliminar
+                  </Button>
+                ) : null}
+              </div>
+            </>
+          )}
         </div>
 
-        {showPreview ? (
-          <DocumentPagePreview
-            srcDoc={previewHtml}
-            orientacao={orientacao}
-            title={nome || "Template"}
-            className="hidden xl:block"
-            lazy
-          />
-        ) : null}
-
-        <aside className={cn("space-y-2 lg:col-start-2", showPreview && "xl:col-start-3")}>
+        {!showPreview ? (
+        <aside className="space-y-2">
           <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
             Inserir variável
           </p>
@@ -565,6 +583,7 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
             })}
           </div>
         </aside>
+        ) : null}
       </div>
     </section>
   );

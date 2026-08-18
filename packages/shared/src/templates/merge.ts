@@ -50,7 +50,9 @@ function escapeHtml(s: string): string {
 export function mergeTemplatePlainTextToHtml(
   template: string,
   context: Record<string, string | number | null | undefined>,
+  htmlKeys: string[] = ["acao.conteudos_modulos"],
 ): string {
+  const htmlSet = new Set(htmlKeys);
   const parts: string[] = [];
   let lastIndex = 0;
   const re = new RegExp(TOKEN_RE.source, "g");
@@ -62,7 +64,8 @@ export function mergeTemplatePlainTextToHtml(
     if (val === null || val === undefined || val === "") {
       parts.push(`{{${key}}}`);
     } else {
-      parts.push(escapeHtml(String(val)));
+      const s = String(val);
+      parts.push(htmlSet.has(key) ? s : escapeHtml(s));
     }
     lastIndex = m.index + m[0].length;
   }
@@ -73,4 +76,20 @@ export function mergeTemplatePlainTextToHtml(
     .split("\n")
     .map((line) => `<p>${line || "&nbsp;"}</p>`)
     .join("");
+}
+
+export function templateBodyLooksHtml(template: string): boolean {
+  return /<[a-z][\s\S]*>/i.test(template);
+}
+
+/** Escolhe merge HTML vs texto simples consoante formato e conteúdo. */
+export function resolveMergedTemplateBody(
+  template: string,
+  context: Record<string, string | number | null | undefined>,
+  formato?: "texto" | "html",
+): string {
+  if (formato === "texto" && !templateBodyLooksHtml(template)) {
+    return mergeTemplatePlainTextToHtml(template, context);
+  }
+  return mergeTemplateHtml(template, context);
 }

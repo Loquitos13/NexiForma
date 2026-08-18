@@ -281,6 +281,8 @@ export {
   mergeTemplateContent,
   mergeTemplateHtml,
   mergeTemplatePlainTextToHtml,
+  resolveMergedTemplateBody,
+  templateBodyLooksHtml,
 } from "./templates/merge";
 
 export {

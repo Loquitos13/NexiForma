@@ -22,21 +22,31 @@ export function pageDimensionsMm(orientacao: DocumentOrientacao = "portrait"): {
 function documentPageLayoutRules(
   orientacao: DocumentOrientacao = "portrait",
   selectorPrefix = "",
+  mode: "editor" | "print" = "print",
 ): string {
   const { width, height } = pageDimensionsMm(orientacao);
   const innerH = height - DOCUMENT_MARGIN_MM * 2;
   const p = selectorPrefix ? `${selectorPrefix} ` : "";
+  const shellHeight =
+    mode === "editor"
+      ? `display: flex; flex-direction: column; min-height: min(${height}mm, 70vh); max-height: min(${height}mm, 70vh); overflow-y: auto;`
+      : `min-height: ${height}mm;`;
+
+  const bodyMiddleMin =
+    mode === "editor"
+      ? `flex: 1; min-height: 0;`
+      : `min-height: ${innerH}mm;`;
+
+  const bodyTopMin = mode === "editor" ? `flex: 1; min-height: 0;` : `min-height: auto;`;
 
   return `
     ${p}.doc-page-shell {
       box-sizing: border-box;
       width: ${width}mm;
-      min-height: ${height}mm;
-      max-height: min(${height}mm, 70vh);
+      ${shellHeight}
       margin: 0 auto;
       padding: ${DOCUMENT_MARGIN_MM}mm;
       background: #fff;
-      overflow-y: auto;
       font-family: Georgia, "Times New Roman", serif;
       color: #111;
       line-height: 1.45;
@@ -44,20 +54,20 @@ function documentPageLayoutRules(
     }
     ${p}.doc-page-body {
       box-sizing: border-box;
-      min-height: ${innerH}mm;
       display: flex;
       flex-direction: column;
     }
-    ${p}.doc-page-body[data-v-align="top"] { justify-content: flex-start; min-height: auto; }
-    ${p}.doc-page-body[data-v-align="middle"] { justify-content: center; min-height: ${innerH}mm; }
-    ${p}.doc-page-body[data-v-align="bottom"] { justify-content: flex-end; min-height: ${innerH}mm; }
-    ${p}.doc-content-layer { width: 100%; min-height: 2rem; }
+    ${p}.doc-page-body[data-v-align="top"] { justify-content: flex-start; ${bodyTopMin} }
+    ${p}.doc-page-body[data-v-align="middle"] { justify-content: center; ${bodyMiddleMin} }
+    ${p}.doc-page-body[data-v-align="bottom"] { justify-content: flex-end; ${bodyMiddleMin} }
+    ${p}.doc-content-layer { width: 100%; }
     ${p}.doc-content-layer h1 { font-size: 1.6em; font-weight: 700; margin: 0.6em 0 0.3em; }
     ${p}.doc-content-layer h2 { font-size: 1.35em; font-weight: 700; margin: 0.5em 0 0.25em; }
     ${p}.doc-content-layer h3 { font-size: 1.15em; font-weight: 600; margin: 0.45em 0 0.2em; }
     ${p}.doc-content-layer p { margin: 0 0 10px; }
     ${p}.doc-content-layer ul, ${p}.doc-content-layer ol { margin: 0 0 10px 1.25em; }
     ${p}.doc-content-layer table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+    ${p}.doc-content-layer td, ${p}.doc-content-layer th { border: 1px solid #ccc; padding: 4px 8px; }
   `.trim();
 }
 
@@ -79,7 +89,7 @@ export function documentPageCss(
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    ${documentPageLayoutRules(orientacao)}
+    ${documentPageLayoutRules(orientacao, "", "print")}
     ${extraCss}
   `.trim();
 }
@@ -89,7 +99,7 @@ export function documentPageEditorCss(
   orientacao: DocumentOrientacao = "portrait",
   rootSelector = ".doc-editor-root",
 ): string {
-  return documentPageLayoutRules(orientacao, rootSelector);
+  return documentPageLayoutRules(orientacao, rootSelector, "editor");
 }
 
 function escapeHtml(s: string): string {

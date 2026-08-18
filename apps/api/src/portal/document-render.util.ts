@@ -3,8 +3,8 @@ import {
   getModuloLogos,
   getModuloTemplates,
   mergeTemplateHtml,
-  mergeTemplatePlainTextToHtml,
   parseDocumentLogoPlacements,
+  resolveMergedTemplateBody,
   type DocumentLogoPlacement,
   type DocumentOrientacao,
   type DocumentVerticalAlign,
@@ -91,10 +91,9 @@ export async function renderMatriculaDocumentHtml(
     if (!rawTemplate.trim()) {
       throw new Error("EMPTY_TEMPLATE");
     }
-    mergedBody =
-      entry?.formato === "texto"
-        ? mergeTemplatePlainTextToHtml(rawTemplate, input.context)
-        : mergeTemplateHtml(rawTemplate, input.context);
+    mergedBody = resolveMergedTemplateBody(rawTemplate, input.context, entry?.formato);
+  } else {
+    mergedBody = mergeTemplateHtml(mergedBody, input.context);
   }
 
   let html = ensureFullDocumentHtml(label, mergedBody, input.metadata, {

@@ -345,7 +345,9 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
         data-placeholder={placeholder}
         className={cn(
           "doc-content-layer rich-template-editor outline-none text-slate-900",
-          pageLayout === "a4" ? "min-h-0 flex-1" : "min-h-[360px] w-full rounded-lg px-4 py-3 text-[13px]",
+          pageLayout === "a4"
+            ? "w-full"
+            : "min-h-[360px] w-full rounded-lg px-4 py-3 text-[13px]",
           pageLayout !== "a4" &&
             "rounded-lg border border-slate-600/60 bg-white leading-relaxed font-[Georgia,'Times_New_Roman',serif]",
           "[&:empty]:before:text-slate-400 [&:empty]:before:content-[attr(data-placeholder)]",
