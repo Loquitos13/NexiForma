@@ -159,12 +159,13 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
 
   async function guardar() {
     if (!activeId) return;
+    const latestConteudo = richEditorRef.current?.getContent() ?? conteudo;
     const label = nome.trim() || activeCatalog?.label || activeId;
     const logosNorm = logoPlacements.map((p, i) => normalizeLogoPlacement(p, i));
     const next = {
       ...saved,
       [activeId]: {
-        conteudo,
+        conteudo: latestConteudo,
         nome: label,
         ...(isCustomActive ? { custom: true as const } : {}),
         formato,
@@ -174,7 +175,14 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
         updatedAt: new Date().toISOString(),
       },
     };
-    await persistTemplates(next, `Template «${label}» guardado.`);
+    const ok = await persistTemplates(next, `Template «${label}» guardado.`);
+    if (!ok) return;
+    if (latestConteudo !== conteudo) setConteudo(latestConteudo);
+    window.dispatchEvent(
+      new CustomEvent("nexiforma:document-templates-updated", {
+        detail: { modulo, templateId: activeId },
+      }),
+    );
   }
 
   async function eliminarTemplate() {

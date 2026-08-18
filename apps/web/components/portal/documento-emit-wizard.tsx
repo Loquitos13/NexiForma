@@ -66,6 +66,37 @@ export function DocumentoEmitWizard({
   const [initialLoaded, setInitialLoaded] = useState(false);
   const [bodyEdited, setBodyEdited] = useState(false);
 
+  const loadInitial = useCallback(
+    async (opts?: { force?: boolean }) => {
+      setLoading(true);
+      setInitialLoaded(false);
+      if (opts?.force) {
+        bodyEditedRef.current = false;
+        setBodyEdited(false);
+        setLogoPlacements([]);
+      }
+      const r = await bffFetch(
+        `/api/v1/matriculas/${encodeURIComponent(matriculaId)}/documentos/${encodeURIComponent(templateId)}/preview?v=${Date.now()}`,
+        { headers: { accept: "application/json", "cache-control": "no-cache" } },
+      );
+      setLoading(false);
+      if (!r.ok) {
+        onError?.(await parseApiError(r));
+        if (!opts?.force) onOpenChange(false);
+        return;
+      }
+      const data = (await r.json()) as PreviewPayload;
+      setBodyHtml(data.bodyHtml);
+      setPreviewHtml(data.html);
+      setLogoPlacements(data.logoPlacements ?? []);
+      setModuleLogos(data.moduleLogos ?? []);
+      if (data.orientacao) setOrientacao(data.orientacao);
+      if (data.alinhamentoVertical) setAlinhamentoVertical(data.alinhamentoVertical);
+      setInitialLoaded(true);
+    },
+    [matriculaId, templateId, onError, onOpenChange],
+  );
+
   const refreshPreview = useCallback(async () => {
     setPreviewLoading(true);
     const payload: Record<string, unknown> = {
@@ -112,31 +143,22 @@ export function DocumentoEmitWizard({
       bodyEditedRef.current = false;
       return;
     }
-    void (async () => {
-      setLoading(true);
-      setInitialLoaded(false);
-      bodyEditedRef.current = false;
-      setBodyEdited(false);
-      const r = await bffFetch(
-        `/api/v1/matriculas/${encodeURIComponent(matriculaId)}/documentos/${encodeURIComponent(templateId)}/preview?v=${Date.now()}`,
-        { headers: { accept: "application/json", "cache-control": "no-cache" } },
-      );
-      setLoading(false);
-      if (!r.ok) {
-        onError?.(await parseApiError(r));
-        onOpenChange(false);
-        return;
-      }
-      const data = (await r.json()) as PreviewPayload;
-      setBodyHtml(data.bodyHtml);
-      setPreviewHtml(data.html);
-      setLogoPlacements(data.logoPlacements ?? []);
-      setModuleLogos(data.moduleLogos ?? []);
-      if (data.orientacao) setOrientacao(data.orientacao);
-      if (data.alinhamentoVertical) setAlinhamentoVertical(data.alinhamentoVertical);
-      setInitialLoaded(true);
-    })();
-  }, [open, matriculaId, templateId, onError, onOpenChange]);
+    bodyEditedRef.current = false;
+    setBodyEdited(false);
+    void loadInitial();
+  }, [open, matriculaId, templateId, loadInitial]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onTemplatesUpdated(e: Event) {
+      const detail = (e as CustomEvent<{ templateId?: string }>).detail;
+      if (detail?.templateId && detail.templateId !== templateId) return;
+      void loadInitial({ force: true });
+    }
+    window.addEventListener("nexiforma:document-templates-updated", onTemplatesUpdated);
+    return () =>
+      window.removeEventListener("nexiforma:document-templates-updated", onTemplatesUpdated);
+  }, [open, templateId, loadInitial]);
 
   useEffect(() => {
     if (!open || loading || !initialLoaded) return;

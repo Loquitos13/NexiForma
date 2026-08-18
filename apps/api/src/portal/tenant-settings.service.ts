@@ -506,6 +506,14 @@ export class TenantSettingsService {
         ...(entry.logos?.length
           ? { logos: parseDocumentLogoPlacements(entry.logos) }
           : {}),
+        ...(entry.orientacao === "portrait" || entry.orientacao === "landscape"
+          ? { orientacao: entry.orientacao }
+          : {}),
+        ...(entry.alinhamentoVertical === "top" ||
+        entry.alinhamentoVertical === "middle" ||
+        entry.alinhamentoVertical === "bottom"
+          ? { alinhamentoVertical: entry.alinhamentoVertical }
+          : {}),
         updatedAt: new Date().toISOString(),
       };
     }

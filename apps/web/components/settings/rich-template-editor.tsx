@@ -86,6 +86,8 @@ const DEFAULT_FORMAT: FormatState = {
 export type RichTemplateEditorHandle = {
   insertToken: (token: string) => void;
   focus: () => void;
+  /** Conteúdo actual do editor (mesmo formato que onChange). */
+  getContent: () => string;
 };
 
 type Props = {
@@ -517,6 +519,15 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
       [emitChange],
     );
 
+    const readContent = useCallback((): string => {
+      const raw =
+        mode === "html"
+          ? (textareaRef.current?.value ?? htmlSource)
+          : (editorRef.current?.innerHTML ?? htmlSource);
+      const clean = sanitizeDocumentEditorHtml(raw);
+      return formato === "texto" ? editorHtmlToPlainText(clean) : clean;
+    }, [formato, htmlSource, mode]);
+
     useImperativeHandle(
       ref,
       () => ({
@@ -532,8 +543,11 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
           if (mode === "html") textareaRef.current?.focus();
           else editorRef.current?.focus();
         },
+        getContent() {
+          return readContent();
+        },
       }),
-      [captureSelection, emitFromVisualEditor, insertInTextarea, mode],
+      [captureSelection, emitFromVisualEditor, insertInTextarea, mode, readContent],
     );
 
     useLayoutEffect(() => {
@@ -926,10 +940,8 @@ function ToolbarSelect({
         "h-7 max-w-[9rem] rounded border border-slate-600/60 bg-slate-900 px-1.5 text-[10px] text-slate-200",
         className,
       )}
-      onMouseDown={(e) => {
-        e.preventDefault();
-        onOpen();
-      }}
+      onPointerDown={() => onOpen()}
+      onFocus={() => onOpen()}
       onChange={(e) => {
         const v = e.target.value;
         if (v) onPick(v);
