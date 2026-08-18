@@ -270,6 +270,7 @@ export {
   a4AspectRatio,
   buildDocumentPreviewHtml,
   documentPageCss,
+  documentPageEditorCss,
   pageDimensionsMm,
   type DocumentOrientacao,
   type DocumentVerticalAlign,

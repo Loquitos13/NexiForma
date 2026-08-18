@@ -73,10 +73,11 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
   const richEditorRef = useRef<RichTemplateEditorHandle>(null);
   const [importandoDocx, setImportandoDocx] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
+  const [showLogos, setShowLogos] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
-    const body =
-      formato === "texto" ? plainTextToEditorHtml(conteudo) : conteudo;
+    const body = formato === "texto" ? plainTextToEditorHtml(conteudo) : conteudo;
     const t = window.setTimeout(() => {
       setPreviewHtml(
         buildDocumentPreviewHtml(body, {
@@ -85,7 +86,7 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
           verticalAlign: alinhamentoVertical,
         }),
       );
-    }, 250);
+    }, 450);
     return () => window.clearTimeout(t);
   }, [conteudo, formato, nome, orientacao, alinhamentoVertical]);
 
@@ -245,9 +246,6 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
     }
   }
 
-  const logoPreviewHtml =
-    formato === "texto" ? plainTextToEditorHtml(conteudo) : conteudo;
-
   if (!types.length && customTemplates.length === 0) {
     return (
       <p className="text-sm text-slate-500">Sem tipos de template para este módulo.</p>
@@ -399,27 +397,49 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
       </div>
 
       <div className="space-y-2">
-        <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-          Logótipos predefinidos neste template
-        </p>
-        <TemplateLogoPresets
-          modulo={modulo}
-          logos={moduleLogos}
-          placements={logoPlacements}
-          onChange={setLogoPlacements}
-          previewHtml={logoPreviewHtml}
-          orientacao={orientacao}
-          verticalAlign={alinhamentoVertical}
-        />
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-700/40 bg-slate-950/40 px-3 py-2 text-left"
+          onClick={() => setShowLogos((v) => !v)}
+        >
+          <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+            Logótipos predefinidos neste template
+          </span>
+          <ChevronDown className={cn("h-4 w-4 text-slate-500 transition-transform", showLogos && "rotate-180")} />
+        </button>
+        {showLogos ? (
+          <TemplateLogoPresets
+            modulo={modulo}
+            logos={moduleLogos}
+            placements={logoPlacements}
+            onChange={setLogoPlacements}
+            previewSrcDoc={previewHtml}
+            orientacao={orientacao}
+            verticalAlign={alinhamentoVertical}
+          />
+        ) : null}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,520px)_14rem]">
+      <div
+        className={cn(
+          "grid gap-4 lg:grid-cols-[minmax(0,1fr)_14rem]",
+          showPreview && "xl:grid-cols-[minmax(0,1fr)_minmax(260px,420px)_14rem]",
+        )}
+      >
         <div className="min-w-0 space-y-2 xl:col-span-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <label className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-              Editor (tamanho A4 real)
+              Editor (tamanho A4)
             </label>
             <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => setShowPreview((v) => !v)}
+              >
+                {showPreview ? "Ocultar preview" : "Mostrar preview"}
+              </Button>
               <input
                 ref={docxInputRef}
                 type="file"
@@ -444,7 +464,7 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
             </div>
           </div>
           <RichTemplateEditor
-            key={`${activeId}-${formato}-${orientacao}`}
+            key={`${activeId}-${formato}`}
             ref={richEditorRef}
             value={conteudo}
             onChange={setConteudo}
@@ -454,13 +474,15 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
             verticalAlign={alinhamentoVertical}
             onVerticalAlignChange={setAlinhamentoVertical}
           />
-          <div className="xl:hidden">
+          {showPreview ? (
             <DocumentPagePreview
               srcDoc={previewHtml}
               orientacao={orientacao}
               title={nome || "Template"}
+              className="lg:hidden"
+              lazy
             />
-          </div>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" disabled={busy} onClick={() => void guardar()}>
               <Save className="h-3.5 w-3.5" />
@@ -486,14 +508,17 @@ export function TemplateEditorPanel({ modulo, title, description }: Props) {
           </div>
         </div>
 
-        <DocumentPagePreview
-          srcDoc={previewHtml}
-          orientacao={orientacao}
-          title={nome || "Template"}
-          className="hidden xl:block"
-        />
+        {showPreview ? (
+          <DocumentPagePreview
+            srcDoc={previewHtml}
+            orientacao={orientacao}
+            title={nome || "Template"}
+            className="hidden xl:block"
+            lazy
+          />
+        ) : null}
 
-        <aside className="space-y-2">
+        <aside className={cn("space-y-2 lg:col-start-2", showPreview && "xl:col-start-3")}>
           <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
             Inserir variável
           </p>

@@ -14,6 +14,7 @@ type Props = {
   onChange: (next: DocumentLogoPlacement[]) => void;
   modulo: string;
   previewHtml?: string;
+  previewSrcDoc?: string;
   orientacao?: DocumentOrientacao;
   verticalAlign?: DocumentVerticalAlign;
 };

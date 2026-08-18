@@ -24,7 +24,7 @@ import {
   Underline,
 } from "lucide-react";
 import {
-  documentPageCss,
+  documentPageEditorCss,
   editorHtmlToPlainText,
   pageDimensionsMm,
   plainTextToEditorHtml,
@@ -54,7 +54,7 @@ export type RichTemplateEditorHandle = {
 type Props = {
   value: string;
   onChange: (html: string) => void;
-  /** Indicador do formato guardado (texto vs HTML) — não alterna modo de edição. */
+  /** Indicador do formato guardado (texto vs HTML)  não alterna modo de edição. */
   formato?: "texto" | "html";
   pageLayout?: "a4" | "fluid";
   orientacao?: DocumentOrientacao;
@@ -174,7 +174,7 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
     const hydratedRef = useRef(false);
 
     const pageMm = pageDimensionsMm(orientacao);
-    const pageCss = documentPageCss(orientacao);
+    const editorCss = documentPageEditorCss(orientacao);
 
     const emitChange = useCallback(
       (nextHtml: string) => {
@@ -307,8 +307,12 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
       function onSelectionChange() {
         if (document.activeElement === el) captureSelection();
       }
+      el.addEventListener("focusin", onSelectionChange);
       document.addEventListener("selectionchange", onSelectionChange);
-      return () => document.removeEventListener("selectionchange", onSelectionChange);
+      return () => {
+        el.removeEventListener("focusin", onSelectionChange);
+        document.removeEventListener("selectionchange", onSelectionChange);
+      };
     }, [captureSelection, mode]);
 
     function switchMode(next: EditorMode) {
@@ -457,11 +461,11 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
 
         {mode === "visual" ? (
           pageLayout === "a4" ? (
-            <div className="overflow-x-auto rounded-lg border border-slate-700/40 bg-slate-800/30 p-3">
-              <style>{pageCss}</style>
+            <div className="doc-editor-root overflow-x-auto rounded-lg border border-slate-700/40 bg-slate-800/30 p-3">
+              <style>{editorCss}</style>
               <div
                 className="doc-page-shell mx-auto shadow-md"
-                style={{ width: `${pageMm.width}mm`, minHeight: `${pageMm.height}mm`, maxWidth: "100%" }}
+                style={{ width: `${pageMm.width}mm`, maxWidth: "100%" }}
               >
                 <div className="doc-page-body" data-v-align={verticalAlign}>
                   {editorSurface}
@@ -475,7 +479,7 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
           <div className="overflow-x-auto rounded-lg border border-slate-700/40 bg-slate-800/30 p-3">
             <textarea
               ref={textareaRef}
-              rows={28}
+              rows={22}
               dir="ltr"
               lang="pt"
               value={htmlSource}
@@ -489,7 +493,11 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
                 captureTextareaSelection();
               }}
               className="mx-auto block w-full max-w-full rounded border border-slate-600/60 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-200 leading-relaxed"
-              style={{ width: `${pageMm.width}mm`, minHeight: `${pageMm.height}mm`, maxWidth: "100%" }}
+              style={{
+                width: `${pageMm.width}mm`,
+                maxWidth: "100%",
+                maxHeight: "70vh",
+              }}
               spellCheck={false}
             />
           </div>

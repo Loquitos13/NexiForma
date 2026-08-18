@@ -29,7 +29,10 @@ type Props = {
   placements: DocumentLogoPlacement[];
   onChange: (next: DocumentLogoPlacement[]) => void;
   modulo: string;
+  /** HTML parcial (legado) */
   previewHtml?: string;
+  /** HTML completo para iframe (preferido — evita rebuild duplicado). */
+  previewSrcDoc?: string;
   orientacao?: DocumentOrientacao;
   verticalAlign?: DocumentVerticalAlign;
 };
@@ -48,6 +51,7 @@ export function LogoDragCanvas({
   onChange,
   modulo,
   previewHtml,
+  previewSrcDoc,
   orientacao = "portrait",
   verticalAlign = "top",
 }: Props) {
@@ -141,13 +145,11 @@ export function LogoDragCanvas({
     };
   }, [drag, normalized, pctFromEvent]);
 
-  const previewDoc = useMemo(
-    () =>
-      previewHtml
-        ? buildDocumentPreviewHtml(previewHtml, { orientacao, verticalAlign })
-        : "",
-    [previewHtml, orientacao, verticalAlign],
-  );
+  const previewDoc = useMemo(() => {
+    if (previewSrcDoc) return previewSrcDoc;
+    if (!previewHtml) return "";
+    return buildDocumentPreviewHtml(previewHtml, { orientacao, verticalAlign });
+  }, [previewSrcDoc, previewHtml, orientacao, verticalAlign]);
 
   if (!logos.length) {
     return (

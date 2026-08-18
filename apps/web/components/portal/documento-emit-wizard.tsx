@@ -234,6 +234,7 @@ export function DocumentoEmitWizard({
                 orientacao={orientacao}
                 title={templateLabel}
                 maxWidth={420}
+                lazy
               />
             </div>
           </div>
@@ -264,6 +265,7 @@ export function DocumentoEmitWizard({
               orientacao={orientacao}
               title={templateLabel}
               maxWidth={640}
+              lazy
             />
             <label className="flex items-center gap-2 text-xs text-slate-400">
               <input

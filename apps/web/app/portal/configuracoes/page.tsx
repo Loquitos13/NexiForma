@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
@@ -12,9 +13,38 @@ import {
   resolveConfigModulos,
   type ConfigModuloId,
 } from "@/components/settings/configuracoes-modulo-nav";
-import { ConfiguracoesFormacaoPanel } from "@/components/settings/configuracoes-formacao-panel";
-import { ConfiguracoesCrmPanel } from "@/components/settings/configuracoes-crm-panel";
-import { TemplateEditorPanel } from "@/components/settings/template-editor-panel";
+
+const ConfiguracoesFormacaoPanel = dynamic(
+  () =>
+    import("@/components/settings/configuracoes-formacao-panel").then((m) => ({
+      default: m.ConfiguracoesFormacaoPanel,
+    })),
+  { loading: () => <PanelSkeleton label="Formação" /> },
+);
+
+const ConfiguracoesCrmPanel = dynamic(
+  () =>
+    import("@/components/settings/configuracoes-crm-panel").then((m) => ({
+      default: m.ConfiguracoesCrmPanel,
+    })),
+  { loading: () => <PanelSkeleton label="CRM" /> },
+);
+
+const TemplateEditorPanel = dynamic(
+  () =>
+    import("@/components/settings/template-editor-panel").then((m) => ({
+      default: m.TemplateEditorPanel,
+    })),
+  { loading: () => <PanelSkeleton label="Templates" /> },
+);
+
+function PanelSkeleton({ label }: { label: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-700/30 bg-slate-900/50 p-8 text-center text-sm text-slate-500">
+      A carregar {label}…
+    </div>
+  );
+}
 
 type TenantInfo = {
   slug: string;
@@ -81,8 +111,9 @@ export default function ConfiguracoesPage() {
   }, []);
 
   useEffect(() => {
+    if (modulo !== "geral") return;
     void load();
-  }, [load]);
+  }, [modulo, load]);
 
   useEffect(() => {
     if (!modulos.some((m) => m.id === modulo)) {

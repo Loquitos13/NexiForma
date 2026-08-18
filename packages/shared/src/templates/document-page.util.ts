@@ -18,14 +18,55 @@ export function pageDimensionsMm(orientacao: DocumentOrientacao = "portrait"): {
     : { width: A4_WIDTH_MM, height: A4_HEIGHT_MM };
 }
 
-/** CSS partilhado entre editor, pré-visualização e PDF. */
+/** Regras de layout A4 (sem html/body/@page). */
+function documentPageLayoutRules(
+  orientacao: DocumentOrientacao = "portrait",
+  selectorPrefix = "",
+): string {
+  const { width, height } = pageDimensionsMm(orientacao);
+  const innerH = height - DOCUMENT_MARGIN_MM * 2;
+  const p = selectorPrefix ? `${selectorPrefix} ` : "";
+
+  return `
+    ${p}.doc-page-shell {
+      box-sizing: border-box;
+      width: ${width}mm;
+      min-height: ${height}mm;
+      max-height: min(${height}mm, 70vh);
+      margin: 0 auto;
+      padding: ${DOCUMENT_MARGIN_MM}mm;
+      background: #fff;
+      overflow-y: auto;
+      font-family: Georgia, "Times New Roman", serif;
+      color: #111;
+      line-height: 1.45;
+      font-size: 13px;
+    }
+    ${p}.doc-page-body {
+      box-sizing: border-box;
+      min-height: ${innerH}mm;
+      display: flex;
+      flex-direction: column;
+    }
+    ${p}.doc-page-body[data-v-align="top"] { justify-content: flex-start; min-height: auto; }
+    ${p}.doc-page-body[data-v-align="middle"] { justify-content: center; min-height: ${innerH}mm; }
+    ${p}.doc-page-body[data-v-align="bottom"] { justify-content: flex-end; min-height: ${innerH}mm; }
+    ${p}.doc-content-layer { width: 100%; min-height: 2rem; }
+    ${p}.doc-content-layer h1 { font-size: 1.6em; font-weight: 700; margin: 0.6em 0 0.3em; }
+    ${p}.doc-content-layer h2 { font-size: 1.35em; font-weight: 700; margin: 0.5em 0 0.25em; }
+    ${p}.doc-content-layer h3 { font-size: 1.15em; font-weight: 600; margin: 0.45em 0 0.2em; }
+    ${p}.doc-content-layer p { margin: 0 0 10px; }
+    ${p}.doc-content-layer ul, ${p}.doc-content-layer ol { margin: 0 0 10px 1.25em; }
+    ${p}.doc-content-layer table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  `.trim();
+}
+
+/** CSS para iframe/PDF (documento completo). */
 export function documentPageCss(
   orientacao: DocumentOrientacao = "portrait",
   extraCss = "",
 ): string {
-  const { width, height } = pageDimensionsMm(orientacao);
   const pageSize = orientacao === "landscape" ? "A4 landscape" : "A4 portrait";
-  const innerH = height - DOCUMENT_MARGIN_MM * 2;
 
   return `
     @page { size: ${pageSize}; margin: ${DOCUMENT_MARGIN_MM}mm; }
@@ -38,32 +79,17 @@ export function documentPageCss(
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    .doc-page-shell {
-      box-sizing: border-box;
-      width: ${width}mm;
-      min-height: ${height}mm;
-      margin: 0 auto;
-      padding: ${DOCUMENT_MARGIN_MM}mm;
-      background: #fff;
-    }
-    .doc-page-body {
-      box-sizing: border-box;
-      min-height: ${innerH}mm;
-      display: flex;
-      flex-direction: column;
-    }
-    .doc-page-body[data-v-align="top"] { justify-content: flex-start; }
-    .doc-page-body[data-v-align="middle"] { justify-content: center; }
-    .doc-page-body[data-v-align="bottom"] { justify-content: flex-end; }
-    .doc-content-layer { width: 100%; }
-    .doc-content-layer h1 { font-size: 1.6em; font-weight: 700; margin: 0.6em 0 0.3em; }
-    .doc-content-layer h2 { font-size: 1.35em; font-weight: 700; margin: 0.5em 0 0.25em; }
-    .doc-content-layer h3 { font-size: 1.15em; font-weight: 600; margin: 0.45em 0 0.2em; }
-    .doc-content-layer p { margin: 0 0 10px; }
-    .doc-content-layer ul, .doc-content-layer ol { margin: 0 0 10px 1.25em; }
-    .doc-content-layer table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+    ${documentPageLayoutRules(orientacao)}
     ${extraCss}
   `.trim();
+}
+
+/** CSS scoped para o editor React — não afecta html/body do portal. */
+export function documentPageEditorCss(
+  orientacao: DocumentOrientacao = "portrait",
+  rootSelector = ".doc-editor-root",
+): string {
+  return documentPageLayoutRules(orientacao, rootSelector);
 }
 
 function escapeHtml(s: string): string {
