@@ -43,12 +43,14 @@ function documentPageLayoutRules(
   const bodyFlex =
     mode === "editor" ? `flex: 1; min-height: 0; display: flex; flex-direction: column;` : "";
 
+  const pageMargin = mode === "editor" ? "margin: 0;" : "margin: 0 auto;";
+
   return `
     ${p}.doc-page-shell {
       box-sizing: border-box;
       width: ${width}mm;
       ${shellHeight}
-      margin: 0 auto;
+      ${pageMargin}
       padding: ${DOCUMENT_MARGIN_MM}mm;
       background: #fff;
       font-family: Georgia, "Times New Roman", serif;

@@ -791,24 +791,23 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
           pageLayout === "a4" ? (
             <div
               ref={pageWrapRef}
-              className="doc-editor-root overflow-x-hidden overflow-y-auto rounded-lg border border-slate-700/40 bg-slate-800/30"
+              className="doc-editor-root flex justify-center overflow-x-hidden overflow-y-auto rounded-lg border border-slate-700/40 bg-slate-800/30"
               style={{ maxHeight: "min(85vh, 920px)" }}
             >
               <style>{editorCss}</style>
               <div
-                className="mx-auto"
+                className="shrink-0 overflow-hidden"
                 style={{
                   width: pageWidthPx * pageScale,
                   height: pageHeightPx * pageScale,
                 }}
               >
                 <div
-                  className="doc-page-shell mx-auto origin-top shadow-md"
+                  className="doc-page-shell origin-top-left shadow-md"
                   style={{
                     width: `${pageMm.width}mm`,
                     height: `${pageMm.height}mm`,
                     transform: `scale(${pageScale})`,
-                    transformOrigin: "top center",
                   }}
                 >
                   <div className="doc-page-body" data-v-align={verticalAlign}>
