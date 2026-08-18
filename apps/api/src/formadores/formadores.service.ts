@@ -85,6 +85,8 @@ export class FormadoresService {
         nif,
         telefone: dto.telefone,
         morada: dto.morada,
+        ccNumero: dto.ccNumero?.trim(),
+        ccValidade: dto.ccValidade,
       },
       req,
     );

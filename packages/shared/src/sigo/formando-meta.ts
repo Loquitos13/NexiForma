@@ -12,6 +12,8 @@ export function extrairSigoFormandoMetadata(metadata: unknown): SigoFormandoMeta
       typeof s.tipoDocIdentificacao === "string" ? s.tipoDocIdentificacao : undefined,
     numDocIdentificacao:
       typeof s.numDocIdentificacao === "string" ? s.numDocIdentificacao : undefined,
+    validadeDocumento:
+      typeof s.validadeDocumento === "string" ? s.validadeDocumento : undefined,
     codPaisDocIdentificacao:
       typeof s.codPaisDocIdentificacao === "string" ? s.codPaisDocIdentificacao : undefined,
     dataNascimento: typeof s.dataNascimento === "string" ? s.dataNascimento : undefined,

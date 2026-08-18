@@ -271,6 +271,7 @@ export {
   buildDocumentPreviewHtml,
   documentPageCss,
   documentPageEditorCss,
+  mmToCssPx,
   pageDimensionsMm,
   type DocumentOrientacao,
   type DocumentVerticalAlign,

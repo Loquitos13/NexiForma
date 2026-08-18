@@ -17,6 +17,11 @@ export class SigoFormandoMetadataDto {
 
   @IsOptional()
   @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "validadeDocumento deve ser AAAA-MM-DD" })
+  validadeDocumento?: string;
+
+  @IsOptional()
+  @IsString()
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "dataNascimento deve ser AAAA-MM-DD" })
   dataNascimento?: string;
 

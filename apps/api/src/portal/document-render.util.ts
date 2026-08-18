@@ -114,7 +114,12 @@ export async function renderMatriculaDocumentHtml(
       input.modulo,
       logoPlacements,
     );
-    html = applyDocumentLogosToHtml(html, resolved);
+    if (resolved.length) {
+      html = applyDocumentLogosToHtml(html, resolved);
+    } else if (input.includeLegacyBranding !== false) {
+      const logoSrc = await resolveTenantLogoDataUri(input.storage, input.metadata);
+      html = applyTenantDocumentBranding(html, logoSrc, input.metadata);
+    }
   } else if (input.includeLegacyBranding !== false) {
     const logoSrc = await resolveTenantLogoDataUri(input.storage, input.metadata);
     html = applyTenantDocumentBranding(html, logoSrc, input.metadata);

@@ -68,6 +68,8 @@ const EMPTY_FORM = {
   email: "",
   telefone: "",
   morada: "",
+  ccNumero: "",
+  ccValidade: "",
 };
 
 export default function FormadoresPage() {
@@ -378,6 +380,23 @@ export default function FormadoresPage() {
               onChange={(e) => setForm((f) => ({ ...f, morada: e.target.value }))}
               required
             />
+            <div className="rounded-xl border border-slate-700/40 bg-slate-900/30 p-3 space-y-3">
+              <p className="text-xs font-semibold text-slate-400">Documento de identificação</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Input
+                  label="N.º documento"
+                  value={form.ccNumero}
+                  onChange={(e) => setForm((f) => ({ ...f, ccNumero: e.target.value }))}
+                  placeholder="Ex.: 12345678 0 ZX3"
+                />
+                <Input
+                  label="Validade"
+                  type="date"
+                  value={form.ccValidade}
+                  onChange={(e) => setForm((f) => ({ ...f, ccValidade: e.target.value }))}
+                />
+              </div>
+            </div>
             <p className="text-xs text-slate-500">
               Será criada automaticamente uma conta NexiForma e enviada uma password temporária a este
               endereço (cópia para quem efectua o registo). O formador deve carregar CV, CCP, documento

@@ -32,7 +32,8 @@ function absoluteLogoHtml(p: ResolvedDocumentLogo): string {
 export function documentLogosCss(): string {
   return `
     .doc-page-shell { position: relative; }
-    .doc-page-canvas { position: absolute; inset: 0; min-height: 100%; }
+    .doc-page-canvas { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+    .doc-page-body { position: relative; z-index: 1; }
     .doc-content-layer { position: relative; z-index: 1; }
     .doc-logo-abs { pointer-events: none; }
   `.trim();
@@ -50,9 +51,11 @@ export function applyDocumentLogosToHtml(html: string, logos: ResolvedDocumentLo
   }));
 
   const absoluteImgs = normalized.map(absoluteLogoHtml).filter(Boolean).join("");
-  const css = documentLogosCss();
+  if (!absoluteImgs) return html;
 
+  const css = documentLogosCss();
   let out = html;
+
   if (css && !/doc-page-canvas/.test(out)) {
     if (/<head[^>]*>/i.test(out)) {
       out = out.replace(/<head([^>]*)>/i, `<head$1><style>${css}</style>`);
@@ -61,39 +64,28 @@ export function applyDocumentLogosToHtml(html: string, logos: ResolvedDocumentLo
     }
   }
 
-  const canvasOpen = `<div class="doc-page-canvas">${absoluteImgs}`;
-  const canvasClose = `</div>`;
-
-  if (/<body[^>]*>/i.test(out)) {
-    if (/doc-page-canvas/.test(out)) {
-      out = out.replace(
-        /<div class="doc-page-canvas">/i,
-        `<div class="doc-page-canvas">${absoluteImgs}`,
-      );
-    } else if (/doc-page-shell/.test(out) && /doc-page-body/.test(out)) {
-      out = out.replace(
-        /(<div class="doc-page-shell">\s*)(<div class="doc-page-body"[^>]*>)/i,
-        `$1<div class="doc-page-canvas">${absoluteImgs}$2`,
-      );
-      out = out.replace(
-        /(<\/div>\s*<\/div>\s*)(<\/div>\s*<\/body>)/i,
-        `$1${canvasClose}$2`,
-      );
-    } else if (/doc-content-layer/.test(out)) {
-      out = out.replace(
-        /(<body[^>]*>)(\s*<div class="doc-content-layer">)/i,
-        `$1${canvasOpen}$2`,
-      );
-      out = out.replace(/<\/body>/i, `${canvasClose}</body>`);
-    } else {
-      out = out.replace(/<body([^>]*)>/i, `<body$1>${canvasOpen}<div class="doc-content-layer">`);
-      out = out.replace(/<\/body>/i, `</div>${canvasClose}</body>`);
-    }
-  } else {
-    out = `${canvasOpen}<div class="doc-content-layer">${out}</div>${canvasClose}`;
+  if (/doc-page-canvas/.test(out)) {
+    return out.replace(
+      /<div class="doc-page-canvas">/i,
+      `<div class="doc-page-canvas">${absoluteImgs}`,
+    );
   }
 
-  return out;
+  if (/class="doc-page-shell"/.test(out)) {
+    return out.replace(
+      /(<div class="doc-page-shell"[^>]*>)/i,
+      `$1<div class="doc-page-canvas">${absoluteImgs}</div>`,
+    );
+  }
+
+  if (/doc-content-layer/.test(out)) {
+    return out.replace(
+      /(<div class="doc-content-layer">)/i,
+      `<div class="doc-page-canvas">${absoluteImgs}</div>$1`,
+    );
+  }
+
+  return `<style>${css}</style><div class="doc-page-shell"><div class="doc-page-canvas">${absoluteImgs}</div><div class="doc-content-layer">${out}</div></div>`;
 }
 
 function escapeAttr(s: string): string {

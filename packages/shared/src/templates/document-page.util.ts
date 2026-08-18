@@ -18,6 +18,11 @@ export function pageDimensionsMm(orientacao: DocumentOrientacao = "portrait"): {
     : { width: A4_WIDTH_MM, height: A4_HEIGHT_MM };
 }
 
+/** Converte mm CSS para px (96dpi)  útil para escalar preview/editor A4. */
+export function mmToCssPx(mm: number): number {
+  return mm * (96 / 25.4);
+}
+
 /** Regras de layout A4 (sem html/body/@page). */
 function documentPageLayoutRules(
   orientacao: DocumentOrientacao = "portrait",
@@ -29,15 +34,14 @@ function documentPageLayoutRules(
   const p = selectorPrefix ? `${selectorPrefix} ` : "";
   const shellHeight =
     mode === "editor"
-      ? `display: flex; flex-direction: column; min-height: min(${height}mm, 70vh); max-height: min(${height}mm, 70vh); overflow-y: auto;`
+      ? `display: flex; flex-direction: column; min-height: ${height}mm; height: ${height}mm;`
       : `min-height: ${height}mm;`;
 
   const bodyMiddleMin =
-    mode === "editor"
-      ? `flex: 1; min-height: 0;`
-      : `min-height: ${innerH}mm;`;
-
-  const bodyTopMin = mode === "editor" ? `flex: 1; min-height: 0;` : `min-height: auto;`;
+    mode === "editor" ? "" : `min-height: ${innerH}mm;`;
+  const bodyTopMin = mode === "editor" ? "" : `min-height: auto;`;
+  const bodyFlex =
+    mode === "editor" ? `flex: 1; min-height: 0; display: flex; flex-direction: column;` : "";
 
   return `
     ${p}.doc-page-shell {
@@ -56,6 +60,7 @@ function documentPageLayoutRules(
       box-sizing: border-box;
       display: flex;
       flex-direction: column;
+      ${bodyFlex}
     }
     ${p}.doc-page-body[data-v-align="top"] { justify-content: flex-start; ${bodyTopMin} }
     ${p}.doc-page-body[data-v-align="middle"] { justify-content: center; ${bodyMiddleMin} }
@@ -79,7 +84,7 @@ export function documentPageCss(
   const pageSize = orientacao === "landscape" ? "A4 landscape" : "A4 portrait";
 
   return `
-    @page { size: ${pageSize}; margin: ${DOCUMENT_MARGIN_MM}mm; }
+    @page { size: ${pageSize}; margin: 0; }
     html, body { margin: 0; padding: 0; background: #fff; }
     body {
       font-family: Georgia, "Times New Roman", serif;
@@ -94,7 +99,7 @@ export function documentPageCss(
   `.trim();
 }
 
-/** CSS scoped para o editor React — não afecta html/body do portal. */
+/** CSS scoped para o editor React  não afecta html/body do portal. */
 export function documentPageEditorCss(
   orientacao: DocumentOrientacao = "portrait",
   rootSelector = ".doc-editor-root",

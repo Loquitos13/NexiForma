@@ -84,6 +84,7 @@ export function labelHabilitacaoQnq(code?: string | null): string {
 export type SigoFormandoMetadata = {
   tipoDocIdentificacao?: SigoTipoDocIdentificacao | string;
   numDocIdentificacao?: string;
+  validadeDocumento?: string;
   codPaisDocIdentificacao?: string;
   dataNascimento?: string;
   nacionalidade?: string;

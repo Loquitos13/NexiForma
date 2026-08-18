@@ -203,38 +203,21 @@ export function DocumentoEmitWizard({
         ) : null}
 
         {!loading && step === 0 ? (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,420px)]">
-            <div className="space-y-3 min-w-0">
-              <p className="text-xs text-slate-500">
-                Revise o texto com os dados do formando já aplicados. A formatação mantém-se no PDF
-                final.
-              </p>
-              <RichTemplateEditor
-                ref={editorRef}
-                value={bodyHtml}
-                onChange={setBodyHtml}
-                formato="html"
-                pageLayout="a4"
-                orientacao={orientacao}
-                verticalAlign={alinhamentoVertical}
-                onVerticalAlignChange={setAlinhamentoVertical}
-              />
-            </div>
-            <div className="space-y-2">
-              {previewLoading ? (
-                <p className="flex items-center gap-2 text-xs text-slate-500">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  A actualizar pré-visualização…
-                </p>
-              ) : null}
-              <DocumentPagePreview
-                srcDoc={previewHtml}
-                orientacao={orientacao}
-                title={templateLabel}
-                maxWidth={420}
-                lazy
-              />
-            </div>
+          <div className="space-y-3 min-w-0">
+            <p className="text-xs text-slate-500">
+              Revise o texto com os dados do formando já aplicados. O documento abaixo tem o tamanho
+              exacto do PDF final.
+            </p>
+            <RichTemplateEditor
+              ref={editorRef}
+              value={bodyHtml}
+              onChange={setBodyHtml}
+              formato="html"
+              pageLayout="a4"
+              orientacao={orientacao}
+              verticalAlign={alinhamentoVertical}
+              onVerticalAlignChange={setAlinhamentoVertical}
+            />
           </div>
         ) : null}
 

@@ -27,6 +27,7 @@ type Formando = {
   sigo?: {
     tipoDocIdentificacao?: string;
     numDocIdentificacao?: string;
+    validadeDocumento?: string;
     dataNascimento?: string;
     nacionalidade?: string;
     habilitacaoLiteraria?: string;
@@ -37,6 +38,7 @@ type Formando = {
 type SigoForm = {
   tipoDocIdentificacao: string;
   numDocIdentificacao: string;
+  validadeDocumento: string;
   dataNascimento: string;
   nacionalidade: string;
   habilitacaoLiteraria: string;
@@ -45,6 +47,7 @@ type SigoForm = {
 const EMPTY_SIGO: SigoForm = {
   tipoDocIdentificacao: "CC",
   numDocIdentificacao: "",
+  validadeDocumento: "",
   dataNascimento: "",
   nacionalidade: "PT",
   habilitacaoLiteraria: "3",
@@ -200,6 +203,7 @@ export default function FormandosPage() {
     setSigoForm({
       tipoDocIdentificacao: f.sigo?.tipoDocIdentificacao ?? "CC",
       numDocIdentificacao: f.sigo?.numDocIdentificacao ?? "",
+      validadeDocumento: f.sigo?.validadeDocumento ?? "",
       dataNascimento: f.sigo?.dataNascimento ?? "",
       nacionalidade: f.sigo?.nacionalidade ?? "PT",
       habilitacaoLiteraria: normalizarHabilitacaoQnq(f.sigo?.habilitacaoLiteraria) ?? "3",
@@ -231,6 +235,7 @@ export default function FormandosPage() {
       sigo: {
         tipoDocIdentificacao: sigoForm.tipoDocIdentificacao,
         numDocIdentificacao: sigoForm.numDocIdentificacao.trim() || undefined,
+        validadeDocumento: sigoForm.validadeDocumento.trim() || undefined,
         dataNascimento: sigoForm.dataNascimento.trim() || undefined,
         nacionalidade: sigoForm.nacionalidade.trim().toUpperCase() || undefined,
         habilitacaoLiteraria: sigoForm.habilitacaoLiteraria.trim() || undefined,
@@ -523,6 +528,12 @@ export default function FormandosPage() {
                   label="N.º documento *"
                   value={sigoForm.numDocIdentificacao}
                   onChange={(e) => setSigoForm((s) => ({ ...s, numDocIdentificacao: e.target.value }))}
+                />
+                <Input
+                  label="Validade documento"
+                  type="date"
+                  value={sigoForm.validadeDocumento}
+                  onChange={(e) => setSigoForm((s) => ({ ...s, validadeDocumento: e.target.value }))}
                 />
                 <Input
                   label="Data nascimento *"

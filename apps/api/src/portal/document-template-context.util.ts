@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@nexiforma/database";
+import { extrairSigoFormandoMetadata } from "@nexiforma/shared";
 
 /** Formata data por extenso em pt-PT (ex.: 11 de março de 2026). */
 export function formatDateExtensoPt(date: Date, local?: string | null): string {
@@ -25,14 +26,27 @@ function modalidadeLabel(modalidade: string | null | undefined): string {
 
 type SigoMeta = {
   dataNascimento?: string;
-  numeroDocumento?: string;
+  numDocIdentificacao?: string;
   validadeDocumento?: string;
+  /** @deprecated nomes antigos  fallback de leitura */
+  numeroDocumento?: string;
 };
 
 function parseFormandoSigo(metadata: unknown): SigoMeta {
-  if (!metadata || typeof metadata !== "object") return {};
-  const sigo = (metadata as { sigo?: SigoMeta }).sigo;
-  return sigo && typeof sigo === "object" ? sigo : {};
+  const sigo = extrairSigoFormandoMetadata(metadata);
+  const raw =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? ((metadata as { sigo?: Record<string, unknown> }).sigo ?? {})
+      : {};
+  return {
+    dataNascimento: sigo.dataNascimento,
+    numDocIdentificacao:
+      sigo.numDocIdentificacao ??
+      (typeof raw.numeroDocumento === "string" ? raw.numeroDocumento : undefined),
+    validadeDocumento:
+      sigo.validadeDocumento ??
+      (typeof raw.validadeDocumento === "string" ? raw.validadeDocumento : undefined),
+  };
 }
 
 function fmtIsoDate(iso: string | undefined | null): string {
@@ -152,7 +166,7 @@ export async function buildFormacaoTemplateContext(
     "formando.nome_completo": matricula?.formando.nome ?? "",
     "formando.nif": matricula?.formando.nif ?? "",
     "formando.data_nascimento": fmtIsoDate(sigo.dataNascimento),
-    "formando.numero_identificacao": sigo.numeroDocumento ?? "",
+    "formando.numero_identificacao": sigo.numDocIdentificacao ?? "",
     "formando.validade_identificacao": fmtIsoDate(sigo.validadeDocumento),
     "formando.email": matricula?.formando.user?.email ?? matricula?.formando.email ?? "",
     "curso.designacao": curso?.designacao ?? "",

@@ -34,6 +34,9 @@ export function mergeFormandoMetadataSigo(
     ...(patch.numDocIdentificacao !== undefined || cur.numDocIdentificacao
       ? { numDocIdentificacao: patch.numDocIdentificacao ?? cur.numDocIdentificacao }
       : {}),
+    ...(patch.validadeDocumento !== undefined || cur.validadeDocumento
+      ? { validadeDocumento: patch.validadeDocumento ?? cur.validadeDocumento }
+      : {}),
     ...(patch.dataNascimento !== undefined || cur.dataNascimento
       ? { dataNascimento: patch.dataNascimento ?? cur.dataNascimento }
       : {}),

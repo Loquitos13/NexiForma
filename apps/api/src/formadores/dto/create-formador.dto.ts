@@ -1,7 +1,9 @@
 import {
   IsEmail,
+  IsOptional,
   IsString,
   Length,
+  Matches,
   MaxLength,
   MinLength,
 } from "class-validator";
@@ -29,4 +31,14 @@ export class CreateFormadorDto {
   @MinLength(5)
   @MaxLength(500)
   morada!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  ccNumero?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "ccValidade deve ser AAAA-MM-DD" })
+  ccValidade?: string;
 }

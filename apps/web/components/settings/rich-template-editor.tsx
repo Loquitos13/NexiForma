@@ -11,6 +11,7 @@ import {
 } from "react";
 import {
   AlignCenter,
+  AlignJustify,
   AlignLeft,
   AlignRight,
   AlignVerticalJustifyCenter,
@@ -26,6 +27,7 @@ import {
 import {
   documentPageEditorCss,
   editorHtmlToPlainText,
+  mmToCssPx,
   pageDimensionsMm,
   plainTextToEditorHtml,
   sanitizeDocumentEditorHtml,
@@ -42,9 +44,44 @@ const FONT_FAMILIES = [
   { label: "Verdana", value: "Verdana, Geneva, sans-serif" },
 ];
 
-const FONT_SIZES = ["10px", "11px", "12px", "14px", "16px", "18px", "24px", "32px"];
+const FONT_SIZES = ["10px", "11px", "12px", "13px", "14px", "16px", "18px", "24px", "32px"];
+
+const BLOCK_OPTIONS = [
+  { value: "p", label: "Parágrafo" },
+  { value: "h1", label: "Título 1" },
+  { value: "h2", label: "Título 2" },
+  { value: "h3", label: "Título 3" },
+];
 
 type EditorMode = "visual" | "html";
+
+type FormatState = {
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strikeThrough: boolean;
+  justifyLeft: boolean;
+  justifyCenter: boolean;
+  justifyRight: boolean;
+  justifyFull: boolean;
+  fontFamily: string;
+  fontSize: string;
+  blockTag: string;
+};
+
+const DEFAULT_FORMAT: FormatState = {
+  bold: false,
+  italic: false,
+  underline: false,
+  strikeThrough: false,
+  justifyLeft: true,
+  justifyCenter: false,
+  justifyRight: false,
+  justifyFull: false,
+  fontFamily: FONT_FAMILIES[0]!.value,
+  fontSize: "13px",
+  blockTag: "p",
+};
 
 export type RichTemplateEditorHandle = {
   insertToken: (token: string) => void;
@@ -54,7 +91,6 @@ export type RichTemplateEditorHandle = {
 type Props = {
   value: string;
   onChange: (html: string) => void;
-  /** Indicador do formato guardado (texto vs HTML)  não alterna modo de edição. */
   formato?: "texto" | "html";
   pageLayout?: "a4" | "fluid";
   orientacao?: DocumentOrientacao;
@@ -85,6 +121,88 @@ function restoreSelection(range: Range | null) {
   if (!sel) return;
   sel.removeAllRanges();
   sel.addRange(range);
+}
+
+function normalizeFontFamily(raw: string): string {
+  const needle = raw.replace(/["']/g, "").toLowerCase();
+  for (const f of FONT_FAMILIES) {
+    const val = f.value.replace(/["']/g, "").toLowerCase();
+    if (needle.includes(val.split(",")[0]!.trim()) || val.includes(needle.split(",")[0]!.trim())) {
+      return f.value;
+    }
+  }
+  return FONT_FAMILIES[0]!.value;
+}
+
+function normalizeFontSize(raw: string): string {
+  const pxMatch = raw.match(/^(\d+(?:\.\d+)?)px$/);
+  if (pxMatch) {
+    const rounded = `${Math.round(Number(pxMatch[1]))}px`;
+    if (FONT_SIZES.includes(rounded)) return rounded;
+    const nearest = FONT_SIZES.reduce((best, s) => {
+      const d = Math.abs(Number(s) - Number(rounded));
+      const bd = Math.abs(Number(best) - Number(rounded));
+      return d < bd ? s : best;
+    }, FONT_SIZES[0]!);
+    return nearest;
+  }
+  return FONT_SIZES.includes(raw) ? raw : "13px";
+}
+
+function blockTagFromNode(node: Node | null, editorEl: HTMLDivElement): string {
+  let el = node?.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement | null);
+  while (el && el !== editorEl) {
+    const tag = el.tagName?.toLowerCase();
+    if (tag === "h1" || tag === "h2" || tag === "h3" || tag === "p") return tag;
+    el = el.parentElement;
+  }
+  return "p";
+}
+
+function readFormatState(editorEl: HTMLDivElement): FormatState {
+  const sel = window.getSelection();
+  const anchor = sel?.anchorNode;
+  if (!anchor || !editorEl.contains(anchor)) return DEFAULT_FORMAT;
+
+  let el = anchor.nodeType === Node.TEXT_NODE ? anchor.parentElement : (anchor as HTMLElement);
+  const block = blockTagFromNode(anchor, editorEl);
+
+  let fontFamily = "";
+  let fontSize = "";
+  let bold = false;
+  let italic = false;
+  let underline = false;
+  let strikeThrough = false;
+  let textAlign = "left";
+
+  while (el && el !== editorEl) {
+    const style = window.getComputedStyle(el);
+    if (!fontFamily && style.fontFamily) fontFamily = normalizeFontFamily(style.fontFamily);
+    if (!fontSize && style.fontSize) fontSize = normalizeFontSize(style.fontSize);
+    if (!bold && (style.fontWeight === "bold" || Number(style.fontWeight) >= 600)) bold = true;
+    if (!italic && style.fontStyle === "italic") italic = true;
+    if (!underline && style.textDecorationLine.includes("underline")) underline = true;
+    if (!strikeThrough && style.textDecorationLine.includes("line-through")) strikeThrough = true;
+    const tag = el.tagName?.toLowerCase();
+    if (["p", "h1", "h2", "h3", "div", "li"].includes(tag ?? "")) {
+      textAlign = style.textAlign || textAlign;
+    }
+    el = el.parentElement;
+  }
+
+  return {
+    bold,
+    italic,
+    underline,
+    strikeThrough,
+    justifyLeft: textAlign === "left" || textAlign === "start",
+    justifyCenter: textAlign === "center",
+    justifyRight: textAlign === "right" || textAlign === "end",
+    justifyFull: textAlign === "justify",
+    fontFamily: fontFamily || DEFAULT_FORMAT.fontFamily,
+    fontSize: fontSize || DEFAULT_FORMAT.fontSize,
+    blockTag: block,
+  };
 }
 
 function applyInlineStyle(
@@ -121,11 +239,7 @@ function applyInlineStyle(
     const css = Object.entries(styles)
       .map(([k, v]) => `${k.replace(/([A-Z])/g, "-$1").toLowerCase()}:${v}`)
       .join(";");
-    document.execCommand(
-      "insertHTML",
-      false,
-      `<span style="${css}">${r.toString()}</span>`,
-    );
+    document.execCommand("insertHTML", false, `<span style="${css}">${r.toString()}</span>`);
   }
 }
 
@@ -166,7 +280,10 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
   ) {
     const [mode, setMode] = useState<EditorMode>("visual");
     const [htmlSource, setHtmlSource] = useState(() => valueToEditorHtml(value, formato));
+    const [format, setFormat] = useState<FormatState>(DEFAULT_FORMAT);
+    const [pageScale, setPageScale] = useState(1);
     const editorRef = useRef<HTMLDivElement>(null);
+    const pageWrapRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const savedRangeRef = useRef<Range | null>(null);
     const textareaSelRef = useRef<{ start: number; end: number } | null>(null);
@@ -175,6 +292,14 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
 
     const pageMm = pageDimensionsMm(orientacao);
     const editorCss = documentPageEditorCss(orientacao);
+    const pageWidthPx = mmToCssPx(pageMm.width);
+    const pageHeightPx = mmToCssPx(pageMm.height);
+
+    const refreshFormatState = useCallback(() => {
+      const el = editorRef.current;
+      if (!el || mode !== "visual") return;
+      setFormat(readFormatState(el));
+    }, [mode]);
 
     const emitChange = useCallback(
       (nextHtml: string) => {
@@ -187,12 +312,16 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
     );
 
     const emitFromVisualEditor = useCallback(() => {
-      if (editorRef.current) emitChange(editorRef.current.innerHTML);
-    }, [emitChange]);
+      if (editorRef.current) {
+        emitChange(editorRef.current.innerHTML);
+        refreshFormatState();
+      }
+    }, [emitChange, refreshFormatState]);
 
     const captureSelection = useCallback(() => {
       savedRangeRef.current = saveSelection(editorRef.current);
-    }, []);
+      refreshFormatState();
+    }, [refreshFormatState]);
 
     const captureTextareaSelection = useCallback(() => {
       const ta = textareaRef.current;
@@ -233,6 +362,13 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
         captureSelection();
       },
       [captureSelection, emitChange],
+    );
+
+    const applyBlock = useCallback(
+      (tag: string) => {
+        runExec("formatBlock", `<${tag}>`);
+      },
+      [runExec],
     );
 
     const insertInTextarea = useCallback(
@@ -286,7 +422,8 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
       el.innerHTML = valueToEditorHtml(value, formato);
       lastEmittedValueRef.current = value;
       hydratedRef.current = true;
-    }, [formato, mode, orientacao, value]);
+      refreshFormatState();
+    }, [formato, mode, orientacao, refreshFormatState, value]);
 
     useEffect(() => {
       if (mode !== "visual") return;
@@ -299,26 +436,47 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
       setHtmlSource(html);
       el.innerHTML = html;
       hydratedRef.current = true;
-    }, [value, formato, mode]);
+      refreshFormatState();
+    }, [value, formato, mode, refreshFormatState]);
+
+    useLayoutEffect(() => {
+      if (pageLayout !== "a4") return;
+      const wrap = pageWrapRef.current;
+      if (!wrap) return;
+      const update = () => {
+        const avail = wrap.clientWidth - 8;
+        setPageScale(Math.min(1, avail / pageWidthPx));
+      };
+      update();
+      const ro = new ResizeObserver(update);
+      ro.observe(wrap);
+      return () => ro.disconnect();
+    }, [pageLayout, pageWidthPx, orientacao]);
 
     useEffect(() => {
       const el = editorRef.current;
       if (!el || mode !== "visual") return;
       function onSelectionChange() {
-        if (document.activeElement === el) captureSelection();
+        if (!el) return;
+        const sel = window.getSelection();
+        if (sel && el.contains(sel.anchorNode)) refreshFormatState();
       }
-      el.addEventListener("focusin", onSelectionChange);
       document.addEventListener("selectionchange", onSelectionChange);
+      el.addEventListener("keyup", onSelectionChange);
+      el.addEventListener("mouseup", onSelectionChange);
       return () => {
-        el.removeEventListener("focusin", onSelectionChange);
         document.removeEventListener("selectionchange", onSelectionChange);
+        el.removeEventListener("keyup", onSelectionChange);
+        el.removeEventListener("mouseup", onSelectionChange);
       };
-    }, [captureSelection, mode]);
+    }, [mode, refreshFormatState]);
 
     function switchMode(next: EditorMode) {
       if (next === mode) return;
       if (next === "html") {
-        setHtmlSource(editorRef.current?.innerHTML ?? htmlSource);
+        const html = editorRef.current?.innerHTML ?? htmlSource;
+        setHtmlSource(html);
+        lastEmittedValueRef.current = formato === "texto" ? editorHtmlToPlainText(html) : html;
         setMode("html");
         return;
       }
@@ -330,6 +488,8 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
           editorRef.current.innerHTML = html;
           lastEmittedValueRef.current = value;
           hydratedRef.current = true;
+          emitChange(html);
+          refreshFormatState();
         }
       });
     }
@@ -362,27 +522,70 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
     return (
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-700/50 bg-slate-950/80 p-1.5">
-          <ToolbarBtn title="Negrito" onClick={() => runExec("bold")} disabled={mode === "html"}>
+          <ToolbarBtn
+            title="Negrito"
+            active={format.bold}
+            onClick={() => runExec("bold")}
+            disabled={mode === "html"}
+          >
             <Bold className="h-3.5 w-3.5" />
           </ToolbarBtn>
-          <ToolbarBtn title="Itálico" onClick={() => runExec("italic")} disabled={mode === "html"}>
+          <ToolbarBtn
+            title="Itálico"
+            active={format.italic}
+            onClick={() => runExec("italic")}
+            disabled={mode === "html"}
+          >
             <Italic className="h-3.5 w-3.5" />
           </ToolbarBtn>
-          <ToolbarBtn title="Sublinhado" onClick={() => runExec("underline")} disabled={mode === "html"}>
+          <ToolbarBtn
+            title="Sublinhado"
+            active={format.underline}
+            onClick={() => runExec("underline")}
+            disabled={mode === "html"}
+          >
             <Underline className="h-3.5 w-3.5" />
           </ToolbarBtn>
-          <ToolbarBtn title="Rasurado" onClick={() => runExec("strikeThrough")} disabled={mode === "html"}>
+          <ToolbarBtn
+            title="Rasurado"
+            active={format.strikeThrough}
+            onClick={() => runExec("strikeThrough")}
+            disabled={mode === "html"}
+          >
             <Strikethrough className="h-3.5 w-3.5" />
           </ToolbarBtn>
           <span className="mx-1 h-5 w-px bg-slate-700" />
-          <ToolbarBtn title="Alinhar à esquerda" onClick={() => runExec("justifyLeft")} disabled={mode === "html"}>
+          <ToolbarBtn
+            title="Alinhar à esquerda"
+            active={format.justifyLeft}
+            onClick={() => runExec("justifyLeft")}
+            disabled={mode === "html"}
+          >
             <AlignLeft className="h-3.5 w-3.5" />
           </ToolbarBtn>
-          <ToolbarBtn title="Centrar horizontalmente" onClick={() => runExec("justifyCenter")} disabled={mode === "html"}>
+          <ToolbarBtn
+            title="Centrar horizontalmente"
+            active={format.justifyCenter}
+            onClick={() => runExec("justifyCenter")}
+            disabled={mode === "html"}
+          >
             <AlignCenter className="h-3.5 w-3.5" />
           </ToolbarBtn>
-          <ToolbarBtn title="Alinhar à direita" onClick={() => runExec("justifyRight")} disabled={mode === "html"}>
+          <ToolbarBtn
+            title="Alinhar à direita"
+            active={format.justifyRight}
+            onClick={() => runExec("justifyRight")}
+            disabled={mode === "html"}
+          >
             <AlignRight className="h-3.5 w-3.5" />
+          </ToolbarBtn>
+          <ToolbarBtn
+            title="Justificar"
+            active={format.justifyFull}
+            onClick={() => runExec("justifyFull")}
+            disabled={mode === "html"}
+          >
+            <AlignJustify className="h-3.5 w-3.5" />
           </ToolbarBtn>
           {onVerticalAlignChange ? (
             <>
@@ -416,30 +619,28 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
           <span className="mx-1 h-5 w-px bg-slate-700" />
           <ToolbarSelect
             disabled={mode === "html"}
+            value={format.fontFamily}
             onOpen={captureSelection}
-            onPick={(v) => applyFont(v)}
+            onPick={applyFont}
             placeholder="Fonte…"
             options={FONT_FAMILIES.map((f) => ({ value: f.value, label: f.label }))}
           />
           <ToolbarSelect
             disabled={mode === "html"}
+            value={format.fontSize}
             onOpen={captureSelection}
-            onPick={(v) => applySize(v)}
+            onPick={applySize}
             placeholder="Tamanho…"
             options={FONT_SIZES.map((s) => ({ value: s, label: s }))}
             className="w-[4.5rem]"
           />
           <ToolbarSelect
             disabled={mode === "html"}
+            value={format.blockTag}
             onOpen={captureSelection}
-            onPick={(v) => runExec("formatBlock", v)}
+            onPick={applyBlock}
             placeholder="Bloco…"
-            options={[
-              { value: "p", label: "Parágrafo" },
-              { value: "h1", label: "Título 1" },
-              { value: "h2", label: "Título 2" },
-              { value: "h3", label: "Título 3" },
-            ]}
+            options={BLOCK_OPTIONS}
             className="max-w-[6rem]"
           />
           <span className="mx-1 h-5 w-px bg-slate-700" />
@@ -463,14 +664,31 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
 
         {mode === "visual" ? (
           pageLayout === "a4" ? (
-            <div className="doc-editor-root overflow-x-auto rounded-lg border border-slate-700/40 bg-slate-800/30 p-3">
+            <div
+              ref={pageWrapRef}
+              className="doc-editor-root overflow-x-auto overflow-y-auto rounded-lg border border-slate-700/40 bg-slate-800/30 p-3"
+              style={{ maxHeight: "min(85vh, 920px)" }}
+            >
               <style>{editorCss}</style>
               <div
-                className="doc-page-shell mx-auto shadow-md"
-                style={{ width: `${pageMm.width}mm`, maxWidth: "100%" }}
+                className="mx-auto"
+                style={{
+                  width: pageWidthPx * pageScale,
+                  height: pageHeightPx * pageScale,
+                }}
               >
-                <div className="doc-page-body" data-v-align={verticalAlign}>
-                  {editorSurface}
+                <div
+                  className="doc-page-shell mx-auto origin-top shadow-md"
+                  style={{
+                    width: `${pageMm.width}mm`,
+                    height: `${pageMm.height}mm`,
+                    transform: `scale(${pageScale})`,
+                    transformOrigin: "top center",
+                  }}
+                >
+                  <div className="doc-page-body" data-v-align={verticalAlign}>
+                    {editorSurface}
+                  </div>
                 </div>
               </div>
             </div>
@@ -498,7 +716,7 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
               style={{
                 width: `${pageMm.width}mm`,
                 maxWidth: "100%",
-                maxHeight: "70vh",
+                minHeight: `${pageMm.height}mm`,
               }}
               spellCheck={false}
             />
@@ -560,6 +778,7 @@ function ToolbarBtn({
 
 function ToolbarSelect({
   disabled,
+  value,
   onOpen,
   onPick,
   placeholder,
@@ -567,25 +786,26 @@ function ToolbarSelect({
   className,
 }: {
   disabled?: boolean;
+  value: string;
   onOpen: () => void;
   onPick: (value: string) => void;
   placeholder: string;
   options: Array<{ value: string; label: string }>;
   className?: string;
 }) {
+  const matched = options.some((o) => o.value === value);
   return (
     <select
       disabled={disabled}
+      value={matched ? value : ""}
       className={cn(
         "h-7 max-w-[9rem] rounded border border-slate-600/60 bg-slate-900 px-1.5 text-[10px] text-slate-200",
         className,
       )}
-      defaultValue=""
       onMouseDown={() => onOpen()}
       onChange={(e) => {
         const v = e.target.value;
         if (v) onPick(v);
-        e.target.value = "";
       }}
     >
       <option value="">{placeholder}</option>

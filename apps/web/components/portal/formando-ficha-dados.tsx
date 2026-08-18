@@ -29,6 +29,7 @@ type ClienteOpt = { id: string; nome: string; nif: string };
 export type FormandoSigo = {
   tipoDocIdentificacao?: string;
   numDocIdentificacao?: string;
+  validadeDocumento?: string;
   dataNascimento?: string;
   nacionalidade?: string;
   habilitacaoLiteraria?: string;
@@ -94,6 +95,7 @@ export function FormandoFichaDados({
     entidadeClienteId: "",
     tipoDocIdentificacao: "CC",
     numDocIdentificacao: "",
+    validadeDocumento: "",
     dataNascimento: "",
     nacionalidade: "PT",
     habilitacaoLiteraria: "3",
@@ -121,6 +123,7 @@ export function FormandoFichaDados({
       entidadeClienteId: ficha.entidadeCliente?.id ?? "",
       tipoDocIdentificacao: ficha.sigo.tipoDocIdentificacao ?? "CC",
       numDocIdentificacao: ficha.sigo.numDocIdentificacao ?? "",
+      validadeDocumento: ficha.sigo.validadeDocumento ?? "",
       dataNascimento: ficha.sigo.dataNascimento ?? "",
       nacionalidade: ficha.sigo.nacionalidade ?? "PT",
       habilitacaoLiteraria: normalizarHabilitacaoQnq(ficha.sigo.habilitacaoLiteraria) ?? "3",
@@ -174,6 +177,7 @@ export function FormandoFichaDados({
         sigo: {
           tipoDocIdentificacao: form.tipoDocIdentificacao,
           numDocIdentificacao: form.numDocIdentificacao.trim() || undefined,
+          validadeDocumento: form.validadeDocumento.trim() || undefined,
           dataNascimento: form.dataNascimento.trim() || undefined,
           nacionalidade: form.nacionalidade.trim().toUpperCase() || undefined,
           habilitacaoLiteraria: form.habilitacaoLiteraria.trim() || undefined,
@@ -381,6 +385,14 @@ export function FormandoFichaDados({
                   }
                 />
                 <Input
+                  label="Validade documento"
+                  type="date"
+                  value={form.validadeDocumento}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, validadeDocumento: e.target.value }))
+                  }
+                />
+                <Input
                   label="Data nascimento *"
                   type="date"
                   value={form.dataNascimento}
@@ -444,6 +456,14 @@ export function FormandoFichaDados({
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Documento" value={docLabel} />
                 <Field label="N.º documento" value={ficha.sigo.numDocIdentificacao ?? "-"} />
+                <Field
+                  label="Validade documento"
+                  value={
+                    ficha.sigo.validadeDocumento
+                      ? formatDatePt(ficha.sigo.validadeDocumento)
+                      : "-"
+                  }
+                />
                 <Field
                   label="Data de nascimento"
                   value={

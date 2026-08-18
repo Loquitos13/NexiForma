@@ -643,6 +643,8 @@ export class UsersService {
       nif: string;
       telefone: string;
       morada: string;
+      ccNumero?: string;
+      ccValidade?: string;
     },
     req?: { headers: Record<string, string | string[] | undefined> },
   ) {
@@ -713,6 +715,8 @@ export class UsersService {
         nomeCompleto: params.displayName.trim(),
         telefone: params.telefone.trim(),
         morada: params.morada.trim(),
+        ...(params.ccNumero?.trim() ? { ccNumero: params.ccNumero.trim() } : {}),
+        ...(params.ccValidade ? { ccValidade: new Date(params.ccValidade) } : {}),
       },
       select: {
         id: true,

@@ -31,7 +31,7 @@ type Props = {
   modulo: string;
   /** HTML parcial (legado) */
   previewHtml?: string;
-  /** HTML completo para iframe (preferido — evita rebuild duplicado). */
+  /** HTML completo para iframe (preferido  evita rebuild duplicado). */
   previewSrcDoc?: string;
   orientacao?: DocumentOrientacao;
   verticalAlign?: DocumentVerticalAlign;

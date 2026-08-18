@@ -187,16 +187,16 @@ export function FormadorFichaDados({ ficha, canManage, onSaved }: Props) {
 
             <div className="rounded-xl border border-slate-700/40 bg-slate-900/30 p-3 space-y-3">
               <p className="text-xs font-semibold text-slate-400">
-                Credenciais DGERT (CC / CCP)
+                Credenciais DGERT (documento de identificação / CCP)
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Input
-                  label="CC n.º"
+                  label="Documento identificação n.º"
                   value={form.ccNumero}
                   onChange={(e) => setForm((f) => ({ ...f, ccNumero: e.target.value }))}
                 />
                 <Input
-                  label="CC validade"
+                  label="Validade documento identificação"
                   type="date"
                   value={form.ccValidade}
                   onChange={(e) => setForm((f) => ({ ...f, ccValidade: e.target.value }))}
@@ -238,7 +238,7 @@ export function FormadorFichaDados({ ficha, canManage, onSaved }: Props) {
             </div>
             <div className="rounded-xl border border-slate-700/40 bg-slate-900/30 p-3 grid gap-3 sm:grid-cols-2">
               <div>
-                <p className="text-xs text-slate-500">Carta de condução</p>
+                <p className="text-xs text-slate-500">Documento de identificação</p>
                 <p className="text-sm text-slate-200">{ficha.ccNumero ?? "-"}</p>
                 <div className="mt-1">
                   <CredencialBadge validade={ficha.ccValidade} />

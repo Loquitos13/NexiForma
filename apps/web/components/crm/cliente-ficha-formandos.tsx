@@ -32,6 +32,7 @@ type FormandoRow = {
 type SigoForm = {
   tipoDocIdentificacao: string;
   numDocIdentificacao: string;
+  validadeDocumento: string;
   dataNascimento: string;
   nacionalidade: string;
   habilitacaoLiteraria: string;
@@ -41,6 +42,7 @@ const EMPTY_FORM = { nome: "", nif: "", email: "", emailPresenca: "", telefone: 
 const EMPTY_SIGO: SigoForm = {
   tipoDocIdentificacao: "CC",
   numDocIdentificacao: "",
+  validadeDocumento: "",
   dataNascimento: "",
   nacionalidade: "PT",
   habilitacaoLiteraria: "3",
@@ -124,6 +126,7 @@ export function ClienteFichaFormandos({ entidadeId, canManage }: Props) {
       sigo: {
         tipoDocIdentificacao: sigoForm.tipoDocIdentificacao,
         numDocIdentificacao: sigoForm.numDocIdentificacao.trim() || undefined,
+        validadeDocumento: sigoForm.validadeDocumento.trim() || undefined,
         dataNascimento: sigoForm.dataNascimento.trim() || undefined,
         nacionalidade: sigoForm.nacionalidade.trim().toUpperCase() || undefined,
         habilitacaoLiteraria: sigoForm.habilitacaoLiteraria.trim() || undefined,
@@ -265,6 +268,14 @@ export function ClienteFichaFormandos({ entidadeId, canManage }: Props) {
                   value={sigoForm.numDocIdentificacao}
                   onChange={(e) =>
                     setSigoForm((s) => ({ ...s, numDocIdentificacao: e.target.value }))
+                  }
+                />
+                <Input
+                  label="Validade documento"
+                  type="date"
+                  value={sigoForm.validadeDocumento}
+                  onChange={(e) =>
+                    setSigoForm((s) => ({ ...s, validadeDocumento: e.target.value }))
                   }
                 />
                 <Input
