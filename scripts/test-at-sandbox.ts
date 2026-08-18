@@ -14,7 +14,7 @@ import { postAtSoapRequest, loadAtTlsMaterial } from "../apps/api/src/faturas/at
 import { buildRegisterInvoiceSoapEnvelope } from "../apps/api/src/faturas/at-faturas-payload.util";
 import { parseAtFaturasSoapResponse } from "../apps/api/src/faturas/at-faturas-response.util";
 import { buildAtSecurityHeaderFields } from "../apps/api/src/faturas/at-faturas-security.util";
-import { cerPublicKeyToPem } from "../apps/api/src/faturas/at-integration.util";
+import { cerPublicKeyToPem, normalizeAtPublicKeyPem } from "../apps/api/src/faturas/at-integration.util";
 import { buildRegistarSerieSoapEnvelope } from "../apps/api/src/faturas/at-series-payload.util";
 import { parseAtSeriesSoapResponse } from "../apps/api/src/faturas/at-series-response.util";
 import { AT_SERIES_ENDPOINTS, AT_SERIES_SOAP_ACTION } from "../apps/api/src/faturas/at-series-constants";
@@ -31,10 +31,9 @@ function loadPublicKeyPem(): string {
   if (!existsSync(path)) {
     throw new Error(`Chave pública AT em falta: ${path}`);
   }
-  const raw = readFileSync(path, "utf8");
-  if (raw.includes("BEGIN PUBLIC KEY")) return raw;
   if (path.toLowerCase().endsWith(".cer")) return cerPublicKeyToPem(path);
-  return raw;
+  const raw = readFileSync(path, "utf8");
+  return normalizeAtPublicKeyPem(raw);
 }
 
 const nif = env("AT_TEST_NIF", "599999993");

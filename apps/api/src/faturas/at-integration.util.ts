@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { X509Certificate } from "node:crypto";
+import { createPublicKey, X509Certificate } from "node:crypto";
 import { ServiceUnavailableException } from "@nestjs/common";
 import type { ConfigService } from "@nestjs/config";
 import { resolveProjectPath } from "../config/env-paths";
@@ -49,11 +49,38 @@ export function buildAtTlsConfig(config: ConfigService): AtTlsConfig {
   };
 }
 
-/** Converte ChavePublicaAT.cer (DER) para PEM SPKI – WS-Security AT. */
+/** Normaliza PEM (certificado ou chave) para SPKI PUBLIC KEY – WS-Security AT. */
+export function normalizeAtPublicKeyPem(raw: string): string {
+  if (raw.includes("BEGIN PUBLIC KEY") || raw.includes("BEGIN RSA PUBLIC KEY")) {
+    return raw;
+  }
+  if (raw.includes("BEGIN CERTIFICATE")) {
+    const cert = new X509Certificate(raw);
+    return cert.publicKey.export({ type: "spki", format: "pem" }) as string;
+  }
+  return raw;
+}
+
+/** Converte .cer AT (DER) para PEM SPKI – WS-Security AT. Suporta X509 clássico e chave SPKI/PKCS1. */
 export function cerPublicKeyToPem(cerPath: string): string {
   const der = readFileSync(cerPath);
-  const cert = new X509Certificate(der);
-  return cert.publicKey.export({ type: "spki", format: "pem" }) as string;
+  try {
+    const cert = new X509Certificate(der);
+    return cert.publicKey.export({ type: "spki", format: "pem" }) as string;
+  } catch {
+    // «Chave Cifra Publica AT (Produção).cer» – chave pública RSA, não certificado X509.
+  }
+  for (const type of ["spki", "pkcs1"] as const) {
+    try {
+      const key = createPublicKey({ key: der, format: "der", type });
+      return key.export({ type: "spki", format: "pem" }) as string;
+    } catch {
+      // tentar formato seguinte
+    }
+  }
+  throw new Error(
+    `Formato .cer AT não reconhecido (${cerPath}). Exporte saPubKey.jks (alias sapubkey.testes ou sapubkey.prod).`,
+  );
 }
 
 export function loadAtPublicKeyPem(config: ConfigService, cache: { value: string | null }): string {
@@ -71,20 +98,16 @@ export function loadAtPublicKeyPem(config: ConfigService, cache: { value: string
     );
   }
   try {
-    const raw = readFileSync(pemPath, "utf8");
-    if (raw.includes("BEGIN PUBLIC KEY") || raw.includes("BEGIN RSA PUBLIC KEY")) {
-      cache.value = raw;
-      return raw;
-    }
     if (pemPath.toLowerCase().endsWith(".cer")) {
       cache.value = cerPublicKeyToPem(pemPath);
       return cache.value;
     }
-    cache.value = raw;
-    return raw;
+    const raw = readFileSync(pemPath, "utf8");
+    cache.value = normalizeAtPublicKeyPem(raw);
+    return cache.value;
   } catch {
     throw new ServiceUnavailableException(
-      `Chave pública AT inacessível (${configured}). Verifique AT_FATURAS_PUBLIC_KEY_PATH.`,
+      `Chave pública AT inacessível (${configured}). Exporte sapubkey.testes de saPubKey.jks para at-public-key.pem.`,
     );
   }
 }

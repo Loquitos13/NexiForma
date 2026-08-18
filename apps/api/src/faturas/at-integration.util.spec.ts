@@ -1,4 +1,9 @@
+import { generateKeyPairSync, writeFileSync, unlinkSync } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
+  cerPublicKeyToPem,
+  normalizeAtPublicKeyPem,
   isAtSandboxMock,
   readAtMode,
   resolveAtFaturasEndpoint,
@@ -32,5 +37,24 @@ describe("at-integration.util", () => {
       "production",
     );
     expect(readAtMode(mockConfig({}), "AT_FATURAS_MODE")).toBe("disabled");
+  });
+
+  it("cerPublicKeyToPem converte chave SPKI DER", () => {
+    const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const der = publicKey.export({ type: "spki", format: "der" }) as Buffer;
+    const path = join(tmpdir(), `at-spki-${Date.now()}.cer`);
+    writeFileSync(path, der);
+    try {
+      const pem = cerPublicKeyToPem(path);
+      expect(pem).toContain("BEGIN PUBLIC KEY");
+    } finally {
+      unlinkSync(path);
+    }
+  });
+
+  it("normalizeAtPublicKeyPem passa SPKI e extrai de certificado PEM", () => {
+    const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const spki = publicKey.export({ type: "spki", format: "pem" }) as string;
+    expect(normalizeAtPublicKeyPem(spki)).toBe(spki);
   });
 });
