@@ -1,9 +1,12 @@
+import type { TenantUserSignature } from "./tenant-user-signatures.util";
+
 export type TenantMetadataBranding = {
   logoUrl?: string;
   logoStorageKey?: string;
   companyName?: string;
   signatureStorageKey?: string;
   signatureResponsibleName?: string;
+  userSignatures?: TenantUserSignature[];
 };
 
 /** 1–2 iniciais a partir do nome da entidade (ex.: "Demonstração NexiForma" → "DN"). */

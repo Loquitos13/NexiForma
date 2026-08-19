@@ -1,6 +1,16 @@
 import {
   readTenantLogoStorageKey,
   readTenantSignatureStorageKey,
+  readTenantSignatureResponsibleName,
+} from "../auth/tenant-branding.util";
+import {
+  readTenantUserSignatures,
+  readUserSignatureStorageKey,
+} from "../auth/tenant-user-signatures.util";
+
+export {
+  readTenantSignatureStorageKey,
+  readTenantSignatureResponsibleName,
 } from "../auth/tenant-branding.util";
 
 type StorageGetObject = {
@@ -107,12 +117,37 @@ export function tenantLogoImgHtml(
 export async function resolveTenantSignatureDataUri(
   storage: StorageGetObject,
   metadata: unknown,
+  userId?: string | null,
 ): Promise<string | null> {
-  const key = readTenantSignatureStorageKey(metadata);
-  if (!key) return null;
-  const obj = await storage.getObject(key);
-  if (!obj?.body?.length) return null;
-  return `data:${obj.contentType};base64,${obj.body.toString("base64")}`;
+  const preferredKey = userId?.trim()
+    ? readUserSignatureStorageKey(metadata, userId)
+    : null;
+  const legacyKey = readTenantSignatureStorageKey(metadata);
+  const fallbackKey =
+    readTenantUserSignatures(metadata).find((s) => s.storageKey.trim())?.storageKey ?? null;
+
+  for (const key of [preferredKey, legacyKey, fallbackKey]) {
+    if (!key?.trim()) continue;
+    const obj = await storage.getObject(key);
+    if (obj?.body?.length) {
+      return `data:${obj.contentType};base64,${obj.body.toString("base64")}`;
+    }
+  }
+  return null;
+}
+
+/** Bloco HTML de assinatura (imagem PNG ou fallback tipográfico). */
+export function userSignatureBlockHtml(
+  signatureSrc: string | null | undefined,
+  name: string | null | undefined,
+  alt = "Assinatura",
+): string {
+  if (signatureSrc?.trim()) {
+    return tenantSignatureImgHtml(signatureSrc, alt);
+  }
+  const label = name?.trim();
+  if (!label) return "";
+  return `<p style="font-family:'Harris Signature',cursive;font-size:22pt;margin:0">${escapeHtml(label)}</p>`;
 }
 
 /** Markup HTML da assinatura para {{entidade.assinatura}}. */

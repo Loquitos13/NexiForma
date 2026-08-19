@@ -12,7 +12,11 @@ import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { FormadorScopeService } from "../common/formador-scope.service";
-import { resolveTenantLogoDataUri } from "../common/tenant-logo-embed.util";
+import {
+  resolveTenantLogoDataUri,
+  resolveTenantSignatureDataUri,
+  userSignatureBlockHtml,
+} from "../common/tenant-logo-embed.util";
 import { requireTenantId } from "../common/tenant-scope";
 import { escapeHtml } from "../cronogramas/cronograma-export.util";
 
@@ -119,6 +123,12 @@ export class FolhaPresencaHtmlExportService {
     const aprovadaEm = folha.aprovadaGestorEm?.toLocaleString("pt-PT") ?? null;
     const assinaturaFormador = folha.validacaoFormadorAssinaturaNome?.trim() || null;
     const assinaturaGestor = folha.aprovacaoAssinaturaNome?.trim() || null;
+    const assinaturaFormadorSrc = folha.validadaFormadorPor
+      ? await resolveTenantSignatureDataUri(this.storage, tenant.metadata, folha.validadaFormadorPor)
+      : null;
+    const assinaturaGestorSrc = folha.aprovadaGestorPor
+      ? await resolveTenantSignatureDataUri(this.storage, tenant.metadata, folha.aprovadaGestorPor)
+      : null;
     const inicioReal = folha.sessao.iniciadaEm?.toLocaleString("pt-PT") ?? "-";
     const fimReal = folha.sessao.terminadaEm?.toLocaleString("pt-PT") ?? "-";
     const formadorPresente =
@@ -249,7 +259,7 @@ export class FolhaPresencaHtmlExportService {
     assinaturaFormador
       ? `<div style="flex:1;min-width:180px;border-top:1px solid #ccc;padding-top:10px">
     <p style="font-size:8pt;color:#555;margin:0 0 4px">Assinatura do formador (validação)</p>
-    <p style="font-family:'Harris Signature',cursive;font-size:22pt;margin:0">${escapeHtml(assinaturaFormador)}</p>
+    ${userSignatureBlockHtml(assinaturaFormadorSrc, assinaturaFormador)}
     <p style="font-size:7.5pt;color:#666;margin:4px 0 0">Validada em ${escapeHtml(validadaEm)}</p>
   </div>`
       : ""
@@ -258,7 +268,7 @@ export class FolhaPresencaHtmlExportService {
     assinaturaGestor
       ? `<div style="flex:1;min-width:180px;border-top:1px solid #ccc;padding-top:10px">
     <p style="font-size:8pt;color:#555;margin:0 0 4px">Assinatura do gestor / coordenador (aprovação)</p>
-    <p style="font-family:'Harris Signature',cursive;font-size:22pt;margin:0">${escapeHtml(assinaturaGestor)}</p>
+    ${userSignatureBlockHtml(assinaturaGestorSrc, assinaturaGestor)}
     ${aprovadaEm ? `<p style="font-size:7.5pt;color:#666;margin:4px 0 0">Aprovada em ${escapeHtml(aprovadaEm)}</p>` : ""}
   </div>`
       : ""

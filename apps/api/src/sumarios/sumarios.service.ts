@@ -11,8 +11,11 @@ import { StorageService } from "../storage/storage.service";
 import { assertAllowedUpload } from "../common/upload-mime.util";
 import {
   resolveTenantLogoDataUri,
+  resolveTenantSignatureDataUri,
   tenantLogoImgHtml,
+  userSignatureBlockHtml,
 } from "../common/tenant-logo-embed.util";
+import { readUserSignatureStorageKey } from "../auth/tenant-user-signatures.util";
 import { FormadorScopeService } from "../common/formador-scope.service";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { requireTenantId } from "../common/tenant-scope";
@@ -156,6 +159,13 @@ export class SumariosService {
     }
 
     const assinadoEm = new Date();
+    const tenantMeta = (
+      await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { metadata: true },
+      })
+    )?.metadata;
+    const hasPngSignature = Boolean(readUserSignatureStorageKey(tenantMeta, user.sub));
     return this.prisma.sumario.update({
       where: { id },
       data: {
@@ -165,7 +175,7 @@ export class SumariosService {
         assinaturaRef: user.sub,
         assinaturaMetadata: {
           nomeAssinatura,
-          fonte: "Harris Signature",
+          fonte: hasPngSignature ? "png" : "Harris Signature",
           assinadoEm: assinadoEm.toISOString(),
         },
       },
@@ -291,6 +301,12 @@ export class SumariosService {
     const logoHtml = tenantLogoImgHtml(
       await resolveTenantLogoDataUri(this.storage, tenant?.metadata),
     );
+    const meta = row.assinaturaMetadata as { nomeAssinatura?: string } | null;
+    const nomeAssinatura = meta?.nomeAssinatura?.trim() ?? "";
+    const assinaturaSrc = row.assinaturaRef
+      ? await resolveTenantSignatureDataUri(this.storage, tenant?.metadata, row.assinaturaRef)
+      : null;
+    const assinaturaHtml = userSignatureBlockHtml(assinaturaSrc, nomeAssinatura);
     const acao = row.sessao.cronograma.acaoFormacao;
     const dataLabel = row.sessao.data
       ? new Date(row.sessao.data).toLocaleDateString("pt-PT")
@@ -328,9 +344,12 @@ export class SumariosService {
   <div class="conteudo">${escapeHtml(row.conteudo)}</div>
   ${
     row.assinadoEm
-      ? `<p class="assinatura">Assinado em ${escapeHtml(new Date(row.assinadoEm).toLocaleString("pt-PT"))}${
+      ? `<div class="assinatura">
+    <p style="margin:0 0 6px;font-size:0.85rem;color:#64748b">Assinado em ${escapeHtml(new Date(row.assinadoEm).toLocaleString("pt-PT"))}${
           row.assinaturaTipo ? ` (${escapeHtml(row.assinaturaTipo)})` : ""
-        }</p>`
+        }</p>
+    ${assinaturaHtml}
+  </div>`
       : ""
   }
 </body>

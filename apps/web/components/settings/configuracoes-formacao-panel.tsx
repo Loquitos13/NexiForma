@@ -12,10 +12,8 @@ export function ConfiguracoesFormacaoPanel() {
         <div className="min-w-0">
           <DocumentosPoliticaSettings variant="tenant" />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 grid gap-6 lg:grid-cols-2 lg:items-start">
           <TenantSignaturePanel />
-        </div>
-        <div className="min-w-0 lg:col-span-2">
           <ModuleLogosPanel modulo="formacao" title="Logótipos de formação" />
         </div>
       </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
+import { bffFetch } from "@/lib/client/bff-fetch";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
@@ -52,13 +53,35 @@ export function SumarioAssinaturaModal({
   const [step, setStep] = useState<Step>("conteudo");
   const [conteudo, setConteudo] = useState("");
   const [nome, setNome] = useState("");
+  const [mySignatureUrl, setMySignatureUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setStep("conteudo");
     setConteudo(documento?.conteudo?.trim() ?? "");
     setNome("");
+    setMySignatureUrl(null);
   }, [open, documento?.conteudo]);
+
+  useEffect(() => {
+    if (!open || step !== "assinatura" || readOnly) return;
+    void bffFetch("/api/v1/portal/tenant/signatures/me", {
+      headers: { accept: "application/json" },
+    }).then(async (r) => {
+      if (!r.ok) return;
+      const data = (await r.json()) as {
+        configured?: boolean;
+        signatureUrl?: string;
+        displayName?: string;
+      };
+      if (data.configured && data.signatureUrl) {
+        setMySignatureUrl(`${data.signatureUrl}?v=${Date.now()}`);
+        if (data.displayName?.trim()) {
+          setNome((prev) => prev.trim() || data.displayName!.trim());
+        }
+      }
+    });
+  }, [open, step, readOnly]);
 
   const conteudoTrim = conteudo.trim();
   const nomeTrim = nome.trim();
@@ -79,7 +102,7 @@ export function SumarioAssinaturaModal({
             ? "Consulta do sumário pedagógico assinado."
             : step === "conteudo"
               ? "Passo 1 - registe o sumário pedagógico (mín. 10 caracteres)."
-              : "Passo 2 - escreva o nome para aplicar a assinatura manuscrita."
+              : "Passo 2 - confirme o nome; será usada a sua assinatura configurada, se existir."
         }
         className="max-w-2xl"
       >
@@ -180,7 +203,14 @@ export function SumarioAssinaturaModal({
                   Assinatura
                 </p>
                 <div className="mt-2 min-h-[4.5rem] rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-3">
-                  {nomeTrim ? (
+                  {mySignatureUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={mySignatureUrl}
+                      alt="Assinatura configurada"
+                      className="max-h-20 max-w-full object-contain"
+                    />
+                  ) : nomeTrim ? (
                     <p
                       className="text-4xl leading-tight text-slate-900"
                       style={{ fontFamily: '"Harris Signature", cursive' }}
@@ -191,9 +221,12 @@ export function SumarioAssinaturaModal({
                     <p className="text-sm text-slate-500">Documento assinado.</p>
                   ) : (
                     <p className="text-sm italic text-slate-400">
-                      O nome aparecerá aqui com a fonte de assinatura.
+                      Configure a assinatura em Configurações ou escreva o nome para a fonte manuscrita.
                     </p>
                   )}
+                  {nomeTrim && mySignatureUrl ? (
+                    <p className="mt-2 text-xs text-slate-600 border-t border-slate-200 pt-2">{nomeTrim}</p>
+                  ) : null}
                 </div>
               </footer>
             )}

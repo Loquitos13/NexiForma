@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check } from "lucide-react";
 import { labelEstadoPresencaOuPorAssinalar, type EstadoPresenca } from "@nexiforma/shared";
+import { bffFetch } from "@/lib/client/bff-fetch";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,7 +66,7 @@ const COPY: Record<
   "validacao-formador": {
     title: "Validar folha de presenças",
     descRevisao: "Passo 1 - reveja todas as presenças antes de validar.",
-    descAssinatura: "Passo 2 - escreva o nome para assinar a validação.",
+    descAssinatura: "Passo 2 - confirme o nome; será usada a sua assinatura configurada, se existir.",
     avisoAssinatura:
       "Ao assinar, confirma a assiduidade desta sessão. A folha ficará à espera de aprovação do gestor ou coordenador pedagógico.",
     labelAssinatura: "Assinatura do formador",
@@ -74,7 +75,7 @@ const COPY: Record<
   "aprovacao-gestor": {
     title: "Aprovar folha de presenças",
     descRevisao: "Passo 1 - reveja a assiduidade antes de aprovar.",
-    descAssinatura: "Passo 2 - escreva o nome para aplicar a assinatura manuscrita.",
+    descAssinatura: "Passo 2 - confirme o nome; será usada a sua assinatura configurada, se existir.",
     avisoAssinatura:
       "Folha validada pelo formador. Confirme a assinatura abaixo para aprovar e fechar a folha.",
     labelAssinatura: "Assinatura do gestor / coordenador",
@@ -92,13 +93,35 @@ export function FolhaAprovacaoModal({
 }: Props) {
   const [step, setStep] = useState<Step>("revisao");
   const [nome, setNome] = useState("");
+  const [mySignatureUrl, setMySignatureUrl] = useState<string | null>(null);
   const copy = COPY[modo];
 
   useEffect(() => {
     if (!open) return;
     setStep("revisao");
     setNome("");
+    setMySignatureUrl(null);
   }, [open, modo]);
+
+  useEffect(() => {
+    if (!open || step !== "assinatura") return;
+    void bffFetch("/api/v1/portal/tenant/signatures/me", {
+      headers: { accept: "application/json" },
+    }).then(async (r) => {
+      if (!r.ok) return;
+      const data = (await r.json()) as {
+        configured?: boolean;
+        signatureUrl?: string;
+        displayName?: string;
+      };
+      if (data.configured && data.signatureUrl) {
+        setMySignatureUrl(`${data.signatureUrl}?v=${Date.now()}`);
+        if (data.displayName?.trim()) {
+          setNome((prev) => prev.trim() || data.displayName!.trim());
+        }
+      }
+    });
+  }, [open, step]);
 
   const presentes = useMemo(
     () => (documento?.presencas ?? []).filter((p) => p.estado === "PRESENTE").length,
@@ -237,7 +260,14 @@ export function FolhaAprovacaoModal({
                   {copy.labelAssinatura}
                 </p>
                 <div className="mt-2 min-h-[4.5rem] rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-3">
-                  {nomeTrim ? (
+                  {mySignatureUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={mySignatureUrl}
+                      alt="Assinatura configurada"
+                      className="max-h-20 max-w-full object-contain"
+                    />
+                  ) : nomeTrim ? (
                     <p
                       className="text-4xl leading-tight text-slate-900"
                       style={{ fontFamily: '"Harris Signature", cursive' }}
@@ -246,9 +276,12 @@ export function FolhaAprovacaoModal({
                     </p>
                   ) : (
                     <p className="text-sm italic text-slate-400">
-                      O nome aparecerá aqui com a fonte de assinatura.
+                      Configure a assinatura em Configurações ou escreva o nome para a fonte manuscrita.
                     </p>
                   )}
+                  {nomeTrim && mySignatureUrl ? (
+                    <p className="mt-2 text-xs text-slate-600 border-t border-slate-200 pt-2">{nomeTrim}</p>
+                  ) : null}
                 </div>
               </footer>
             ) : null}

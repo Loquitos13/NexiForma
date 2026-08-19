@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useId, useState } from "react";
-import { Camera, ImageUp, Trash2, Upload } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { Trash2, Upload } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import {
   isAcceptedSignatureImageFile,
@@ -11,17 +11,27 @@ import {
 import { Button } from "@/components/ui";
 import { takeFileFromInput } from "@/lib/ui/file-input.util";
 
-type BrandingSignature = {
-  signatureUrl?: string;
-  signatureResponsibleName?: string;
+type PortalUser = {
+  id: string;
+  displayName: string;
+  email: string;
+  role: string;
 };
 
-type ImportMode = "upload" | "camera";
+type SignatureRow = {
+  id: string;
+  userId: string;
+  displayName?: string;
+  signatureUrl: string;
+  userDisplayName: string | null;
+  userEmail: string | null;
+};
 
 export function TenantSignaturePanel() {
-  const [branding, setBranding] = useState<BrandingSignature | null>(null);
-  const [responsibleName, setResponsibleName] = useState("");
-  const [importMode, setImportMode] = useState<ImportMode>("upload");
+  const [signatures, setSignatures] = useState<SignatureRow[]>([]);
+  const [users, setUsers] = useState<PortalUser[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [threshold, setThreshold] = useState<number | null>(null);
   const [contrast, setContrast] = useState<number | null>(null);
   const [autoThreshold, setAutoThreshold] = useState<number | null>(null);
@@ -36,21 +46,46 @@ export function TenantSignaturePanel() {
   const [err, setErr] = useState<string | null>(null);
   const [cacheBust, setCacheBust] = useState(0);
   const uploadInputId = useId();
-  const cameraInputId = useId();
 
   const load = useCallback(async () => {
-    const r = await bffFetch("/api/v1/portal/tenant/branding", {
-      headers: { accept: "application/json" },
-    });
-    if (!r.ok) return;
-    const data = (await r.json()) as BrandingSignature;
-    setBranding(data);
-    setResponsibleName(data.signatureResponsibleName ?? "");
+    const [sigRes, usersRes] = await Promise.all([
+      bffFetch("/api/v1/portal/tenant/signatures", { headers: { accept: "application/json" } }),
+      bffFetch("/api/v1/users", { headers: { accept: "application/json" } }),
+    ]);
+    if (sigRes.ok) {
+      const data = (await sigRes.json()) as { signatures: SignatureRow[] };
+      setSignatures(data.signatures ?? []);
+    }
+    if (usersRes.ok) {
+      const raw = (await usersRes.json()) as Record<string, unknown>[];
+      setUsers(
+        raw
+          .filter((u) => String(u.role) !== "FORMANDO")
+          .map((u) => ({
+            id: String(u.id),
+            displayName: String(u.displayName ?? u.email ?? u.id),
+            email: String(u.email ?? ""),
+            role: String(u.role ?? ""),
+          })),
+      );
+    }
   }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  const assignedUserIds = useMemo(
+    () => new Set(signatures.map((s) => s.userId).filter(Boolean)),
+    [signatures],
+  );
+
+  const availableUsers = useMemo(
+    () => users.filter((u) => !assignedUserIds.has(u.id) || u.id === selectedUserId),
+    [users, assignedUserIds, selectedUserId],
+  );
+
+  const editingSignature = signatures.find((s) => s.userId === selectedUserId);
 
   useEffect(() => {
     if (!pendingFile) {
@@ -88,6 +123,25 @@ export function TenantSignaturePanel() {
     [previewUrl],
   );
 
+  function resetForm() {
+    setSelectedUserId("");
+    setDisplayName("");
+    setPendingFile(null);
+    setPendingFileName(null);
+    setThreshold(null);
+    setContrast(null);
+    setShowFineTune(false);
+  }
+
+  function startEdit(sig: SignatureRow) {
+    setSelectedUserId(sig.userId);
+    setDisplayName(sig.displayName ?? sig.userDisplayName ?? "");
+    setPendingFile(null);
+    setPendingFileName(null);
+    setErr(null);
+    setMsg(null);
+  }
+
   function onPickFile(file: File | undefined) {
     if (!file) return;
     if (!isAcceptedSignatureImageFile(file)) {
@@ -103,34 +157,32 @@ export function TenantSignaturePanel() {
     setMsg(null);
   }
 
-  function onDropFiles(files: FileList | null | undefined) {
-    setDragOver(false);
-    onPickFile(files?.[0]);
-  }
-
   async function saveSignature() {
-    if (!pendingFile) {
-      setErr(
-        importMode === "camera"
-          ? "Fotografe a assinatura primeiro."
-          : "Importe uma imagem da assinatura primeiro.",
-      );
+    if (!selectedUserId) {
+      setErr("Seleccione o utilizador a quem atribuir a assinatura.");
+      return;
+    }
+    if (!pendingFile && !editingSignature) {
+      setErr("Importe uma imagem da assinatura.");
       return;
     }
     setBusy(true);
     setErr(null);
     setMsg(null);
     try {
-      const opts: SignatureProcessOptions = {};
-      if (showFineTune) {
-        if (threshold != null) opts.threshold = threshold;
-        if (contrast != null) opts.contrast = contrast;
-      }
-      const { blob } = await processSignatureImageFileDetailed(pendingFile, opts);
       const fd = new FormData();
-      fd.append("file", blob, "assinatura.png");
-      fd.append("responsibleName", responsibleName.trim());
-      const r = await bffFetch("/api/v1/portal/tenant/signature", {
+      fd.append("userId", selectedUserId);
+      if (displayName.trim()) fd.append("displayName", displayName.trim());
+      if (pendingFile) {
+        const opts: SignatureProcessOptions = {};
+        if (showFineTune) {
+          if (threshold != null) opts.threshold = threshold;
+          if (contrast != null) opts.contrast = contrast;
+        }
+        const { blob } = await processSignatureImageFileDetailed(pendingFile, opts);
+        fd.append("file", blob, "assinatura.png");
+      }
+      const r = await bffFetch("/api/v1/portal/tenant/signatures", {
         method: "POST",
         body: fd,
       });
@@ -138,8 +190,7 @@ export function TenantSignaturePanel() {
         setErr("Não foi possível guardar a assinatura.");
         return;
       }
-      setPendingFile(null);
-      setPendingFileName(null);
+      resetForm();
       setCacheBust(Date.now());
       setMsg("Assinatura guardada.");
       await load();
@@ -150,129 +201,132 @@ export function TenantSignaturePanel() {
     }
   }
 
-  async function saveNameOnly() {
+  async function removeSignature(id: string) {
+    if (!window.confirm("Remover esta assinatura?")) return;
     setBusy(true);
     setErr(null);
     setMsg(null);
-    const r = await bffFetch("/api/v1/portal/tenant/branding", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ signatureResponsibleName: responsibleName.trim() }),
+    const r = await bffFetch(`/api/v1/portal/tenant/signatures/${encodeURIComponent(id)}`, {
+      method: "DELETE",
     });
-    setBusy(false);
-    if (!r.ok) {
-      setErr("Não foi possível guardar o nome.");
-      return;
-    }
-    setMsg("Nome do responsável actualizado.");
-    await load();
-  }
-
-  async function removeSignature() {
-    if (!window.confirm("Remover a assinatura guardada?")) return;
-    setBusy(true);
-    setErr(null);
-    setMsg(null);
-    const r = await bffFetch("/api/v1/portal/tenant/signature", { method: "DELETE" });
     setBusy(false);
     if (!r.ok) {
       setErr("Não foi possível remover a assinatura.");
       return;
     }
-    setPendingFile(null);
-    setPendingFileName(null);
+    if (editingSignature?.id === id) resetForm();
     setCacheBust(Date.now());
     setMsg("Assinatura removida.");
     await load();
   }
 
-  const storedUrl = branding?.signatureUrl
-    ? `${branding.signatureUrl}?v=${cacheBust}`
+  const storedUrl = editingSignature
+    ? `${editingSignature.signatureUrl}?v=${cacheBust}`
     : null;
   const displayUrl = previewUrl ?? storedUrl;
 
   return (
     <section className="rounded-2xl border border-slate-700/30 bg-slate-900/50 p-5 space-y-4">
       <div>
-        <h2 className="text-sm font-semibold text-slate-100">Assinatura do responsável</h2>
+        <h2 className="text-sm font-semibold text-slate-100">Assinaturas da entidade</h2>
         <p className="text-xs text-slate-500 mt-1">
-          Importe uma imagem ou fotografe a assinatura num papel claro. O fundo é removido
-          automaticamente. Para máxima qualidade, prepare o PNG noutra app (ex. PhotoRoom) e
-          importe-o - ficheiros já transparentes não são reprocessados. Use{" "}
-          <code className="text-slate-400">{`{{entidade.assinatura}}`}</code> e{" "}
-          <code className="text-slate-400">{`{{entidade.responsavel_assinatura}}`}</code> nos
-          templates.
+          Atribua uma assinatura PNG a cada utilizador do portal. Quando assinarem sumários ou
+          folhas de presença, será usada a respetiva imagem. Importe scan ou PNG transparente - em
+          telemóvel o selector de ficheiros também permite usar a câmara. Use{" "}
+          <code className="text-slate-400">{`{{entidade.assinatura}}`}</code> nos templates.
         </p>
       </div>
 
       {err ? <p className="text-xs text-red-300">{err}</p> : null}
       {msg ? <p className="text-xs text-green-300">{msg}</p> : null}
 
-      <label className="block space-y-1 max-w-md">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-          Nome do responsável
-        </span>
+      {signatures.length > 0 ? (
+        <ul className="space-y-2">
+          {signatures.map((sig) => (
+            <li
+              key={sig.id}
+              className="flex items-center gap-3 rounded-lg border border-slate-700/40 bg-slate-950/40 p-2"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`${sig.signatureUrl}?v=${cacheBust}`}
+                alt=""
+                className="h-10 w-20 object-contain bg-[length:8px_8px] bg-[position:0_0,0_4px,4px_-4px,-4px_0px] bg-[image:linear-gradient(45deg,#334155_25%,transparent_25%),linear-gradient(-45deg,#334155_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#334155_75%),linear-gradient(-45deg,transparent_75%,#334155_75%)] bg-slate-800 rounded"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-slate-200 truncate">
+                  {sig.userDisplayName ?? sig.displayName ?? "Sem utilizador"}
+                </p>
+                <p className="text-[10px] text-slate-500 truncate">
+                  {sig.userEmail ?? (sig.userId ? sig.userId : "Legado - reatribua a um utilizador")}
+                </p>
+              </div>
+              <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => startEdit(sig)}>
+                Editar
+              </Button>
+              <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => void removeSignature(sig.id)}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-slate-500">Nenhuma assinatura configurada.</p>
+      )}
+
+      <div className="rounded-xl border border-slate-700/40 bg-slate-950/30 p-4 space-y-3">
+        <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+          {editingSignature ? "Actualizar assinatura" : "Nova assinatura"}
+        </p>
+
+        <label className="block space-y-1">
+          <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+            Utilizador
+          </span>
+          <select
+            value={selectedUserId}
+            onChange={(e) => {
+              const id = e.target.value;
+              setSelectedUserId(id);
+              const u = users.find((x) => x.id === id);
+              setDisplayName(u?.displayName ?? "");
+            }}
+            disabled={busy || Boolean(editingSignature?.userId)}
+            className="w-full rounded-lg border border-slate-600/60 bg-slate-950 px-3 py-2 text-xs text-slate-200"
+          >
+            <option value="">Seleccionar utilizador…</option>
+            {availableUsers.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.displayName} ({u.email})
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block space-y-1">
+          <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+            Nome a imprimir (opcional)
+          </span>
+          <input
+            type="text"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="Ex.: Dr. Ana Costa - Directora"
+            className="w-full rounded-lg border border-slate-600/60 bg-slate-950 px-3 py-2 text-xs text-slate-200"
+          />
+        </label>
+
         <input
-          type="text"
-          value={responsibleName}
-          onChange={(e) => setResponsibleName(e.target.value)}
-          placeholder="Ex.: Dr. Ana Costa - Directora"
-          className="w-full rounded-lg border border-slate-600/60 bg-slate-950 px-3 py-2 text-xs text-slate-200"
+          id={uploadInputId}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+          className="sr-only"
+          onChange={(e) => {
+            const file = takeFileFromInput(e);
+            if (file) onPickFile(file);
+          }}
         />
-      </label>
 
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant={importMode === "upload" ? "default" : "secondary"}
-          disabled={busy}
-          onClick={() => setImportMode("upload")}
-        >
-          <ImageUp className="mr-1.5 h-3.5 w-3.5" />
-          Importar imagem
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={importMode === "camera" ? "default" : "secondary"}
-          disabled={busy}
-          onClick={() => setImportMode("camera")}
-        >
-          <Camera className="mr-1.5 h-3.5 w-3.5" />
-          Fotografar
-        </Button>
-        {branding?.signatureUrl ? (
-          <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => void removeSignature()}>
-            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-            Remover
-          </Button>
-        ) : null}
-      </div>
-
-      <input
-        id={uploadInputId}
-        type="file"
-        accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
-        className="sr-only"
-        onChange={(e) => {
-          const file = takeFileFromInput(e);
-          if (file) onPickFile(file);
-        }}
-      />
-      <input
-        id={cameraInputId}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="sr-only"
-        onChange={(e) => {
-          const file = takeFileFromInput(e);
-          if (file) onPickFile(file);
-        }}
-      />
-
-      {importMode === "upload" ? (
         <label
           htmlFor={uploadInputId}
           onDragEnter={(e) => {
@@ -289,146 +343,126 @@ export function TenantSignaturePanel() {
           }}
           onDrop={(e) => {
             e.preventDefault();
-            onDropFiles(e.dataTransfer.files);
+            setDragOver(false);
+            onPickFile(e.dataTransfer.files?.[0]);
           }}
-          className={`block rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${
+          className={`block rounded-xl border-2 border-dashed p-4 text-center cursor-pointer transition-colors ${
             dragOver
               ? "border-blue-400/70 bg-blue-950/30"
               : "border-slate-600/50 bg-slate-950/40 hover:border-slate-500/70"
           }`}
         >
-          <Upload className="mx-auto h-8 w-8 text-slate-500 mb-2" />
-          <p className="text-sm text-slate-200 font-medium">
-            Arraste uma imagem para aqui ou clique para seleccionar
+          <Upload className="mx-auto h-6 w-6 text-slate-500 mb-1" />
+          <p className="text-xs text-slate-200 font-medium">
+            Arraste uma imagem ou clique para seleccionar
           </p>
-          <p className="text-xs text-slate-500 mt-1">PNG, JPEG ou WebP - scan, foto ou PNG já transparente</p>
+          <p className="text-[10px] text-slate-500 mt-1">PNG, JPEG ou WebP - scan ou PNG transparente</p>
           {pendingFileName ? (
-            <p className="text-xs text-blue-300 mt-2 truncate max-w-full">{pendingFileName}</p>
+            <p className="text-[10px] text-blue-300 mt-1 truncate">{pendingFileName}</p>
           ) : null}
         </label>
-      ) : (
-        <div className="rounded-xl border border-slate-700/40 bg-slate-950/40 p-6 text-center space-y-3">
-          <Camera className="mx-auto h-8 w-8 text-slate-500" />
-          <p className="text-sm text-slate-200">
-            Use a câmara do telemóvel ou webcam para capturar a assinatura num papel branco.
+
+        {pendingFile && alreadyTransparent ? (
+          <p className="text-[10px] text-slate-400">PNG já transparente - apenas recorte aplicado.</p>
+        ) : null}
+
+        {pendingFile && !alreadyTransparent && autoThreshold != null && autoThreshold >= 0 && !showFineTune ? (
+          <p className="text-[10px] text-slate-400">
+            Fundo removido (limiar {autoThreshold}). Se necessário, use o ajuste fino.
           </p>
-          <Button type="button" size="sm" disabled={busy} asChild>
-            <label htmlFor={cameraInputId} className="cursor-pointer">
-              Abrir câmara
-            </label>
-          </Button>
-          {pendingFileName ? (
-            <p className="text-xs text-blue-300 truncate max-w-full">Captura: {pendingFileName}</p>
-          ) : null}
-        </div>
-      )}
+        ) : null}
 
-      {pendingFile && alreadyTransparent ? (
-        <p className="text-xs text-slate-400">
-          Imagem importada já tinha fundo transparente - aplicado apenas recorte. Ajuste fino não
-          é necessário.
-        </p>
-      ) : null}
-      {pendingFile && autoThreshold != null && autoThreshold >= 0 && !showFineTune ? (
-        <p className="text-xs text-slate-400">
-          Fundo removido automaticamente (limiar estimado: {autoThreshold}). Se a assinatura ficar
-          fraca ou com restos de papel, abra o ajuste fino abaixo.
-        </p>
-      ) : null}
-
-      {pendingFile && !alreadyTransparent ? (
-        <div className="rounded-lg border border-slate-700/50 bg-slate-950/50 p-3 space-y-3">
-          <button
-            type="button"
-            className="text-[10px] font-medium uppercase tracking-wide text-slate-400 hover:text-slate-200"
-            onClick={() => {
-              setShowFineTune((v) => {
-                const next = !v;
-                if (next) {
-                  if (threshold == null) {
-                    setThreshold(autoThreshold != null && autoThreshold >= 0 ? autoThreshold : 210);
+        {pendingFile && !alreadyTransparent ? (
+          <div className="rounded-lg border border-slate-700/50 bg-slate-950/50 p-2 space-y-2">
+            <button
+              type="button"
+              className="text-[10px] font-medium uppercase tracking-wide text-slate-400 hover:text-slate-200"
+              onClick={() => {
+                setShowFineTune((v) => {
+                  const next = !v;
+                  if (next) {
+                    if (threshold == null) {
+                      setThreshold(autoThreshold != null && autoThreshold >= 0 ? autoThreshold : 210);
+                    }
+                    if (contrast == null) setContrast(1.05);
                   }
-                  if (contrast == null) setContrast(1.05);
-                }
-                return next;
-              });
-            }}
+                  return next;
+                });
+              }}
+            >
+              {showFineTune ? "▾ Ocultar ajuste fino" : "▸ Ajuste fino"}
+            </button>
+            {showFineTune ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="block space-y-1">
+                  <span className="text-[10px] text-slate-500">Limiar {threshold ?? autoThreshold ?? 210}</span>
+                  <input
+                    type="range"
+                    min={140}
+                    max={250}
+                    value={threshold ?? (autoThreshold != null && autoThreshold >= 0 ? autoThreshold : 210)}
+                    onChange={(e) => setThreshold(Number(e.target.value))}
+                    className="w-full accent-blue-500"
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-[10px] text-slate-500">
+                    Contraste {(contrast ?? 1.05).toFixed(2)}
+                  </span>
+                  <input
+                    type="range"
+                    min={100}
+                    max={135}
+                    value={Math.round((contrast ?? 1.05) * 100)}
+                    onChange={(e) => setContrast(Number(e.target.value) / 100)}
+                    className="w-full accent-blue-500"
+                  />
+                </label>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div
+          className="rounded-lg border border-slate-700/40 p-3 min-h-[88px] flex flex-col items-center justify-center gap-1"
+          style={{
+            backgroundImage:
+              "linear-gradient(45deg, #334155 25%, transparent 25%), linear-gradient(-45deg, #334155 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #334155 75%), linear-gradient(-45deg, transparent 75%, #334155 75%)",
+            backgroundSize: "16px 16px",
+            backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0",
+            backgroundColor: "#1e293b",
+          }}
+        >
+          {displayUrl ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={displayUrl} alt="Pré-visualização" className="max-h-20 max-w-full object-contain" />
+              {displayName.trim() ? (
+                <p className="text-[10px] text-slate-200 border-t border-slate-500/60 pt-1 px-2 text-center">
+                  {displayName.trim()}
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="text-[10px] text-slate-500">Pré-visualização</p>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            disabled={busy || !selectedUserId || (!pendingFile && !editingSignature)}
+            onClick={() => void saveSignature()}
           >
-            {showFineTune ? "▾ Ocultar ajuste fino" : "▸ Ajuste fino (limiar e contraste)"}
-          </button>
-          {showFineTune ? (
-            <div className="grid gap-3 sm:grid-cols-2 max-w-lg">
-              <label className="block space-y-1">
-                <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-                  Remoção de fundo - limiar {threshold ?? autoThreshold ?? 210}
-                </span>
-                <input
-                  type="range"
-                  min={140}
-                  max={250}
-                  value={threshold ?? (autoThreshold != null && autoThreshold >= 0 ? autoThreshold : 210)}
-                  onChange={(e) => setThreshold(Number(e.target.value))}
-                  className="w-full accent-blue-500"
-                />
-                <span className="text-[10px] text-slate-600">Mais baixo = mais tinta; mais alto = mais fundo removido</span>
-              </label>
-              <label className="block space-y-1">
-                <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-                  Contraste da tinta - {(contrast ?? 1.05).toFixed(2)}
-                </span>
-                <input
-                  type="range"
-                  min={100}
-                  max={135}
-                  value={Math.round((contrast ?? 1.05) * 100)}
-                  onChange={(e) => setContrast(Number(e.target.value) / 100)}
-                  className="w-full accent-blue-500"
-                />
-                <span className="text-[10px] text-slate-600">Aumente se a assinatura ficar demasiado clara</span>
-              </label>
-            </div>
+            Guardar assinatura
+          </Button>
+          {editingSignature || selectedUserId ? (
+            <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={resetForm}>
+              Cancelar
+            </Button>
           ) : null}
         </div>
-      ) : null}
-
-      <div
-        className="rounded-xl border border-slate-700/40 p-4 min-h-[120px] flex flex-col items-center justify-center gap-2"
-        style={{
-          backgroundImage:
-            "linear-gradient(45deg, #334155 25%, transparent 25%), linear-gradient(-45deg, #334155 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #334155 75%), linear-gradient(-45deg, transparent 75%, #334155 75%)",
-          backgroundSize: "16px 16px",
-          backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0",
-          backgroundColor: "#1e293b",
-        }}
-      >
-        {displayUrl ? (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={displayUrl} alt="Pré-visualização da assinatura" className="max-h-32 max-w-sm object-contain" />
-            {responsibleName.trim() ? (
-              <p className="text-xs text-slate-200 border-t border-slate-500/60 pt-1 px-4 text-center">
-                {responsibleName.trim()}
-              </p>
-            ) : null}
-          </>
-        ) : (
-          <p className="text-xs text-slate-500">Sem assinatura configurada.</p>
-        )}
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Button type="button" size="sm" disabled={busy || !pendingFile} onClick={() => void saveSignature()}>
-          Guardar assinatura
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          disabled={busy}
-          onClick={() => void saveNameOnly()}
-        >
-          Guardar só o nome
-        </Button>
       </div>
     </section>
   );

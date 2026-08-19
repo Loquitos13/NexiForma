@@ -125,8 +125,61 @@ export class PortalController {
     @CurrentUser() user: RequestUser,
     @UploadedFile() file: Express.Multer.File,
     @Body("responsibleName") responsibleName?: string,
+    @Body("userId") userId?: string,
   ) {
-    return this.tenantSettings.uploadSignature(user, file, responsibleName);
+    return this.tenantSettings.uploadSignature(user, file, responsibleName, userId);
+  }
+
+  @Get("tenant/signatures")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager")
+  listUserSignatures(@CurrentUser() user: RequestUser) {
+    return this.tenantSettings.listUserSignatures(user);
+  }
+
+  @Get("tenant/signatures/me")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador", "comercial")
+  mySignature(@CurrentUser() user: RequestUser) {
+    return this.tenantSettings.getMySignature(user);
+  }
+
+  @Post("tenant/signatures")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 1024 * 1024 } }))
+  uploadUserSignature(
+    @CurrentUser() user: RequestUser,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body("userId") userId: string,
+    @Body("displayName") displayName?: string,
+  ) {
+    return this.tenantSettings.uploadUserSignature(user, file, userId, displayName);
+  }
+
+  @Delete("tenant/signatures/:id")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager")
+  deleteUserSignature(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+    return this.tenantSettings.deleteUserSignature(user, id);
+  }
+
+  @Get("tenant/signatures/:id/file")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador", "comercial")
+  async streamUserSignature(
+    @CurrentUser() user: RequestUser,
+    @Param("id") id: string,
+    @Res() res: Response,
+  ) {
+    const obj = await this.tenantSettings.streamUserSignature(user, id);
+    if (!obj) {
+      res.status(404).send("Assinatura não configurada.");
+      return;
+    }
+    res.setHeader("Content-Type", obj.contentType);
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.send(obj.body);
   }
 
   @Delete("tenant/signature")
