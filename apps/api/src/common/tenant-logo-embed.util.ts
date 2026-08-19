@@ -125,7 +125,7 @@ export function tenantSignatureImgHtml(
   if (!(src.startsWith("data:") || src.startsWith("http://") || src.startsWith("https://"))) {
     return "";
   }
-  return `<img class="tenant-signature" src="${src}" alt="${escapeHtml(alt)}" style="max-width:280px;max-height:110px;width:auto;height:auto;display:block;object-fit:contain;" />`;
+  return `<img class="tenant-signature" src="${src}" alt="${escapeHtml(alt)}" style="max-width:280px;max-height:110px;width:auto;height:auto;display:inline-block;vertical-align:middle;object-fit:contain;" />`;
 }
 
 function tenantLogoBlockHtml(
@@ -147,6 +147,7 @@ export function tenantDocumentBrandingCss(metadata: unknown): string {
     .tenant-logo-header { ${logoImgStyle(header).replace(/"/g, "")} }
     .tenant-logo-footer { ${logoImgStyle(footer).replace(/"/g, "")} }
     .tenant-doc-footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #ddd; font-size: 11px; color: #666; }
+    .tenant-signature { display: inline-block; vertical-align: middle; object-fit: contain; }
   `.trim();
 }
 

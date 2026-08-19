@@ -184,7 +184,59 @@ function preserveForegroundPixel(
   data[i] = Math.round(r * (1 - darken));
   data[i + 1] = Math.round(g * (1 - darken));
   data[i + 2] = Math.round(b * (1 - darken));
-  data[i + 3] = Math.round(Math.min(255, 255 * Math.pow(inkStrength, 0.82)));
+  data[i + 3] = Math.round(Math.min(255, 255 * inkStrength));
+}
+
+/** Suaviza bordas (alpha) para reduzir aspecto serrilhado/pixelizado. */
+function featherAlphaChannel(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  radius = 1,
+): void {
+  const alphas = new Float32Array(width * height);
+  for (let i = 0; i < width * height; i++) {
+    alphas[i] = data[i * 4 + 3]!;
+  }
+
+  const blurred = new Float32Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      let count = 0;
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          sum += alphas[ny * width + nx]!;
+          count++;
+        }
+      }
+      blurred[y * width + x] = count ? sum / count : 0;
+    }
+  }
+
+  for (let i = 0; i < width * height; i++) {
+    data[i * 4 + 3] = Math.round(blurred[i]!);
+  }
+}
+
+/** Evita assinaturas minúsculas que ficam pixelizadas ao ampliar no PDF. */
+function upscaleCanvasIfSmall(canvas: HTMLCanvasElement, minLongEdge = 520): HTMLCanvasElement {
+  const long = Math.max(canvas.width, canvas.height);
+  if (long >= minLongEdge) return canvas;
+
+  const scale = minLongEdge / long;
+  const out = document.createElement("canvas");
+  out.width = Math.max(1, Math.round(canvas.width * scale));
+  out.height = Math.max(1, Math.round(canvas.height * scale));
+  const ctx = out.getContext("2d", { alpha: true });
+  if (!ctx) return canvas;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(canvas, 0, 0, out.width, out.height);
+  return out;
 }
 
 function removeBackgroundAutomatic(
@@ -219,8 +271,7 @@ function removeBackgroundAutomatic(
         continue;
       }
 
-      const inkStrength = isInk ? Math.max(strength, 0.62) : strength;
-      preserveForegroundPixel(data, i, inkStrength, contrast);
+      preserveForegroundPixel(data, i, strength, contrast);
     }
   }
 
@@ -317,13 +368,16 @@ export async function processSignatureImageElementDetailed(
     autoThreshold = -1;
   } else if (opts.threshold != null) {
     removeBackgroundManual(data, opts.threshold, contrast);
+    featherAlphaChannel(data, width, height, 1);
     autoThreshold = opts.threshold;
   } else {
     autoThreshold = removeBackgroundAutomatic(data, width, height, contrast);
+    featherAlphaChannel(data, width, height, 1);
   }
 
   ctx.putImageData(imageData, 0, 0);
-  const trimmed = trimTransparentCanvas(canvas, paddingPx);
+  let trimmed = trimTransparentCanvas(canvas, paddingPx);
+  trimmed = upscaleCanvasIfSmall(trimmed);
   const blob = await canvasToPngBlob(trimmed);
   return { blob, autoThreshold, alreadyTransparent };
 }

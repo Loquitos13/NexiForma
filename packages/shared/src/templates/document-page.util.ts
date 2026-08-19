@@ -75,6 +75,15 @@ function documentPageLayoutRules(
     ${p}.doc-content-layer ul, ${p}.doc-content-layer ol { margin: 0 0 10px 1.25em; }
     ${p}.doc-content-layer table { width: 100%; border-collapse: collapse; margin: 12px 0; }
     ${p}.doc-content-layer td, ${p}.doc-content-layer th { border: 1px solid #ccc; padding: 4px 8px; }
+    ${p}.doc-content-layer .tenant-signature {
+      display: inline-block;
+      vertical-align: middle;
+      max-width: 280px;
+      max-height: 110px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+    }
   `.trim();
 }
 

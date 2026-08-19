@@ -196,7 +196,9 @@ export function TenantSignaturePanel() {
         <h2 className="text-sm font-semibold text-slate-100">Assinatura do responsável</h2>
         <p className="text-xs text-slate-500 mt-1">
           Importe uma imagem ou fotografe a assinatura num papel claro. O fundo é removido
-          automaticamente. Use <code className="text-slate-400">{`{{entidade.assinatura}}`}</code> e{" "}
+          automaticamente. Para máxima qualidade, prepare o PNG noutra app (ex. PhotoRoom) e
+          importe-o - ficheiros já transparentes não são reprocessados. Use{" "}
+          <code className="text-slate-400">{`{{entidade.assinatura}}`}</code> e{" "}
           <code className="text-slate-400">{`{{entidade.responsavel_assinatura}}`}</code> nos
           templates.
         </p>
