@@ -11,11 +11,13 @@ export function ConfiguracoesCrmPanel() {
           <ModuleLogosPanel modulo="crm" title="Logótipos CRM" />
         </div>
       </div>
-      <TemplateEditorPanel
-      modulo="crm"
-      title="Templates CRM"
-      description="Propostas e contratos com variáveis do cliente, proposta e comercial. Também pode importar DOCX numa fase posterior."
-      />
+      <div className="mx-auto w-full max-w-4xl">
+        <TemplateEditorPanel
+          modulo="crm"
+          title="Templates CRM"
+          description="Propostas e contratos com variáveis do cliente, proposta e comercial. Também pode importar DOCX numa fase posterior."
+        />
+      </div>
     </div>
   );
 }

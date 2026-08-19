@@ -213,7 +213,7 @@ export default function ConfiguracoesPage() {
   })();
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className="w-full space-y-6">
       <header className="ui-settings-hero space-y-2 border-b border-slate-700/30 pb-5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
           Administração
@@ -244,11 +244,13 @@ export default function ConfiguracoesPage() {
           {modulo === "formacao" ? <ConfiguracoesFormacaoPanel /> : null}
           {modulo === "crm" ? <ConfiguracoesCrmPanel /> : null}
           {modulo === "faturacao" ? (
-            <TemplateEditorPanel
-              modulo="faturacao"
-              title="Templates de faturação"
-              description="Recibos, notas de crédito e documentos fiscais com variáveis do cliente e da fatura."
-            />
+            <div className="mx-auto w-full max-w-4xl">
+              <TemplateEditorPanel
+                modulo="faturacao"
+                title="Templates de faturação"
+                description="Recibos, notas de crédito e documentos fiscais com variáveis do cliente e da fatura."
+              />
+            </div>
           ) : null}
           {modulo === "geral" ? (
             <>

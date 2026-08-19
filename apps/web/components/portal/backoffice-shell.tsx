@@ -14,6 +14,7 @@ import {
 import { publishMobileNavOpen } from "@/lib/client/mobile-nav";
 import { Sidebar } from "./sidebar";
 import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
+import { cn } from "@/lib/ui/cn";
 import type { JwtRole, TenantEntitlements } from "@nexiforma/shared";
 
 export function BackofficeShell({
@@ -38,6 +39,8 @@ export function BackofficeShell({
     publishMobileNavOpen(mobileNavOpen);
     return () => publishMobileNavOpen(false);
   }, [mobileNavOpen]);
+
+  const isWideSettingsPage = pathname.startsWith("/portal/configuracoes");
 
   return (
     <div className="portal-app-shell ui-shell-atmosphere-host flex-row">
@@ -84,7 +87,12 @@ export function BackofficeShell({
           ref={scrollRef}
           className="portal-main portal-scroll-main"
         >
-          <div className="mx-auto w-full max-w-6xl px-3 py-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-6">
+          <div
+            className={cn(
+              "mx-auto w-full px-3 py-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-6",
+              isWideSettingsPage ? "max-w-[90rem]" : "max-w-6xl",
+            )}
+          >
             {children}
           </div>
         </main>
