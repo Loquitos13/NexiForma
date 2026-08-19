@@ -52,6 +52,18 @@ export const FORMADOR_DOCS_OBRIGATORIOS_META: Array<{
     accept: "application/pdf,image/jpeg,image/png",
     ajuda: "Ficha curricular DGERT preenchida e assinada.",
   },
+  {
+    id: "certificados_formacao",
+    label: "Certificados de formação complementar",
+    accept: "application/pdf,image/jpeg,image/png",
+    ajuda: "Certificados de formação complementar (quando existirem).",
+  },
+  {
+    id: "carta_conducao",
+    label: "Carta de condução",
+    accept: "application/pdf,image/jpeg,image/png",
+    ajuda: "Carta de condução (quando aplicável).",
+  },
 ];
 
 export const FORMADOR_DOC_CATEGORIAS_UPLOAD = [
@@ -63,3 +75,12 @@ export const FORMADOR_DOC_CATEGORIAS_UPLOAD = [
   { value: "carta_conducao", label: "Carta de condução" },
   { value: "outros", label: "Outros documentos relevantes" },
 ] as const;
+
+export function labelFormadorDocCategoria(categoria: string | null | undefined): string {
+  const meta = FORMADOR_DOCS_OBRIGATORIOS_META.find((m) => m.id === categoria);
+  if (meta) return meta.label;
+  const cat = FORMADOR_DOC_CATEGORIAS_UPLOAD.find((c) => c.value === categoria);
+  if (cat) return cat.label;
+  if (!categoria) return "Documento";
+  return categoria;
+}

@@ -35,7 +35,7 @@ interface SidebarProps {
   onRailCollapsedChange?: (collapsed: boolean) => void;
 }
 
-function isActive(href: string, pathname: string) {
+function matchesNavHref(href: string, pathname: string) {
   if (href === "/portal") return pathname === "/portal";
   if (href === "/portal/crm") return pathname === "/portal/crm";
   if (href === "/portal/propostas") {
@@ -44,8 +44,14 @@ function isActive(href: string, pathname: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function groupHasActiveItem(items: NavItem[], pathname: string) {
-  return items.some((item) => isActive(item.href, pathname));
+/** Preferir o item mais específico (ex.: Clientes vs Formandos). */
+function resolveActiveNavHref(items: NavItem[], pathname: string): string | null {
+  let best: string | null = null;
+  for (const item of items) {
+    if (!matchesNavHref(item.href, pathname)) continue;
+    if (!best || item.href.length > best.length) best = item.href;
+  }
+  return best;
 }
 
 function NavIcon({ name }: { name?: string }) {
@@ -59,21 +65,21 @@ function NavIcon({ name }: { name?: string }) {
 
 function NavLink({
   item,
-  pathname,
+  activeHref,
   entitlements,
   onNavigate,
   nested = false,
   railCollapsed = false,
 }: {
   item: NavItem;
-  pathname: string;
+  activeHref: string | null;
   entitlements?: TenantEntitlements | null;
   onNavigate?: () => void;
   nested?: boolean;
   railCollapsed?: boolean;
 }) {
   const { emFaltaCount, roleKind } = useDocumentosObrigatorios();
-  const active = isActive(item.href, pathname);
+  const active = item.href === activeHref;
   const docsDot =
     !railCollapsed &&
     item.href === "/portal/formador/perfil" &&
@@ -124,7 +130,8 @@ function NavSection({
 }) {
   const collapsible = isNavGroupCollapsible(group);
   const title = navGroupTitle(group);
-  const hasActive = groupHasActiveItem(group.items, pathname);
+  const activeHref = resolveActiveNavHref(group.items, pathname);
+  const hasActive = activeHref !== null;
   const storageKey = `portal-nav:${group.module ?? group.label}`;
   const sectionRef = useRef<HTMLDivElement>(null);
   const flyoutRef = useRef<HTMLDivElement>(null);
@@ -210,7 +217,7 @@ function NavSection({
             <NavLink
               key={item.href}
               item={item}
-              pathname={pathname}
+              activeHref={activeHref}
               entitlements={entitlements}
               onNavigate={onNavigate}
               railCollapsed={railCollapsed}
@@ -277,7 +284,7 @@ function NavSection({
               <NavLink
                 key={item.href}
                 item={item}
-                pathname={pathname}
+                activeHref={activeHref}
                 entitlements={entitlements}
                 onNavigate={onNavigate}
                 nested
@@ -302,7 +309,7 @@ function NavSection({
               <NavLink
                 key={item.href}
                 item={item}
-                pathname={pathname}
+                activeHref={activeHref}
                 entitlements={entitlements}
                 onNavigate={() => {
                   setOpen(false);

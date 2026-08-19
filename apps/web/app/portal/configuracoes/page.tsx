@@ -254,8 +254,9 @@ export default function ConfiguracoesPage() {
             <>
       <DgertRequisitoBanner backHref="/portal/dossie" />
 
+      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
       {tenant ? (
-        <DgertTarget id="entidade" className="ui-settings-card scroll-mt-24 rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">
+        <DgertTarget id="entidade" className="ui-settings-card scroll-mt-24 rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5 min-w-0">
           <h2 className="ui-settings-card-title text-sm font-semibold mb-1">Entidade formadora</h2>
           <p className="ui-settings-card-desc text-xs mb-4">
             Nome legal e NIF usados em DGERT, dossiê e faturação. Alterações ficam na base de dados
@@ -341,7 +342,7 @@ export default function ConfiguracoesPage() {
       ) : null}
 
       {canManage ? (
-        <div id="branding" className="ui-settings-card scroll-mt-24 rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5 space-y-4">
+        <div id="branding" className="ui-settings-card scroll-mt-24 rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5 space-y-4 min-w-0">
           <h2 className="ui-settings-card-title text-sm font-semibold">Branding e logótipo</h2>
           <p className="ui-settings-card-desc text-xs">
             O logótipo desta entidade aparece em faturas, propostas, cronogramas, folhas de presença,
@@ -563,6 +564,7 @@ export default function ConfiguracoesPage() {
           </button>
         </div>
       ) : null}
+      </div>
 
       {canManage ? (
         <div id="cnaef" className="ui-settings-card scroll-mt-24 rounded-2xl bg-slate-900/50 border border-slate-700/30 p-5">

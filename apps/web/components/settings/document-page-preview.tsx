@@ -1,11 +1,9 @@
 "use client";
 
 import { memo, useEffect, useRef, useState } from "react";
-import {
-  a4AspectRatio,
-  type DocumentOrientacao,
-} from "@nexiforma/shared";
+import type { DocumentOrientacao } from "@nexiforma/shared";
 import { cn } from "@/lib/ui/cn";
+import { useA4PageScale } from "@/lib/ui/use-a4-page-scale";
 
 type Props = {
   srcDoc: string;
@@ -27,9 +25,10 @@ function DocumentPagePreviewInner({
   lazy = false,
   hideLabel = false,
 }: Props) {
-  const aspect = a4AspectRatio(orientacao);
   const [mounted, setMounted] = useState(!lazy);
   const containerRef = useRef<HTMLDivElement>(null);
+  const pageWrapRef = useRef<HTMLDivElement>(null);
+  const { scale, pageWidthPx, pageHeightPx } = useA4PageScale(pageWrapRef, orientacao);
   const lastSrcRef = useRef(srcDoc);
 
   useEffect(() => {
@@ -65,16 +64,29 @@ function DocumentPagePreviewInner({
         </p>
       ) : null}
       <div
-        className="mx-auto overflow-hidden rounded-lg border border-slate-600/50 bg-slate-800/40 shadow-inner"
+        ref={pageWrapRef}
+        className="mx-auto w-full overflow-hidden rounded-lg border border-slate-600/50 bg-slate-800/40 shadow-inner"
         style={{ maxWidth }}
       >
-        <div className="relative w-full bg-white" style={{ aspectRatio: aspect }}>
+        <div
+          className="relative mx-auto overflow-hidden bg-white"
+          style={{
+            width: pageWidthPx * scale,
+            height: pageHeightPx * scale,
+          }}
+        >
           {mounted && srcDoc ? (
             <iframe
               key={iframeKey}
               title={title}
               srcDoc={srcDoc}
-              className="absolute inset-0 h-full w-full border-0 bg-white"
+              className="pointer-events-none absolute left-0 top-0 border-0 bg-white"
+              style={{
+                width: pageWidthPx,
+                height: pageHeightPx,
+                transform: `scale(${scale})`,
+                transformOrigin: "top left",
+              }}
               sandbox=""
               referrerPolicy="no-referrer"
               loading="lazy"

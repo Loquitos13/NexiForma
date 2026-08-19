@@ -27,10 +27,12 @@ export function extractDownloadablesFromAttrs(
   for (const p of photoUrls) {
     const url = p["normalized-url"] || p.url;
     if (!url) continue;
+    const page = p.page ?? "front";
+    if (out.some((f) => f.page === page)) continue;
     out.push({
       url,
-      page: p.page ?? "front",
-      filename: `persona-id-${p.page ?? "front"}${extensionFromUrl(url)}`,
+      page,
+      filename: `persona-id-${page}${extensionFromUrl(url)}`,
     });
   }
 
@@ -38,24 +40,26 @@ export function extractDownloadablesFromAttrs(
   if (!out.length && files?.length) {
     for (const f of files) {
       if (!f.url) continue;
+      const page = f.page ?? "front";
+      if (out.some((item) => item.page === page)) continue;
       out.push({
         url: f.url,
-        page: f.page ?? "front",
-        filename: f.filename ?? `persona-id-front${extensionFromUrl(f.url)}`,
+        page,
+        filename: f.filename ?? `persona-id-${page}${extensionFromUrl(f.url)}`,
       });
     }
   }
 
   const front = attrs["front-photo-url"] as string | undefined;
   const back = attrs["back-photo-url"] as string | undefined;
-  if (!out.length && front) {
+  if (!out.some((f) => f.page === "front") && front) {
     out.push({
       url: front,
       page: "front",
       filename: `persona-id-front${extensionFromUrl(front)}`,
     });
   }
-  if (back) {
+  if (!out.some((f) => f.page === "back") && back) {
     out.push({
       url: back,
       page: "back",

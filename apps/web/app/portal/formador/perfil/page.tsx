@@ -1,8 +1,8 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Lock, Shield, Upload, User } from "lucide-react";
+import { CheckCircle2, CircleAlert, FileText, Lock, Shield, User } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
@@ -20,7 +20,6 @@ import {
   Textarea,
 } from "@/components/ui";
 import { PasswordInput } from "@/components/ui/password-input";
-import { DocumentPreviewModal } from "@/components/ui/document-preview-modal";
 import { notifyDocumentosObrigatoriosUpdated } from "@/components/portal/documentos-obrigatorios-gate";
 import { DocPendenteNeonDot } from "@/components/portal/doc-pendente-neon-dot";
 import {
@@ -28,7 +27,8 @@ import {
   usePersonaEnabled,
 } from "@/components/persona/persona-id-verification";
 import {
-  FORMADOR_DOC_CATEGORIAS_UPLOAD,
+  FORMADOR_DOCS_OBRIGATORIOS_META,
+  labelFormadorDocCategoria,
   type FormadorDocObrigatorioResumo,
 } from "@/lib/formador/documentos-obrigatorios";
 import { AVISO_NOME_DOCUMENTO_OUTROS } from "@/lib/documentos/nome-ficheiro-aviso";
@@ -79,8 +79,6 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: "documentos", label: "Documentos" },
 ];
 
-const DOC_CATEGORIAS = FORMADOR_DOC_CATEGORIAS_UPLOAD;
-
 function formatBytes(n: number) {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -90,7 +88,6 @@ function formatBytes(n: number) {
 export default function FormadorPerfilPage() {
   const router = useRouter();
   const { role, loading: roleLoading, isFormador } = useTenantRole();
-  const fileRef = useRef<HTMLInputElement>(null);
   const [tab, setTab] = useState<TabId>("dados");
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [docs, setDocs] = useState<Documento[]>([]);
@@ -100,9 +97,8 @@ export default function FormadorPerfilPage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const [categoria, setCategoria] = useState("cv");
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewTitle, setPreviewTitle] = useState("");
+  const [nomeAdicional, setNomeAdicional] = useState("");
+  const [ficheiroAdicional, setFicheiroAdicional] = useState<File | null>(null);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -118,13 +114,6 @@ export default function FormadorPerfilPage() {
   });
   const { enabled: personaEnabled, ready: personaReady, environmentId: personaEnvironmentId } =
     usePersonaEnabled();
-  const idDocOk = obrigatorios?.items.find((i) => i.id === "documento_identificacao")?.completo;
-
-  useEffect(() => {
-    if (personaReady && personaEnabled && categoria === "documento_identificacao") {
-      setCategoria("cv");
-    }
-  }, [personaReady, personaEnabled, categoria]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -175,12 +164,6 @@ export default function FormadorPerfilPage() {
     const t = new URLSearchParams(window.location.search).get("tab");
     if (t === "documentos" || t === "dados" || t === "seguranca") setTab(t);
   }, []);
-
-  useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
-  }, [previewUrl]);
 
   const docsEmFalta = Boolean(obrigatorios && !obrigatorios.completo);
 
@@ -241,37 +224,78 @@ export default function FormadorPerfilPage() {
     setConfirmPassword("");
   }
 
-  async function onUpload(file: File) {
+  async function uploadFicheiro(
+    file: File,
+    categoria: string,
+    nome?: string,
+  ): Promise<boolean> {
     setUploading(true);
     setError(null);
     setMsg(null);
+    let uploadFile = file;
+    if (categoria === "outros" && nome?.trim()) {
+      const ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : "";
+      uploadFile = new File([file], `${nome.trim()}${ext}`, {
+        type: file.type,
+        lastModified: file.lastModified,
+      });
+    }
     const fd = new FormData();
-    fd.append("file", file);
+    fd.append("file", uploadFile);
     const r = await bffFetch(
       `/api/v1/formadores/me/documentos?categoria=${encodeURIComponent(categoria)}`,
       { method: "POST", body: fd },
     );
-    setUploading(false);
     if (!r.ok) {
       setError(await parseApiError(r));
-      return;
+      setUploading(false);
+      return false;
     }
-    setMsg("Documento enviado.");
+    setMsg(
+      categoria === "outros" && nome?.trim()
+        ? `«${nome.trim()}» registado.`
+        : `${labelFormadorDocCategoria(categoria)} registado.`,
+    );
     await load();
     notifyDocumentosObrigatoriosUpdated();
+    setUploading(false);
+    return true;
   }
 
-  async function verDocumento(doc: Documento) {
+  async function enviarFicheiroAdicional() {
+    if (!ficheiroAdicional) {
+      setError("Seleccione um ficheiro para enviar.");
+      return;
+    }
+    if (!nomeAdicional.trim()) {
+      setError("Indique um nome para o documento.");
+      return;
+    }
+    const ok = await uploadFicheiro(ficheiroAdicional, "outros", nomeAdicional);
+    if (ok) {
+      setNomeAdicional("");
+      setFicheiroAdicional(null);
+    }
+  }
+
+  async function openDocumento(id: string) {
     setError(null);
-    const r = await bffFetch(`/api/v1/formadores/me/documentos/${doc.id}/download`);
+    const r = await bffFetch(`/api/v1/formadores/me/documentos/${id}/download`);
     if (!r.ok) {
       setError(await parseApiError(r));
       return;
     }
     const blob = await r.blob();
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(URL.createObjectURL(blob));
-    setPreviewTitle(doc.nome);
+    const objUrl = URL.createObjectURL(blob);
+    const opened = window.open(objUrl, "_blank", "noopener,noreferrer");
+    if (!opened) {
+      const a = document.createElement("a");
+      a.href = objUrl;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.click();
+    }
+    window.setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
   }
 
   if (roleLoading || !isFormador) {
@@ -562,9 +586,13 @@ export default function FormadorPerfilPage() {
                               })();
                             }}
                           />
-                          <Button size="sm" variant="secondary" disabled={uploading} asChild>
-                            <span>{uploading ? "A enviar…" : "Enviar ficheiro"}</span>
-                          </Button>
+                          <span className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-600 bg-transparent px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
+                            {uploading
+                              ? "A enviar…"
+                              : r.estado === "submetido"
+                                ? "Substituir ficheiro"
+                                : "Carregar ficheiro"}
+                          </span>
                         </label>
                       ) : null}
                     </li>
@@ -574,138 +602,194 @@ export default function FormadorPerfilPage() {
             </Card>
           ) : null}
 
-          <Card className="border-slate-700/30 bg-slate-900/40 border-sky-500/15">
+          <Card className="border-slate-700/30 bg-slate-900/40 border-amber-500/10">
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
-                <FileText className="h-4 w-4 text-sky-400" />
-                Documento de identificação
+                <FileText className="h-4 w-4 text-amber-400" />
+                Documentos obrigatórios
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <PersonaIdVerification
-                roleKind="formador"
-                idCompleto={idDocOk}
-                onSynced={load}
-                enabled={personaEnabled}
-                ready={personaReady}
-                environmentId={personaEnvironmentId}
-              />
-              {personaReady && personaEnabled ? (
-                <p className="mt-2 text-xs text-slate-500">
-                  Os restantes documentos obrigatórios podem ser enviados manualmente abaixo.
-                </p>
-              ) : null}
+            <CardContent className="space-y-5">
+              <p className="text-sm text-slate-300 leading-relaxed">
+                A <strong className="text-slate-100">NexiForma</strong> não utiliza estes ficheiros para
+                fins próprios. Servem para que{" "}
+                <strong className="text-amber-300/90">
+                  {perfil?.tenantLegalName ?? "a entidade formadora"}
+                </strong>{" "}
+                cumpra requisitos legais da formação (credenciais DGERT, contratação, dossiê).
+              </p>
+
+              <ul className="space-y-3">
+                {(obrigatorios?.items ?? FORMADOR_DOCS_OBRIGATORIOS_META.map((m) => ({
+                  id: m.id,
+                  label: m.label,
+                  completo: false,
+                  detalhe: m.ajuda,
+                  obrigatorio: false,
+                  origem: "cargo" as const,
+                }))).map((status) => {
+                  const meta = FORMADOR_DOCS_OBRIGATORIOS_META.find((m) => m.id === status.id);
+                  const ok = status.completo;
+                  const label = meta?.label ?? status.label;
+                  const ajuda = meta?.ajuda ?? status.detalhe;
+                  return (
+                    <li
+                      key={status.id}
+                      className="rounded-xl border border-slate-700/30 bg-slate-800/30 px-4 py-3 space-y-3"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium text-slate-100 flex items-center gap-2">
+                            {ok ? (
+                              <CheckCircle2 className="h-4 w-4 text-teal-400 shrink-0" />
+                            ) : (
+                              <CircleAlert className="h-4 w-4 text-amber-400 shrink-0" />
+                            )}
+                            {label}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-1">{ajuda}</p>
+                        </div>
+                        <Badge variant={ok ? "green" : status.obrigatorio ? "yellow" : "default"}>
+                          {ok ? "OK" : status.obrigatorio ? "Em falta" : "Opcional"}
+                        </Badge>
+                      </div>
+
+                      {status.id === "documento_identificacao" ? (
+                        <PersonaIdVerification
+                          roleKind="formador"
+                          idCompleto={ok}
+                          onSynced={load}
+                          enabled={personaEnabled}
+                          ready={personaReady}
+                          environmentId={personaEnvironmentId}
+                        />
+                      ) : null}
+
+                      {status.id === "documento_identificacao" &&
+                      personaReady &&
+                      personaEnabled ? null : (
+                        <label className="inline-flex">
+                          <input
+                            type="file"
+                            accept={meta?.accept ?? "application/pdf,image/jpeg,image/png"}
+                            className="sr-only"
+                            disabled={uploading}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = "";
+                              if (!file) return;
+                              void uploadFicheiro(file, status.id);
+                            }}
+                          />
+                          <span className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-600 bg-transparent px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
+                            {uploading ? "A enviar…" : "Carregar ficheiro"}
+                          </span>
+                        </label>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
             </CardContent>
           </Card>
 
-        <Card className="border-slate-700/30 bg-slate-900/40">
-          <CardHeader className="border-b border-slate-700/40 flex flex-row flex-wrap items-center justify-between gap-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <FileText className="h-4 w-4 text-amber-400" />
-              Documentos ({docs.length})
-            </CardTitle>
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={categoria}
-                onChange={(e) => setCategoria(e.target.value)}
-                className="h-9 rounded-lg border border-slate-600 bg-slate-900 px-2 text-sm text-slate-200"
-              >
-                {DOC_CATEGORIAS.filter(
-                  (c) =>
-                    !(personaReady && personaEnabled && c.value === "documento_identificacao"),
-                ).map((c) => {
-                  const obr = obrigatorios?.items.find((i) => i.id === c.value);
-                  const suffix = obr
-                    ? obr.completo
-                      ? " (obrigatório · OK)"
-                      : " (obrigatório)"
-                    : "";
-                  return (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                      {suffix}
-                    </option>
-                  );
-                })}
-              </select>
-              <input
-                ref={fileRef}
-                type="file"
-                accept="application/pdf,image/jpeg,image/png"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = "";
-                  if (f) void onUpload(f);
-                }}
+          <Card className="border-slate-700/30 bg-slate-900/40">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileText className="h-4 w-4 text-slate-400" />
+                Ficheiros adicionais
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-slate-400">
+                Documentos complementares que não fazem parte da checklist obrigatória.
+              </p>
+              <p className="text-xs text-slate-500 leading-relaxed">{AVISO_NOME_DOCUMENTO_OUTROS}</p>
+              <Input
+                label="Nome do documento"
+                placeholder="Ex.: Certificado UFCD Gestão"
+                value={nomeAdicional}
+                onChange={(e) => setNomeAdicional(e.target.value)}
+                disabled={uploading}
               />
-              <Button size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
-                <Upload className="h-3.5 w-3.5" />
-                {uploading ? "A enviar…" : "Enviar"}
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-4 space-y-3">
-            <p className="text-sm text-slate-400">
-              Obrigatórios: CV, CCP, documento de identificação e ficha curricular DGERT. Opcional:
-              certificados de formação complementar (se existir) e outros documentos relevantes.
-            </p>
-            {categoria === "outros" ? (
-              <Alert variant="warning">{AVISO_NOME_DOCUMENTO_OUTROS}</Alert>
-            ) : null}
-            {obrigatorios ? (
-              <ul className="space-y-1.5 rounded-lg border border-slate-700/40 bg-slate-950/40 px-3 py-2">
-                {obrigatorios.items.map((item) => (
-                  <li
-                    key={item.id}
-                    className="flex items-center justify-between gap-2 text-sm"
-                  >
-                    <span className="text-slate-200">{item.label}</span>
-                    <Badge variant={item.completo ? "green" : "yellow"}>
-                      {item.completo ? "OK" : "Em falta"}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {docs.length === 0 ? (
-              <p className="text-sm text-slate-500">Ainda não enviou documentos.</p>
-            ) : (
-              <ul className="space-y-2">
-                {docs.map((d) => (
-                  <li
-                    key={d.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-700/30 px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm text-slate-100 truncate">{d.nome}</p>
-                      <p className="text-[11px] text-slate-500">
-                        {formatDatePt(d.createdAt)}
-                        {d.categoria ? ` · ${d.categoria}` : ""}
-                        {d.tamanhoBytes ? ` · ${formatBytes(d.tamanhoBytes)}` : ""}
-                      </p>
-                    </div>
-                    <Button size="sm" variant="secondary" onClick={() => void verDocumento(d)}>
-                      Ver
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex">
+                  <input
+                    type="file"
+                    accept="application/pdf,image/jpeg,image/png"
+                    className="sr-only"
+                    disabled={uploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      e.target.value = "";
+                      setFicheiroAdicional(file);
+                    }}
+                  />
+                  <span className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-600 bg-transparent px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
+                    Escolher ficheiro
+                  </span>
+                </label>
+                {ficheiroAdicional ? (
+                  <span className="text-xs text-slate-400 truncate max-w-[220px]">
+                    {ficheiroAdicional.name}
+                  </span>
+                ) : (
+                  <span className="text-xs text-slate-500">Nenhum ficheiro seleccionado</span>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={uploading || !ficheiroAdicional || !nomeAdicional.trim()}
+                  onClick={() => void enviarFicheiroAdicional()}
+                >
+                  {uploading ? "A enviar…" : "Enviar ficheiro adicional"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {docs.length > 0 ? (
+            <Card className="border-slate-700/30 bg-slate-900/40">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-slate-400" />
+                  Ficheiros registados
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2">
+                  {docs.map((doc) => (
+                    <li
+                      key={doc.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-700/25 bg-slate-800/30 px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm text-slate-200 truncate">
+                          {doc.categoria === "outros"
+                            ? doc.nome
+                            : labelFormadorDocCategoria(doc.categoria)}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {formatBytes(doc.tamanhoBytes)} · {formatDatePt(doc.createdAt)}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void openDocumento(doc.id)}
+                      >
+                        Ver
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
       ) : null}
-
-      <DocumentPreviewModal
-        open={!!previewUrl}
-        title={previewTitle}
-        url={previewUrl}
-        onClose={() => {
-          if (previewUrl) URL.revokeObjectURL(previewUrl);
-          setPreviewUrl(null);
-        }}
-      />
     </div>
   );
 }

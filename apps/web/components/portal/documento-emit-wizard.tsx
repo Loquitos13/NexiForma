@@ -286,7 +286,7 @@ export function DocumentoEmitWizard({
               logos={moduleLogos}
               placements={logoPlacements}
               onChange={setLogoPlacements}
-              previewSrcDoc={previewHtml}
+              previewHtml={bodyHtml}
               orientacao={orientacao}
               verticalAlign={alinhamentoVertical}
             />

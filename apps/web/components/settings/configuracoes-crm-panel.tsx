@@ -6,7 +6,11 @@ import { TemplateEditorPanel } from "@/components/settings/template-editor-panel
 export function ConfiguracoesCrmPanel() {
   return (
     <div className="space-y-6">
-      <ModuleLogosPanel modulo="crm" title="Logótipos CRM" />
+      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+        <div className="min-w-0">
+          <ModuleLogosPanel modulo="crm" title="Logótipos CRM" />
+        </div>
+      </div>
       <TemplateEditorPanel
       modulo="crm"
       title="Templates CRM"

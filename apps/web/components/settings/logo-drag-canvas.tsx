@@ -6,7 +6,6 @@ import {
   defaultLogoOpacity,
   defaultLogoPlacementCoords,
   normalizeLogoPlacement,
-  a4AspectRatio,
   buildDocumentPreviewHtml,
   type DocumentLogoPlacement,
   type DocumentLogoZona,
@@ -16,6 +15,7 @@ import {
 } from "@nexiforma/shared";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/ui/cn";
+import { useA4PageScale } from "@/lib/ui/use-a4-page-scale";
 
 const ZONAS: { value: DocumentLogoZona; label: string }[] = [
   { value: "cabecalho", label: "Cabeçalho" },
@@ -56,6 +56,7 @@ export function LogoDragCanvas({
   verticalAlign = "top",
 }: Props) {
   const canvasRef = useRef<HTMLDivElement>(null);
+  const { scale, pageWidthPx, pageHeightPx } = useA4PageScale(canvasRef, orientacao);
   const [selected, setSelected] = useState<number | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
 
@@ -126,8 +127,8 @@ export function LogoDragCanvas({
         const { xPct, yPct } = pctFromEvent(e.clientX, e.clientY);
         update(activeDrag.idx, { xPct, yPct });
       } else {
-        const dx = e.clientX - activeDrag.startX;
-        const dy = e.clientY - activeDrag.startY;
+        const dx = (e.clientX - activeDrag.startX) / scale;
+        const dy = (e.clientY - activeDrag.startY) / scale;
         update(activeDrag.idx, {
           larguraPx: Math.min(480, Math.max(40, activeDrag.origW + dx)),
           alturaPx: Math.min(320, Math.max(24, (p.alturaPx ?? 48) + dy)),
@@ -143,12 +144,15 @@ export function LogoDragCanvas({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [drag, normalized, pctFromEvent]);
+  }, [drag, normalized, pctFromEvent, scale]);
 
   const previewDoc = useMemo(() => {
+    // Corpo sem logos embutidos - os overlays interactivos representam os logótipos.
+    if (previewHtml?.trim()) {
+      return buildDocumentPreviewHtml(previewHtml, { orientacao, verticalAlign });
+    }
     if (previewSrcDoc) return previewSrcDoc;
-    if (!previewHtml) return "";
-    return buildDocumentPreviewHtml(previewHtml, { orientacao, verticalAlign });
+    return "";
   }, [previewSrcDoc, previewHtml, orientacao, verticalAlign]);
 
   if (!logos.length) {
@@ -186,14 +190,20 @@ export function LogoDragCanvas({
       <div
         ref={canvasRef}
         className="relative mx-auto w-full max-w-[520px] overflow-hidden rounded-lg border border-slate-600/50 bg-white shadow-inner"
-        style={{ aspectRatio: a4AspectRatio(orientacao) }}
+        style={{ height: pageHeightPx * scale }}
         onClick={() => setSelected(null)}
       >
         {previewDoc ? (
           <iframe
             title="Pré-visualização do documento"
             srcDoc={previewDoc}
-            className="pointer-events-none absolute inset-0 z-[2] h-full w-full border-0 bg-white"
+            className="pointer-events-none absolute left-0 top-0 z-[2] border-0 bg-white"
+            style={{
+              width: pageWidthPx,
+              height: pageHeightPx,
+              transform: `scale(${scale})`,
+              transformOrigin: "top left",
+            }}
             sandbox=""
             referrerPolicy="no-referrer"
           />
@@ -243,8 +253,8 @@ export function LogoDragCanvas({
                 draggable={false}
                 className="block max-w-none object-contain"
                 style={{
-                  width: p.larguraPx ?? 140,
-                  height: p.alturaPx ?? 48,
+                  width: (p.larguraPx ?? 140) * scale,
+                  height: (p.alturaPx ?? 48) * scale,
                   opacity: p.opacidade ?? defaultLogoOpacity(p.zona),
                 }}
               />

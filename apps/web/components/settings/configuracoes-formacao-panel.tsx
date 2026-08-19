@@ -8,9 +8,17 @@ import { TenantSignaturePanel } from "@/components/settings/tenant-signature-pan
 export function ConfiguracoesFormacaoPanel() {
   return (
     <div className="space-y-6">
-      <DocumentosPoliticaSettings variant="tenant" />
-      <TenantSignaturePanel />
-      <ModuleLogosPanel modulo="formacao" title="Logótipos de formação" />
+      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+        <div className="min-w-0">
+          <DocumentosPoliticaSettings variant="tenant" />
+        </div>
+        <div className="min-w-0">
+          <TenantSignaturePanel />
+        </div>
+        <div className="min-w-0 lg:col-span-2">
+          <ModuleLogosPanel modulo="formacao" title="Logótipos de formação" />
+        </div>
+      </div>
       <TemplateEditorPanel
         modulo="formacao"
         title="Templates de formação"

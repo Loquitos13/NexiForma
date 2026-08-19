@@ -16,4 +16,16 @@ describe("persona-id-files.util", () => {
     expect(files).toHaveLength(2);
     expect(files[0]?.page).toBe("front");
   });
+
+  it("não duplica verso quando photo-urls e back-photo-url coexistem", () => {
+    const files = extractDownloadablesFromAttrs({
+      "photo-urls": [
+        { page: "front", url: "https://example.com/f.jpg" },
+        { page: "back", url: "https://example.com/b.jpg" },
+      ],
+      "back-photo-url": "https://example.com/b.jpg",
+    });
+    expect(files).toHaveLength(2);
+    expect(files.map((f) => f.page)).toEqual(["front", "back"]);
+  });
 });
