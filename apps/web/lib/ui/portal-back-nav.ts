@@ -13,6 +13,7 @@ const BACK_LABELS: Record<string, string> = {
   "/portal/propostas/clientes": "Propostas · Clientes",
   "/portal/crm/faturas": "Faturas",
   "/portal/contratos": "Contratos",
+  "/portal/contratos/[id]": "Contrato",
 };
 
 /** Caminho interno do portal válido para navegação «voltar». */

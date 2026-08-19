@@ -229,6 +229,7 @@ export {
   isAllowedTemplateId,
   isCustomTemplateId,
   listEmitivelTemplateOptions,
+  listCrmContratoTemplateOptions,
   mergeTenantDocumentTemplates,
   parseTenantDocumentTemplates,
   slugifyTemplateId,

@@ -21,35 +21,53 @@ import {
   type SortState,
 } from "@/components/ui";
 import { CrmContextNav, CONTRATOS_NAV } from "@/components/crm/crm-context-nav";
-import { CrmListFilters,
+import { NovoContratoModal } from "@/components/crm/novo-contrato-modal";
+import {
+  CrmListFilters,
   emptyCrmListFilters,
   type CrmListFiltersValue,
 } from "@/components/crm/crm-list-filters";
 import { parsePaginatedList } from "@/lib/crm/paginated-list";
 import { fmtDate, fmtEuro } from "@/lib/crm/shared";
 
-type ContratoEstado = "VIGENTE" | "A_EXPIRAR" | "EXPIRADO";
+type ContratoEstado = "VIGENTE" | "A_EXPIRAR" | "EXPIRADO" | "RASCUNHO" | "CANCELADO";
 
-type PropostaAceite = {
+type ContratoRow = {
   id: string;
   codigo: string;
   titulo: string;
   valorCentavos: number;
-  validadeAte: string | null;
-  aceiteEm: string | null;
+  dataInicio: string | null;
+  dataFim: string | null;
+  estado: string;
+  templateId: string | null;
   createdAt: string;
   entidadeCliente: { id: string; nome: string; nif: string };
-  curso: { designacao: string } | null;
-  fatura?: { id: string; estado: string } | null;
+  proposta?: {
+    id: string;
+    codigo: string;
+    fatura?: { id: string; estado: string } | null;
+  } | null;
+  contratoEstado: ContratoEstado;
 };
 
-type ContratoRow = PropostaAceite & { contratoEstado: ContratoEstado };
+const ESTADOS: (ContratoEstado | "TODOS")[] = [
+  "TODOS",
+  "RASCUNHO",
+  "VIGENTE",
+  "A_EXPIRAR",
+  "EXPIRADO",
+  "CANCELADO",
+];
 
-const ESTADOS: (ContratoEstado | "TODOS")[] = ["TODOS", "VIGENTE", "A_EXPIRAR", "EXPIRADO"];
-
-function computeContratoEstado(validadeAte: string | null): ContratoEstado {
-  if (!validadeAte) return "VIGENTE";
-  const end = new Date(validadeAte);
+function computeContratoEstado(
+  estado: string,
+  dataFim: string | null,
+): ContratoEstado {
+  if (estado === "RASCUNHO") return "RASCUNHO";
+  if (estado === "CANCELADO") return "CANCELADO";
+  if (!dataFim) return "VIGENTE";
+  const end = new Date(dataFim);
   if (Number.isNaN(end.getTime())) return "VIGENTE";
   const now = new Date();
   if (end < now) return "EXPIRADO";
@@ -60,29 +78,26 @@ function computeContratoEstado(validadeAte: string | null): ContratoEstado {
 
 function contratoEstadoLabel(estado: ContratoEstado): string {
   const map: Record<ContratoEstado, string> = {
+    RASCUNHO: "Rascunho",
     VIGENTE: "Vigente",
     A_EXPIRAR: "A expirar",
     EXPIRADO: "Expirado",
+    CANCELADO: "Cancelado",
   };
   return map[estado];
 }
 
-function contratoEstadoVariant(estado: ContratoEstado): "green" | "yellow" | "default" {
+function contratoEstadoVariant(estado: ContratoEstado): "green" | "yellow" | "default" | "blue" {
   if (estado === "VIGENTE") return "green";
   if (estado === "A_EXPIRAR") return "yellow";
+  if (estado === "RASCUNHO") return "blue";
   return "default";
 }
 
 function matchesSearch(row: ContratoRow, q: string): boolean {
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
-  const hay = [
-    row.codigo,
-    row.titulo,
-    row.entidadeCliente.nome,
-    row.entidadeCliente.nif,
-    row.curso?.designacao ?? "",
-  ]
+  const hay = [row.codigo, row.titulo, row.entidadeCliente.nome, row.entidadeCliente.nif]
     .join(" ")
     .toLowerCase();
   return hay.includes(needle);
@@ -92,40 +107,44 @@ export default function ContratosPage() {
   const pathname = usePathname();
   const { canManageCrm, canManage, writeDisabled } = useTenantRole();
   const [contratos, setContratos] = useState<ContratoRow[]>([]);
-  const [entidades, setEntidades] = useState<{ id: string; nome: string }[]>([]);
+  const [entidades, setEntidades] = useState<{ id: string; nome: string; nif: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [estadoFilter, setEstadoFilter] = useState<(ContratoEstado | "TODOS")>("TODOS");
   const [entidadeFilter, setEntidadeFilter] = useState("");
   const [listFilters, setListFilters] = useState<CrmListFiltersValue>(emptyCrmListFilters);
-  const [sort, setSort] = useState<SortState | null>({ key: "aceiteEm", direction: "desc" });
+  const [sort, setSort] = useState<SortState | null>({ key: "createdAt", direction: "desc" });
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const [pRes, eRes] = await Promise.all([
-      bffFetch("/api/v1/propostas?estado=ACEITE&pageSize=200", {
+    const [cRes, eRes] = await Promise.all([
+      bffFetch("/api/v1/contratos?pageSize=200", {
         headers: { accept: "application/json" },
       }),
       bffFetch("/api/v1/entidades-cliente", { headers: { accept: "application/json" } }),
     ]);
-    if (!pRes.ok) {
-      setError(await parseApiError(pRes));
+    if (!cRes.ok) {
+      setError(await parseApiError(cRes));
       setContratos([]);
     } else {
-      const items = parsePaginatedList<PropostaAceite>(await pRes.json()).items;
+      const items = parsePaginatedList<Omit<ContratoRow, "contratoEstado">>(await cRes.json()).items;
       setContratos(
-        items.map((p) => ({
-          ...p,
-          contratoEstado: computeContratoEstado(p.validadeAte),
+        items.map((c) => ({
+          ...c,
+          contratoEstado: computeContratoEstado(c.estado, c.dataFim),
         })),
       );
     }
     if (eRes.ok) {
-      const raw = (await eRes.json()) as { id: string; nome: string }[] | { items?: { id: string; nome: string }[] };
-      setEntidades(Array.isArray(raw) ? raw : (raw.items ?? []));
+      const raw = (await eRes.json()) as
+        | { id: string; nome: string; nif: string }[]
+        | { items?: { id: string; nome: string; nif: string }[] };
+      const list = Array.isArray(raw) ? raw : (raw.items ?? []);
+      setEntidades(list);
     }
     setLoading(false);
   }, []);
@@ -144,23 +163,32 @@ export default function ContratosPage() {
   }, [contratos, estadoFilter, entidadeFilter, listFilters.q]);
 
   const counts = useMemo(() => {
-    const base = { TODOS: contratos.length, VIGENTE: 0, A_EXPIRAR: 0, EXPIRADO: 0 };
+    const base: Record<string, number> = {
+      TODOS: contratos.length,
+      RASCUNHO: 0,
+      VIGENTE: 0,
+      A_EXPIRAR: 0,
+      EXPIRADO: 0,
+      CANCELADO: 0,
+    };
     for (const c of contratos) base[c.contratoEstado] += 1;
     return base;
   }, [contratos]);
 
   const resumo = useMemo(() => {
-    const vigentes = contratos.filter((c) => c.contratoEstado !== "EXPIRADO");
+    const vigentes = contratos.filter(
+      (c) => c.contratoEstado !== "EXPIRADO" && c.contratoEstado !== "CANCELADO" && c.contratoEstado !== "RASCUNHO",
+    );
     const expirados = contratos.filter((c) => c.contratoEstado === "EXPIRADO");
     const valorTotal = contratos.reduce((sum, c) => sum + c.valorCentavos, 0);
     return { vigentes: vigentes.length, expirados: expirados.length, valorTotal };
   }, [contratos]);
 
-  async function faturarContrato(id: string) {
+  async function faturarProposta(propostaId: string) {
     setBusy(true);
     setError(null);
     setMsg(null);
-    const res = await bffFetch(`/api/v1/crm/propostas/${id}/faturar`, {
+    const res = await bffFetch(`/api/v1/crm/propostas/${propostaId}/faturar`, {
       method: "POST",
       headers: { accept: "application/json" },
     });
@@ -183,12 +211,11 @@ export default function ContratosPage() {
       sortValue: (c) => c.codigo,
       cell: (c) => (
         <Link
-          href={withPortalFrom(`/portal/propostas/${c.id}`, pathname || "/portal/contratos")}
+          href={withPortalFrom(`/portal/contratos/${c.id}`, pathname || "/portal/contratos")}
           className="block hover:text-violet-300"
         >
           <span className="font-medium text-slate-100">{c.codigo}</span>
           <p className="mt-0.5 text-xs text-slate-500">{c.titulo}</p>
-          {c.curso ? <p className="mt-0.5 text-xs text-slate-600">{c.curso.designacao}</p> : null}
         </Link>
       ),
     },
@@ -216,38 +243,40 @@ export default function ContratosPage() {
       cell: (c) => <span className="font-medium">{fmtEuro(c.valorCentavos)}</span>,
     },
     {
-      key: "aceiteEm",
-      header: "Aceite em",
+      key: "dataInicio",
+      header: "Início",
       sortable: true,
       hideOnMobile: true,
       sortValue: (c) => {
-        const iso = c.aceiteEm ?? c.createdAt;
-        const t = new Date(iso).getTime();
+        if (!c.dataInicio) return null;
+        const t = new Date(c.dataInicio).getTime();
         return Number.isFinite(t) ? t : null;
       },
-      cell: (c) => <span className="text-sm text-slate-400">{fmtDate(c.aceiteEm ?? c.createdAt)}</span>,
+      cell: (c) => <span className="text-sm text-slate-400">{fmtDate(c.dataInicio)}</span>,
     },
     {
-      key: "validadeAte",
-      header: "Validade",
+      key: "dataFim",
+      header: "Fim",
       sortable: true,
       hideOnMobile: true,
       sortValue: (c) => {
-        if (!c.validadeAte) return null;
-        const t = new Date(c.validadeAte).getTime();
+        if (!c.dataFim) return null;
+        const t = new Date(c.dataFim).getTime();
         return Number.isFinite(t) ? t : null;
       },
-      cell: (c) => <span className="text-sm text-slate-400">{fmtDate(c.validadeAte)}</span>,
+      cell: (c) => <span className="text-sm text-slate-400">{fmtDate(c.dataFim)}</span>,
     },
     {
       key: "contratoEstado",
       header: "Estado",
       sortable: true,
       mobilePriority: true,
-      sortCycle: ["VIGENTE", "A_EXPIRAR", "EXPIRADO"],
+      sortCycle: ["RASCUNHO", "VIGENTE", "A_EXPIRAR", "EXPIRADO", "CANCELADO"],
       sortValue: (c) => c.contratoEstado,
       cell: (c) => (
-        <Badge variant={contratoEstadoVariant(c.contratoEstado)}>{contratoEstadoLabel(c.contratoEstado)}</Badge>
+        <Badge variant={contratoEstadoVariant(c.contratoEstado)}>
+          {contratoEstadoLabel(c.contratoEstado)}
+        </Badge>
       ),
     },
   ];
@@ -266,14 +295,12 @@ export default function ContratosPage() {
       <CrmContextNav tabs={CONTRATOS_NAV} ariaLabel="Secções Contratos" />
       <PageHeader
         title="Contratos"
-        description="Propostas aceites pelo cliente - contratos vigentes, validade e facturação."
+        description="Contratos comerciais com clientes - vigência, documento e facturação associada."
         actions={
           canManageCrm ? (
-            <Button asChild disabled={writeDisabled}>
-              <Link href="/portal/propostas?nova=1">
-                <Plus className="h-4 w-4" />
-                Nova proposta
-              </Link>
+            <Button disabled={writeDisabled} onClick={() => setCreateOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Novo contrato
             </Button>
           ) : null
         }
@@ -324,7 +351,7 @@ export default function ContratosPage() {
         value={listFilters}
         onChange={setListFilters}
         gestor={canManage}
-        searchPlaceholder="Pesquisar código, cliente ou curso…"
+        searchPlaceholder="Pesquisar código, cliente ou título…"
       />
 
       <div className="mb-4 mt-5 flex flex-wrap items-end gap-3">
@@ -372,18 +399,18 @@ export default function ContratosPage() {
             sort={sort}
             onSortChange={setSort}
             getRowHref={(c) =>
-              withPortalFrom(`/portal/propostas/${c.id}`, pathname || "/portal/contratos")
+              withPortalFrom(`/portal/contratos/${c.id}`, pathname || "/portal/contratos")
             }
             emptyMessage={
               contratos.length === 0
-                ? "Sem contratos. Crie uma proposta comercial e aguarde a aceitação pelo cliente."
+                ? "Sem contratos. Clique em «Novo contrato» para criar o primeiro."
                 : "Sem contratos com estes filtros."
             }
             rowActions={(c) => (
               <>
                 <Button size="sm" variant="secondary" asChild>
-                  <Link href={withPortalFrom(`/portal/propostas/${c.id}`, pathname || "/portal/contratos")}>
-                    Ver proposta
+                  <Link href={withPortalFrom(`/portal/contratos/${c.id}`, pathname || "/portal/contratos")}>
+                    Abrir
                   </Link>
                 </Button>
                 <Button size="sm" variant="ghost" asChild>
@@ -394,15 +421,20 @@ export default function ContratosPage() {
                     Cliente
                   </Link>
                 </Button>
-                {canManage && !c.fatura ? (
-                  <Button size="sm" variant="teal" disabled={busy} onClick={() => void faturarContrato(c.id)}>
+                {canManage && c.proposta && !c.proposta.fatura ? (
+                  <Button
+                    size="sm"
+                    variant="teal"
+                    disabled={busy}
+                    onClick={() => void faturarProposta(c.proposta!.id)}
+                  >
                     <Receipt className="h-3.5 w-3.5" />
                     Faturar
                   </Button>
                 ) : null}
-                {canManage && c.fatura ? (
+                {canManage && c.proposta?.fatura ? (
                   <Button size="sm" variant="secondary" asChild>
-                    <Link href={`/portal/crm/faturas/${c.fatura.id}`}>
+                    <Link href={`/portal/crm/faturas/${c.proposta.fatura.id}`}>
                       <Receipt className="h-3.5 w-3.5" />
                       Fatura
                     </Link>
@@ -411,15 +443,15 @@ export default function ContratosPage() {
               </>
             )}
           />
-          {!loading && contratos.length === 0 ? (
-            <div className="border-t border-slate-700/30 px-4 py-6 text-center text-sm text-slate-500">
-              <Link href="/portal/propostas" className="font-medium text-violet-400 underline">
-                Ir para Propostas
-              </Link>
-            </div>
-          ) : null}
         </CardContent>
       </Card>
+
+      <NovoContratoModal
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        entidades={entidades}
+        onCreated={() => void load()}
+      />
     </>
   );
 }

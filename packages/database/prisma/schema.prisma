@@ -168,6 +168,7 @@ model Tenant {
   tenantInvites   TenantInvite[]
   entidadesCliente EntidadeCliente[]
   propostasComerciais PropostaComercial[]
+  contratosComerciais ContratoComercial[]
   leadsComerciais     LeadComercial[]
   interaccoesComerciais InteraccaoComercial[]
   calendarioEventos     CalendarioEvento[]
@@ -584,6 +585,7 @@ model User {
   leadsCriados               LeadComercial[] @relation("LeadCriadoPor")
   propostasEnviadas          PropostaComercial[] @relation("PropostaEnviadaPor")
   propostasCriadas           PropostaComercial[] @relation("PropostaCriadaPor")
+  contratosCriados           ContratoComercial[] @relation("ContratoCriadoPor")
   interaccoesComerciaisCriadas InteraccaoComercial[] @relation("InteraccaoCriadaPor")
   calendarioEventosCriados     CalendarioEvento[] @relation("CalendarioEventoCriadoPor")
   sugestoesIaValidadas       SugestaoIaComercial[] @relation("SugestaoIaValidadaPor")
@@ -636,6 +638,7 @@ model EntidadeCliente {
 
   formandos  FormandoProfile[]
   propostas  PropostaComercial[]
+  contratos  ContratoComercial[]
   leads      LeadComercial[]
   faturas    FaturaComercial[]
   documentos DocumentoAnexo[]
@@ -1224,6 +1227,14 @@ enum PropostaEstado {
   @@schema("public")
 }
 
+enum ContratoComercialEstado {
+  RASCUNHO
+  VIGENTE
+  CANCELADO
+
+  @@schema("public")
+}
+
 model PropostaComercial {
   id                String         @id @default(uuid()) @db.Uuid
   tenantId          String         @map("tenant_id") @db.Uuid
@@ -1268,12 +1279,47 @@ model PropostaComercial {
   enviadaPor      User?           @relation("PropostaEnviadaPor", fields: [enviadaPorUserId], references: [id], onDelete: SetNull)
   fatura          FaturaComercial?
   linhas          PropostaLinha[]
+  contratos       ContratoComercial[]
 
   @@unique([tenantId, codigo])
   @@index([tenantId])
   @@index([entidadeClienteId])
   @@index([criadoPorUserId])
   @@map("propostas_comerciais")
+  @@schema("public")
+}
+
+model ContratoComercial {
+  id                String                  @id @default(uuid()) @db.Uuid
+  tenantId          String                  @map("tenant_id") @db.Uuid
+  entidadeClienteId String                  @map("entidade_cliente_id") @db.Uuid
+  propostaId        String?                 @map("proposta_id") @db.Uuid
+  codigo            String
+  titulo            String
+  /** Template CRM (ex.: contrato, custom_xxx). Null = documento personalizado sem template base. */
+  templateId        String?                 @map("template_id")
+  bodyHtml          String?                 @map("body_html") @db.Text
+  dataInicio        DateTime?               @map("data_inicio") @db.Date
+  dataFim           DateTime?               @map("data_fim") @db.Date
+  valorCentavos     Int                     @default(0) @map("valor_centavos")
+  estado            ContratoComercialEstado @default(RASCUNHO)
+  notasInternas     String?                 @map("notas_internas") @db.Text
+  criadoPorUserId   String?                 @map("criado_por_user_id") @db.Uuid
+  metadata          Json?
+  createdAt         DateTime                @default(now()) @map("created_at")
+  updatedAt         DateTime                @updatedAt @map("updated_at")
+
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  entidadeCliente EntidadeCliente   @relation(fields: [entidadeClienteId], references: [id], onDelete: Cascade)
+  proposta        PropostaComercial? @relation(fields: [propostaId], references: [id], onDelete: SetNull)
+  criadoPor       User?             @relation("ContratoCriadoPor", fields: [criadoPorUserId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId])
+  @@index([entidadeClienteId])
+  @@index([propostaId])
+  @@index([criadoPorUserId])
+  @@map("contratos_comerciais")
   @@schema("public")
 }
 

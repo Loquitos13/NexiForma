@@ -22,6 +22,29 @@ export function propostaScopeWhere(
   return undefined;
 }
 
+export function assertContratoAcessivel(
+  user: RequestUser,
+  row: { criadoPorUserId: string | null },
+): void {
+  if (!isComercial(user.role)) return;
+  if (!user.sub) {
+    throw new ForbiddenException("Utilizador inválido.");
+  }
+  if (row.criadoPorUserId !== user.sub) {
+    throw new ForbiddenException("Sem acesso a este contrato.");
+  }
+}
+
+export function contratoScopeWhere(
+  user: RequestUser,
+): Prisma.ContratoComercialWhereInput | undefined {
+  if (isTenantManager(user.role)) return undefined;
+  if (isComercial(user.role) && user.sub) {
+    return { criadoPorUserId: user.sub };
+  }
+  return undefined;
+}
+
 export function assertPropostaAcessivel(
   user: RequestUser,
   row: { criadoPorUserId: string | null; enviadaPorUserId: string | null },

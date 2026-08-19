@@ -9,7 +9,7 @@ import {
 } from "@nexiforma/shared";
 import { tenantDocumentBrandingCss } from "../common/tenant-logo-embed.util";
 
-const EMITIVEL_MODULOS: TemplateModulo[] = ["formacao"];
+const EMITIVEL_MODULOS: TemplateModulo[] = ["formacao", "crm"];
 
 export function isEmitivelTemplateId(templateId: string): boolean {
   if (isCustomTemplateId(templateId)) return true;
@@ -19,7 +19,17 @@ export function isEmitivelTemplateId(templateId: string): boolean {
 }
 
 export function templateModuloForId(templateId: string): TemplateModulo | null {
-  if (isCustomTemplateId(templateId)) return "formacao";
+  if (isCustomTemplateId(templateId)) {
+    return "formacao";
+  }
+  for (const mod of EMITIVEL_MODULOS) {
+    if (TEMPLATE_TYPES[mod].some((t) => t.id === templateId)) return mod;
+  }
+  return null;
+}
+
+export function templateModuloForIdStrict(templateId: string): TemplateModulo | null {
+  if (isCustomTemplateId(templateId)) return null;
   for (const mod of EMITIVEL_MODULOS) {
     if (TEMPLATE_TYPES[mod].some((t) => t.id === templateId)) return mod;
   }

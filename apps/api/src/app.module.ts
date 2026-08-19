@@ -22,6 +22,7 @@ import { FormandosModule } from "./formandos/formandos.module";
 import { FormadoresModule } from "./formadores/formadores.module";
 import { EntidadesClienteModule } from "./entidades-cliente/entidades-cliente.module";
 import { PropostasModule } from "./propostas/propostas.module";
+import { ContratosModule } from "./contratos/contratos.module";
 import { MatriculasModule } from "./matriculas/matriculas.module";
 import { TurmasModule } from "./turmas/turmas.module";
 import { CronogramasModule } from "./cronogramas/cronogramas.module";
@@ -99,6 +100,7 @@ import { AppPublicUrlInterceptor } from "./common/app-public-url.interceptor";
     FormadoresModule,
     EntidadesClienteModule,
     PropostasModule,
+    ContratosModule,
     MatriculasModule,
     CronogramasModule,
     SessoesFormacaoModule,

@@ -46,7 +46,7 @@ const CORE_FORMATION_API = [
   "persona",
 ] as const;
 
-const CRM_API = ["crm", "entidades-cliente", "propostas"] as const;
+const CRM_API = ["crm", "entidades-cliente", "propostas", "contratos"] as const;
 
 function isFaturacaoPortalPath(pathname: string): boolean {
   return (
@@ -68,7 +68,7 @@ function isFaturacaoCrmApiPath(normalized: string): boolean {
 
 function isCrmCommercialApiPath(normalized: string): boolean {
   const seg = firstSegment(normalized);
-  if (seg === "propostas" || seg === "entidades-cliente" || seg === "calendario") {
+  if (seg === "propostas" || seg === "entidades-cliente" || seg === "contratos" || seg === "calendario") {
     return true;
   }
   if (seg !== "crm") return false;

@@ -59,6 +59,25 @@ export function listEmitivelTemplateOptions(
   return options;
 }
 
+/** Templates CRM disponíveis para criar/reutilizar contratos. */
+export function listCrmContratoTemplateOptions(
+  saved: Record<string, TenantTemplateEntry>,
+): Array<{ id: string; label: string; descricao?: string }> {
+  const catalog = TEMPLATE_TYPES.crm;
+  const options: Array<{ id: string; label: string; descricao?: string }> = catalog.map((t) => ({
+    id: t.id,
+    label: saved[t.id]?.nome?.trim() || t.label,
+    descricao: t.descricao,
+  }));
+  for (const [id, entry] of Object.entries(saved)) {
+    if (catalog.some((t) => t.id === id)) continue;
+    if (entry.custom || isCustomTemplateId(id)) {
+      options.push({ id, label: entry.nome?.trim() || id });
+    }
+  }
+  return options;
+}
+
 export type TenantDocumentTemplates = {
   version: 1;
   modulos: Partial<Record<TemplateModulo, Record<string, TenantTemplateEntry>>>;
