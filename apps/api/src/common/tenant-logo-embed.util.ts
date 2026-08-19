@@ -1,4 +1,7 @@
-import { readTenantLogoStorageKey } from "../auth/tenant-branding.util";
+import {
+  readTenantLogoStorageKey,
+  readTenantSignatureStorageKey,
+} from "../auth/tenant-branding.util";
 
 type StorageGetObject = {
   getObject(key: string): Promise<{ body: Buffer; contentType: string } | null>;
@@ -98,6 +101,31 @@ export function tenantLogoImgHtml(
     return "";
   }
   return `<img class="${className}" src="${src}" alt="${alt}" style="${logoImgStyle(placement)}" />`;
+}
+
+/** Resolve assinatura digitalizada do tenant (PNG transparente) para PDF/HTML. */
+export async function resolveTenantSignatureDataUri(
+  storage: StorageGetObject,
+  metadata: unknown,
+): Promise<string | null> {
+  const key = readTenantSignatureStorageKey(metadata);
+  if (!key) return null;
+  const obj = await storage.getObject(key);
+  if (!obj?.body?.length) return null;
+  return `data:${obj.contentType};base64,${obj.body.toString("base64")}`;
+}
+
+/** Markup HTML da assinatura para {{entidade.assinatura}}. */
+export function tenantSignatureImgHtml(
+  signatureSrc: string | null | undefined,
+  alt = "Assinatura",
+): string {
+  if (!signatureSrc?.trim()) return "";
+  const src = signatureSrc.trim();
+  if (!(src.startsWith("data:") || src.startsWith("http://") || src.startsWith("https://"))) {
+    return "";
+  }
+  return `<img class="tenant-signature" src="${src}" alt="${escapeHtml(alt)}" style="max-width:220px;max-height:80px;width:auto;height:auto;display:block;object-fit:contain;" />`;
 }
 
 function tenantLogoBlockHtml(

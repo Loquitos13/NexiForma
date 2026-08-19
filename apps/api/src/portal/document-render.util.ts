@@ -14,7 +14,10 @@ import {
 import {
   applyTenantDocumentBranding,
   resolveTenantLogoDataUri,
+  resolveTenantSignatureDataUri,
+  tenantSignatureImgHtml,
 } from "../common/tenant-logo-embed.util";
+import { readTenantSignatureResponsibleName } from "../auth/tenant-branding.util";
 import {
   ensureFullDocumentHtml,
   resolveTenantTemplateContent,
@@ -75,6 +78,22 @@ async function resolveLogoDataUris(
   return resolved;
 }
 
+async function enrichDocumentContext(
+  context: Record<string, string | number | null | undefined>,
+  storage: StorageGetObject,
+  metadata: unknown,
+): Promise<Record<string, string | number | null | undefined>> {
+  const signatureSrc = await resolveTenantSignatureDataUri(storage, metadata);
+  const responsible =
+    readTenantSignatureResponsibleName(metadata) ||
+    String(context["entidade.responsavel_assinatura"] ?? "");
+  return {
+    ...context,
+    "entidade.responsavel_assinatura": responsible,
+    "entidade.assinatura": tenantSignatureImgHtml(signatureSrc),
+  };
+}
+
 export async function renderMatriculaDocumentHtml(
   input: RenderMatriculaDocumentInput,
 ): Promise<RenderMatriculaDocumentResult> {
@@ -86,14 +105,16 @@ export async function renderMatriculaDocumentHtml(
     input.templateId,
   );
 
+  const context = await enrichDocumentContext(input.context, input.storage, input.metadata);
+
   let mergedBody = input.bodyHtmlOverride?.trim() ?? "";
   if (!mergedBody) {
     if (!rawTemplate.trim()) {
       throw new Error("EMPTY_TEMPLATE");
     }
-    mergedBody = resolveMergedTemplateBody(rawTemplate, input.context, entry?.formato);
+    mergedBody = resolveMergedTemplateBody(rawTemplate, context, entry?.formato);
   } else {
-    mergedBody = mergeTemplateHtml(mergedBody, input.context);
+    mergedBody = mergeTemplateHtml(mergedBody, context);
   }
 
   let html = ensureFullDocumentHtml(label, mergedBody, input.metadata, {

@@ -2,6 +2,8 @@ export type TenantMetadataBranding = {
   logoUrl?: string;
   logoStorageKey?: string;
   companyName?: string;
+  signatureStorageKey?: string;
+  signatureResponsibleName?: string;
 };
 
 /** 1–2 iniciais a partir do nome da entidade (ex.: "Demonstração NexiForma" → "DN"). */
@@ -57,4 +59,15 @@ export function readTenantLogoStorageKey(metadata: unknown): string | null {
   const meta = (metadata ?? {}) as { branding?: TenantMetadataBranding };
   const key = meta.branding?.logoStorageKey?.trim();
   return key || null;
+}
+
+export function readTenantSignatureStorageKey(metadata: unknown): string | null {
+  const meta = (metadata ?? {}) as { branding?: TenantMetadataBranding };
+  const key = meta.branding?.signatureStorageKey?.trim();
+  return key || null;
+}
+
+export function readTenantSignatureResponsibleName(metadata: unknown): string {
+  const meta = (metadata ?? {}) as { branding?: TenantMetadataBranding };
+  return meta.branding?.signatureResponsibleName?.trim() ?? "";
 }

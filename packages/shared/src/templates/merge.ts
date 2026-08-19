@@ -1,5 +1,8 @@
 const TOKEN_RE = /\{\{([a-zA-Z0-9_.]+)\}\}/g;
 
+/** Tokens substituídos como HTML bruto (não escapados). */
+export const DOCUMENT_HTML_TOKEN_KEYS = ["acao.conteudos_modulos", "entidade.assinatura"] as const;
+
 /** Substitui {{variavel}} por valores do contexto. Chaves em falta mantêm-se. */
 export function mergeTemplateContent(
   template: string,
@@ -27,7 +30,7 @@ export function extractTemplateTokens(template: string): string[] {
 export function mergeTemplateHtml(
   template: string,
   context: Record<string, string | number | null | undefined>,
-  htmlKeys: string[] = ["acao.conteudos_modulos"],
+  htmlKeys: string[] = [...DOCUMENT_HTML_TOKEN_KEYS],
 ): string {
   const htmlSet = new Set(htmlKeys);
   return template.replace(TOKEN_RE, (_match, key: string) => {
@@ -50,7 +53,7 @@ function escapeHtml(s: string): string {
 export function mergeTemplatePlainTextToHtml(
   template: string,
   context: Record<string, string | number | null | undefined>,
-  htmlKeys: string[] = ["acao.conteudos_modulos"],
+  htmlKeys: string[] = [...DOCUMENT_HTML_TOKEN_KEYS],
 ): string {
   const htmlSet = new Set(htmlKeys);
   const parts: string[] = [];

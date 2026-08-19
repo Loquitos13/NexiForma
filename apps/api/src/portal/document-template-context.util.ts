@@ -74,6 +74,7 @@ type TenantBrandingMeta = {
   supportEmail?: string;
   supportPhone?: string;
   footerText?: string;
+  signatureResponsibleName?: string;
 };
 
 function extractEntidadeMorada(metadata: unknown): string {
@@ -238,6 +239,7 @@ export async function buildFormacaoTemplateContext(
     "entidade.morada": extractEntidadeMorada(tenant?.metadata),
     "entidade.email": branding?.supportEmail?.trim() ?? "",
     "entidade.telefone": branding?.supportPhone?.trim() ?? "",
+    "entidade.responsavel_assinatura": branding?.signatureResponsibleName?.trim() ?? "",
     "formando.nome_completo": formando?.nome ?? "",
     "formando.nif": formando?.nif ?? "",
     "formando.data_nascimento": fmtIsoDate(sigo.dataNascimento),

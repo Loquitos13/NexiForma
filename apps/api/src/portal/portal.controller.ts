@@ -94,6 +94,7 @@ export class PortalController {
         larguraPx?: number;
         alturaPx?: number;
       };
+      signatureResponsibleName?: string;
       cronograma?: {
         local?: string;
         horarioInicio?: string;
@@ -114,6 +115,25 @@ export class PortalController {
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 2 * 1024 * 1024 } }))
   uploadLogo(@CurrentUser() user: RequestUser, @UploadedFile() file: Express.Multer.File) {
     return this.tenantSettings.uploadLogo(user, file);
+  }
+
+  @Post("tenant/signature")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 1024 * 1024 } }))
+  uploadSignature(
+    @CurrentUser() user: RequestUser,
+    @UploadedFile() file: Express.Multer.File,
+    @Body("responsibleName") responsibleName?: string,
+  ) {
+    return this.tenantSettings.uploadSignature(user, file, responsibleName);
+  }
+
+  @Delete("tenant/signature")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager")
+  deleteSignature(@CurrentUser() user: RequestUser) {
+    return this.tenantSettings.deleteSignature(user);
   }
 
   @Get("tenant/documentos-politica")
@@ -234,6 +254,20 @@ export class PortalController {
     const obj = await this.tenantSettings.streamLogo(user);
     if (!obj) {
       res.status(404).send("Logo não configurado.");
+      return;
+    }
+    res.setHeader("Content-Type", obj.contentType);
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.send(obj.body);
+  }
+
+  @Get("tenant/signature")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador", "comercial")
+  async streamSignature(@CurrentUser() user: RequestUser, @Res() res: Response) {
+    const obj = await this.tenantSettings.streamSignature(user);
+    if (!obj) {
+      res.status(404).send("Assinatura não configurada.");
       return;
     }
     res.setHeader("Content-Type", obj.contentType);

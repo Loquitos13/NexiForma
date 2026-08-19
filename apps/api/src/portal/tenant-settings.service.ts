@@ -67,6 +67,8 @@ export type TenantBrandingPayload = {
     larguraPx?: number;
     alturaPx?: number;
   };
+  signatureStorageKey?: string;
+  signatureResponsibleName?: string;
 };
 
 export type TenantCronogramaConfig = {
@@ -235,10 +237,14 @@ export class TenantSettingsService {
     const publicLogo = branding.logoStorageKey
       ? `/api/v1/auth/public/tenant-logo?slug=${encodeURIComponent(tenant.slug)}`
       : branding.logoUrl;
+    const signatureUrl = branding.signatureStorageKey
+      ? `/api/v1/portal/tenant/signature`
+      : undefined;
     return {
       ...branding,
       companyName: branding.companyName ?? tenant.legalName,
       logoUrl: publicLogo,
+      signatureUrl,
       cronograma: meta.cronograma ?? {},
     };
   }
@@ -316,6 +322,115 @@ export class TenantSettingsService {
     });
 
     return { sucesso: true, logoUrl, logoStorageKey: key };
+  }
+
+  async uploadSignature(
+    user: RequestUser,
+    file: Express.Multer.File,
+    responsibleName?: string,
+  ) {
+    const tenantId = requireTenantId(user);
+    if (!file?.buffer?.length) {
+      throw new BadRequestException("Ficheiro de assinatura em falta.");
+    }
+    if (file.mimetype !== "image/png") {
+      throw new BadRequestException("Use PNG transparente (processado no browser).");
+    }
+    if (file.buffer.length > 1024 * 1024) {
+      throw new BadRequestException("Assinatura demasiado grande (máx. 1 MB).");
+    }
+
+    const key = `tenants/${tenantId}/signature.png`;
+    await this.storage.putObject(key, file.buffer, "image/png");
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true, legalName: true },
+    });
+    const meta = (tenant?.metadata ?? {}) as TenantMetadata;
+    const trimmedName = responsibleName?.trim();
+    const next: TenantMetadata = {
+      ...meta,
+      branding: {
+        ...(meta.branding ?? {}),
+        signatureStorageKey: key,
+        ...(trimmedName !== undefined
+          ? { signatureResponsibleName: trimmedName }
+          : {}),
+        companyName: meta.branding?.companyName ?? tenant?.legalName,
+      },
+    };
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { metadata: next as Prisma.InputJsonValue },
+    });
+
+    void this.audit.log({
+      actorType: "TENANT_USER",
+      actorId: user.sub,
+      action: "tenant.signature.upload",
+      resourceType: "Tenant",
+      resourceId: tenantId,
+      targetTenantId: tenantId,
+      targetUserId: user.sub,
+    });
+
+    return {
+      sucesso: true,
+      signatureUrl: `/api/v1/portal/tenant/signature`,
+      signatureStorageKey: key,
+      signatureResponsibleName: next.branding?.signatureResponsibleName ?? "",
+    };
+  }
+
+  async deleteSignature(user: RequestUser) {
+    const tenantId = requireTenantId(user);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true },
+    });
+    const meta = (tenant?.metadata ?? {}) as TenantMetadata;
+    const key = meta.branding?.signatureStorageKey;
+    if (key) {
+      try {
+        await this.storage.deleteObject(key);
+      } catch {
+        /* object may already be gone */
+      }
+    }
+    const currentBranding = meta.branding ?? {};
+    const { signatureStorageKey: _removed, ...restBranding } = currentBranding;
+    const next: TenantMetadata = {
+      ...meta,
+      branding: restBranding,
+    };
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { metadata: next as Prisma.InputJsonValue },
+    });
+
+    void this.audit.log({
+      actorType: "TENANT_USER",
+      actorId: user.sub,
+      action: "tenant.signature.delete",
+      resourceType: "Tenant",
+      resourceId: tenantId,
+      targetTenantId: tenantId,
+      targetUserId: user.sub,
+    });
+
+    return { sucesso: true };
+  }
+
+  async streamSignature(user: RequestUser) {
+    const tenantId = requireTenantId(user);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { metadata: true },
+    });
+    const key = (tenant?.metadata as TenantMetadata | null)?.branding?.signatureStorageKey;
+    if (!key) return null;
+    return this.storage.getObject(key);
   }
 
   async getDocumentosPolitica(user: RequestUser) {

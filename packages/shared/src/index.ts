@@ -278,6 +278,7 @@ export {
 } from "./templates/document-page.util";
 
 export {
+  DOCUMENT_HTML_TOKEN_KEYS,
   extractTemplateTokens,
   mergeTemplateContent,
   mergeTemplateHtml,

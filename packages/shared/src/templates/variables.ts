@@ -33,6 +33,16 @@ export const TEMPLATE_VARIABLES: Record<TemplateModulo, TemplateVariableDef[]> =
     { key: "entidade.morada", label: "Morada da entidade", grupo: "Entidade" },
     { key: "entidade.email", label: "Email da entidade", grupo: "Entidade" },
     { key: "entidade.telefone", label: "Telefone da entidade", grupo: "Entidade" },
+    {
+      key: "entidade.assinatura",
+      label: "Assinatura digitalizada (imagem)",
+      grupo: "Entidade",
+    },
+    {
+      key: "entidade.responsavel_assinatura",
+      label: "Nome do responsável pela assinatura",
+      grupo: "Entidade",
+    },
     { key: "local.data_extenso", label: "Local e data por extenso", grupo: "Local", exemplo: "Santa Maria da Feira, 11 de março de 2026" },
     { key: "data.hoje_extenso", label: "Data de hoje por extenso", grupo: "Local" },
   ],
@@ -77,6 +87,16 @@ export const TEMPLATE_VARIABLES: Record<TemplateModulo, TemplateVariableDef[]> =
     { key: "entidade.morada", label: "Morada da entidade", grupo: "Entidade" },
     { key: "entidade.email", label: "Email da entidade", grupo: "Entidade" },
     { key: "entidade.telefone", label: "Telefone da entidade", grupo: "Entidade" },
+    {
+      key: "entidade.assinatura",
+      label: "Assinatura digitalizada (imagem)",
+      grupo: "Entidade",
+    },
+    {
+      key: "entidade.responsavel_assinatura",
+      label: "Nome do responsável pela assinatura",
+      grupo: "Entidade",
+    },
     { key: "local.data_extenso", label: "Local e data por extenso", grupo: "Local e data", exemplo: "Santa Maria da Feira, 11 de março de 2026" },
     { key: "local.cronograma", label: "Local de formação (cronograma)", grupo: "Local e data" },
     { key: "data.hoje_extenso", label: "Data de hoje por extenso", grupo: "Local e data" },
