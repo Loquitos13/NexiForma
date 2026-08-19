@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { Camera, ImageUp, Trash2, Upload } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import {
@@ -9,6 +9,7 @@ import {
   type SignatureProcessOptions,
 } from "@/lib/client/signature-image.util";
 import { Button } from "@/components/ui";
+import { takeFileFromInput } from "@/lib/ui/file-input.util";
 
 type BrandingSignature = {
   signatureUrl?: string;
@@ -34,8 +35,8 @@ export function TenantSignaturePanel() {
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [cacheBust, setCacheBust] = useState(0);
-  const uploadRef = useRef<HTMLInputElement>(null);
-  const cameraRef = useRef<HTMLInputElement>(null);
+  const uploadInputId = useId();
+  const cameraInputId = useId();
 
   const load = useCallback(async () => {
     const r = await bffFetch("/api/v1/portal/tenant/branding", {
@@ -250,34 +251,30 @@ export function TenantSignaturePanel() {
       </div>
 
       <input
-        ref={uploadRef}
+        id={uploadInputId}
         type="file"
         accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
-        className="hidden"
+        className="sr-only"
         onChange={(e) => {
-          onPickFile(e.target.files?.[0]);
-          e.target.value = "";
+          const file = takeFileFromInput(e);
+          if (file) onPickFile(file);
         }}
       />
       <input
-        ref={cameraRef}
+        id={cameraInputId}
         type="file"
         accept="image/*"
         capture="environment"
-        className="hidden"
+        className="sr-only"
         onChange={(e) => {
-          onPickFile(e.target.files?.[0]);
-          e.target.value = "";
+          const file = takeFileFromInput(e);
+          if (file) onPickFile(file);
         }}
       />
 
       {importMode === "upload" ? (
-        <div
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") uploadRef.current?.click();
-          }}
+        <label
+          htmlFor={uploadInputId}
           onDragEnter={(e) => {
             e.preventDefault();
             setDragOver(true);
@@ -294,8 +291,7 @@ export function TenantSignaturePanel() {
             e.preventDefault();
             onDropFiles(e.dataTransfer.files);
           }}
-          onClick={() => uploadRef.current?.click()}
-          className={`rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${
+          className={`block rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${
             dragOver
               ? "border-blue-400/70 bg-blue-950/30"
               : "border-slate-600/50 bg-slate-950/40 hover:border-slate-500/70"
@@ -309,15 +305,17 @@ export function TenantSignaturePanel() {
           {pendingFileName ? (
             <p className="text-xs text-blue-300 mt-2 truncate max-w-full">{pendingFileName}</p>
           ) : null}
-        </div>
+        </label>
       ) : (
         <div className="rounded-xl border border-slate-700/40 bg-slate-950/40 p-6 text-center space-y-3">
           <Camera className="mx-auto h-8 w-8 text-slate-500" />
           <p className="text-sm text-slate-200">
             Use a câmara do telemóvel ou webcam para capturar a assinatura num papel branco.
           </p>
-          <Button type="button" size="sm" disabled={busy} onClick={() => cameraRef.current?.click()}>
-            Abrir câmara
+          <Button type="button" size="sm" disabled={busy} asChild>
+            <label htmlFor={cameraInputId} className="cursor-pointer">
+              Abrir câmara
+            </label>
           </Button>
           {pendingFileName ? (
             <p className="text-xs text-blue-300 truncate max-w-full">Captura: {pendingFileName}</p>

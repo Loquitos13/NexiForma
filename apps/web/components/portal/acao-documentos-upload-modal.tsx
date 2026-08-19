@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import {
   CheckCircle2,
   Circle,
@@ -12,6 +12,7 @@ import { bffFetch } from "@/lib/client/bff-fetch";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { Button, Dialog, DialogContent } from "@/components/ui";
 import { cn } from "@/lib/ui/cn";
+import { takeFilesFromInput } from "@/lib/ui/file-input.util";
 
 /** Ficheiros recomendados no enquadramento de qualquer acção formativa. */
 const FICHEIROS_ACAO_RECOMENDADOS = [
@@ -184,7 +185,7 @@ export function AcaoDocumentosUploadModal({
   docs,
   onUploaded,
 }: Props) {
-  const fileRef = useRef<HTMLInputElement>(null);
+  const uploadInputId = useId();
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -531,12 +532,8 @@ export function AcaoDocumentosUploadModal({
             </div>
           ) : null}
 
-          <div
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") fileRef.current?.click();
-            }}
+          <label
+            htmlFor={uploadInputId}
             onDragOver={(e) => {
               e.preventDefault();
               setDragOver(true);
@@ -547,9 +544,8 @@ export function AcaoDocumentosUploadModal({
               setDragOver(false);
               if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
             }}
-            onClick={() => fileRef.current?.click()}
             className={cn(
-              "cursor-pointer rounded-xl border border-dashed px-4 py-7 text-center transition-colors",
+              "block cursor-pointer rounded-xl border border-dashed px-4 py-7 text-center transition-colors",
               dragOver
                 ? "border-blue-500/60 bg-blue-950/20"
                 : "border-slate-600/50 bg-slate-900/25 hover:border-slate-500/60",
@@ -559,17 +555,16 @@ export function AcaoDocumentosUploadModal({
             <p className="text-sm font-medium text-slate-200">Arraste ficheiros para aqui</p>
             <p className="mt-1 text-xs text-slate-500">ou clique para escolher no computador</p>
             <input
-              ref={fileRef}
+              id={uploadInputId}
               type="file"
               multiple
               className="sr-only"
               onChange={(e) => {
-                const list = e.target.files;
-                e.target.value = "";
-                if (list?.length) addFiles(list);
+                const files = takeFilesFromInput(e);
+                if (files.length) addFiles(files);
               }}
             />
-          </div>
+          </label>
 
           {error ? <p className="text-xs text-red-300">{error}</p> : null}
 

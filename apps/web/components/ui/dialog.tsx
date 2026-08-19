@@ -9,6 +9,16 @@ function preventModalDismiss(event: Event) {
   event.preventDefault();
 }
 
+/** Evita fechar o modal quando o selector nativo de ficheiros tira foco da página. */
+function preventModalDismissExceptFilePicker(event: Event) {
+  const target = event.target;
+  if (target instanceof HTMLInputElement && target.type === "file") return;
+  if (target instanceof HTMLElement && target.closest('input[type="file"]')) return;
+  const active = document.activeElement;
+  if (active instanceof HTMLInputElement && active.type === "file") return;
+  preventModalDismiss(event);
+}
+
 export const Dialog = RadixDialog.Root;
 export const DialogTrigger = RadixDialog.Trigger;
 export const DialogClose = RadixDialog.Close;
@@ -25,7 +35,8 @@ export function DialogContent({
       <RadixDialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
       <RadixDialog.Content
         onPointerDownOutside={preventModalDismiss}
-        onInteractOutside={preventModalDismiss}
+        onFocusOutside={preventModalDismissExceptFilePicker}
+        onInteractOutside={preventModalDismissExceptFilePicker}
         onEscapeKeyDown={preventModalDismiss}
         className={cn(
           "ui-modal fixed left-1/2 top-1/2 z-50 flex w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col",
