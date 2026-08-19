@@ -8,8 +8,10 @@ export type SignatureProcessOptions = {
 
 export type SignatureProcessResult = {
   blob: Blob;
-  /** Limiar estimado (útil para ajuste fino opcional). */
+  /** Limiar estimado (útil para ajuste fino opcional). -1 = PNG já transparente. */
   autoThreshold: number;
+  /** Imagem importada já tinha canal alpha (ex.: PNG exportado). */
+  alreadyTransparent?: boolean;
 };
 
 type Rgb = { r: number; g: number; b: number };
@@ -219,6 +221,23 @@ function removeBackgroundManual(
   }
 }
 
+/** PNG/ficheiro já com transparência significativa - evita reprocessar a tinta. */
+function hasSignificantTransparency(data: Uint8ClampedArray, width: number, height: number): boolean {
+  const total = width * height;
+  if (total === 0) return false;
+  let soft = 0;
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i]! < 235) soft++;
+  }
+  return soft / total > 0.06;
+}
+
+const ACCEPTED_SIGNATURE_MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+export function isAcceptedSignatureImageFile(file: File): boolean {
+  return ACCEPTED_SIGNATURE_MIME.has(file.type);
+}
+
 /** Remove fundo e exporta PNG transparente (assinatura + nome). */
 export async function processSignatureImageFile(
   file: File,
@@ -261,8 +280,13 @@ export async function processSignatureImageElementDetailed(
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const { data, width, height } = imageData;
 
+  const alreadyTransparent =
+    opts.threshold == null && hasSignificantTransparency(data, width, height);
+
   let autoThreshold: number;
-  if (opts.threshold != null) {
+  if (alreadyTransparent) {
+    autoThreshold = -1;
+  } else if (opts.threshold != null) {
     removeBackgroundManual(data, opts.threshold, contrast);
     autoThreshold = opts.threshold;
   } else {
@@ -272,7 +296,7 @@ export async function processSignatureImageElementDetailed(
   ctx.putImageData(imageData, 0, 0);
   const trimmed = trimTransparentCanvas(canvas, paddingPx);
   const blob = await canvasToPngBlob(trimmed);
-  return { blob, autoThreshold };
+  return { blob, autoThreshold, alreadyTransparent };
 }
 
 function trimTransparentCanvas(source: HTMLCanvasElement, padding: number): HTMLCanvasElement {

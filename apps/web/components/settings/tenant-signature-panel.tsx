@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, Trash2, Upload } from "lucide-react";
+import { Camera, ImageUp, Trash2, Upload } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import {
+  isAcceptedSignatureImageFile,
   processSignatureImageFileDetailed,
   type SignatureProcessOptions,
 } from "@/lib/client/signature-image.util";
@@ -14,13 +15,19 @@ type BrandingSignature = {
   signatureResponsibleName?: string;
 };
 
+type ImportMode = "upload" | "camera";
+
 export function TenantSignaturePanel() {
   const [branding, setBranding] = useState<BrandingSignature | null>(null);
   const [responsibleName, setResponsibleName] = useState("");
+  const [importMode, setImportMode] = useState<ImportMode>("upload");
   const [threshold, setThreshold] = useState<number | null>(null);
   const [autoThreshold, setAutoThreshold] = useState<number | null>(null);
+  const [alreadyTransparent, setAlreadyTransparent] = useState(false);
   const [showFineTune, setShowFineTune] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingFileName, setPendingFileName] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -46,6 +53,7 @@ export function TenantSignaturePanel() {
   useEffect(() => {
     if (!pendingFile) {
       setPreviewUrl(null);
+      setAlreadyTransparent(false);
       return;
     }
     let cancelled = false;
@@ -55,6 +63,7 @@ export function TenantSignaturePanel() {
       if (cancelled) return;
       if (!showFineTune || threshold == null) {
         setAutoThreshold(result.autoThreshold);
+        setAlreadyTransparent(Boolean(result.alreadyTransparent));
       }
       const url = URL.createObjectURL(result.blob);
       setPreviewUrl((prev) => {
@@ -76,16 +85,30 @@ export function TenantSignaturePanel() {
 
   function onPickFile(file: File | undefined) {
     if (!file) return;
+    if (!isAcceptedSignatureImageFile(file)) {
+      setErr("Formato não suportado. Use PNG, JPEG ou WebP.");
+      return;
+    }
     setPendingFile(file);
+    setPendingFileName(file.name);
     setThreshold(null);
     setShowFineTune(false);
     setErr(null);
     setMsg(null);
   }
 
+  function onDropFiles(files: FileList | null | undefined) {
+    setDragOver(false);
+    onPickFile(files?.[0]);
+  }
+
   async function saveSignature() {
     if (!pendingFile) {
-      setErr("Seleccione ou fotografe uma assinatura primeiro.");
+      setErr(
+        importMode === "camera"
+          ? "Fotografe a assinatura primeiro."
+          : "Importe uma imagem da assinatura primeiro.",
+      );
       return;
     }
     setBusy(true);
@@ -107,6 +130,7 @@ export function TenantSignaturePanel() {
         return;
       }
       setPendingFile(null);
+      setPendingFileName(null);
       setCacheBust(Date.now());
       setMsg("Assinatura guardada.");
       await load();
@@ -147,6 +171,7 @@ export function TenantSignaturePanel() {
       return;
     }
     setPendingFile(null);
+    setPendingFileName(null);
     setCacheBust(Date.now());
     setMsg("Assinatura removida.");
     await load();
@@ -162,8 +187,8 @@ export function TenantSignaturePanel() {
       <div>
         <h2 className="text-sm font-semibold text-slate-100">Assinatura do responsável</h2>
         <p className="text-xs text-slate-500 mt-1">
-          Fotografe ou carregue a assinatura num papel claro - o fundo é removido automaticamente
-          (sem IA externa). Use <code className="text-slate-400">{`{{entidade.assinatura}}`}</code> e{" "}
+          Importe uma imagem ou fotografe a assinatura num papel claro. O fundo é removido
+          automaticamente. Use <code className="text-slate-400">{`{{entidade.assinatura}}`}</code> e{" "}
           <code className="text-slate-400">{`{{entidade.responsavel_assinatura}}`}</code> nos
           templates.
         </p>
@@ -186,32 +211,23 @@ export function TenantSignaturePanel() {
       </label>
 
       <div className="flex flex-wrap gap-2">
-        <input
-          ref={uploadRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          className="hidden"
-          onChange={(e) => {
-            onPickFile(e.target.files?.[0]);
-            e.target.value = "";
-          }}
-        />
-        <input
-          ref={cameraRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={(e) => {
-            onPickFile(e.target.files?.[0]);
-            e.target.value = "";
-          }}
-        />
-        <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => uploadRef.current?.click()}>
-          <Upload className="mr-1.5 h-3.5 w-3.5" />
-          Carregar imagem
+        <Button
+          type="button"
+          size="sm"
+          variant={importMode === "upload" ? "default" : "secondary"}
+          disabled={busy}
+          onClick={() => setImportMode("upload")}
+        >
+          <ImageUp className="mr-1.5 h-3.5 w-3.5" />
+          Importar imagem
         </Button>
-        <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => cameraRef.current?.click()}>
+        <Button
+          type="button"
+          size="sm"
+          variant={importMode === "camera" ? "default" : "secondary"}
+          disabled={busy}
+          onClick={() => setImportMode("camera")}
+        >
           <Camera className="mr-1.5 h-3.5 w-3.5" />
           Fotografar
         </Button>
@@ -223,44 +239,127 @@ export function TenantSignaturePanel() {
         ) : null}
       </div>
 
-      {pendingFile && autoThreshold != null && !showFineTune ? (
+      <input
+        ref={uploadRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+        className="hidden"
+        onChange={(e) => {
+          onPickFile(e.target.files?.[0]);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          onPickFile(e.target.files?.[0]);
+          e.target.value = "";
+        }}
+      />
+
+      {importMode === "upload" ? (
+        <div
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") uploadRef.current?.click();
+          }}
+          onDragEnter={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            onDropFiles(e.dataTransfer.files);
+          }}
+          onClick={() => uploadRef.current?.click()}
+          className={`rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${
+            dragOver
+              ? "border-blue-400/70 bg-blue-950/30"
+              : "border-slate-600/50 bg-slate-950/40 hover:border-slate-500/70"
+          }`}
+        >
+          <Upload className="mx-auto h-8 w-8 text-slate-500 mb-2" />
+          <p className="text-sm text-slate-200 font-medium">
+            Arraste uma imagem para aqui ou clique para seleccionar
+          </p>
+          <p className="text-xs text-slate-500 mt-1">PNG, JPEG ou WebP - scan, foto ou PNG já transparente</p>
+          {pendingFileName ? (
+            <p className="text-xs text-blue-300 mt-2 truncate max-w-full">{pendingFileName}</p>
+          ) : null}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-slate-700/40 bg-slate-950/40 p-6 text-center space-y-3">
+          <Camera className="mx-auto h-8 w-8 text-slate-500" />
+          <p className="text-sm text-slate-200">
+            Use a câmara do telemóvel ou webcam para capturar a assinatura num papel branco.
+          </p>
+          <Button type="button" size="sm" disabled={busy} onClick={() => cameraRef.current?.click()}>
+            Abrir câmara
+          </Button>
+          {pendingFileName ? (
+            <p className="text-xs text-blue-300 truncate max-w-full">Captura: {pendingFileName}</p>
+          ) : null}
+        </div>
+      )}
+
+      {pendingFile && alreadyTransparent ? (
+        <p className="text-xs text-slate-400">
+          Imagem importada já tinha fundo transparente - aplicado apenas recorte.
+        </p>
+      ) : null}
+      {pendingFile && autoThreshold != null && autoThreshold >= 0 && !showFineTune ? (
         <p className="text-xs text-slate-400">
           Fundo removido automaticamente (limiar estimado: {autoThreshold}).
         </p>
       ) : null}
 
-      <div className="space-y-2">
-        <button
-          type="button"
-          className="text-[10px] font-medium uppercase tracking-wide text-slate-500 hover:text-slate-300"
-          onClick={() => {
-            setShowFineTune((v) => {
-              const next = !v;
-              if (next && threshold == null) {
-                setThreshold(autoThreshold ?? 210);
-              }
-              return next;
-            });
-          }}
-        >
-          {showFineTune ? "▾ Ocultar ajuste fino" : "▸ Ajuste fino (opcional)"}
-        </button>
-        {showFineTune ? (
-          <label className="block space-y-1 max-w-xs">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-              Limiar manual {threshold ?? autoThreshold ?? 210}
-            </span>
-            <input
-              type="range"
-              min={140}
-              max={250}
-              value={threshold ?? autoThreshold ?? 210}
-              onChange={(e) => setThreshold(Number(e.target.value))}
-              className="w-full accent-blue-500"
-            />
-          </label>
-        ) : null}
-      </div>
+      {!alreadyTransparent ? (
+        <div className="space-y-2">
+          <button
+            type="button"
+            className="text-[10px] font-medium uppercase tracking-wide text-slate-500 hover:text-slate-300"
+            onClick={() => {
+              setShowFineTune((v) => {
+                const next = !v;
+                if (next && threshold == null) {
+                  setThreshold(autoThreshold != null && autoThreshold >= 0 ? autoThreshold : 210);
+                }
+                return next;
+              });
+            }}
+          >
+            {showFineTune ? "▾ Ocultar ajuste fino" : "▸ Ajuste fino (opcional)"}
+          </button>
+          {showFineTune ? (
+            <label className="block space-y-1 max-w-xs">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                Limiar manual {threshold ?? autoThreshold ?? 210}
+              </span>
+              <input
+                type="range"
+                min={140}
+                max={250}
+                value={threshold ?? (autoThreshold != null && autoThreshold >= 0 ? autoThreshold : 210)}
+                onChange={(e) => setThreshold(Number(e.target.value))}
+                className="w-full accent-blue-500"
+              />
+            </label>
+          ) : null}
+        </div>
+      ) : null}
 
       <div
         className="rounded-xl border border-slate-700/40 p-4 min-h-[120px] flex flex-col items-center justify-center gap-2"
