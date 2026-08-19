@@ -364,7 +364,13 @@ export function FaturaInlineEditor({
   };
 
   return (
-    <article className="mx-auto max-w-4xl overflow-hidden rounded-2xl border border-violet-200/80 bg-white text-neutral-900 shadow-2xl shadow-violet-900/10 [color-scheme:light] print:shadow-none">
+    <article
+      className={`mx-auto max-w-4xl overflow-hidden border border-violet-200/80 bg-white text-neutral-900 [color-scheme:light] ${
+        editavel
+          ? "rounded-2xl shadow-2xl shadow-violet-900/10 print:shadow-none"
+          : "rounded-none shadow-none"
+      }`}
+    >
       {/* Cabeçalho gradiente - Figma */}
       <header
         className="relative px-6 py-6 sm:px-8 sm:py-7 text-white"

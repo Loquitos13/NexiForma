@@ -5,7 +5,7 @@ import { HtmlPdfExportService } from "../common/html-pdf-export.service";
 export class FaturaPdfExportService {
   constructor(private readonly htmlPdf: HtmlPdfExportService) {}
 
-  /** Margens mínimas para caber numa página A4 e aproveitar a folha. */
+  /** Margens definidas em @page no HTML; Puppeteer sem margem extra. */
   htmlToPdfBuffer(html: string): Promise<Buffer> {
     return this.htmlPdf.htmlToPdfBuffer(html, {
       preferCSSPageSize: true,

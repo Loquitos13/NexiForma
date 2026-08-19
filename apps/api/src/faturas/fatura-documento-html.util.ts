@@ -208,11 +208,10 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
   <meta charset="utf-8"/>
   <title>${escapeHtml(input.tipoDocumentoLabel)} Nº ${escapeHtml(input.numeroDocumento)}</title>
   <style>
-    @page { size: A4; margin: 8mm; }
+    @page { size: A4; margin: 10mm 12mm; }
     @media print { .no-print { display: none !important; } }
     * { box-sizing: border-box; border-radius: 0 !important; }
     html, body {
-      height: 100%;
       margin: 0;
       padding: 0;
     }
@@ -221,47 +220,38 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
       color: #171717;
       background: #fff;
       font-size: 10.5pt;
-      line-height: 1.4;
+      line-height: 1.35;
     }
     .doc {
       width: 100%;
-      /* Altura útil A4 com margem 8mm (297 − 16) */
-      min-height: 281mm;
-      border: 1px solid ${cores.border};
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-    .brand-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 16px;
-      padding: 14px 18px;
-      background: #fff;
-      border-bottom: 1px solid ${cores.border};
-      flex-shrink: 0;
-    }
-    .tenant-logo {
-      max-height: 64px;
-      max-width: 200px;
-      object-fit: contain;
-      background: transparent !important;
       display: block;
-    }
-    .tenant-logo-placeholder { min-height: 48px; min-width: 100px; }
-    .brand-qr {
-      width: 120px;
-      height: 120px;
-      background: #fff;
-      padding: 3px;
-      flex-shrink: 0;
-      border: 1px solid ${cores.border};
     }
     .header {
       background: ${headerBg};
       color: #fff;
-      padding: 18px 20px;
+      padding: 16px 18px;
+    }
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+    }
+    .header-main { min-width: 0; flex: 1; }
+    .tenant-logo {
+      max-height: 52px;
+      max-width: 180px;
+      object-fit: contain;
+      background: transparent !important;
+      display: block;
+      margin-bottom: 8px;
+    }
+    .tenant-logo-placeholder { display: none; }
+    .header-qr {
+      width: 112px;
+      height: 112px;
+      background: #fff;
+      padding: 4px;
       flex-shrink: 0;
     }
     .header-kicker {
@@ -273,7 +263,7 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
       margin: 0;
     }
     .header-num {
-      font-size: 1.85rem;
+      font-size: 1.75rem;
       font-weight: 700;
       margin: 4px 0 0;
       letter-spacing: -0.01em;
@@ -282,10 +272,9 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       border-bottom: 1px solid #e5e5e5;
-      flex-shrink: 0;
     }
     .meta-cell {
-      padding: 12px 14px;
+      padding: 10px 12px;
       border-right: 1px solid #e5e5e5;
     }
     .meta-cell:last-child { border-right: none; }
@@ -303,23 +292,20 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
       margin: 4px 0 0;
       word-break: break-word;
     }
-    .body-grow {
-      flex: 1 1 auto;
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
-    }
     .parties {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      padding: 14px 16px;
-      flex-shrink: 0;
+      gap: 10px;
+      padding: 12px 14px;
+    }
+    .parties.moradas-transporte {
+      padding-top: 0;
+      padding-bottom: 8px;
     }
     .party {
       background: ${cores.surface};
       border: 1px solid ${cores.border};
-      padding: 14px 16px;
+      padding: 12px 14px;
     }
     .party-label {
       font-size: 9px;
@@ -327,17 +313,14 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: ${cores.accent};
-      margin: 0 0 8px;
+      margin: 0 0 6px;
     }
-    .party p { margin: 4px 0; font-size: 10pt; }
+    .party p { margin: 3px 0; font-size: 10pt; }
     .party .name { font-weight: 600; font-size: 11pt; }
     .muted { color: #6b7280; }
     .mono { font-family: ui-monospace, monospace; font-size: 9pt; }
     .articles {
-      padding: 4px 16px 12px;
-      flex: 1 1 auto;
-      display: flex;
-      flex-direction: column;
+      padding: 0 14px 8px;
     }
     .section-label {
       font-size: 10px;
@@ -345,14 +328,13 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: ${cores.headerFrom};
-      margin: 0 0 8px;
+      margin: 0 0 6px;
     }
     table.lines {
       width: 100%;
       border-collapse: collapse;
       border: 1px solid ${cores.border};
       font-size: 10pt;
-      flex: 1 1 auto;
     }
     table.lines thead tr {
       background: ${cores.accent};
@@ -360,44 +342,40 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
       text-align: left;
     }
     table.lines th {
-      padding: 10px 8px;
+      padding: 8px 8px;
       font-size: 9px;
       text-transform: uppercase;
       font-weight: 700;
     }
     table.lines td {
-      padding: 10px 8px;
+      padding: 8px 8px;
       border-top: 1px solid ${cores.surface};
       vertical-align: top;
     }
     td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
     td.bold { font-weight: 600; }
     .line-desc { font-weight: 500; }
-    .line-motivo { font-size: 9pt; color: ${cores.accent}; margin-top: 3px; font-weight: 500; }
     .iva-box {
-      margin: 0 16px 12px;
-      padding: 12px 14px;
+      margin: 0 14px 8px;
+      padding: 8px 12px;
       background: ${cores.surface};
       border: 1px solid ${cores.border};
-      flex-shrink: 0;
     }
-    .iva-list { margin: 0; padding-left: 0; list-style: none; font-size: 10pt; }
-    .iva-list li { margin: 4px 0; }
+    .iva-list { margin: 0; padding-left: 0; list-style: none; font-size: 9pt; line-height: 1.35; }
+    .iva-list li { margin: 2px 0; }
     .iva-ref { font-weight: 600; color: ${cores.accent}; }
     .footer-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 14px;
+      gap: 12px;
       border-top: 1px solid ${cores.border};
-      padding: 16px;
+      padding: 12px 14px;
       align-items: start;
-      flex-shrink: 0;
-      margin-top: auto;
     }
     .summary {
       background: #fafafa;
       border: 1px solid ${cores.border};
-      padding: 14px 16px;
+      padding: 12px 14px;
       margin-left: auto;
       max-width: 340px;
       width: 100%;
@@ -407,27 +385,26 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
       justify-content: space-between;
       gap: 14px;
       font-size: 10.5pt;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
     .summary-total {
       display: flex;
       justify-content: space-between;
       gap: 14px;
       border-top: 1px solid ${cores.border};
-      padding-top: 10px;
-      margin-top: 6px;
+      padding-top: 8px;
+      margin-top: 4px;
       font-weight: 700;
       color: ${cores.headerFrom};
     }
-    .summary-total .amount { font-size: 1.35rem; }
+    .summary-total .amount { font-size: 1.25rem; }
     .legal-footer {
       border-top: 1px solid ${cores.border};
       background: ${cores.surface};
-      padding: 10px 16px;
+      padding: 8px 14px;
       text-align: center;
       font-size: 9px;
       color: #6b7280;
-      flex-shrink: 0;
     }
     .no-print { margin: 8px; }
     .no-print button {
@@ -443,13 +420,15 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
 <body>
   <div class="no-print"><button type="button" onclick="window.print()">Imprimir</button></div>
   <article class="doc">
-    <div class="brand-row">
-      ${logoHtml}
-      <img class="brand-qr" src="${input.qrDataUrl}" alt="QR Code AT"/>
-    </div>
     <header class="header">
-      <p class="header-kicker">${escapeHtml(input.tipoDocumentoLabel)} ${exemplar}</p>
-      <h1 class="header-num">Nº ${escapeHtml(input.numeroDocumento)}</h1>
+      <div class="header-top">
+        <div class="header-main">
+          ${logoHtml}
+          <p class="header-kicker">${escapeHtml(input.tipoDocumentoLabel)} ${exemplar}</p>
+          <h1 class="header-num">Nº ${escapeHtml(input.numeroDocumento)}</h1>
+        </div>
+        <img class="header-qr" src="${input.qrDataUrl}" alt="QR Code AT"/>
+      </div>
     </header>
 
     <div class="meta-grid">
@@ -471,8 +450,7 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
       </div>
     </div>
 
-    <div class="body-grow">
-      <div class="parties">
+    <div class="parties">
         <div class="party">
           <p class="party-label">De</p>
           <p class="name">${escapeHtml(input.emitente.nomeEmpresa)}</p>
@@ -534,7 +512,6 @@ export function buildFaturaDocumentoHtml(input: FaturaDocumentoInput): string {
           </div>
         </div>
       </div>
-    </div>
 
     <footer class="legal-footer">
       ${escapeHtml(hashFooter)} - Processado por Programa Certificado n.º ${escapeHtml(input.softwareCertificado?.trim() || "-")}/AT
