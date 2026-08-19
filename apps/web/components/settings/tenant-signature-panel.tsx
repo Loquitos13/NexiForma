@@ -325,7 +325,7 @@ export function TenantSignaturePanel() {
 
       {pendingFile && alreadyTransparent ? (
         <p className="text-xs text-slate-400">
-          Imagem importada já tinha fundo transparente — aplicado apenas recorte. Ajuste fino não
+          Imagem importada já tinha fundo transparente - aplicado apenas recorte. Ajuste fino não
           é necessário.
         </p>
       ) : null}
@@ -360,7 +360,7 @@ export function TenantSignaturePanel() {
             <div className="grid gap-3 sm:grid-cols-2 max-w-lg">
               <label className="block space-y-1">
                 <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-                  Remoção de fundo — limiar {threshold ?? autoThreshold ?? 210}
+                  Remoção de fundo - limiar {threshold ?? autoThreshold ?? 210}
                 </span>
                 <input
                   type="range"
@@ -374,7 +374,7 @@ export function TenantSignaturePanel() {
               </label>
               <label className="block space-y-1">
                 <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-                  Contraste da tinta — {(contrast ?? 1.05).toFixed(2)}
+                  Contraste da tinta - {(contrast ?? 1.05).toFixed(2)}
                 </span>
                 <input
                   type="range"
