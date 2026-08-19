@@ -22,6 +22,7 @@ export function TenantSignaturePanel() {
   const [responsibleName, setResponsibleName] = useState("");
   const [importMode, setImportMode] = useState<ImportMode>("upload");
   const [threshold, setThreshold] = useState<number | null>(null);
+  const [contrast, setContrast] = useState<number | null>(null);
   const [autoThreshold, setAutoThreshold] = useState<number | null>(null);
   const [alreadyTransparent, setAlreadyTransparent] = useState(false);
   const [showFineTune, setShowFineTune] = useState(false);
@@ -57,8 +58,11 @@ export function TenantSignaturePanel() {
       return;
     }
     let cancelled = false;
-    const opts: SignatureProcessOptions =
-      showFineTune && threshold != null ? { threshold } : {};
+    const opts: SignatureProcessOptions = {};
+    if (showFineTune) {
+      if (threshold != null) opts.threshold = threshold;
+      if (contrast != null) opts.contrast = contrast;
+    }
     void processSignatureImageFileDetailed(pendingFile, opts).then((result) => {
       if (cancelled) return;
       if (!showFineTune || threshold == null) {
@@ -74,7 +78,7 @@ export function TenantSignaturePanel() {
     return () => {
       cancelled = true;
     };
-  }, [pendingFile, threshold, showFineTune]);
+  }, [pendingFile, threshold, contrast, showFineTune]);
 
   useEffect(
     () => () => {
@@ -92,6 +96,7 @@ export function TenantSignaturePanel() {
     setPendingFile(file);
     setPendingFileName(file.name);
     setThreshold(null);
+    setContrast(null);
     setShowFineTune(false);
     setErr(null);
     setMsg(null);
@@ -115,8 +120,11 @@ export function TenantSignaturePanel() {
     setErr(null);
     setMsg(null);
     try {
-      const opts: SignatureProcessOptions =
-        showFineTune && threshold != null ? { threshold } : {};
+      const opts: SignatureProcessOptions = {};
+      if (showFineTune) {
+        if (threshold != null) opts.threshold = threshold;
+        if (contrast != null) opts.contrast = contrast;
+      }
       const { blob } = await processSignatureImageFileDetailed(pendingFile, opts);
       const fd = new FormData();
       fd.append("file", blob, "assinatura.png");
@@ -317,46 +325,68 @@ export function TenantSignaturePanel() {
 
       {pendingFile && alreadyTransparent ? (
         <p className="text-xs text-slate-400">
-          Imagem importada já tinha fundo transparente - aplicado apenas recorte.
+          Imagem importada já tinha fundo transparente — aplicado apenas recorte. Ajuste fino não
+          é necessário.
         </p>
       ) : null}
       {pendingFile && autoThreshold != null && autoThreshold >= 0 && !showFineTune ? (
         <p className="text-xs text-slate-400">
-          Fundo removido automaticamente (limiar estimado: {autoThreshold}).
+          Fundo removido automaticamente (limiar estimado: {autoThreshold}). Se a assinatura ficar
+          fraca ou com restos de papel, abra o ajuste fino abaixo.
         </p>
       ) : null}
 
-      {!alreadyTransparent ? (
-        <div className="space-y-2">
+      {pendingFile && !alreadyTransparent ? (
+        <div className="rounded-lg border border-slate-700/50 bg-slate-950/50 p-3 space-y-3">
           <button
             type="button"
-            className="text-[10px] font-medium uppercase tracking-wide text-slate-500 hover:text-slate-300"
+            className="text-[10px] font-medium uppercase tracking-wide text-slate-400 hover:text-slate-200"
             onClick={() => {
               setShowFineTune((v) => {
                 const next = !v;
-                if (next && threshold == null) {
-                  setThreshold(autoThreshold != null && autoThreshold >= 0 ? autoThreshold : 210);
+                if (next) {
+                  if (threshold == null) {
+                    setThreshold(autoThreshold != null && autoThreshold >= 0 ? autoThreshold : 210);
+                  }
+                  if (contrast == null) setContrast(1.05);
                 }
                 return next;
               });
             }}
           >
-            {showFineTune ? "▾ Ocultar ajuste fino" : "▸ Ajuste fino (opcional)"}
+            {showFineTune ? "▾ Ocultar ajuste fino" : "▸ Ajuste fino (limiar e contraste)"}
           </button>
           {showFineTune ? (
-            <label className="block space-y-1 max-w-xs">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-                Limiar manual {threshold ?? autoThreshold ?? 210}
-              </span>
-              <input
-                type="range"
-                min={140}
-                max={250}
-                value={threshold ?? (autoThreshold != null && autoThreshold >= 0 ? autoThreshold : 210)}
-                onChange={(e) => setThreshold(Number(e.target.value))}
-                className="w-full accent-blue-500"
-              />
-            </label>
+            <div className="grid gap-3 sm:grid-cols-2 max-w-lg">
+              <label className="block space-y-1">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                  Remoção de fundo — limiar {threshold ?? autoThreshold ?? 210}
+                </span>
+                <input
+                  type="range"
+                  min={140}
+                  max={250}
+                  value={threshold ?? (autoThreshold != null && autoThreshold >= 0 ? autoThreshold : 210)}
+                  onChange={(e) => setThreshold(Number(e.target.value))}
+                  className="w-full accent-blue-500"
+                />
+                <span className="text-[10px] text-slate-600">Mais baixo = mais tinta; mais alto = mais fundo removido</span>
+              </label>
+              <label className="block space-y-1">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                  Contraste da tinta — {(contrast ?? 1.05).toFixed(2)}
+                </span>
+                <input
+                  type="range"
+                  min={100}
+                  max={135}
+                  value={Math.round((contrast ?? 1.05) * 100)}
+                  onChange={(e) => setContrast(Number(e.target.value) / 100)}
+                  className="w-full accent-blue-500"
+                />
+                <span className="text-[10px] text-slate-600">Aumente se a assinatura ficar demasiado clara</span>
+              </label>
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -374,7 +404,7 @@ export function TenantSignaturePanel() {
         {displayUrl ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={displayUrl} alt="Pré-visualização da assinatura" className="max-h-24 max-w-xs object-contain" />
+            <img src={displayUrl} alt="Pré-visualização da assinatura" className="max-h-32 max-w-sm object-contain" />
             {responsibleName.trim() ? (
               <p className="text-xs text-slate-200 border-t border-slate-500/60 pt-1 px-4 text-center">
                 {responsibleName.trim()}

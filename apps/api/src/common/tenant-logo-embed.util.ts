@@ -125,7 +125,7 @@ export function tenantSignatureImgHtml(
   if (!(src.startsWith("data:") || src.startsWith("http://") || src.startsWith("https://"))) {
     return "";
   }
-  return `<img class="tenant-signature" src="${src}" alt="${escapeHtml(alt)}" style="max-width:220px;max-height:80px;width:auto;height:auto;display:block;object-fit:contain;" />`;
+  return `<img class="tenant-signature" src="${src}" alt="${escapeHtml(alt)}" style="max-width:280px;max-height:110px;width:auto;height:auto;display:block;object-fit:contain;" />`;
 }
 
 function tenantLogoBlockHtml(

@@ -157,6 +157,36 @@ function estimateInkThreshold(bg: Rgb, tolerance: number): number {
   return Math.max(95, bgLum - Math.max(38, tolerance * 0.85));
 }
 
+/** 0 = papel; 1 = tinta densa - preserva anti-alias nas bordas. */
+function computeInkStrength(lum: number, bgLum: number, inkThreshold: number): number {
+  if (lum >= bgLum - 4) return 0;
+  const range = Math.max(24, bgLum - inkThreshold);
+  return Math.max(0, Math.min(1, (bgLum - lum) / range));
+}
+
+/** Mantém a cor original (caneta azul/preta) com escurecimento leve opcional. */
+function preserveForegroundPixel(
+  data: Uint8ClampedArray,
+  i: number,
+  inkStrength: number,
+  contrast: number,
+): void {
+  if (inkStrength < 0.05) {
+    data[i + 3] = 0;
+    return;
+  }
+
+  const r = data[i]!;
+  const g = data[i + 1]!;
+  const b = data[i + 2]!;
+
+  const darken = Math.min(0.28, Math.max(0, (contrast - 1) * inkStrength * 0.45));
+  data[i] = Math.round(r * (1 - darken));
+  data[i + 1] = Math.round(g * (1 - darken));
+  data[i + 2] = Math.round(b * (1 - darken));
+  data[i + 3] = Math.round(Math.min(255, 255 * Math.pow(inkStrength, 0.82)));
+}
+
 function removeBackgroundAutomatic(
   data: Uint8ClampedArray,
   width: number,
@@ -176,6 +206,7 @@ function removeBackgroundAutomatic(
       const p = pixelAt(data, width, x, y);
       const lum = luminance(p.r, p.g, p.b);
       const dist = colorDistance(p, bg);
+      const strength = computeInkStrength(lum, bgLum, inkThreshold);
       const isBorderBg = borderBg[idx] === 1;
       const isPaper =
         isBorderBg ||
@@ -183,16 +214,13 @@ function removeBackgroundAutomatic(
         (lum >= bgLum - 6 && dist <= tolerance);
       const isInk = lum < inkThreshold || dist > tolerance * 2.2;
 
-      if (isPaper && !isInk) {
+      if (isPaper && !isInk && strength < 0.08) {
         data[i + 3] = 0;
         continue;
       }
 
-      const ink = Math.max(0, Math.min(255, (255 - lum) * contrast));
-      data[i] = ink;
-      data[i + 1] = ink;
-      data[i + 2] = ink;
-      data[i + 3] = 255;
+      const inkStrength = isInk ? Math.max(strength, 0.62) : strength;
+      preserveForegroundPixel(data, i, inkStrength, contrast);
     }
   }
 
@@ -209,15 +237,14 @@ function removeBackgroundManual(
     const g = data[i + 1]!;
     const b = data[i + 2]!;
     const lum = luminance(r, g, b);
-    if (lum >= threshold) {
+    const strength = Math.max(0, Math.min(1, (threshold - lum) / Math.max(18, threshold * 0.42)));
+
+    if (strength < 0.05) {
       data[i + 3] = 0;
       continue;
     }
-    const ink = Math.max(0, Math.min(255, (255 - lum) * contrast));
-    data[i] = ink;
-    data[i + 1] = ink;
-    data[i + 2] = ink;
-    data[i + 3] = 255;
+
+    preserveForegroundPixel(data, i, strength, contrast);
   }
 }
 
@@ -267,15 +294,17 @@ export async function processSignatureImageElementDetailed(
   img: HTMLImageElement,
   opts: SignatureProcessOptions = {},
 ): Promise<SignatureProcessResult> {
-  const contrast = opts.contrast ?? 1.2;
+  const contrast = opts.contrast ?? 1.05;
   const paddingPx = opts.paddingPx ?? 8;
 
   const canvas = document.createElement("canvas");
   canvas.width = img.naturalWidth || img.width;
   canvas.height = img.naturalHeight || img.height;
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { alpha: true });
   if (!ctx) throw new Error("Canvas indisponível.");
 
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   ctx.drawImage(img, 0, 0);
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const { data, width, height } = imageData;
@@ -331,6 +360,8 @@ function trimTransparentCanvas(source: HTMLCanvasElement, padding: number): HTML
   out.height = cropH;
   const outCtx = out.getContext("2d");
   if (!outCtx) return source;
+  outCtx.imageSmoothingEnabled = true;
+  outCtx.imageSmoothingQuality = "high";
   outCtx.drawImage(
     source,
     minX,
