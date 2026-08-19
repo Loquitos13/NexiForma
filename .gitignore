@@ -28,6 +28,7 @@ nexiforma.dump
 .idea/
 .vscode/*
 !.vscode/extensions.json
+.cursor/
 
 # OS
 Thumbs.db

@@ -11,11 +11,7 @@ import { parseApiError } from "@/lib/ui/backoffice";
 import { fmtDate, fmtEuro } from "@/lib/crm/shared";
 import { Alert, Button, Input, PageHeader, Select, Textarea } from "@/components/ui";
 import { PortalBackButton } from "@/components/ui/portal-back-button";
-import { DocumentPagePreview } from "@/components/settings/document-page-preview";
-import {
-  RichTemplateEditor,
-  type RichTemplateEditorHandle,
-} from "@/components/settings/rich-template-editor";
+import { RichTemplateEditor } from "@/components/settings/rich-template-editor";
 import type { DocumentOrientacao, DocumentVerticalAlign } from "@nexiforma/shared";
 
 type Contrato = {
@@ -44,45 +40,32 @@ function ContratoEditorInner({ contratoId }: { contratoId: string }) {
   const [estado, setEstado] = useState("RASCUNHO");
   const [notasInternas, setNotasInternas] = useState("");
   const [bodyHtml, setBodyHtml] = useState("");
-  const [previewHtml, setPreviewHtml] = useState("");
   const [orientacao, setOrientacao] = useState<DocumentOrientacao>("portrait");
   const [alinhamentoVertical, setAlinhamentoVertical] =
     useState<DocumentVerticalAlign>("top");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [previewLoading, setPreviewLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const editorRef = useRef<RichTemplateEditorHandle>(null);
-  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bodyEditedRef = useRef(false);
 
-  const refreshPreview = useCallback(async () => {
-    if (!contratoId) return;
-    setPreviewLoading(true);
+  const loadDocumentBody = useCallback(async () => {
     const r = await bffFetch(`/api/v1/contratos/${contratoId}/preview`, {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify(bodyEditedRef.current ? { bodyHtml } : {}),
+      headers: { accept: "application/json" },
     });
-    setPreviewLoading(false);
     if (!r.ok) {
       setError(await parseApiError(r));
       return;
     }
     const data = (await r.json()) as {
-      html: string;
       bodyHtml: string;
       orientacao?: DocumentOrientacao;
       alinhamentoVertical?: DocumentVerticalAlign;
     };
-    setPreviewHtml(data.html);
-    if (!bodyEditedRef.current && data.bodyHtml) {
-      setBodyHtml(data.bodyHtml);
-    }
+    setBodyHtml(data.bodyHtml);
     if (data.orientacao) setOrientacao(data.orientacao);
     if (data.alinhamentoVertical) setAlinhamentoVertical(data.alinhamentoVertical);
-  }, [contratoId, bodyHtml]);
+  }, [contratoId]);
 
   const load = useCallback(async () => {
     if (!contratoId) return;
@@ -108,25 +91,15 @@ function ContratoEditorInner({ contratoId }: { contratoId: string }) {
     if (c.bodyHtml?.trim()) {
       setBodyHtml(c.bodyHtml);
       bodyEditedRef.current = true;
+    } else {
+      await loadDocumentBody();
     }
     setLoading(false);
-    void refreshPreview();
-  }, [contratoId, refreshPreview]);
+  }, [contratoId, loadDocumentBody]);
 
   useEffect(() => {
     void load();
   }, [load]);
-
-  useEffect(() => {
-    if (loading || !contrato) return;
-    if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
-    previewTimerRef.current = setTimeout(() => {
-      void refreshPreview();
-    }, 500);
-    return () => {
-      if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
-    };
-  }, [loading, contrato, bodyHtml, refreshPreview]);
 
   async function guardar(): Promise<boolean> {
     if (!contratoId) return false;
@@ -295,38 +268,23 @@ function ContratoEditorInner({ contratoId }: { contratoId: string }) {
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <div className="min-w-0 space-y-2">
-          <h2 className="text-sm font-medium text-slate-200">Texto do contrato</h2>
-          <p className="text-xs text-slate-500">
-            Variáveis como {"{{cliente.nome}}"} e {"{{contrato.numero}}"} são aplicadas na
-            pré-visualização.
-          </p>
-          <RichTemplateEditor
-            ref={editorRef}
-            value={bodyHtml}
-            onChange={(html) => {
-              bodyEditedRef.current = true;
-              setBodyHtml(html);
-            }}
-            formato="html"
-            pageLayout="a4"
-            orientacao={orientacao}
-            verticalAlign={alinhamentoVertical}
-          />
-        </div>
-        <div className="space-y-2">
-          <h2 className="text-sm font-medium text-slate-200">
-            Pré-visualização {previewLoading ? "…" : ""}
-          </h2>
-          <DocumentPagePreview
-            srcDoc={previewHtml}
-            orientacao={orientacao}
-            title={titulo || contrato.codigo}
-            maxWidth={640}
-            lazy
-          />
-        </div>
+      <div className="min-w-0 space-y-2">
+        <h2 className="text-sm font-medium text-slate-200">Texto do contrato</h2>
+        <p className="text-xs text-slate-500">
+          Edite o documento em formato A4. Variáveis como {"{{cliente.nome}}"} são resolvidas ao
+          imprimir ou exportar PDF.
+        </p>
+        <RichTemplateEditor
+          value={bodyHtml}
+          onChange={(html) => {
+            bodyEditedRef.current = true;
+            setBodyHtml(html);
+          }}
+          formato="html"
+          pageLayout="a4"
+          orientacao={orientacao}
+          verticalAlign={alinhamentoVertical}
+        />
       </div>
     </>
   );
