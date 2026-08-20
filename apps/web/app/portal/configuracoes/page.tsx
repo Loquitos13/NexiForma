@@ -244,7 +244,7 @@ export default function ConfiguracoesPage() {
           {modulo === "formacao" ? <ConfiguracoesFormacaoPanel /> : null}
           {modulo === "crm" ? <ConfiguracoesCrmPanel /> : null}
           {modulo === "faturacao" ? (
-            <div className="mx-auto w-full max-w-4xl">
+            <div className="mx-auto w-full max-w-6xl">
               <TemplateEditorPanel
                 modulo="faturacao"
                 title="Templates de faturação"

@@ -19,7 +19,7 @@ export function ConfiguracoesFormacaoPanel() {
           <ModuleLogosPanel modulo="formacao" title="Logótipos de formação" />
         </div>
       </div>
-      <div className="mx-auto w-full max-w-4xl">
+      <div className="mx-auto w-full max-w-6xl">
         <TemplateEditorPanel
           modulo="formacao"
           title="Templates de formação"

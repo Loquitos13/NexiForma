@@ -802,7 +802,7 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
     const a4PageCanvas = (
       <div
         ref={pageWrapRef}
-        className="doc-editor-root flex overflow-x-hidden overflow-y-auto rounded-lg border border-slate-700/40 bg-slate-800/30"
+        className="doc-editor-root flex gap-5 overflow-x-hidden overflow-y-auto rounded-lg border border-slate-700/40 bg-slate-800/30"
         style={{ maxHeight: "min(85vh, 920px)" }}
       >
         <style>{editorCss}</style>

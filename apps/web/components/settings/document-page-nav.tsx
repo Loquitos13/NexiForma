@@ -38,7 +38,7 @@ function DocumentPageNavInner({
 
   return (
     <div
-      className={cn("grid shrink-0 grid-cols-1 gap-2 overflow-y-auto py-3 pl-3 pr-1", className)}
+      className={cn("grid shrink-0 grid-cols-1 gap-2 overflow-y-auto py-3 pl-3", className)}
       style={{ width: thumbWidth + 16 }}
     >
       <style>{editorCss.replace(/\.doc-editor-root/g, ".doc-page-nav-root")}</style>

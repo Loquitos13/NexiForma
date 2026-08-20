@@ -11,7 +11,7 @@ export function ConfiguracoesCrmPanel() {
           <ModuleLogosPanel modulo="crm" title="Logótipos CRM" />
         </div>
       </div>
-      <div className="mx-auto w-full max-w-4xl">
+      <div className="mx-auto w-full max-w-6xl">
         <TemplateEditorPanel
           modulo="crm"
           title="Templates CRM"
