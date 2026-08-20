@@ -176,17 +176,42 @@ export class ConteudosLmsService {
     if (!existing) throw new NotFoundException("Unidade nao encontrada.");
     await this.formadorScope.assertCanEditCurso(user, existing.cursoId);
 
+    const teoricas =
+      dto.cargaHorasTeoricas !== undefined ? dto.cargaHorasTeoricas : existing.cargaHorasTeoricas;
+    const praticas =
+      dto.cargaHorasPraticas !== undefined ? dto.cargaHorasPraticas : existing.cargaHorasPraticas;
+    const horasFromSplit =
+      dto.cargaHorasTeoricas !== undefined || dto.cargaHorasPraticas !== undefined
+        ? (teoricas ?? 0) + (praticas ?? 0)
+        : null;
+
     return this.prisma.moduloUnidade.update({
       where: { id },
       data: {
         codigo: dto.codigo !== undefined ? dto.codigo?.trim().toUpperCase() || null : undefined,
         titulo: dto.titulo?.trim(),
         descricao: dto.descricao !== undefined ? dto.descricao?.trim() || null : undefined,
-        cargaHoras: dto.cargaHoras !== undefined ? dto.cargaHoras : undefined,
+        cargaHoras:
+          horasFromSplit !== null
+            ? horasFromSplit > 0
+              ? horasFromSplit
+              : null
+            : dto.cargaHoras !== undefined
+              ? dto.cargaHoras
+              : undefined,
+        cargaHorasTeoricas:
+          dto.cargaHorasTeoricas !== undefined ? dto.cargaHorasTeoricas : undefined,
+        cargaHorasPraticas:
+          dto.cargaHorasPraticas !== undefined ? dto.cargaHorasPraticas : undefined,
         formadorId: dto.formadorId !== undefined ? dto.formadorId : undefined,
         ordem: dto.ordem,
         notaMinima: dto.notaMinima !== undefined ? dto.notaMinima : undefined,
         lockManual: dto.lockManual !== undefined ? dto.lockManual : undefined,
+        metodologia: dto.metodologia !== undefined ? dto.metodologia : undefined,
+        visivel: dto.visivel !== undefined ? dto.visivel : undefined,
+        obrigatorio: dto.obrigatorio !== undefined ? dto.obrigatorio : undefined,
+        prerequisitoUnidadeId:
+          dto.prerequisitoUnidadeId !== undefined ? dto.prerequisitoUnidadeId : undefined,
       },
     });
   }

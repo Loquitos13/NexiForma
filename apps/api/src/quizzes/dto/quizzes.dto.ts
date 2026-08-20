@@ -2,6 +2,7 @@ import { Type } from "class-transformer";
 import {
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsObject,
   IsOptional,
@@ -10,6 +11,8 @@ import {
   Min,
   ValidateNested,
 } from "class-validator";
+
+const QUIZ_TIPOS = ["MULTIPLA", "VF", "ABERTA"] as const;
 
 export class QuizOpcaoDto {
   @IsUUID()
@@ -46,6 +49,14 @@ export class CreateQuizPerguntaDto {
   @IsInt()
   @Min(1)
   pontos?: number;
+
+  @IsOptional()
+  @IsIn(QUIZ_TIPOS)
+  tipo?: (typeof QUIZ_TIPOS)[number];
+
+  @IsOptional()
+  @IsString()
+  explicacao?: string | null;
 }
 
 export class UpdateQuizPerguntaDto {
@@ -70,6 +81,14 @@ export class UpdateQuizPerguntaDto {
   @IsInt()
   @Min(1)
   pontos?: number;
+
+  @IsOptional()
+  @IsIn(QUIZ_TIPOS)
+  tipo?: (typeof QUIZ_TIPOS)[number];
+
+  @IsOptional()
+  @IsString()
+  explicacao?: string | null;
 }
 
 export class SubmitQuizDto {

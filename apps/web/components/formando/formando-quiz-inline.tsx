@@ -8,6 +8,7 @@ type Pergunta = {
   enunciado: string;
   ordem: number;
   pontos: number;
+  tipo?: "MULTIPLA" | "VF" | "ABERTA";
   opcoes: Array<{ id: string; texto: string }>;
 };
 
@@ -83,6 +84,13 @@ export function FormandoQuizInline({ moduloId, matriculaId, titulo, embedded, on
       if (Object.keys(respostas).length < perguntas.length) {
         setError(`Responde a todas as perguntas (${respondidas}/${perguntas.length}).`);
         return;
+      }
+      for (const q of perguntas) {
+        const r = respostas[q.id];
+        if (!r?.trim()) {
+          setError(`Responde à pergunta ${q.enunciado.slice(0, 40)}…`);
+          return;
+        }
       }
       setBusy(true);
       setError(null);
@@ -241,30 +249,39 @@ export function FormandoQuizInline({ moduloId, matriculaId, titulo, embedded, on
             {currentIdx + 1}. {p.enunciado}
           </p>
           <div className="space-y-2">
-            {p.opcoes.map((o, oi) => {
-              const selected = respostas[p.id] === o.id;
-              return (
-                <button
-                  key={o.id}
-                  type="button"
-                  onClick={() => responder(p.id, o.id)}
-                  className={`w-full rounded-xl border px-4 py-2.5 text-left text-sm transition-all ${
-                    selected
-                      ? "border-blue-500/40 bg-blue-600/20 text-blue-200"
-                      : "border-slate-700/30 bg-slate-800/40 text-slate-300 hover:border-slate-600/40"
-                  }`}
-                >
-                  <span
-                    className={`mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px] ${
-                      selected ? "border-blue-400 bg-blue-500 text-white" : "border-slate-600"
+            {(p.tipo ?? "MULTIPLA") === "ABERTA" ? (
+              <textarea
+                className="w-full min-h-[96px] rounded-xl border border-slate-700/30 bg-slate-800/40 px-4 py-2.5 text-sm text-slate-200 outline-none focus:border-blue-500/40"
+                value={respostas[p.id] ?? ""}
+                placeholder="Escreve a tua resposta..."
+                onChange={(e) => setRespostas((r) => ({ ...r, [p.id]: e.target.value }))}
+              />
+            ) : (
+              p.opcoes.map((o, oi) => {
+                const selected = respostas[p.id] === o.id;
+                return (
+                  <button
+                    key={o.id}
+                    type="button"
+                    onClick={() => responder(p.id, o.id)}
+                    className={`w-full rounded-xl border px-4 py-2.5 text-left text-sm transition-all ${
+                      selected
+                        ? "border-blue-500/40 bg-blue-600/20 text-blue-200"
+                        : "border-slate-700/30 bg-slate-800/40 text-slate-300 hover:border-slate-600/40"
                     }`}
                   >
-                    {selected ? "✓" : String.fromCharCode(65 + oi)}
-                  </span>
-                  {o.texto}
-                </button>
-              );
-            })}
+                    <span
+                      className={`mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px] ${
+                        selected ? "border-blue-400 bg-blue-500 text-white" : "border-slate-600"
+                      }`}
+                    >
+                      {selected ? "✓" : String.fromCharCode(65 + oi)}
+                    </span>
+                    {o.texto}
+                  </button>
+                );
+              })
+            )}
           </div>
           <div className="mt-4 flex justify-between">
             <button

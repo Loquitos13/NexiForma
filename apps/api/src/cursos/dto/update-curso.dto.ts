@@ -1,4 +1,4 @@
-import { IsInt, IsObject, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import { IsBoolean, IsInt, IsObject, IsOptional, IsString, MaxLength, Min } from "class-validator";
 
 export class UpdateCursoDto {
   @IsOptional()
@@ -30,4 +30,9 @@ export class UpdateCursoDto {
   @IsOptional()
   @IsObject()
   configuracaoMatricula?: Record<string, unknown> | null;
+
+  /** Progressão LMS: true = sequencial, false = livre. */
+  @IsOptional()
+  @IsBoolean()
+  lmsProgressaoSequencial?: boolean;
 }

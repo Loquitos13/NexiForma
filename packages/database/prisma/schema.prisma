@@ -730,6 +730,8 @@ model Curso {
   publicado         Boolean         @default(false)
   /// Predefinição documental da inscrição (universais + docs por edição).
   configuracaoMatricula Json?       @map("configuracao_matricula")
+  /// Se true, módulos LMS seguem ordem sequencial; se false, acesso livre.
+  lmsProgressaoSequencial Boolean   @default(true) @map("lms_progressao_sequencial")
   createdAt         DateTime        @default(now()) @map("created_at")
 
   tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1074,12 +1076,21 @@ model ModuloUnidade {
   notaMinima Int?     @map("nota_minima")
   /// Se true, o módulo fica bloqueado até desbloqueio explícito por matrícula (gestor ou formando).
   lockManual Boolean  @default(false) @map("lock_manual")
+  /// presencial | b-learning | e-learning (override por módulo; null herda do curso)
+  metodologia String?
+  visivel     Boolean  @default(true)
+  obrigatorio Boolean  @default(true)
+  cargaHorasTeoricas  Int? @map("carga_horas_teoricas")
+  cargaHorasPraticas  Int? @map("carga_horas_praticas")
+  prerequisitoUnidadeId String? @map("prerequisito_unidade_id") @db.Uuid
   formadorId String?  @map("formador_id") @db.Uuid
   createdAt  DateTime @default(now()) @map("created_at")
 
   tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   curso     Curso            @relation(fields: [cursoId], references: [id], onDelete: Cascade)
   formador  FormadorProfile? @relation(fields: [formadorId], references: [id], onDelete: SetNull)
+  prerequisitoUnidade ModuloUnidade?  @relation("ModuloUnidadePrerequisito", fields: [prerequisitoUnidadeId], references: [id], onDelete: SetNull)
+  unidadesDependentes ModuloUnidade[] @relation("ModuloUnidadePrerequisito")
   conteudos ModuloConteudo[]
   sessoes   SessaoFormacao[]
   desbloqueios MatriculaUnidadeDesbloqueio[]
@@ -1920,8 +1931,11 @@ model QuizPergunta {
   moduloId  String   @map("modulo_id") @db.Uuid
   enunciado String   @db.Text
   ordem     Int      @default(0)
+  /// MULTIPLA | VF | ABERTA
+  tipo      String   @default("MULTIPLA")
   opcoes    Json
   pontos    Int      @default(1)
+  explicacao String? @db.Text
   createdAt DateTime @default(now()) @map("created_at")
 
   tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)

@@ -38,6 +38,7 @@ type CursoDetail = {
   designacao: string;
   cargaHoras: number;
   modalidade: string;
+  lmsProgressaoSequencial?: boolean;
   objetivos: string | null;
   acoesFormacao: AcaoRow[];
 };
@@ -50,7 +51,7 @@ const MODALIDADE_LABEL: Record<string, string> = {
 
 const CURSO_TABS = [
   { id: "resumo", label: "Resumo", icon: FileText },
-  { id: "conteudos", label: "Conteúdos LMS", icon: BookOpen },
+  { id: "conteudos", label: "Módulos", icon: BookOpen },
 ] as const;
 
 type CursoTab = (typeof CURSO_TABS)[number]["id"];
@@ -258,18 +259,30 @@ export default function CursoDetailPage() {
       {tab === "conteudos" ? (
         <Card>
           <CardHeader>
-            <CardTitle>Conteúdos da formação</CardTitle>
+            <CardTitle>Módulos da formação</CardTitle>
           </CardHeader>
           <CardContent className="overflow-hidden">
             <p className="text-sm text-slate-400 mb-4">
-              Percurso LMS partilhado por todas as acções deste curso. Reordena, edita e pré-visualiza como o
-              formando verá.
+              Organiza módulos, metodologia e conteúdos do percurso LMS partilhado por todas as acções deste curso.
             </p>
             <ActionContentBuilder
               cursoId={curso.id}
               cursoTitulo={curso.designacao}
+              cursoCargaHoras={curso.cargaHoras}
+              lmsProgressaoSequencial={curso.lmsProgressaoSequencial !== false}
               canEdit={canEditContent}
               initialUnidadeId={openUnidadeId}
+              onProgressaoChange={async (sequencial) => {
+                if (!canManage) return;
+                const res = await bffFetch(`/api/v1/cursos/${curso.id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json", accept: "application/json" },
+                  body: JSON.stringify({ lmsProgressaoSequencial: sequencial }),
+                });
+                if (res.ok) {
+                  setCurso((c) => (c ? { ...c, lmsProgressaoSequencial: sequencial } : c));
+                }
+              }}
             />
           </CardContent>
         </Card>

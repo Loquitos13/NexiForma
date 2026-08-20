@@ -126,6 +126,9 @@ export class CursosService {
                     ) as Prisma.InputJsonValue),
             }
           : {}),
+        ...(dto.lmsProgressaoSequencial !== undefined
+          ? { lmsProgressaoSequencial: dto.lmsProgressaoSequencial }
+          : {}),
       },
     });
     void this.formadorNotificacoes.notifyCursoCrud(

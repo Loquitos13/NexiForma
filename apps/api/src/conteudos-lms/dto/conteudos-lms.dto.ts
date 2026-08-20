@@ -12,6 +12,8 @@ import {
   ValidateIf,
 } from "class-validator";
 
+const METODOLOGIAS = ["presencial", "b-learning", "e-learning"] as const;
+
 const TIPOS = ["VIDEO", "PDF", "SCORM", "TEXTO", "QUIZ", "WEBINAR"] as const;
 
 export class CreateModuloConteudoDto {
@@ -99,6 +101,10 @@ export class CreateModuloUnidadeDto {
   @Min(0)
   @Max(100)
   notaMinima?: number;
+
+  @IsOptional()
+  @IsIn(METODOLOGIAS)
+  metodologia?: (typeof METODOLOGIAS)[number];
 }
 
 export class UpdateModuloUnidadeDto {
@@ -137,6 +143,32 @@ export class UpdateModuloUnidadeDto {
   @IsOptional()
   @IsBoolean()
   lockManual?: boolean;
+
+  @IsOptional()
+  @IsIn(METODOLOGIAS)
+  metodologia?: (typeof METODOLOGIAS)[number] | null;
+
+  @IsOptional()
+  @IsBoolean()
+  visivel?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  obrigatorio?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  cargaHorasTeoricas?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  cargaHorasPraticas?: number | null;
+
+  @IsOptional()
+  @IsUUID()
+  prerequisitoUnidadeId?: string | null;
 }
 
 export class DesbloquearUnidadeDto {

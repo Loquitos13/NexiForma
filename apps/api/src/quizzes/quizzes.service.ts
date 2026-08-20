@@ -54,6 +54,7 @@ export class QuizzesService {
       enunciado: p.enunciado,
       ordem: p.ordem,
       pontos: p.pontos,
+      tipo: p.tipo ?? "MULTIPLA",
       opcoes: (p.opcoes as OpcaoQuiz[]).map(({ id, texto }) => ({ id, texto })),
     }));
   }
@@ -72,8 +73,10 @@ export class QuizzesService {
         moduloId: dto.moduloId,
         enunciado: dto.enunciado.trim(),
         ordem: dto.ordem ?? 0,
+        tipo: dto.tipo ?? "MULTIPLA",
         opcoes: dto.opcoes as unknown as Prisma.InputJsonValue,
         pontos: dto.pontos ?? 1,
+        explicacao: dto.explicacao?.trim() || null,
       },
     });
   }
@@ -91,10 +94,12 @@ export class QuizzesService {
       data: {
         ...(dto.enunciado !== undefined ? { enunciado: dto.enunciado.trim() } : {}),
         ...(dto.ordem !== undefined ? { ordem: dto.ordem } : {}),
+        ...(dto.tipo !== undefined ? { tipo: dto.tipo } : {}),
         ...(dto.opcoes !== undefined
           ? { opcoes: dto.opcoes as unknown as Prisma.InputJsonValue }
           : {}),
         ...(dto.pontos !== undefined ? { pontos: dto.pontos } : {}),
+        ...(dto.explicacao !== undefined ? { explicacao: dto.explicacao?.trim() || null } : {}),
       },
     });
   }
@@ -150,6 +155,8 @@ export class QuizzesService {
     let pontosMax = 0;
     const feedback: QuizFeedbackItem[] = [];
     for (const p of perguntas) {
+      const tipo = p.tipo ?? "MULTIPLA";
+      if (tipo === "ABERTA") continue;
       pontosMax += p.pontos;
       const opcoes = p.opcoes as OpcaoQuiz[];
       const correta = opcoes.find((o) => o.correta)?.id;
@@ -160,6 +167,16 @@ export class QuizzesService {
         perguntaId: p.id,
         enunciado: p.enunciado,
         correto: acertou,
+        opcaoEscolhidaId: resposta,
+      });
+    }
+
+    for (const p of perguntas.filter((x) => (x.tipo ?? "MULTIPLA") === "ABERTA")) {
+      const resposta = dto.respostas[p.id] ?? null;
+      feedback.push({
+        perguntaId: p.id,
+        enunciado: p.enunciado,
+        correto: false,
         opcaoEscolhidaId: resposta,
       });
     }
