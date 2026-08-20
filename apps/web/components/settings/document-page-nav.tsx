@@ -37,15 +37,9 @@ function DocumentPageNavInner({
   const thumbHeight = pageHeightPx * THUMB_SCALE;
 
   return (
-    <aside
-      className={cn(
-        "flex w-[88px] shrink-0 flex-col gap-3 overflow-y-auto rounded-lg border border-slate-700/40 bg-slate-900/60 p-2",
-        className,
-      )}
-      style={{ maxHeight: "min(85vh, 920px)" }}
-    >
+    <div className={cn("grid shrink-0 grid-cols-1 gap-2 overflow-y-auto py-3 pl-3 pr-1", className)}>
       <style>{editorCss.replace(/\.doc-editor-root/g, ".doc-page-nav-root")}</style>
-      <p className="px-0.5 text-[9px] font-medium uppercase tracking-wide text-slate-500">Páginas</p>
+      <p className="text-[9px] font-medium uppercase tracking-wide text-slate-500">Páginas</p>
       {pages.map((pageHtml, index) => {
         const selected = index === activeIndex;
         return (
@@ -54,15 +48,12 @@ function DocumentPageNavInner({
             type="button"
             title={`Página ${index + 1}`}
             onClick={() => onSelect(index)}
-            className={cn(
-              "group flex flex-col items-center gap-1 rounded-md p-1 transition-colors",
-              selected ? "bg-slate-800/80" : "hover:bg-slate-800/50",
-            )}
+            className="flex flex-col items-center gap-1"
           >
             <div
               className={cn(
-                "doc-page-nav-root overflow-hidden rounded-sm bg-white shadow-sm ring-2 ring-offset-2 ring-offset-slate-900 transition-shadow",
-                selected ? "ring-blue-500" : "ring-transparent group-hover:ring-slate-600",
+                "doc-page-nav-root overflow-hidden rounded-sm bg-white shadow-sm ring-2 transition-shadow",
+                selected ? "ring-blue-500" : "ring-transparent hover:ring-slate-600",
               )}
               style={{ width: thumbWidth, height: thumbHeight }}
             >
@@ -103,7 +94,7 @@ function DocumentPageNavInner({
           </button>
         );
       })}
-    </aside>
+    </div>
   );
 }
 

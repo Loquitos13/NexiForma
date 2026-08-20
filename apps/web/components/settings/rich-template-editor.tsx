@@ -403,6 +403,7 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
     const [activePageIndex, setActivePageIndex] = useState(0);
     const editorRef = useRef<HTMLDivElement>(null);
     const pageWrapRef = useRef<HTMLDivElement>(null);
+    const pageCanvasRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const savedRangeRef = useRef<Range | null>(null);
     const textareaSelRef = useRef<{ start: number; end: number } | null>(null);
@@ -705,15 +706,15 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
 
     useLayoutEffect(() => {
       if (pageLayout !== "a4") return;
-      const wrap = pageWrapRef.current;
-      if (!wrap) return;
+      const canvas = pageCanvasRef.current;
+      if (!canvas) return;
       const update = () => {
-        const avail = wrap.clientWidth;
+        const avail = canvas.clientWidth;
         setPageScale(Math.min(1, avail / pageWidthPx));
       };
       update();
       const ro = new ResizeObserver(update);
-      ro.observe(wrap);
+      ro.observe(canvas);
       return () => ro.disconnect();
     }, [pageLayout, pageWidthPx, orientacao]);
 
@@ -801,27 +802,39 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
     const a4PageCanvas = (
       <div
         ref={pageWrapRef}
-        className="doc-editor-root min-w-0 flex-1 flex justify-center overflow-x-hidden overflow-y-auto rounded-lg border border-slate-700/40 bg-slate-800/30"
+        className="doc-editor-root flex overflow-x-hidden overflow-y-auto rounded-lg border border-slate-700/40 bg-slate-800/30"
         style={{ maxHeight: "min(85vh, 920px)" }}
       >
         <style>{editorCss}</style>
-        <div
-          className="shrink-0 overflow-hidden"
-          style={{
-            width: pageWidthPx * pageScale,
-            height: pageHeightPx * pageScale,
-          }}
-        >
+        {multiPage && pages.length > 0 ? (
+          <DocumentPageNav
+            pages={pages}
+            activeIndex={activePageIndex}
+            orientacao={orientacao}
+            verticalAlign={verticalAlign}
+            editorCss={editorCss}
+            onSelect={selectPage}
+          />
+        ) : null}
+        <div ref={pageCanvasRef} className="flex min-w-0 flex-1 justify-center overflow-x-hidden overflow-y-auto py-3 pr-3">
           <div
-            className="doc-page-shell origin-top-left shadow-md"
+            className="shrink-0 overflow-hidden"
             style={{
-              width: `${pageMm.width}mm`,
-              height: `${pageMm.height}mm`,
-              transform: `scale(${pageScale})`,
+              width: pageWidthPx * pageScale,
+              height: pageHeightPx * pageScale,
             }}
           >
-            <div className="doc-page-body" data-v-align={verticalAlign}>
-              {editorSurface}
+            <div
+              className="doc-page-shell origin-top-left shadow-md"
+              style={{
+                width: `${pageMm.width}mm`,
+                height: `${pageMm.height}mm`,
+                transform: `scale(${pageScale})`,
+              }}
+            >
+              <div className="doc-page-body" data-v-align={verticalAlign}>
+                {editorSurface}
+              </div>
             </div>
           </div>
         </div>
@@ -973,19 +986,7 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
 
         {mode === "visual" ? (
           pageLayout === "a4" ? (
-            <div className="flex gap-3">
-              {multiPage && pages.length > 0 ? (
-                <DocumentPageNav
-                  pages={pages}
-                  activeIndex={activePageIndex}
-                  orientacao={orientacao}
-                  verticalAlign={verticalAlign}
-                  editorCss={editorCss}
-                  onSelect={selectPage}
-                />
-              ) : null}
-              {a4PageCanvas}
-            </div>
+            a4PageCanvas
           ) : (
             editorSurface
           )
