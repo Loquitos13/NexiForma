@@ -22,7 +22,7 @@ type ModuloStoredMediaProps = {
   titulo?: string;
   mimeType?: string | null;
   fileName?: string | null;
-  variant?: "preview" | "full";
+  variant?: "preview" | "editor" | "full";
   showActions?: boolean;
   onVideoEnded?: () => void;
   onDocumentoVisualizado?: () => void;
@@ -69,6 +69,8 @@ export function ModuloStoredMedia({
       </a>
     ) : null;
 
+  const editorHeight = "min(52vh, 520px)";
+
   if (tipo === "VIDEO") {
     return (
       <div className="space-y-2">
@@ -77,8 +79,11 @@ export function ModuloStoredMedia({
           className={
             variant === "preview"
               ? "w-full rounded-lg max-h-40 bg-black"
-              : "w-full aspect-video"
+              : variant === "editor"
+                ? "w-full rounded-lg bg-black"
+                : "w-full aspect-video"
           }
+          style={variant === "editor" ? { maxHeight: editorHeight } : undefined}
           src={blobUrl}
           onEnded={onVideoEnded}
         >
@@ -99,8 +104,11 @@ export function ModuloStoredMedia({
           className={
             variant === "preview"
               ? "max-h-40 rounded-lg mx-auto"
-              : "max-w-full max-h-[70vh] rounded-lg"
+              : variant === "editor"
+                ? "max-w-full rounded-lg mx-auto"
+                : "max-w-full max-h-[70vh] rounded-lg"
           }
+          style={variant === "editor" ? { maxHeight: editorHeight } : undefined}
           onLoad={onDocumentoVisualizado}
         />
         {actions}
@@ -124,6 +132,9 @@ export function ModuloStoredMedia({
     );
   }
 
+  const docMinHeight =
+    variant === "preview" ? "12rem" : variant === "editor" ? editorHeight : "70vh";
+
   return (
     <div
       className={
@@ -131,7 +142,7 @@ export function ModuloStoredMedia({
           ? "rounded-lg overflow-hidden border border-slate-700/40 bg-white"
           : "rounded-2xl overflow-hidden border border-slate-700/30 bg-white"
       }
-      style={{ minHeight: variant === "preview" ? "12rem" : "70vh" }}
+      style={{ minHeight: docMinHeight }}
     >
       {variant === "full" && onDocumentoVisualizado ? (
         <PdfBlobViewer
@@ -143,7 +154,7 @@ export function ModuloStoredMedia({
         <iframe
           src={blobUrl}
           className="w-full"
-          style={{ height: variant === "preview" ? "12rem" : "70vh" }}
+          style={{ height: docMinHeight }}
           title={titulo ?? fileName ?? "Documento"}
           onLoad={onDocumentoVisualizado}
         />

@@ -66,6 +66,8 @@ export function ActionContentBuilder({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [drag, setDrag] = useState<{ fromIdx: number } | null>(null);
   const [dropIdx, setDropIdx] = useState<number | null>(null);
+  const [unidadeDrag, setUnidadeDrag] = useState<{ fromIdx: number } | null>(null);
+  const [unidadeDropIdx, setUnidadeDropIdx] = useState<number | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -97,6 +99,11 @@ export function ActionContentBuilder({
   const quizPond = selectedUnidadeId && selectedUnidadeId !== UNIDADE_FLAT_ID
     ? quizPonderacaoTotal(modulos, selectedUnidadeId)
     : 0;
+
+  const unidadesOrdenadas = useMemo(
+    () => [...unidades].sort((a, b) => a.ordem - b.ordem || a.id.localeCompare(b.id)),
+    [unidades],
+  );
 
   const loadAll = useCallback(async () => {
     if (!cursoId) {
@@ -277,6 +284,37 @@ export function ActionContentBuilder({
     scheduleSave(`c-${id}`, () => void persistConteudo(id, patch));
   }
 
+  async function reorderUnidades(reordered: UnidadeNode[]) {
+    const withOrdem = reordered.map((u, i) => ({ ...u, ordem: i }));
+    setUnidades(withOrdem);
+    for (let i = 0; i < withOrdem.length; i++) {
+      await bffFetch(`/api/v1/conteudos-lms/unidades/${withOrdem[i].id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ ordem: i }),
+      });
+    }
+    for (const u of withOrdem) {
+      if (!u.prerequisitoUnidadeId) continue;
+      const prereq = withOrdem.find((x) => x.id === u.prerequisitoUnidadeId);
+      if (!prereq || prereq.ordem >= u.ordem) {
+        void persistUnidade(u.id, { prerequisitoUnidadeId: null });
+      }
+    }
+  }
+
+  async function handleUnidadeDrop(idx: number) {
+    setUnidadeDropIdx(null);
+    if (!unidadeDrag || !canEdit) return;
+    const fromIdx = unidadeDrag.fromIdx;
+    setUnidadeDrag(null);
+    if (fromIdx === idx) return;
+    const reordered = [...unidadesOrdenadas];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(idx, 0, moved);
+    await reorderUnidades(reordered);
+  }
+
   async function reorderConteudos(reordered: ModuloNode[]) {
     const ids = new Set(reordered.map((x) => x.id));
     setModulos((prev) => {
@@ -379,6 +417,17 @@ export function ActionContentBuilder({
     if (e.dataTransfer.files?.length) void uploadFicheirosLocais(e.dataTransfer.files);
   }
 
+  function handleProgressaoChange(sequencial: boolean) {
+    onProgressaoChange?.(sequencial);
+    if (!sequencial) {
+      for (const u of unidades) {
+        if (u.prerequisitoUnidadeId) {
+          patchUnidade(u.id, { prerequisitoUnidadeId: null });
+        }
+      }
+    }
+  }
+
   const mockupModulos = useMemo(
     () =>
       [...modulos]
@@ -397,22 +446,30 @@ export function ActionContentBuilder({
       {error ? <Alert variant="error">{error}</Alert> : null}
       {msg ? <Alert variant="success">{msg}</Alert> : null}
 
-      <div className="flex h-[min(82vh,780px)] max-h-[780px] w-full flex-col overflow-hidden rounded-2xl border border-slate-700/40 bg-slate-950/40 lg:flex-row">
+      <div className="flex h-[min(90vh,920px)] max-h-[920px] w-full flex-col overflow-hidden rounded-2xl border border-slate-700/40 bg-slate-950/40 lg:flex-row">
         <LmsModulosSidebar
           cursoCargaHoras={cursoCargaHoras}
           progressaoSequencial={lmsProgressaoSequencial}
-          onProgressaoChange={(v) => onProgressaoChange?.(v)}
-          unidades={unidades}
+          onProgressaoChange={handleProgressaoChange}
+          unidades={unidadesOrdenadas}
           modulos={modulos}
           flatCount={flatModulos.length}
           selectedUnidadeId={selectedUnidadeId}
           canEdit={canEdit}
           busy={busy}
+          unidadeDropIdx={unidadeDropIdx}
           onSelectUnidade={(id) => {
             setSelectedUnidadeId(id);
             setExpandedConteudoId(null);
           }}
           onCreateUnidade={() => void criarUnidade()}
+          onUnidadeDragStart={(idx) => setUnidadeDrag({ fromIdx: idx })}
+          onUnidadeDragEnd={() => {
+            setUnidadeDrag(null);
+            setUnidadeDropIdx(null);
+          }}
+          onUnidadeDragOver={setUnidadeDropIdx}
+          onUnidadeDrop={(idx) => void handleUnidadeDrop(idx)}
         />
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -425,7 +482,8 @@ export function ActionContentBuilder({
             <>
               <LmsModuloHeader
                 unidade={selectedUnidade}
-                unidades={unidades}
+                unidades={unidadesOrdenadas}
+                progressaoSequencial={lmsProgressaoSequencial}
                 canEdit={canEdit}
                 busy={busy}
                 onUpdate={(patch) => patchUnidade(selectedUnidade.id, patch)}

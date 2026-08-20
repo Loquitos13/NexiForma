@@ -145,11 +145,28 @@ export function LmsConteudoList({
               >
                 <div className="flex items-stretch gap-1">
                   {canEdit && !expanded ? (
-                    <div className="flex shrink-0 cursor-grab items-center px-1.5 text-slate-600">
+                    <div
+                      className="flex shrink-0 cursor-grab items-center px-1.5 text-slate-600"
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
                       <GripVertical className="h-4 w-4" />
                     </div>
                   ) : null}
-                  <div className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onExpand(expanded ? null : m.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onExpand(expanded ? null : m.id);
+                      }
+                    }}
+                    className={`flex min-w-0 flex-1 items-center gap-3 px-3 py-3 text-left ${
+                      expanded ? "" : "cursor-pointer hover:bg-slate-800/30"
+                    }`}
+                  >
                     <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${c.bg} ${c.text}`}>
                       <t.Icon className="h-4 w-4" />
                     </span>
@@ -171,30 +188,29 @@ export function LmsConteudoList({
                     >
                       {m.publicado ? "Publicado" : "Rascunho"}
                     </span>
-                    {canEdit ? (
-                      <button
-                        type="button"
-                        onClick={() => onExpand(expanded ? null : m.id)}
-                        className="shrink-0 rounded-lg border border-slate-700/50 px-2.5 py-1 text-[11px] text-slate-300 hover:bg-slate-800/60"
-                      >
-                        {expanded ? "Fechar" : "Editar"}
-                      </button>
-                    ) : null}
-                    {canEdit && !expanded ? (
-                      <button
-                        type="button"
-                        onClick={() => onDelete(m.id)}
-                        className="shrink-0 p-1 text-red-400/70 hover:text-red-300"
-                        aria-label="Eliminar"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    ) : null}
+                    {expanded ? (
+                      <span className="shrink-0 text-[10px] text-slate-500">Fechar ▲</span>
+                    ) : (
+                      <span className="shrink-0 text-[10px] text-slate-600">Expandir ▼</span>
+                    )}
                   </div>
+                  {canEdit && !expanded ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(m.id);
+                      }}
+                      className="shrink-0 self-center p-2 text-red-400/70 hover:text-red-300"
+                      aria-label="Eliminar"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : null}
                 </div>
 
                 {expanded ? (
-                  <div className="border-t border-slate-700/30 p-4 space-y-3">
+                  <div className="border-t border-slate-700/30 p-5 space-y-4 min-h-[min(58vh,520px)]">
                     <div className="grid gap-3 sm:grid-cols-2">
                       <label className="block">
                         <span className="text-[10px] uppercase tracking-wide text-slate-500">Título</span>
@@ -251,8 +267,8 @@ export function LmsConteudoList({
                       <label className="block">
                         <span className="text-[10px] uppercase tracking-wide text-slate-500">Conteúdo</span>
                         <textarea
-                          rows={6}
-                          className={`${INPUT_CLASS} mt-1 resize-y min-h-[120px]`}
+                          rows={14}
+                          className={`${INPUT_CLASS} mt-1 resize-y min-h-[280px]`}
                           value={m.conteudoHtml ?? ""}
                           disabled={!canEdit}
                           placeholder="Ao completar este módulo o formando será capaz de..."
@@ -283,7 +299,7 @@ export function LmsConteudoList({
                     ) : null}
 
                     {(m.tipo === "VIDEO" || m.tipo === "PDF") && (
-                      <div className="rounded-lg border border-slate-700/40 bg-slate-900/50 p-3 space-y-2">
+                      <div className="rounded-lg border border-slate-700/40 bg-slate-900/50 p-4 space-y-3">
                         {isModuloStorageRef(m.urlOuRef) && m.urlOuRef ? (
                           <ModuloStoredMedia
                             moduloId={m.id}
@@ -291,7 +307,7 @@ export function LmsConteudoList({
                             tipo={m.tipo === "VIDEO" ? "VIDEO" : "PDF"}
                             mimeType={meta.mimeType}
                             fileName={meta.fileName}
-                            variant="preview"
+                            variant="editor"
                           />
                         ) : null}
                         {meta.fileName ? (
@@ -327,7 +343,7 @@ export function LmsConteudoList({
                     )}
 
                     {m.tipo === "QUIZ" ? (
-                      <div className="space-y-3">
+                      <div className="space-y-4">
                         <label className="block w-32">
                           <span className="text-[10px] uppercase tracking-wide text-slate-500">% nota</span>
                           <input
@@ -337,6 +353,7 @@ export function LmsConteudoList({
                             className={`${INPUT_CLASS} mt-1 tabular-nums`}
                             value={meta.ponderacaoNota ?? ""}
                             disabled={!canEdit}
+                            onClick={(e) => e.stopPropagation()}
                             onChange={(e) =>
                               onUpdate(m.id, {
                                 metadata: {

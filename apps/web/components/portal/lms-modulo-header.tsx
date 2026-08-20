@@ -12,13 +12,22 @@ import {
 type Props = {
   unidade: UnidadeNode;
   unidades: UnidadeNode[];
+  progressaoSequencial: boolean;
   canEdit: boolean;
   busy: boolean;
   onUpdate: (patch: Partial<UnidadeNode>) => void;
   onDelete: () => void;
 };
 
-export function LmsModuloHeader({ unidade, unidades, canEdit, busy, onUpdate, onDelete }: Props) {
+export function LmsModuloHeader({
+  unidade,
+  unidades,
+  progressaoSequencial,
+  canEdit,
+  busy,
+  onUpdate,
+  onDelete,
+}: Props) {
   const [renaming, setRenaming] = useState(false);
   const [draftTitulo, setDraftTitulo] = useState(unidade.titulo);
 
@@ -153,22 +162,24 @@ export function LmsModuloHeader({ unidade, unidades, canEdit, busy, onUpdate, on
           </div>
         </div>
 
-        <label className="block min-w-[140px]">
-          <span className="text-[10px] uppercase tracking-wide text-slate-500">Pré-requisito</span>
-          <select
-            disabled={!canEdit || busy}
-            className={`${INPUT_CLASS} mt-1 h-9`}
-            value={unidade.prerequisitoUnidadeId ?? ""}
-            onChange={(e) => onUpdate({ prerequisitoUnidadeId: e.target.value || null })}
-          >
-            <option value="">Nenhum</option>
-            {prereqOpts.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.titulo}
-              </option>
-            ))}
-          </select>
-        </label>
+        {progressaoSequencial ? (
+          <label className="block min-w-[140px]">
+            <span className="text-[10px] uppercase tracking-wide text-slate-500">Pré-requisito</span>
+            <select
+              disabled={!canEdit || busy}
+              className={`${INPUT_CLASS} mt-1 h-9`}
+              value={unidade.prerequisitoUnidadeId ?? ""}
+              onChange={(e) => onUpdate({ prerequisitoUnidadeId: e.target.value || null })}
+            >
+              <option value="">Nenhum</option>
+              {prereqOpts.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.titulo}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
 
       <div>

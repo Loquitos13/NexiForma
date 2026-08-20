@@ -121,6 +121,11 @@ export function globalPubStats(modulos: ModuloNode[]) {
   return { total: modulos.length, pub };
 }
 
+export function metodologiaLabel(m: MetodologiaModulo | null | undefined): string {
+  if (!m) return "Curso";
+  return METODOLOGIA_OPTS.find((o) => o.id === m)?.label ?? m;
+}
+
 export function quizPonderacaoTotal(modulos: ModuloNode[], unidadeId: string | null): number {
   return modulos
     .filter((m) => m.moduloUnidadeId === unidadeId && m.tipo === "QUIZ")
