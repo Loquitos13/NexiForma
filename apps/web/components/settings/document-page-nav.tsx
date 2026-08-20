@@ -37,7 +37,10 @@ function DocumentPageNavInner({
   const thumbHeight = pageHeightPx * THUMB_SCALE;
 
   return (
-    <div className={cn("grid shrink-0 grid-cols-1 gap-2 overflow-y-auto py-3 pl-3 pr-1", className)}>
+    <div
+      className={cn("grid shrink-0 grid-cols-1 gap-2 overflow-y-auto py-3 pl-3 pr-1", className)}
+      style={{ width: thumbWidth + 16 }}
+    >
       <style>{editorCss.replace(/\.doc-editor-root/g, ".doc-page-nav-root")}</style>
       <p className="text-[9px] font-medium uppercase tracking-wide text-slate-500">Páginas</p>
       {pages.map((pageHtml, index) => {
@@ -48,7 +51,7 @@ function DocumentPageNavInner({
             type="button"
             title={`Página ${index + 1}`}
             onClick={() => onSelect(index)}
-            className="flex flex-col items-center gap-1"
+            className="flex w-full flex-col items-start gap-1"
           >
             <div
               className={cn(
@@ -58,23 +61,20 @@ function DocumentPageNavInner({
               style={{ width: thumbWidth, height: thumbHeight }}
             >
               <div
-                className="origin-top-left"
-                style={{
-                  width: pageWidthPx,
-                  height: pageHeightPx,
-                  transform: `scale(${THUMB_SCALE})`,
-                }}
+                className="overflow-hidden"
+                style={{ width: thumbWidth, height: thumbHeight }}
               >
                 <div
-                  className="doc-page-shell"
+                  className="doc-page-shell origin-top-left"
                   style={{
                     width: `${pageMm.width}mm`,
                     height: `${pageMm.height}mm`,
+                    transform: `scale(${THUMB_SCALE})`,
                   }}
                 >
                   <div className="doc-page-body" data-v-align={verticalAlign}>
                     <div
-                      className="doc-content-layer pointer-events-none select-none"
+                      className="doc-content-layer rich-template-editor pointer-events-none select-none text-slate-900"
                       dangerouslySetInnerHTML={{
                         __html: pageHtml?.trim() ? pageHtml : "<p><br></p>",
                       }}
@@ -85,9 +85,10 @@ function DocumentPageNavInner({
             </div>
             <span
               className={cn(
-                "text-[11px] font-medium tabular-nums",
+                "w-full text-center text-[11px] font-medium tabular-nums",
                 selected ? "text-blue-300" : "text-slate-400",
               )}
+              style={{ maxWidth: thumbWidth }}
             >
               {index + 1}
             </span>
