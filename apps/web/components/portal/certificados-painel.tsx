@@ -553,11 +553,14 @@ export function CertificadosPainel({ acoes, acaoId, onAcaoChange }: Props) {
                           )}
                         </section>
 
+                        {f.elegivelCertificado || f.certificadoSigo?.temFicheiro ? (
                         <div className="flex flex-wrap gap-2 pt-1">
-                          <Button size="sm" onClick={() => void imprimir(f.matriculaId)}>
-                            <Download className="h-3 w-3" />
-                            Imprimir / PDF
-                          </Button>
+                          {f.elegivelCertificado ? (
+                            <Button size="sm" onClick={() => void imprimir(f.matriculaId)}>
+                              <Download className="h-3 w-3" />
+                              Imprimir / PDF
+                            </Button>
+                          ) : null}
                           {f.certificadoSigo?.temFicheiro ? (
                             <Button
                               size="sm"
@@ -568,6 +571,7 @@ export function CertificadosPainel({ acoes, acaoId, onAcaoChange }: Props) {
                             </Button>
                           ) : null}
                         </div>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>
