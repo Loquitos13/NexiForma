@@ -29,12 +29,19 @@ import {
   editorHtmlToPlainText,
   mmToCssPx,
   pageDimensionsMm,
+  parseDocumentPages,
   plainTextToEditorHtml,
   sanitizeDocumentEditorHtml,
+  serializeDocumentPages,
   type DocumentOrientacao,
   type DocumentVerticalAlign,
 } from "@nexiforma/shared";
 import { cn } from "@/lib/ui/cn";
+import { DocumentPageNav } from "@/components/settings/document-page-nav";
+import {
+  rebalanceDocumentPages,
+  selectionIsAtEditorEnd,
+} from "@/lib/ui/document-page-split.util";
 
 const FONT_FAMILIES = [
   { label: "Georgia (documento)", value: "Georgia, 'Times New Roman', serif" },
@@ -387,6 +394,13 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
     const [htmlSource, setHtmlSource] = useState(() => valueToEditorHtml(value, formato));
     const [format, setFormat] = useState<FormatState>(DEFAULT_FORMAT);
     const [pageScale, setPageScale] = useState(1);
+    const multiPage = pageLayout === "a4";
+    const [pages, setPages] = useState<string[]>(() =>
+      multiPage
+        ? parseDocumentPages(valueToEditorHtml(value, formato))
+        : [valueToEditorHtml(value, formato)],
+    );
+    const [activePageIndex, setActivePageIndex] = useState(0);
     const editorRef = useRef<HTMLDivElement>(null);
     const pageWrapRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -394,6 +408,11 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
     const textareaSelRef = useRef<{ start: number; end: number } | null>(null);
     const lastEmittedValueRef = useRef<string | null>(null);
     const hydratedRef = useRef(false);
+    const pagesRef = useRef(pages);
+    const activePageRef = useRef(activePageIndex);
+
+    pagesRef.current = pages;
+    activePageRef.current = activePageIndex;
 
     const pageMm = pageDimensionsMm(orientacao);
     const editorCss = documentPageEditorCss(orientacao);
@@ -416,12 +435,90 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
       [formato, onChange],
     );
 
+    const syncPagesAndEmit = useCallback(
+      (nextPages: string[], nextActive?: number) => {
+        setPages(nextPages);
+        pagesRef.current = nextPages;
+        if (nextActive !== undefined) {
+          setActivePageIndex(nextActive);
+          activePageRef.current = nextActive;
+        }
+        emitChange(serializeDocumentPages(nextPages));
+      },
+      [emitChange],
+    );
+
     const emitFromVisualEditor = useCallback(() => {
-      if (editorRef.current) {
-        emitChange(editorRef.current.innerHTML);
+      const el = editorRef.current;
+      if (!el) return;
+
+      if (!multiPage) {
+        emitChange(el.innerHTML);
         refreshFormatState();
+        return;
       }
-    }, [emitChange, refreshFormatState]);
+
+      const atEnd = selectionIsAtEditorEnd(el);
+      const beforeHtml = el.innerHTML;
+      const previousActive = activePageRef.current;
+      const updated = [...pagesRef.current];
+      updated[previousActive] = beforeHtml;
+      const balanced = rebalanceDocumentPages(updated, previousActive, {
+        orientacao,
+        editorCss,
+      });
+
+      let nextActive = previousActive;
+      const pageWasSplit =
+        balanced.length > updated.length ||
+        (balanced[previousActive] ?? "") !== beforeHtml;
+      if (atEnd && pageWasSplit && previousActive + 1 < balanced.length) {
+        nextActive = previousActive + 1;
+      }
+
+      syncPagesAndEmit(balanced, nextActive);
+
+      const displayHtml = balanced[nextActive] ?? "<p><br></p>";
+      if (nextActive !== previousActive || el.innerHTML !== displayHtml) {
+        requestAnimationFrame(() => {
+          const live = editorRef.current;
+          if (!live) return;
+          live.innerHTML = displayHtml;
+          if (nextActive !== previousActive) {
+            live.focus();
+            const range = document.createRange();
+            range.selectNodeContents(live);
+            range.collapse(true);
+            restoreSelection(range);
+          }
+          refreshFormatState();
+        });
+        return;
+      }
+
+      refreshFormatState();
+    }, [editorCss, emitChange, multiPage, orientacao, refreshFormatState, syncPagesAndEmit]);
+
+    const selectPage = useCallback(
+      (index: number) => {
+        if (!multiPage || index === activePageRef.current) return;
+        const el = editorRef.current;
+        const updated = [...pagesRef.current];
+        if (el) updated[activePageRef.current] = el.innerHTML;
+        pagesRef.current = updated;
+        setPages(updated);
+        setActivePageIndex(index);
+        activePageRef.current = index;
+        requestAnimationFrame(() => {
+          const live = editorRef.current;
+          if (!live) return;
+          live.innerHTML = updated[index] ?? "<p><br></p>";
+          live.focus();
+          refreshFormatState();
+        });
+      },
+      [multiPage, refreshFormatState],
+    );
 
     const captureSelection = useCallback(() => {
       savedRangeRef.current = saveSelection(editorRef.current);
@@ -442,11 +539,11 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
         const range = resolveRangeForFormatting(el, savedRangeRef.current);
         setSelectionRange(range);
         document.execCommand(cmd, false, val);
-        emitChange(el.innerHTML);
+        emitFromVisualEditor();
         savedRangeRef.current = saveSelection(el);
         refreshFormatState();
       },
-      [emitChange, refreshFormatState],
+      [emitFromVisualEditor, refreshFormatState],
     );
 
     const applyFont = useCallback(
@@ -454,11 +551,11 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
         const el = editorRef.current;
         if (!el) return;
         applyInlineStyle(el, { "font-family": fontFamily }, savedRangeRef.current);
-        emitChange(el.innerHTML);
+        emitFromVisualEditor();
         savedRangeRef.current = saveSelection(el);
         refreshFormatState();
       },
-      [emitChange, refreshFormatState],
+      [emitFromVisualEditor, refreshFormatState],
     );
 
     const applySize = useCallback(
@@ -466,11 +563,11 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
         const el = editorRef.current;
         if (!el) return;
         applyInlineStyle(el, { "font-size": fontSize }, savedRangeRef.current);
-        emitChange(el.innerHTML);
+        emitFromVisualEditor();
         savedRangeRef.current = saveSelection(el);
         refreshFormatState();
       },
-      [emitChange, refreshFormatState],
+      [emitFromVisualEditor, refreshFormatState],
     );
 
     const applyBlock = useCallback(
@@ -491,11 +588,11 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
             document.execCommand("formatBlock", false, `<${tag}>`);
           }
         }
-        emitChange(el.innerHTML);
+        emitFromVisualEditor();
         savedRangeRef.current = saveSelection(el);
         refreshFormatState();
       },
-      [emitChange, refreshFormatState],
+      [emitFromVisualEditor, refreshFormatState],
     );
 
     const insertInTextarea = useCallback(
@@ -523,10 +620,18 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
       const raw =
         mode === "html"
           ? (textareaRef.current?.value ?? htmlSource)
-          : (editorRef.current?.innerHTML ?? htmlSource);
+          : multiPage
+            ? (() => {
+                const updated = [...pagesRef.current];
+                if (editorRef.current) {
+                  updated[activePageRef.current] = editorRef.current.innerHTML;
+                }
+                return serializeDocumentPages(updated);
+              })()
+            : (editorRef.current?.innerHTML ?? htmlSource);
       const clean = sanitizeDocumentEditorHtml(raw);
       return formato === "texto" ? editorHtmlToPlainText(clean) : clean;
-    }, [formato, htmlSource, mode]);
+    }, [formato, htmlSource, mode, multiPage]);
 
     useImperativeHandle(
       ref,
@@ -552,17 +657,27 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
 
     useLayoutEffect(() => {
       hydratedRef.current = false;
+      setActivePageIndex(0);
+      activePageRef.current = 0;
     }, [formato, orientacao]);
 
     useLayoutEffect(() => {
       if (mode !== "visual") return;
       const el = editorRef.current;
       if (!el || hydratedRef.current) return;
-      el.innerHTML = valueToEditorHtml(value, formato);
+      const html = valueToEditorHtml(value, formato);
+      if (multiPage) {
+        const parsed = parseDocumentPages(html);
+        setPages(parsed);
+        pagesRef.current = parsed;
+        el.innerHTML = parsed[0] ?? "<p><br></p>";
+      } else {
+        el.innerHTML = html;
+      }
       lastEmittedValueRef.current = value;
       hydratedRef.current = true;
       refreshFormatState();
-    }, [formato, mode, orientacao, refreshFormatState, value]);
+    }, [formato, mode, multiPage, orientacao, refreshFormatState, value]);
 
     useEffect(() => {
       if (mode !== "visual") return;
@@ -573,10 +688,20 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
       lastEmittedValueRef.current = value;
       const html = valueToEditorHtml(value, formato);
       setHtmlSource(html);
-      el.innerHTML = html;
+      if (multiPage) {
+        const parsed = parseDocumentPages(html);
+        setPages(parsed);
+        pagesRef.current = parsed;
+        const idx = Math.min(activePageRef.current, Math.max(parsed.length - 1, 0));
+        setActivePageIndex(idx);
+        activePageRef.current = idx;
+        el.innerHTML = parsed[idx] ?? "<p><br></p>";
+      } else {
+        el.innerHTML = html;
+      }
       hydratedRef.current = true;
       refreshFormatState();
-    }, [value, formato, mode, refreshFormatState]);
+    }, [value, formato, mode, multiPage, refreshFormatState]);
 
     useLayoutEffect(() => {
       if (pageLayout !== "a4") return;
@@ -613,7 +738,14 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
     function switchMode(next: EditorMode) {
       if (next === mode) return;
       if (next === "html") {
-        const html = editorRef.current?.innerHTML ?? htmlSource;
+        let html = editorRef.current?.innerHTML ?? htmlSource;
+        if (multiPage && editorRef.current) {
+          const updated = [...pagesRef.current];
+          updated[activePageRef.current] = editorRef.current.innerHTML;
+          setPages(updated);
+          pagesRef.current = updated;
+          html = serializeDocumentPages(updated);
+        }
         setHtmlSource(html);
         lastEmittedValueRef.current = formato === "texto" ? editorHtmlToPlainText(html) : html;
         setMode("html");
@@ -623,13 +755,21 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
       setHtmlSource(html);
       setMode("visual");
       requestAnimationFrame(() => {
-        if (editorRef.current) {
+        if (!editorRef.current) return;
+        if (multiPage) {
+          const parsed = parseDocumentPages(html);
+          setPages(parsed);
+          pagesRef.current = parsed;
+          setActivePageIndex(0);
+          activePageRef.current = 0;
+          editorRef.current.innerHTML = parsed[0] ?? "<p><br></p>";
+        } else {
           editorRef.current.innerHTML = html;
-          lastEmittedValueRef.current = value;
-          hydratedRef.current = true;
-          emitChange(html);
-          refreshFormatState();
         }
+        lastEmittedValueRef.current = value;
+        hydratedRef.current = true;
+        emitChange(multiPage ? serializeDocumentPages(parseDocumentPages(html)) : html);
+        refreshFormatState();
       });
     }
 
@@ -656,6 +796,36 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
         onMouseUp={captureSelection}
         onInput={emitFromVisualEditor}
       />
+    );
+
+    const a4PageCanvas = (
+      <div
+        ref={pageWrapRef}
+        className="doc-editor-root min-w-0 flex-1 flex justify-center overflow-x-hidden overflow-y-auto rounded-lg border border-slate-700/40 bg-slate-800/30"
+        style={{ maxHeight: "min(85vh, 920px)" }}
+      >
+        <style>{editorCss}</style>
+        <div
+          className="shrink-0 overflow-hidden"
+          style={{
+            width: pageWidthPx * pageScale,
+            height: pageHeightPx * pageScale,
+          }}
+        >
+          <div
+            className="doc-page-shell origin-top-left shadow-md"
+            style={{
+              width: `${pageMm.width}mm`,
+              height: `${pageMm.height}mm`,
+              transform: `scale(${pageScale})`,
+            }}
+          >
+            <div className="doc-page-body" data-v-align={verticalAlign}>
+              {editorSurface}
+            </div>
+          </div>
+        </div>
+      </div>
     );
 
     return (
@@ -803,32 +973,18 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
 
         {mode === "visual" ? (
           pageLayout === "a4" ? (
-            <div
-              ref={pageWrapRef}
-              className="doc-editor-root flex justify-center overflow-x-hidden overflow-y-auto rounded-lg border border-slate-700/40 bg-slate-800/30"
-              style={{ maxHeight: "min(85vh, 920px)" }}
-            >
-              <style>{editorCss}</style>
-              <div
-                className="shrink-0 overflow-hidden"
-                style={{
-                  width: pageWidthPx * pageScale,
-                  height: pageHeightPx * pageScale,
-                }}
-              >
-                <div
-                  className="doc-page-shell origin-top-left shadow-md"
-                  style={{
-                    width: `${pageMm.width}mm`,
-                    height: `${pageMm.height}mm`,
-                    transform: `scale(${pageScale})`,
-                  }}
-                >
-                  <div className="doc-page-body" data-v-align={verticalAlign}>
-                    {editorSurface}
-                  </div>
-                </div>
-              </div>
+            <div className="flex gap-3">
+              {multiPage && pages.length > 0 ? (
+                <DocumentPageNav
+                  pages={pages}
+                  activeIndex={activePageIndex}
+                  orientacao={orientacao}
+                  verticalAlign={verticalAlign}
+                  editorCss={editorCss}
+                  onSelect={selectPage}
+                />
+              ) : null}
+              {a4PageCanvas}
             </div>
           ) : (
             editorSurface

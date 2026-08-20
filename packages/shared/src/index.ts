@@ -279,6 +279,14 @@ export {
 } from "./templates/document-page.util";
 
 export {
+  DOCUMENT_PAGE_BREAK,
+  buildDocumentPageShellsHtml,
+  isEmptyDocumentPage,
+  parseDocumentPages,
+  serializeDocumentPages,
+} from "./templates/document-pages.util";
+
+export {
   DOCUMENT_HTML_TOKEN_KEYS,
   extractTemplateTokens,
   mergeTemplateContent,

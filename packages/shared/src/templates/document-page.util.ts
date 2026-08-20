@@ -67,7 +67,10 @@ function documentPageLayoutRules(
     ${p}.doc-page-body[data-v-align="top"] { justify-content: flex-start; ${bodyTopMin} }
     ${p}.doc-page-body[data-v-align="middle"] { justify-content: center; ${bodyMiddleMin} }
     ${p}.doc-page-body[data-v-align="bottom"] { justify-content: flex-end; ${bodyMiddleMin} }
-    ${p}.doc-content-layer { width: 100%; }
+    ${p}.doc-content-layer {
+      width: 100%;
+      ${mode === "editor" ? `overflow: hidden; max-height: ${innerH}mm; flex: 1; min-height: 0;` : ""}
+    }
     ${p}.doc-content-layer h1 { font-size: 1.6em; font-weight: 700; margin: 0.6em 0 0.3em; }
     ${p}.doc-content-layer h2 { font-size: 1.35em; font-weight: 700; margin: 0.5em 0 0.25em; }
     ${p}.doc-content-layer h3 { font-size: 1.15em; font-weight: 600; margin: 0.45em 0 0.2em; }
@@ -106,6 +109,14 @@ export function documentPageCss(
       print-color-adjust: exact;
     }
     ${documentPageLayoutRules(orientacao, "", "print")}
+    .doc-page-shell {
+      page-break-after: always;
+      break-after: page;
+    }
+    .doc-page-shell:last-child {
+      page-break-after: auto;
+      break-after: auto;
+    }
     ${extraCss}
   `.trim();
 }
@@ -131,6 +142,8 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+import { buildDocumentPageShellsHtml } from "./document-pages.util";
+
 /** HTML completo para iframe de pré-visualização (client-side). */
 export function buildDocumentPreviewHtml(
   bodyHtml: string,
@@ -145,6 +158,7 @@ export function buildDocumentPreviewHtml(
   const verticalAlign = opts?.verticalAlign ?? "top";
   const title = escapeHtml(opts?.title ?? "Pré-visualização");
   const css = documentPageCss(orientacao, opts?.extraCss ?? "");
+  const shells = buildDocumentPageShellsHtml(bodyHtml ?? "", verticalAlign);
 
   return `<!DOCTYPE html>
 <html lang="pt">
@@ -154,11 +168,7 @@ export function buildDocumentPreviewHtml(
   <style>${css}</style>
 </head>
 <body>
-  <div class="doc-page-shell">
-    <div class="doc-page-body" data-v-align="${verticalAlign}">
-      <div class="doc-content-layer">${bodyHtml?.trim() || "<p></p>"}</div>
-    </div>
-  </div>
+${shells}
 </body>
 </html>`;
 }

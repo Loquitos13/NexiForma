@@ -2,6 +2,7 @@ import {
   getModuloTemplates,
   isCustomTemplateId,
   TEMPLATE_TYPES,
+  buildDocumentPageShellsHtml,
   documentPageCss,
   type DocumentOrientacao,
   type DocumentVerticalAlign,
@@ -91,6 +92,7 @@ function wrapTenantDocumentHtml(
   const orientacao = opts?.orientacao ?? "portrait";
   const verticalAlign = opts?.verticalAlign ?? "top";
   const pageCss = documentPageCss(orientacao, brandingCss);
+  const shells = buildDocumentPageShellsHtml(bodyHtml, verticalAlign);
   return `<!DOCTYPE html>
 <html lang="pt">
 <head>
@@ -99,13 +101,7 @@ function wrapTenantDocumentHtml(
   <style>${pageCss}</style>
 </head>
 <body>
-  <div class="doc-page-shell">
-    <div class="doc-page-body" data-v-align="${verticalAlign}">
-      <div class="doc-content-layer">
-${bodyHtml}
-      </div>
-    </div>
-  </div>
+${shells}
 </body>
 </html>`;
 }

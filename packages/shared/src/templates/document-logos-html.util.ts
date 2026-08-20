@@ -68,10 +68,20 @@ function injectLogoLayers(html: string, back: string, front: string): string {
   const frontLayer = front ? `<div class="doc-page-canvas-front">${front}</div>` : "";
 
   if (/class="doc-page-shell"/.test(out)) {
-    out = out.replace(/(<div class="doc-page-shell"[^>]*>)/i, `$1${backLayer}`);
-    if (frontLayer) {
-      out = injectFrontBeforeBodyClose(out, frontLayer);
-    }
+    const shellParts = out.split(/(?=<div class="doc-page-shell")/i);
+    out = shellParts
+      .map((part) => {
+        if (!/class="doc-page-shell"/.test(part)) return part;
+        let page = part.replace(/(<div class="doc-page-shell"[^>]*>)/i, `$1${backLayer}`);
+        if (frontLayer) {
+          page = page.replace(
+            /(<div class="doc-content-layer">[\s\S]*?<\/div>)(\s*<\/div>)/i,
+            `$1${frontLayer}$2`,
+          );
+        }
+        return page;
+      })
+      .join("");
     return out;
   }
 
