@@ -10,6 +10,8 @@ import {
 import { cn } from "@/lib/ui/cn";
 
 const THUMB_SCALE = 0.21;
+const NAV_PAD_X = 12;
+const SCROLLBAR_RESERVE = 16;
 
 type Props = {
   pages: string[];
@@ -35,11 +37,19 @@ function DocumentPageNavInner({
   const pageHeightPx = mmToCssPx(pageMm.height);
   const thumbWidth = pageWidthPx * THUMB_SCALE;
   const thumbHeight = pageHeightPx * THUMB_SCALE;
+  const navWidth = Math.ceil(thumbWidth) + NAV_PAD_X + SCROLLBAR_RESERVE;
 
   return (
     <div
-      className={cn("grid shrink-0 grid-cols-1 gap-2 overflow-y-auto py-3 pl-3", className)}
-      style={{ width: thumbWidth + 16 }}
+      className={cn(
+        "grid max-h-full min-h-0 shrink-0 grid-cols-1 gap-2 self-stretch overflow-x-hidden overflow-y-auto py-3 pl-3",
+        className,
+      )}
+      style={{
+        width: navWidth,
+        minWidth: navWidth,
+        maxWidth: navWidth,
+      }}
     >
       <style>{editorCss.replace(/\.doc-editor-root/g, ".doc-page-nav-root")}</style>
       <p className="text-[9px] font-medium uppercase tracking-wide text-slate-500">Páginas</p>
@@ -51,30 +61,34 @@ function DocumentPageNavInner({
             type="button"
             title={`Página ${index + 1}`}
             onClick={() => onSelect(index)}
-            className="flex w-full flex-col items-start gap-1"
+            className="flex flex-col items-start gap-1"
+            style={{ width: thumbWidth }}
           >
             <div
               className={cn(
-                "doc-page-nav-root overflow-hidden rounded-sm bg-white shadow-sm ring-2 transition-shadow",
+                "doc-page-nav-root relative shrink-0 overflow-hidden rounded-sm bg-white shadow-sm ring-2 ring-inset transition-shadow",
                 selected ? "ring-blue-500" : "ring-transparent hover:ring-slate-600",
               )}
               style={{ width: thumbWidth, height: thumbHeight }}
             >
               <div
-                className="overflow-hidden"
-                style={{ width: thumbWidth, height: thumbHeight }}
+                className="pointer-events-none absolute left-0 top-0 origin-top-left"
+                style={{
+                  width: `${pageMm.width}mm`,
+                  height: `${pageMm.height}mm`,
+                  transform: `scale(${THUMB_SCALE})`,
+                }}
               >
                 <div
-                  className="doc-page-shell origin-top-left"
+                  className="doc-page-shell"
                   style={{
                     width: `${pageMm.width}mm`,
                     height: `${pageMm.height}mm`,
-                    transform: `scale(${THUMB_SCALE})`,
                   }}
                 >
                   <div className="doc-page-body" data-v-align={verticalAlign}>
                     <div
-                      className="doc-content-layer rich-template-editor pointer-events-none select-none text-slate-900"
+                      className="doc-content-layer rich-template-editor select-none text-slate-900"
                       dangerouslySetInnerHTML={{
                         __html: pageHtml?.trim() ? pageHtml : "<p><br></p>",
                       }}
@@ -85,10 +99,9 @@ function DocumentPageNavInner({
             </div>
             <span
               className={cn(
-                "w-full text-center text-[11px] font-medium tabular-nums",
+                "block w-full text-center text-[11px] font-medium tabular-nums",
                 selected ? "text-blue-300" : "text-slate-400",
               )}
-              style={{ maxWidth: thumbWidth }}
             >
               {index + 1}
             </span>

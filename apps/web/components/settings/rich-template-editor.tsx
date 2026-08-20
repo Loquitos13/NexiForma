@@ -802,7 +802,7 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
     const a4PageCanvas = (
       <div
         ref={pageWrapRef}
-        className="doc-editor-root flex gap-5 overflow-x-hidden overflow-y-auto rounded-lg border border-slate-700/40 bg-slate-800/30"
+        className="doc-editor-root flex gap-5 overflow-hidden rounded-lg border border-slate-700/40 bg-slate-800/30"
         style={{ maxHeight: "min(85vh, 920px)" }}
       >
         <style>{editorCss}</style>
@@ -816,7 +816,7 @@ export const RichTemplateEditor = forwardRef<RichTemplateEditorHandle, Props>(
             onSelect={selectPage}
           />
         ) : null}
-        <div ref={pageCanvasRef} className="flex min-w-0 flex-1 justify-center overflow-x-hidden overflow-y-auto py-3 pr-3">
+        <div ref={pageCanvasRef} className="flex min-h-0 min-w-0 flex-1 justify-center overflow-x-hidden overflow-y-auto py-3 pr-3">
           <div
             className="shrink-0 overflow-hidden"
             style={{
