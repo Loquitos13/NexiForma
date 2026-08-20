@@ -9,7 +9,7 @@ import {
 } from "@nexiforma/shared";
 import { cn } from "@/lib/ui/cn";
 
-const THUMB_SCALE = 0.16;
+const THUMB_SCALE = 0.21;
 
 type Props = {
   pages: string[];
