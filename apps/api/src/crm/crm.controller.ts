@@ -291,6 +291,12 @@ export class CrmController {
     return this.reuniaoTeams.terminar(user, id, dto);
   }
 
+  @Post("interaccoes/:id/teams/transcricao")
+  @Roles("tenant_manager", "comercial")
+  importarTranscricaoTeams(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+    return this.reuniaoTeams.importarTranscricao(user, id);
+  }
+
   // ── Inbox sugestões IA (human-in-the-loop) ──
 
   @Get("sugestoes-ia")

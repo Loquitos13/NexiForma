@@ -87,6 +87,12 @@ export {
 } from "./sala-online";
 
 export {
+  parseVttToPlainText,
+  TEAMS_TRANSCRICAO_ESTADOS,
+  type TeamsTranscricaoEstado,
+} from "./teams/transcript-vtt.util";
+
+export {
   isModuloStorageRef,
   moduloConteudoMediaUrl,
   resolveModuloConteudoUrl,

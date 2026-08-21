@@ -612,6 +612,26 @@ export class IntegracoesService {
     return { meetingId: meeting.id, joinUrl: meeting.joinUrl };
   }
 
+  /** Token Graph + object id do organizador (transcrições, assets). */
+  async getTeamsGraphAccess(
+    tenantId: string,
+  ): Promise<{ token: string; organizerObjectId: string }> {
+    const readiness = await this.resolveOAuthReadiness("TEAMS", tenantId);
+    if (!readiness.ready) {
+      throw new ServiceUnavailableException(
+        `Integração Teams não configurada - ${readiness.missing.join(", ")}.`,
+      );
+    }
+    const { config } = await this.ensureOAuthMode(tenantId, "TEAMS");
+    const { values, missing } = this.resolveOAuthCredentials("TEAMS", config);
+    if (missing.length) {
+      throw new BadRequestException(`Credenciais Teams em falta: ${missing.join(", ")}`);
+    }
+    const token = await this.fetchMsToken(values.tenantId, values.clientId, values.clientSecret);
+    const organizer = await this.resolveMsUser(token, values.organizerId);
+    return { token, organizerObjectId: organizer.id };
+  }
+
   async criarReuniao(
     user: RequestUser,
     sessaoId: string,
@@ -1003,6 +1023,7 @@ export class IntegracoesService {
           subject: opts?.subject ?? "Sessão NexiForma",
           startDateTime: start.toISOString(),
           endDateTime: end.toISOString(),
+          allowTranscription: true,
         }),
       },
     );

@@ -22,6 +22,7 @@ import { EmailTemplates } from "../notificacoes/templates/email.templates";
 import { AssiduidadeService } from "../assiduidade/assiduidade.service";
 import { LmsService } from "../lms/lms.service";
 import { IntegracoesService } from "../integracoes/integracoes.service";
+import { TeamsTranscriptService } from "../integracoes/teams-transcript.service";
 import { isModalidadeOnline, resolveSalaOnline } from "../lms/sessao-sala.util";
 import type { CreateSessaoFormacaoDto } from "./dto/create-sessao-formacao.dto";
 import type { UpdateSessaoFormacaoDto } from "./dto/update-sessao-formacao.dto";
@@ -98,6 +99,8 @@ export class SessoesFormacaoService {
     private readonly calendarioNotificacoes: CalendarioNotificacoesService,
     @Inject(forwardRef(() => IntegracoesService))
     private readonly integracoes: IntegracoesService,
+    @Inject(forwardRef(() => TeamsTranscriptService))
+    private readonly teamsTranscript: TeamsTranscriptService,
   ) {}
 
   private sessaoSemSala(sessao: {
@@ -911,6 +914,17 @@ export class SessoesFormacaoService {
             this.logger.error(
               `Falha ao notificar pendências após terminar sessão ${id}`,
               err instanceof Error ? err.stack : String(err),
+            );
+          });
+      }
+
+      if (sessao.teamsMeetingId) {
+        void this.teamsTranscript
+          .marcarPendenteSessao(id, tenantId)
+          .then(() => this.teamsTranscript.importarSessao(id, tenantId))
+          .catch((err) => {
+            this.logger.warn(
+              `Transcrição Teams sessão ${id}: ${err instanceof Error ? err.message : String(err)}`,
             );
           });
       }

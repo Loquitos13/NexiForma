@@ -29,6 +29,8 @@ export type CalendarioEventoDto = {
   reuniaoIniciadaEm?: string | null;
   reuniaoTerminadaEm?: string | null;
   reuniaoDuracaoSegundos?: number | null;
+  teamsTranscricao?: string | null;
+  teamsTranscricaoEstado?: string | null;
   /** Sessão de formação – contador formador / entrada formando */
   iniciadaEm?: string | null;
   terminadaEm?: string | null;
@@ -171,6 +173,8 @@ export class CalendarioService {
           reuniaoIniciadaEm: r.reuniaoIniciadaEm?.toISOString() ?? null,
           reuniaoTerminadaEm: r.reuniaoTerminadaEm?.toISOString() ?? null,
           reuniaoDuracaoSegundos: r.reuniaoDuracaoSegundos,
+          teamsTranscricao: r.teamsTranscricao,
+          teamsTranscricaoEstado: r.teamsTranscricaoEstado,
         });
       }
     }

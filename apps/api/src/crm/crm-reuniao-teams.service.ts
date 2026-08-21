@@ -12,6 +12,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { CrmInteraccoesService } from "./crm-interaccoes.service";
 import type { TerminarReuniaoCrmDto } from "./dto/terminar-reuniao.dto";
 import { mapInteraccaoRow, type InteraccaoComercialResposta } from "./crm-ia.types";
+import { TeamsTranscriptService } from "../integracoes/teams-transcript.service";
 
 function formatDuracao(segundos: number): string {
   const m = Math.floor(segundos / 60);
@@ -26,6 +27,7 @@ export class CrmReuniaoTeamsService {
     private readonly integracoes: IntegracoesService,
     private readonly interaccoes: CrmInteraccoesService,
     private readonly calendarioNotificacoes: CalendarioNotificacoesService,
+    private readonly teamsTranscript: TeamsTranscriptService,
   ) {}
 
   async criarSala(user: RequestUser, interaccaoId: string): Promise<InteraccaoComercialResposta> {
@@ -71,6 +73,26 @@ export class CrmReuniaoTeamsService {
       include: this.detailInclude(),
     });
     return mapInteraccaoRow(updated as unknown as Record<string, unknown>);
+  }
+
+  async importarTranscricao(
+    user: RequestUser,
+    interaccaoId: string,
+  ): Promise<{ estado: string; teamsTranscricao?: string | null }> {
+    const row = await this.getReuniao(user, interaccaoId);
+    if (!row.teamsMeetingId) {
+      throw new BadRequestException("Reunião sem sala Teams.");
+    }
+    const tenantId = requireTenantId(user);
+    const estado = await this.teamsTranscript.importarCrm(interaccaoId, tenantId);
+    const fresh = await this.prisma.interaccaoComercial.findFirst({
+      where: { id: interaccaoId, tenantId },
+      select: { teamsTranscricao: true, teamsTranscricaoEstado: true },
+    });
+    return {
+      estado: fresh?.teamsTranscricaoEstado ?? estado,
+      teamsTranscricao: fresh?.teamsTranscricao ?? null,
+    };
   }
 
   async terminar(
@@ -123,6 +145,12 @@ export class CrmReuniaoTeamsService {
         leadComercialId: updated.leadComercialId ?? undefined,
         reuniaoOrigemId: interaccaoId,
       });
+    }
+
+    if (row.teamsMeetingId && dto.importarTranscricao !== false) {
+      const tenantId = requireTenantId(user);
+      await this.teamsTranscript.marcarPendenteCrm(interaccaoId, tenantId);
+      void this.teamsTranscript.importarCrm(interaccaoId, tenantId).catch(() => undefined);
     }
 
     return {

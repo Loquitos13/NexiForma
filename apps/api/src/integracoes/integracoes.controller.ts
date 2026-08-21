@@ -6,12 +6,17 @@ import { Roles } from "../auth/decorators/roles.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import type { RequestUser } from "../auth/types/access-token-payload";
 import { IntegracoesService } from "./integracoes.service";
+import { TeamsTranscriptService } from "./teams-transcript.service";
 import { UpsertIntegracaoDto } from "./dto/integracoes.dto";
+import { requireTenantId } from "../common/tenant-scope";
 
 @Controller("integracoes")
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class IntegracoesController {
-  constructor(private readonly integracoes: IntegracoesService) {}
+  constructor(
+    private readonly integracoes: IntegracoesService,
+    private readonly teamsTranscript: TeamsTranscriptService,
+  ) {}
 
   /** Estado Teams/Zoom do tenant - qualquer utilizador autenticado (sem segredos). */
   @Get("disponibilidade")
@@ -42,6 +47,17 @@ export class IntegracoesController {
       provider = "TEAMS";
     }
     return this.integracoes.criarReuniao(user, sessaoId, provider);
+  }
+
+  @Post("sessoes/:sessaoId/teams/transcricao")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
+  async importarTranscricaoSessao(
+    @CurrentUser() user: RequestUser,
+    @Param("sessaoId", ParseUUIDPipe) sessaoId: string,
+  ) {
+    const tenantId = requireTenantId(user);
+    const estado = await this.teamsTranscript.importarSessao(sessaoId, tenantId);
+    return { estado };
   }
 
   @Get("oauth/status")

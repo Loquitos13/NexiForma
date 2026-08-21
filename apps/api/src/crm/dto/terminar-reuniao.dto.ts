@@ -11,6 +11,10 @@ export class TerminarReuniaoCrmDto {
   registarNota?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  importarTranscricao?: boolean;
+
+  @IsOptional()
   @IsString()
   @MaxLength(8000)
   contexto?: string;

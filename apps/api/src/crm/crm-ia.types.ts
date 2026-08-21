@@ -33,6 +33,8 @@ export type InteraccaoComercialResposta = {
   reuniaoIniciadaEm?: Date | null;
   reuniaoTerminadaEm?: Date | null;
   reuniaoDuracaoSegundos?: number | null;
+  teamsTranscricao?: string | null;
+  teamsTranscricaoEstado?: string | null;
   entidadeCliente?: { id: string; nome: string; nif: string } | null;
   leadComercial?: { id: string; codigo: string; empresaNome: string } | null;
   criadoPor?: { id: string; displayName: string; email: string; contaEliminada?: boolean };
@@ -105,6 +107,8 @@ export function mapInteraccaoRow(row: Record<string, unknown>): InteraccaoComerc
     reuniaoIniciadaEm: (row.reuniaoIniciadaEm as Date | null) ?? null,
     reuniaoTerminadaEm: (row.reuniaoTerminadaEm as Date | null) ?? null,
     reuniaoDuracaoSegundos: (row.reuniaoDuracaoSegundos as number | null) ?? null,
+    teamsTranscricao: (row.teamsTranscricao as string | null) ?? null,
+    teamsTranscricaoEstado: (row.teamsTranscricaoEstado as string | null) ?? null,
     entidadeCliente: (row.entidadeCliente as InteraccaoComercialResposta["entidadeCliente"]) ?? null,
     leadComercial: (row.leadComercial as InteraccaoComercialResposta["leadComercial"]) ?? null,
     criadoPor: displayName

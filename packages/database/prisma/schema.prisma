@@ -949,6 +949,8 @@ model SessaoFormacao {
   presencaQrToken String?          @unique @map("presenca_qr_token")
   /// Validade do token QR actual (após isto a API gera um novo).
   presencaQrExpiresAt DateTime?    @map("presenca_qr_expires_at")
+  teamsTranscricao       String?   @map("teams_transcricao") @db.Text
+  teamsTranscricaoEstado String?   @map("teams_transcricao_estado") @db.VarChar(16)
   createdAt       DateTime         @default(now()) @map("created_at")
 
   tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1509,6 +1511,8 @@ model InteraccaoComercial {
   reuniaoTerminadaEm DateTime?                     @map("reuniao_terminada_em")
   reuniaoDuracaoSegundos Int?                      @map("reuniao_duracao_segundos")
   reuniaoOrigemId    String?                       @map("reuniao_origem_id") @db.Uuid
+  teamsTranscricao       String?                   @map("teams_transcricao") @db.Text
+  teamsTranscricaoEstado String?                   @map("teams_transcricao_estado") @db.VarChar(16)
   participantesIds   Json?                         @default("[]") @map("participantes_ids")
   /// Perfis convidados (ex.: COMERCIAL, FORMADOR, FINANCEIRO) quando não há participantes explícitos.
   audienciaRoles     Json?                         @default("[]") @map("audiencia_roles")
