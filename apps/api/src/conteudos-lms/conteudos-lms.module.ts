@@ -5,6 +5,7 @@ import { ConteudosLmsController } from "./conteudos-lms.controller";
 import { ScormAssetsController } from "./scorm-assets.controller";
 import { ConteudosLmsService } from "./conteudos-lms.service";
 import { ConteudosLmsPrazoSchedulerService } from "./conteudos-lms-prazo-scheduler.service";
+import { ConteudosLmsLembreteSchedulerService } from "./conteudos-lms-lembrete-scheduler.service";
 import { ScormService } from "./scorm.service";
 import { ScormPackageService } from "./scorm-package.service";
 import { ScormAssetAuthService } from "./scorm-asset-auth.service";
@@ -15,6 +16,7 @@ import { ScormAssetAuthService } from "./scorm-asset-auth.service";
   providers: [
     ConteudosLmsService,
     ConteudosLmsPrazoSchedulerService,
+    ConteudosLmsLembreteSchedulerService,
     ScormService,
     ScormPackageService,
     ScormAssetAuthService,

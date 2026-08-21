@@ -215,3 +215,136 @@ export function percentualProgressoPercurso(
   const raw = (done / total) * 100;
   return opts?.decimals === 0 ? Math.round(raw) : Math.round(raw * 10) / 10;
 }
+
+/** ID sintético para tarefas sem módulo (percurso directo). */
+export const PERCURSO_UNIDADE_FLAT_ID = "__flat__";
+
+export type UnidadePercursoUi = {
+  id: string;
+  ordem: number;
+  desbloqueado: boolean;
+  notaMinima?: number | null;
+  pontuacao?: number | null;
+};
+
+export type TarefaPercursoUi = TarefaProgressoUi & {
+  id: string;
+  moduloUnidadeId?: string | null;
+  ordem: number;
+  desbloqueado: boolean;
+  titulo?: string;
+  notaMinima?: number | null;
+  pontuacao?: number | null;
+};
+
+export function tarefasDeUnidadeUi(
+  tarefas: TarefaPercursoUi[],
+  unidadeId: string,
+  flatId = PERCURSO_UNIDADE_FLAT_ID,
+): TarefaPercursoUi[] {
+  const items =
+    unidadeId === flatId
+      ? tarefas.filter((t) => !t.moduloUnidadeId)
+      : tarefas.filter((t) => t.moduloUnidadeId === unidadeId);
+  return [...items].sort((a, b) => a.ordem - b.ordem || a.id.localeCompare(b.id));
+}
+
+/** Módulo concluído com notas mínimas - formando pode avançar. */
+export function moduloProntoParaAvancar(
+  unidade: Pick<UnidadePercursoUi, "id" | "notaMinima" | "pontuacao">,
+  tarefas: TarefaPercursoUi[],
+  flatId = PERCURSO_UNIDADE_FLAT_ID,
+): { ok: boolean; motivo: string | null } {
+  const allItems = tarefasDeUnidadeUi(tarefas, unidade.id, flatId);
+  const items = allItems.filter((t) => t.desbloqueado);
+
+  if (allItems.length === 0 || items.length === 0) {
+    return { ok: true, motivo: null };
+  }
+
+  const pendentes = items.filter((t) => !tarefaConcluidaEfectiva(t));
+  if (pendentes.length > 0) {
+    return {
+      ok: false,
+      motivo: `Conclui ${pendentes.length} conteúdo(s) deste módulo antes de avançar.`,
+    };
+  }
+
+  const minima = unidade.notaMinima;
+  if (minima != null && minima > 0) {
+    const score = unidade.pontuacao;
+    if (score == null || score < minima) {
+      return {
+        ok: false,
+        motivo: `Precisas de pelo menos ${minima}% neste módulo (actual: ${score ?? 0}%).`,
+      };
+    }
+  }
+
+  for (const t of items) {
+    if (t.notaMinima != null && t.notaMinima > 0) {
+      const s = t.pontuacao ?? (tarefaConcluidaEfectiva(t) ? 100 : null);
+      if (s == null || s < t.notaMinima) {
+        return {
+          ok: false,
+          motivo: t.titulo
+            ? `«${t.titulo}» exige nota mínima de ${t.notaMinima}%.`
+            : `Conteúdo exige nota mínima de ${t.notaMinima}%.`,
+        };
+      }
+    }
+  }
+
+  return { ok: true, motivo: null };
+}
+
+/** Primeiro módulo desbloqueado ainda incompleto (ordem do curso). */
+export function primeiraUnidadeIncompleta(
+  unidades: UnidadePercursoUi[],
+  tarefas: TarefaPercursoUi[],
+  flatId = PERCURSO_UNIDADE_FLAT_ID,
+): UnidadePercursoUi | null {
+  for (const u of unidadesOrdenadas(unidades)) {
+    if (!u.desbloqueado) continue;
+    if (!moduloProntoParaAvancar(u, tarefas, flatId).ok) return u;
+  }
+  return null;
+}
+
+/** Destino «Continuar»: ignora módulos já concluídos. */
+export function resolverContinuarPercurso(
+  unidades: UnidadePercursoUi[],
+  tarefas: TarefaPercursoUi[],
+  flatId = PERCURSO_UNIDADE_FLAT_ID,
+): { unidadeId: string | null; tarefaId: string | null } {
+  const incompleta = primeiraUnidadeIncompleta(unidades, tarefas, flatId);
+  if (incompleta) {
+    const pendente = tarefasDeUnidadeUi(tarefas, incompleta.id, flatId)
+      .filter((t) => t.desbloqueado)
+      .find((t) => !tarefaConcluidaEfectiva(t));
+    return { unidadeId: incompleta.id, tarefaId: pendente?.id ?? null };
+  }
+
+  const revisao = unidadesOrdenadas(unidades).find((u) => u.desbloqueado);
+  const t0 = revisao ? tarefasDeUnidadeUi(tarefas, revisao.id, flatId)[0] : undefined;
+  return { unidadeId: revisao?.id ?? null, tarefaId: t0?.id ?? null };
+}
+
+/** Próximo módulo desbloqueado incompleto após o actual (salta concluídos). */
+export function proximaUnidadeIncompleta(
+  unidades: UnidadePercursoUi[],
+  tarefas: TarefaPercursoUi[],
+  fromUnidadeId: string,
+  flatId = PERCURSO_UNIDADE_FLAT_ID,
+): UnidadePercursoUi | null {
+  const sorted = unidadesOrdenadas(unidades);
+  const idx = sorted.findIndex((u) => u.id === fromUnidadeId);
+  if (idx < 0) return null;
+
+  for (let i = idx + 1; i < sorted.length; i++) {
+    const u = sorted[i]!;
+    if (!u.desbloqueado) continue;
+    if (!moduloProntoParaAvancar(u, tarefas, flatId).ok) return u;
+  }
+  return null;
+}

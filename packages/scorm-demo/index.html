@@ -226,6 +226,9 @@
         if (!API) {
           setStatus("API SCORM 1.2 (window.API) não encontrada. Abre via player NexiForma.", "warn");
           btnSave.disabled = true;
+          document.querySelectorAll("input, textarea, button").forEach(function (el) {
+            if (el.id !== "btn-save") return;
+          });
           return;
         }
 

@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Menu, X } from "lucide-react";
-import { percentualProgressoPercurso } from "@nexiforma/shared";
+import { percentualProgressoPercurso, resolverContinuarPercurso, proximaUnidadeIncompleta } from "@nexiforma/shared";
 import { FormandoPercursoSidebar } from "./formando-percurso-sidebar";
-import { FormandoPercursoFooter } from "./formando-percurso-footer";
+import { FormandoPercursoFooter, formandoFooterVisivel } from "./formando-percurso-footer";
 import { FormandoTarefaBlock } from "./formando-tarefa-block";
 import { FormandoModuloTransition } from "./formando-modulo-transition";
 import type { PercursoFormando } from "./formando-percurso-types";
@@ -73,8 +73,8 @@ export function FormandoCursoView({
   }, [unidades, percurso.tarefas]);
 
   const [activeUnidadeId, setActiveUnidadeId] = useState(() => {
-    const first = unidadesComConteudo.find((u) => u.desbloqueado);
-    return first?.id ?? unidadesComConteudo[0]?.id ?? "";
+    const destino = resolverContinuarPercurso(unidadesComConteudo, percurso.tarefas, UNIDADE_FLAT_ID);
+    return destino.unidadeId ?? unidadesComConteudo.find((u) => u.desbloqueado)?.id ?? unidadesComConteudo[0]?.id ?? "";
   });
   const [activeTarefaId, setActiveTarefaId] = useState<string | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -101,11 +101,13 @@ export function FormandoCursoView({
   const unidadeTitulo = unidadesComConteudo.find((u) => u.id === activeUnidadeId)?.titulo ?? "";
 
   const proximaUnidade = useCallback(
-    (fromId: string) => {
-      const idx = sortedUnidades.findIndex((u) => u.id === fromId);
-      return sortedUnidades.slice(idx + 1).find((u) => u.desbloqueado) ?? null;
-    },
-    [sortedUnidades],
+    (fromId: string) => proximaUnidadeIncompleta(sortedUnidades, percurso.tarefas, fromId, UNIDADE_FLAT_ID),
+    [sortedUnidades, percurso.tarefas],
+  );
+
+  const footerVisivel = useMemo(
+    () => formandoFooterVisivel(unidadesComConteudo, percurso.tarefas, activeUnidadeId),
+    [unidadesComConteudo, percurso.tarefas, activeUnidadeId],
   );
 
   const scrollParaTarefa = useCallback((tarefaId: string) => {
@@ -127,16 +129,17 @@ export function FormandoCursoView({
   const avancarModulo = useCallback(async () => {
     const next = proximaUnidade(activeUnidadeId);
     if (!next || avancarBusy) return;
+    const nextMeta = unidadesComConteudo.find((u) => u.id === next.id);
     setAvancarBusy(true);
     try {
-      setOverlayMeta({ atual: unidadeTitulo, proximo: next.titulo, nextId: next.id });
+      setOverlayMeta({ atual: unidadeTitulo, proximo: nextMeta?.titulo, nextId: next.id });
       setOverlayOpen(true);
       setSlidePhase("exit");
       await new Promise((r) => setTimeout(r, 400));
     } finally {
       setAvancarBusy(false);
     }
-  }, [activeUnidadeId, avancarBusy, proximaUnidade, unidadeTitulo]);
+  }, [activeUnidadeId, avancarBusy, proximaUnidade, unidadeTitulo, unidadesComConteudo]);
 
   const handleOverlayDone = useCallback(() => {
     setOverlayOpen(false);
@@ -246,7 +249,12 @@ export function FormandoCursoView({
             </Link>
           </div>
 
-          <div ref={contentRef} className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-3 sm:px-8 sm:py-6">
+          <div
+            ref={contentRef}
+            className={`flex-1 overflow-y-auto overflow-x-hidden px-2 py-3 sm:px-8 sm:py-6 ${
+              footerVisivel ? "pb-[calc(5.75rem+var(--safe-bottom,0px))] sm:pb-[calc(6.25rem+var(--safe-bottom,0px))]" : ""
+            }`}
+          >
             <div
               className={`portal-card-shell mx-auto w-full max-w-3xl rounded-2xl border border-slate-700/30 bg-slate-900/40 shadow-xl transition-all duration-400 ease-out ${
                 slidePhase === "exit"

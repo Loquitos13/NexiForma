@@ -27,7 +27,7 @@
     "build": "npm run build:packages && npm run build -w @nexiforma/api && npm run build -w @nexiforma/web",
     "test": "npm run test -w @nexiforma/api",
     "test:a11y": "node scripts/a11y-audit.mjs",
-    "test:at-sandbox": "npx tsx scripts/test-at-sandbox.ts",
+    "build:scorm-demo": "node scripts/build-scorm-demo-package.mjs",
     "generate:at-csr": "node scripts/generate-at-csr.mjs",
     "generate:at-pfx": "node scripts/generate-at-pfx.mjs",
     "verify:at-cert-key": "node scripts/verify-at-cert-key.mjs",

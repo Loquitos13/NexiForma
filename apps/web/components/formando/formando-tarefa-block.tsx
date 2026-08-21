@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback } from "react";
 import { CheckCircle2, Lock } from "lucide-react";
 import {
@@ -96,8 +97,16 @@ export function FormandoTarefaBlock({ tarefa, matriculaId, cursoId: _cursoId, on
           onComplete={() => onConcluido?.()}
         />
       ) : tarefa.tipo === "SCORM" && urlOuRef ? (
-        <div className="mx-auto max-w-3xl overflow-hidden rounded-2xl border border-slate-700/30 bg-slate-900/50">
-          <iframe src={urlOuRef} className="min-h-[60vh] w-full" title={tarefa.titulo} />
+        <div className="mx-auto flex max-w-3xl flex-col items-center gap-4 rounded-2xl border border-slate-700/30 bg-slate-900/50 p-8">
+          <p className="text-center text-sm text-slate-400">
+            Este conteúdo SCORM abre num player dedicado com registo de progresso.
+          </p>
+          <Link
+            href={`/portal/formando/scorm/${tarefa.id}?matriculaId=${encodeURIComponent(matriculaId)}`}
+            className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-500"
+          >
+            Abrir pacote SCORM
+          </Link>
         </div>
       ) : tarefa.tipo === "VIDEO" && (isStored || mediaUrl) ? (
         <div className="mx-auto max-w-3xl overflow-hidden rounded-2xl bg-black shadow-md ring-1 ring-slate-700/30">

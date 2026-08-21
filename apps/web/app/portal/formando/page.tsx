@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, GraduationCap } from "lucide-react";
-import { percentualProgressoPercurso } from "@nexiforma/shared";
+import { percentualProgressoPercurso, resolverContinuarPercurso, PERCURSO_UNIDADE_FLAT_ID } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useMinhasSessoesPoll } from "@/lib/lms/use-minhas-sessoes-poll";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,6 +37,7 @@ type PercursoResumo = {
   concluidos: number;
   pendentes: number;
   pct: number;
+  continuarHref: string;
   prazoLms?: {
     limite: string;
     diasRestantes: number | null;
@@ -61,11 +62,27 @@ export default function FormandoPortalPage() {
           { headers: { accept: "application/json" } },
         );
         if (!pRes.ok) {
-          next[b.matriculaId] = { total: 0, concluidos: 0, pendentes: 0, pct: 0 };
+          next[b.matriculaId] = {
+            total: 0,
+            concluidos: 0,
+            pendentes: 0,
+            pct: 0,
+            continuarHref: `/portal/formando/aprendizagem/${b.matriculaId}`,
+          };
           return;
         }
         const p = (await pRes.json()) as {
-          tarefas: Array<{ concluido: boolean; desbloqueado: boolean; percentual: number }>;
+          unidades: Array<{ id: string; ordem: number; desbloqueado: boolean; notaMinima?: number | null; pontuacao?: number | null }>;
+          tarefas: Array<{
+            id: string;
+            concluido: boolean;
+            desbloqueado: boolean;
+            percentual: number;
+            moduloUnidadeId?: string | null;
+            ordem: number;
+            notaMinima?: number | null;
+            pontuacao?: number | null;
+          }>;
           prazoLms?: PercursoResumo["prazoLms"];
         };
         const total = p.tarefas.length;
@@ -76,12 +93,16 @@ export default function FormandoPortalPage() {
             ? Math.min(100, Math.floor(pctBackend))
             : Math.floor(percentualProgressoPercurso(p.tarefas, { decimals: 0 }));
         const pendentes = p.tarefas.filter((t) => t.desbloqueado && !(t.concluido || t.percentual >= 100)).length;
+        const destino = resolverContinuarPercurso(p.unidades, p.tarefas, PERCURSO_UNIDADE_FLAT_ID);
+        const base = `/portal/formando/aprendizagem/${b.matriculaId}`;
+        const continuarHref = destino.tarefaId ? `${base}?tarefa=${encodeURIComponent(destino.tarefaId)}` : base;
         next[b.matriculaId] = {
           total,
           concluidos,
           pendentes,
           prazoLms: p.prazoLms ?? null,
           pct,
+          continuarHref,
         };
       }),
     );
@@ -199,7 +220,7 @@ export default function FormandoPortalPage() {
                       ) : null}
                     </div>
                     <Link
-                      href={`/portal/formando/aprendizagem/${block.matriculaId}`}
+                      href={prog?.continuarHref ?? `/portal/formando/aprendizagem/${block.matriculaId}`}
                       className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white shrink-0"
                     >
                       {completo ? "Rever conteúdos" : "Continuar"}

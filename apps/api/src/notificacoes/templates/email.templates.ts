@@ -329,6 +329,40 @@ export class EmailTemplates {
     };
   }
 
+  static lmsPrazoLembrete(params: {
+    nomeFormando: string;
+    acaoTitulo: string;
+    limite: string;
+    diasRestantes: number;
+    pendentes: number;
+    portalUrl: string;
+  }): EmailTemplate {
+    const prazoLabel =
+      params.diasRestantes === 1
+        ? "O prazo termina amanhã"
+        : `Faltam ${params.diasRestantes} dias para o prazo`;
+    return {
+      subject: `Lembrete LMS – ${params.acaoTitulo}`,
+      text:
+        `Caro(a) ${params.nomeFormando},\n\n` +
+        `${prazoLabel} para concluir os conteúdos LMS de «${params.acaoTitulo}» (até ${params.limite}).\n\n` +
+        `Conteúdos por concluir: ${params.pendentes}\n\n` +
+        `Continuar: ${params.portalUrl}\n\n` +
+        `Com os melhores cumprimentos,\nNexiForma\n`,
+      html:
+        cumprimento(params.nomeFormando) +
+        emailParagraph(`${prazoLabel} para concluir os conteúdos LMS de «${escapeHtml(params.acaoTitulo)}».`) +
+        emailInfoBox(
+          emailDataTable(
+            emailDataRow("Prazo", escapeHtml(params.limite)) +
+              emailDataRow("Por concluir", String(params.pendentes)),
+          ),
+        ) +
+        emailButtonRow(emailButton("Continuar aprendizagem", params.portalUrl, "primary")) +
+        assinatura(),
+    };
+  }
+
   static sessaoIniciada(params: {
     nomeDestinatario: string;
     nomeSessao: string;

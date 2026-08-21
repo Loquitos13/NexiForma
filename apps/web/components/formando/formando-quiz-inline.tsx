@@ -44,6 +44,7 @@ export function FormandoQuizInline({ moduloId, matriculaId, titulo, embedded, on
   const [currentIdx, setCurrentIdx] = useState(0);
   const [tempoRestante, setTempoRestante] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const respostasBaselineRef = useRef<string>("{}");
 
   const totalPontos = perguntas.reduce((s, p) => s + (p.pontos ?? 1), 0);
   const respondidas = Object.keys(respostas).length;
@@ -59,6 +60,8 @@ export function FormandoQuizInline({ moduloId, matriculaId, titulo, embedded, on
       const qs = (await pRes.json()) as Pergunta[];
       setPerguntas(qs);
       setTempoRestante(qs.length * 60);
+      setRespostas({});
+      respostasBaselineRef.current = "{}";
     } else setError("Erro ao carregar perguntas.");
     if (tRes.ok) {
       setTentativas(
@@ -138,10 +141,15 @@ export function FormandoQuizInline({ moduloId, matriculaId, titulo, embedded, on
   function reiniciarQuiz() {
     setResultado(null);
     setRespostas({});
+    respostasBaselineRef.current = "{}";
     setCurrentIdx(0);
     setTempoRestante(perguntas.length * 60);
     setError(null);
   }
+
+  const temAlteracoes =
+    JSON.stringify(respostas) !== respostasBaselineRef.current && Object.keys(respostas).length > 0;
+  const podeSubmeter = temAlteracoes && respondidas >= perguntas.length && perguntas.length > 0;
 
   const fmtTempo = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const p = perguntas[currentIdx];
@@ -300,16 +308,18 @@ export function FormandoQuizInline({ moduloId, matriculaId, titulo, embedded, on
               >
                 Seguinte
               </button>
-            ) : (
+            ) : podeSubmeter ? (
               <button
                 type="button"
                 onClick={() => void submeterQuiz()}
-                disabled={busy || respondidas < perguntas.length}
+                disabled={busy}
                 className="rounded-xl bg-gradient-to-r from-green-600 to-teal-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
               >
                 {busy ? "A submeter..." : "Submeter"}
               </button>
-            )}
+            ) : currentIdx === perguntas.length - 1 ? (
+              <span className="text-[11px] text-slate-500">Responde às perguntas para submeter</span>
+            ) : null}
           </div>
         </div>
       ) : null}

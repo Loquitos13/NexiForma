@@ -103,13 +103,19 @@ export {
 
 export {
   moduloDesbloqueado,
+  moduloProntoParaAvancar,
   notaMinimaParaDesbloquearProximo,
   percentualProgressoPercurso,
+  PERCURSO_UNIDADE_FLAT_ID,
   pontuacaoModulo,
   pontuacaoTarefa,
   prerequisitoUnidadeEfectivo,
+  primeiraUnidadeIncompleta,
+  proximaUnidadeIncompleta,
+  resolverContinuarPercurso,
   tarefaConcluidaEfectiva,
   tarefaDesbloqueada,
+  tarefasDeUnidadeUi,
   tarefasOrdenadas,
   unidadeConcluida,
   unidadesOrdenadas,
@@ -117,7 +123,9 @@ export {
   type PercursoDesbloqueioOpts,
   type ProgressoPercurso,
   type TarefaPercurso,
+  type TarefaPercursoUi,
   type TarefaProgressoUi,
+  type UnidadePercursoUi,
 } from "./lms/percurso";
 
 export {
