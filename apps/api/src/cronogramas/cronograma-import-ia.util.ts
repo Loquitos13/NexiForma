@@ -25,6 +25,8 @@ export type CronogramaImportDraft = {
   prazosModulos: CronogramaImportPrazoModuloDraft[];
   avisos: string[];
   legendaResumo: string | null;
+  /** Conformidade com módulos/horas do curso (não da acção). */
+  conformidadeCurso?: import("./cronograma-validacao-curso.util").ConformidadeCursoResult;
 };
 
 export type ModuloRef = { id: string; codigo: string | null; titulo: string };

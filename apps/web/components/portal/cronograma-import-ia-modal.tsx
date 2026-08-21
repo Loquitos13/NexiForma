@@ -36,6 +36,24 @@ type ImportDraft = {
   prazosModulos?: PrazoModuloDraft[];
   avisos: string[];
   legendaResumo: string | null;
+  conformidadeCurso?: {
+    modulosCurso: number;
+    modulosComSessao: number;
+    modulosSemSessao: string[];
+    referenciasSemModuloCurso: string[];
+    porModulo: Array<{
+      moduloId: string;
+      titulo: string;
+      metodologia: string | null;
+      horasEsperadas: number;
+      horasPlaneadas: number;
+      sessoes: number;
+      ok: boolean;
+      nota: string | null;
+    }>;
+    avisos: string[];
+    requerConfirmacao: boolean;
+  };
 };
 
 type JobStatus = "A_PROCESSAR" | "RASCUNHO" | "FALHA" | "APLICADO" | "DESCARTADO";
@@ -117,6 +135,7 @@ export function CronogramaImportIaModal({
   const [actualizarPrazosModulos, setActualizarPrazosModulos] = useState(true);
   const [activarLockManual, setActivarLockManual] = useState(true);
   const [substituir, setSubstituir] = useState(true);
+  const [confirmarDesalinhamento, setConfirmarDesalinhamento] = useState(false);
   const [paste, setPaste] = useState("");
 
   function reset() {
@@ -133,6 +152,7 @@ export function CronogramaImportIaModal({
     setActualizarPrazosModulos(true);
     setActivarLockManual(true);
     setSubstituir(true);
+    setConfirmarDesalinhamento(false);
     seededRef.current = null;
     loadedJobRef.current = null;
     if (fileRef.current) fileRef.current.value = "";
@@ -339,6 +359,7 @@ export function CronogramaImportIaModal({
             activarLockManual && (draft.prazosModulos?.length ?? 0) > 0,
           ),
           substituirExistentes: hasSessoes ? substituir : true,
+          confirmarDesalinhamento: confirmarDesalinhamento || !draft.conformidadeCurso?.requerConfirmacao,
           ...(turmaId ? { turmaId } : {}),
         }),
       });
@@ -470,6 +491,39 @@ export function CronogramaImportIaModal({
                   <li key={a}>{a}</li>
                 ))}
               </ul>
+            ) : null}
+
+            {draft.conformidadeCurso ? (
+              <div className="rounded-lg border border-slate-700/50 bg-slate-900/50 px-3 py-3 space-y-2">
+                <p className="text-xs font-medium text-slate-300">
+                  Conformidade com o curso ({draft.conformidadeCurso.modulosComSessao}/
+                  {draft.conformidadeCurso.modulosCurso} módulos com sessão)
+                </p>
+                {draft.conformidadeCurso.porModulo.length > 0 ? (
+                  <ul className="text-xs text-slate-400 space-y-1 max-h-40 overflow-y-auto">
+                    {draft.conformidadeCurso.porModulo.map((m) => (
+                      <li key={m.moduloId} className={m.ok ? "" : "text-amber-200/90"}>
+                        <span className="font-medium text-slate-300">{m.titulo}</span>
+                        {" · "}
+                        {m.horasPlaneadas}h planeadas / {m.horasEsperadas}h curso
+                        {m.metodologia ? ` (${m.metodologia})` : ""}
+                        {m.nota ? ` - ${m.nota}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {draft.conformidadeCurso.requerConfirmacao ? (
+                  <label className="flex items-start gap-2 text-xs text-amber-200/90">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={confirmarDesalinhamento}
+                      onChange={(e) => setConfirmarDesalinhamento(e.target.checked)}
+                    />
+                    Confirmo que revi as diferenças face aos módulos e horas configurados no curso.
+                  </label>
+                ) : null}
+              </div>
             ) : null}
 
             {draft.prazoConclusaoLms ? (
@@ -638,7 +692,11 @@ export function CronogramaImportIaModal({
               ) : null}
               <Button
                 type="button"
-                disabled={busy || draft.sessoes.length === 0}
+                disabled={
+                  busy ||
+                  draft.sessoes.length === 0 ||
+                  (draft.conformidadeCurso?.requerConfirmacao && !confirmarDesalinhamento)
+                }
                 onClick={() => void aplicar()}
               >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}

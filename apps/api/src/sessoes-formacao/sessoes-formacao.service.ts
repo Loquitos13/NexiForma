@@ -120,6 +120,29 @@ export class SessoesFormacaoService {
     );
   }
 
+  private async assertModuloPertenceCursoDaAcao(
+    tenantId: string,
+    acaoFormacaoId: string,
+    moduloUnidadeId: string,
+  ): Promise<void> {
+    const modulo = await this.prisma.moduloUnidade.findFirst({
+      where: { id: moduloUnidadeId, tenantId },
+      select: { cursoId: true },
+    });
+    if (!modulo) {
+      throw new NotFoundException("Módulo inexistente ou de outro tenant.");
+    }
+    const acao = await this.prisma.acaoFormacao.findFirst({
+      where: { id: acaoFormacaoId, tenantId },
+      select: { cursoId: true },
+    });
+    if (!acao || modulo.cursoId !== acao.cursoId) {
+      throw new BadRequestException(
+        "O módulo seleccionado não pertence ao curso desta acção.",
+      );
+    }
+  }
+
   list(user: RequestUser, cronogramaId?: string, turmaId?: string) {
     const tenantId = requireTenantId(user);
     return this.prisma.sessaoFormacao.findMany({
@@ -213,12 +236,11 @@ export class SessoesFormacaoService {
     }
 
     if (dto.moduloUnidadeId) {
-      const modulo = await this.prisma.moduloUnidade.findFirst({
-        where: { id: dto.moduloUnidadeId, tenantId },
-      });
-      if (!modulo) {
-        throw new NotFoundException("Módulo inexistente ou de outro tenant.");
-      }
+      await this.assertModuloPertenceCursoDaAcao(
+        tenantId,
+        cronograma.acaoFormacaoId,
+        dto.moduloUnidadeId,
+      );
     }
 
     let formadorId = dto.formadorId ?? null;
@@ -265,6 +287,7 @@ export class SessoesFormacaoService {
     const tenantId = requireTenantId(user);
     const existing = await this.prisma.sessaoFormacao.findFirst({
       where: { id, tenantId },
+      include: { cronograma: { select: { acaoFormacaoId: true } } },
     });
     if (!existing) {
       throw new NotFoundException("Sessão não encontrada.");
@@ -280,12 +303,11 @@ export class SessoesFormacaoService {
     }
 
     if (dto.moduloUnidadeId) {
-      const modulo = await this.prisma.moduloUnidade.findFirst({
-        where: { id: dto.moduloUnidadeId, tenantId },
-      });
-      if (!modulo) {
-        throw new NotFoundException("Módulo inexistente ou de outro tenant.");
-      }
+      await this.assertModuloPertenceCursoDaAcao(
+        tenantId,
+        existing.cronograma.acaoFormacaoId,
+        dto.moduloUnidadeId,
+      );
     }
 
     const updated = await this.prisma.sessaoFormacao.update({

@@ -45,6 +45,7 @@ import { Alert } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
 import { dismissToast, pushStickyToast, pushToast } from "@/components/ui/toast";
 import { cn } from "@/lib/ui/cn";
@@ -131,7 +132,15 @@ function tituloSessao(s: Pick<SessaoRow, "numeroSessao" | "titulo" | "moduloUnid
   return s.moduloUnidade?.titulo?.trim() || s.titulo?.trim() || `Sessão ${s.numeroSessao}`;
 }
 
-type ModuloOpt = { id: string; codigo: string | null; titulo: string };
+type ModuloOpt = {
+  id: string;
+  codigo: string | null;
+  titulo: string;
+  cargaHoras?: number | null;
+  cargaHorasTeoricas?: number | null;
+  cargaHorasPraticas?: number | null;
+  metodologia?: string | null;
+};
 
 type CronogramaArquivo = {
   id: string;
@@ -404,6 +413,8 @@ export function PortalScheduleSection({
 
   const [panel, setPanel] = useState<"sessoes" | "presencas">("sessoes");
   const [showNovaSessao, setShowNovaSessao] = useState(false);
+  const [highlightSessaoId, setHighlightSessaoId] = useState<string | null>(null);
+  const sessoesListRef = useRef<HTMLDivElement>(null);
   const [showImportIa, setShowImportIa] = useState(false);
   const [initialImportJobId, setInitialImportJobId] = useState<string | null>(null);
   const [importJobs, setImportJobs] = useState<ImportIaJobRow[]>([]);
@@ -1070,7 +1081,12 @@ export function PortalScheduleSection({
       setMsg(`Sessão ${sessNum} registada. ${formadorOperacao && isModalidadeOnline(sessModalidade) ? "Usa «Iniciar e criar sala Teams» à direita." : ""}`.trim());
       setShowNovaSessao(false);
       await loadSessoes(selectedCronogramaId, selectedTurmaId || undefined);
-      if (created.id) setSelectedSessaoId(created.id);
+      if (created.id) {
+        setSelectedSessaoId(created.id);
+        setHighlightSessaoId(created.id);
+        scrollParaSessao(created.id);
+        window.setTimeout(() => setHighlightSessaoId(null), 2800);
+      }
     } finally {
       setBusy(false);
     }
@@ -1940,7 +1956,22 @@ export function PortalScheduleSection({
   }
 
   function moduloLabel(m: ModuloOpt) {
-    return m.codigo ? `${m.codigo} – ${m.titulo}` : m.titulo;
+    const horas =
+      (m.cargaHorasTeoricas ?? 0) + (m.cargaHorasPraticas ?? 0) ||
+      m.cargaHoras ||
+      0;
+    const meta = m.metodologia ? ` · ${m.metodologia}` : "";
+    const hLabel = horas > 0 ? ` · ${horas}h` : "";
+    const base = m.codigo ? `${m.codigo} – ${m.titulo}` : m.titulo;
+    return `${base}${hLabel}${meta}`;
+  }
+
+  function scrollParaSessao(sessaoId: string) {
+    requestAnimationFrame(() => {
+      const root = sessoesListRef.current;
+      const el = root?.querySelector(`[data-sessao-id="${sessaoId}"]`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
   }
 
 
@@ -2410,7 +2441,7 @@ export function PortalScheduleSection({
                           type="button"
                           size="sm"
                           disabled={busy || !selectedTurmaId}
-                          onClick={() => setShowNovaSessao((v) => !v)}
+                          onClick={() => setShowNovaSessao(true)}
                           className={cn(
                             (dgertRequisito === "sessoes_planeadas" || dgertRequisito === "formadores") &&
                               "ring-2 ring-amber-400/70",
@@ -2434,9 +2465,10 @@ export function PortalScheduleSection({
                       </CardContent>
                     </Card>
                   ) : (
-                    <div className="space-y-2">
+                    <div ref={sessoesListRef} className="space-y-2 max-h-[min(52vh,520px)] overflow-y-auto pr-1">
                       {sessoes.map((s) => {
                         const active = selectedSessaoId === s.id;
+                        const highlighted = highlightSessaoId === s.id;
                         const lockedForFormador = Boolean(
                           formadorProfileId &&
                             !canApproveCronograma &&
@@ -2454,21 +2486,22 @@ export function PortalScheduleSection({
                         return (
                           <div
                             key={s.id}
+                            data-sessao-id={s.id}
                             role="button"
                             tabIndex={0}
                             onClick={() => {
                               setSelectedSessaoId(s.id);
-                              setShowNovaSessao(false);
                             }}
                             onKeyDown={(e) => {
                               if (e.key === "Enter" || e.key === " ") {
                                 e.preventDefault();
                                 setSelectedSessaoId(s.id);
-                                setShowNovaSessao(false);
                               }
                             }}
                             className={`w-full text-left rounded-xl border p-4 transition-all cursor-pointer ${
-                              active
+                              highlighted
+                                ? "border-teal-400/60 bg-teal-500/15 ring-2 ring-teal-400/70"
+                                : active
                                 ? lockedForFormador
                                   ? "border-amber-500/35 bg-amber-950/20 ring-1 ring-amber-500/20"
                                   : "border-blue-500/40 bg-blue-500/10 ring-1 ring-blue-500/20"
@@ -2621,103 +2654,99 @@ export function PortalScheduleSection({
                     </div>
                   )}
 
-                  {showNovaSessao && canManageAssiduidade && !formadorOperacao ? (
-                    <Card className="border-blue-500/20 bg-blue-500/5">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-base text-slate-200">
-                          Registar nova sessão
-                          {turmaAtiva ? (
-                            <span className="block text-xs font-normal text-slate-400 mt-1">
-                              Turma seleccionada: {turmaAtiva.codigo} - {turmaAtiva.nome}
-                              (a folha de presença será desta turma)
-                            </span>
-                          ) : null}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <form onSubmit={(e) => void submitSessao(e)} className="grid gap-3 sm:grid-cols-2">
-                          <Input
-                            label="N.º sessão"
-                            type="number"
-                            min={1}
-                            value={sessNum}
-                            onChange={(e) => setSessNum(e.target.value)}
-                            required
-                          />
-                          <Input
-                            label="Data"
-                            type="date"
-                            value={sessData}
-                            onChange={(e) => setSessData(e.target.value)}
-                            required
-                          />
-                          <Input
-                            label="Início"
-                            value={sessInicio}
-                            onChange={(e) => setSessInicio(e.target.value)}
-                            placeholder="09:00"
-                            required
-                          />
-                          <Input
-                            label="Fim"
-                            value={sessFim}
-                            onChange={(e) => setSessFim(e.target.value)}
-                            placeholder="12:30"
-                            required
-                          />
-                          <Select
-                            label="Modalidade"
-                            value={sessModalidade}
-                            onChange={(e) => setSessModalidade(e.target.value)}
+                  <Dialog open={showNovaSessao} onOpenChange={setShowNovaSessao}>
+                    <DialogContent
+                      title="Registar nova sessão"
+                      description={
+                        turmaAtiva
+                          ? `Turma: ${turmaAtiva.codigo} – ${turmaAtiva.nome}. Os módulos são os configurados no curso.`
+                          : "Seleccione uma turma antes de registar sessões."
+                      }
+                      className="max-w-2xl"
+                    >
+                      <form onSubmit={(e) => void submitSessao(e)} className="grid gap-3 sm:grid-cols-2 px-1 pb-1">
+                        <Input
+                          label="N.º sessão"
+                          type="number"
+                          min={1}
+                          value={sessNum}
+                          onChange={(e) => setSessNum(e.target.value)}
+                          required
+                        />
+                        <Input
+                          label="Data"
+                          type="date"
+                          value={sessData}
+                          onChange={(e) => setSessData(e.target.value)}
+                          required
+                        />
+                        <Input
+                          label="Início"
+                          value={sessInicio}
+                          onChange={(e) => setSessInicio(e.target.value)}
+                          placeholder="09:00"
+                          required
+                        />
+                        <Input
+                          label="Fim"
+                          value={sessFim}
+                          onChange={(e) => setSessFim(e.target.value)}
+                          placeholder="12:30"
+                          required
+                        />
+                        <Select
+                          label="Modalidade"
+                          value={sessModalidade}
+                          onChange={(e) => setSessModalidade(e.target.value)}
+                        >
+                          {MODALIDADES.map((m) => (
+                            <option key={m.value} value={m.value}>
+                              {m.label}
+                            </option>
+                          ))}
+                        </Select>
+                        <Select
+                          label="Formador"
+                          value={sessFormadorId}
+                          onChange={(e) => setSessFormadorId(e.target.value)}
+                        >
+                          <option value="">- Atribuir depois -</option>
+                          {formadores.map((f) => (
+                            <option key={f.id} value={f.id}>
+                              {f.nomeCompleto}
+                            </option>
+                          ))}
+                        </Select>
+                        <Select
+                          label="Módulo (curso)"
+                          value={sessModuloId}
+                          onChange={(e) => setSessModuloId(e.target.value)}
+                          className="sm:col-span-2"
+                        >
+                          <option value="">- Sem módulo -</option>
+                          {modulos.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {moduloLabel(m)}
+                            </option>
+                          ))}
+                        </Select>
+                        <div className="sm:col-span-2 flex flex-wrap justify-end gap-2 pt-1">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => setShowNovaSessao(false)}
                           >
-                            {MODALIDADES.map((m) => (
-                              <option key={m.value} value={m.value}>
-                                {m.label}
-                              </option>
-                            ))}
-                          </Select>
-                          <Select
-                            label="Formador"
-                            value={sessFormadorId}
-                            onChange={(e) => setSessFormadorId(e.target.value)}
-                          >
-                            <option value="">- Atribuir depois -</option>
-                            {formadores.map((f) => (
-                              <option key={f.id} value={f.id}>
-                                {f.nomeCompleto}
-                              </option>
-                            ))}
-                          </Select>
-                          <Select
-                            label="Módulo"
-                            value={sessModuloId}
-                            onChange={(e) => setSessModuloId(e.target.value)}
-                          >
-                            <option value="">- Sem módulo -</option>
-                            {modulos.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {moduloLabel(m)}
-                              </option>
-                            ))}
-                          </Select>
-                          <div className="sm:col-span-2 flex flex-wrap gap-2">
-                            <Button type="submit" disabled={busy}>
-                              {formadorOperacao && isModalidadeOnline(sessModalidade)
-                                ? "Criar sessão online"
-                                : "Registar sessão"}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              onClick={() => setShowNovaSessao(false)}
-                            >
-                              Cancelar
-                            </Button>
-                          </div>
-                        </form>
-                      </CardContent>
-                    </Card>
-                  ) : null}
+                            Cancelar
+                          </Button>
+                          <Button type="submit" disabled={busy || !selectedTurmaId}>
+                            {formadorOperacao && isModalidadeOnline(sessModalidade)
+                              ? "Criar sessão online"
+                              : "Registar sessão"}
+                          </Button>
+                        </div>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
                 </div>
               ) : null}
 

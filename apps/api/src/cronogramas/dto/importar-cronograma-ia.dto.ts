@@ -159,4 +159,9 @@ export class AplicarCronogramaIaDto {
   @IsOptional()
   @IsUUID()
   turmaId?: string;
+
+  /** Confirma import mesmo com desalinhamento face aos módulos/horas do curso. */
+  @IsOptional()
+  @IsBoolean()
+  confirmarDesalinhamento?: boolean;
 }

@@ -33,13 +33,15 @@ import {
   materiaFromTituloModulo,
   normalizarImportDraft,
   parseLlmJsonResponse,
-  planearModulosImport,
   sanitizarCampoTexto,
   stripHtmlToText,
-  tituloModuloCanonico,
   type CronogramaImportDraft,
   type ModuloRef,
 } from "./cronograma-import-ia.util";
+import {
+  validarCronogramaContraCurso,
+  type ModuloCursoRef,
+} from "./cronograma-validacao-curso.util";
 
 /** Limite do texto enviado ao LLM - qwen 3B fica muito lento acima disto. */
 const LLM_TEXTO_MAX_CHARS = 6_000;
@@ -278,7 +280,7 @@ export class CronogramaImportIaService {
     const tenantId = requireTenantId(user);
     const job = await this.prisma.cronogramaImportJob.findFirst({
       where: { id: jobId, tenantId, criadoPorUserId: user.sub },
-      select: { id: true, status: true },
+      select: { id: true, status: true, cronogramaId: true },
     });
     if (!job) throw new NotFoundException("Job de importação não encontrado.");
     if (job.status !== "RASCUNHO" && job.status !== "FALHA") {
@@ -307,11 +309,14 @@ export class CronogramaImportIaService {
       legendaResumo: dto.legendaResumo ?? null,
     };
 
+    const ctx = await this.loadContext(tenantId, job.cronogramaId);
+    const enriched = this.enrichDraftConformidade(resultado, ctx.modulosFull);
+
     return this.prisma.cronogramaImportJob.update({
       where: { id: jobId },
       data: {
         status: "RASCUNHO",
-        resultado: resultado as unknown as Prisma.InputJsonValue,
+        resultado: enriched as unknown as Prisma.InputJsonValue,
         erro: null,
       },
       select: JOB_SELECT,
@@ -435,12 +440,7 @@ export class CronogramaImportIaService {
     }
 
     const ctx = await this.loadContext(tenantId, cronogramaId);
-    const modulos = await this.ensureModulosParaImport(
-      tenantId,
-      ctx.acao.cursoId,
-      ctx.modulos,
-      dto.sessoes,
-    );
+    const modulos = ctx.modulosFull;
 
     const resolvedSessoes = dto.sessoes.map((s) => {
       let moduloUnidadeId = s.moduloUnidadeId ?? null;
@@ -475,11 +475,32 @@ export class CronogramaImportIaService {
     }
     if (moduloIds.length) {
       const n = await this.prisma.moduloUnidade.count({
-        where: { tenantId, id: { in: moduloIds } },
+        where: { tenantId, id: { in: moduloIds }, cursoId: ctx.acao.cursoId },
       });
       if (n !== moduloIds.length) {
-        throw new BadRequestException("Um ou mais módulos são inválidos para este tenant.");
+        throw new BadRequestException(
+          "Um ou mais módulos não pertencem ao curso desta acção. Configure os módulos no curso.",
+        );
       }
+    }
+
+    const conformidade = validarCronogramaContraCurso(
+      resolvedSessoes.map((s) => ({
+        numeroSessao: s.numeroSessao,
+        data: s.data,
+        horaInicio: s.horaInicio,
+        horaFim: s.horaFim,
+        modalidade: s.modalidade,
+        moduloUnidadeId: s.moduloUnidadeId ?? null,
+        formadorId: s.formadorId ?? null,
+        tituloModulo: s.tituloModulo ?? null,
+      })),
+      modulos,
+    );
+    if (conformidade.requerConfirmacao && !dto.confirmarDesalinhamento) {
+      throw new BadRequestException(
+        "O cronograma não está alinhado com os módulos/horas do curso. Revise o preview e confirme para aplicar.",
+      );
     }
 
     const turmaId = turmaIdAlvo;
@@ -705,6 +726,7 @@ export class CronogramaImportIaService {
           ...draft,
           legendaResumo: sanitizarTextoLegivel(draft.legendaResumo, 400),
         };
+        draft = this.enrichDraftConformidade(draft, ctx.modulosFull);
 
         if (draft.sessoes.length >= 1) {
           this.logger.log(
@@ -890,50 +912,13 @@ export class CronogramaImportIaService {
     return { actualizadas };
   }
 
-  /**
-   * Garante ModuloUnidade para cada matéria do import (ordem cronológica).
-   * Título: «Módulo x - {matéria}». Sessões passam a referenciar estes IDs.
-   */
-  private async ensureModulosParaImport(
-    tenantId: string,
-    cursoId: string,
-    existing: ModuloRef[],
-    sessoes: Array<{
-      data: string;
-      horaInicio: string;
-      tituloModulo?: string | null;
-      moduloCodigo?: string | null;
-      moduloUnidadeId?: string | null;
-    }>,
-  ): Promise<ModuloRef[]> {
-    const modulos = [...existing];
-    const planned = planearModulosImport(sessoes);
-    let nextOrdem =
-      modulos.reduce((max, m) => {
-        const n = m.titulo.match(/^m[oó]dulo\s*(\d+)/i)?.[1];
-        return n ? Math.max(max, Number(n)) : max;
-      }, 0) + 1;
-
-    for (const plan of planned) {
-      const already = matchModulo(modulos, plan.codigo, plan.materia);
-      if (already) continue;
-      const titulo = tituloModuloCanonico(nextOrdem, plan.materia);
-      const created = await this.prisma.moduloUnidade.create({
-        data: {
-          tenantId,
-          cursoId,
-          titulo,
-          codigo: plan.codigo?.slice(0, 32) || null,
-          ordem: nextOrdem - 1,
-          lockManual: true,
-        },
-        select: { id: true, codigo: true, titulo: true },
-      });
-      modulos.push(created);
-      nextOrdem += 1;
-    }
-
-    return modulos;
+  private enrichDraftConformidade(
+    draft: CronogramaImportDraft,
+    modulos: ModuloCursoRef[],
+  ): CronogramaImportDraft {
+    const conformidade = validarCronogramaContraCurso(draft.sessoes, modulos);
+    const avisos = [...new Set([...draft.avisos, ...conformidade.avisos])];
+    return { ...draft, avisos, conformidadeCurso: conformidade };
   }
 
   private async loadContext(tenantId: string, cronogramaId: string) {
@@ -955,11 +940,19 @@ export class CronogramaImportIaService {
     });
     if (!cronograma) throw new NotFoundException("Cronograma não encontrado.");
 
-    const [modulos, formadores, tenant] = await Promise.all([
+    const [modulosFull, formadores, tenant] = await Promise.all([
       this.prisma.moduloUnidade.findMany({
         where: { tenantId, cursoId: cronograma.acaoFormacao.cursoId },
         orderBy: [{ ordem: "asc" }, { createdAt: "asc" }],
-        select: { id: true, codigo: true, titulo: true },
+        select: {
+          id: true,
+          codigo: true,
+          titulo: true,
+          cargaHoras: true,
+          cargaHorasTeoricas: true,
+          cargaHorasPraticas: true,
+          metodologia: true,
+        },
         take: 80,
       }),
       this.prisma.formadorProfile.findMany({
@@ -985,7 +978,8 @@ export class CronogramaImportIaService {
         dataInicio: toKey(cronograma.acaoFormacao.dataInicio),
         dataFim: toKey(cronograma.acaoFormacao.dataFim),
       },
-      modulos,
+      modulos: modulosFull as ModuloRef[],
+      modulosFull,
       formadores,
       horarioInicio: meta.cronograma?.horarioInicio,
       horarioFim: meta.cronograma?.horarioFim,
