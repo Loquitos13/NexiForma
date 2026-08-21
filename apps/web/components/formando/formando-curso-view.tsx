@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Menu, X } from "lucide-react";
+import { percentualProgressoPercurso } from "@nexiforma/shared";
 import { FormandoPercursoSidebar } from "./formando-percurso-sidebar";
 import { FormandoPercursoFooter } from "./formando-percurso-footer";
 import { FormandoTarefaBlock } from "./formando-tarefa-block";
@@ -90,11 +91,10 @@ export function FormandoCursoView({
   );
 
   const progressoPct = useMemo(() => {
-    const total = percurso.tarefas.length;
-    if (total === 0) return 0;
-    const done = percurso.tarefas.filter((t) => t.concluido).length;
-    return Math.round((done / total) * 100);
-  }, [percurso.tarefas]);
+    const fromPrazo = percurso.prazoLms?.percentualConclusao;
+    if (fromPrazo != null) return Math.min(100, Math.floor(fromPrazo));
+    return Math.floor(percentualProgressoPercurso(percurso.tarefas, { decimals: 0 }));
+  }, [percurso.tarefas, percurso.prazoLms?.percentualConclusao]);
 
   const tarefasActivas = useMemo(() => tarefasDaUnidade(percurso.tarefas, activeUnidadeId), [percurso.tarefas, activeUnidadeId]);
 
@@ -179,7 +179,7 @@ export function FormandoCursoView({
   }, [searchParams, percurso.tarefas, unidadesComConteudo, scrollParaTarefa]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#070b12]">
+    <div className="flex h-[100dvh] min-h-0 flex-col bg-[#070b12]">
       {topSlot ? (
         <div className="portal-card-shell max-h-[38dvh] shrink-0 overflow-x-hidden overflow-y-auto">
           {topSlot}
@@ -246,7 +246,7 @@ export function FormandoCursoView({
             </Link>
           </div>
 
-          <div ref={contentRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-8 sm:py-6">
+          <div ref={contentRef} className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-3 sm:px-8 sm:py-6">
             <div
               className={`portal-card-shell mx-auto w-full max-w-3xl rounded-2xl border border-slate-700/30 bg-slate-900/40 shadow-xl transition-all duration-400 ease-out ${
                 slidePhase === "exit"

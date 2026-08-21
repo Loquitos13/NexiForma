@@ -21,6 +21,7 @@ import {
   pontuacaoModulo,
   pontuacaoTarefa,
   prerequisitoUnidadeEfectivo,
+  tarefaConcluidaEfectiva,
   tarefaDesbloqueada,
   tarefasOrdenadas,
   unidadesOrdenadas,
@@ -654,7 +655,7 @@ export class ConteudosLmsService {
     });
 
     const total = tarefasOut.length;
-    const concluidos = tarefasOut.filter((t) => t.concluido).length;
+    const concluidos = tarefasOut.filter((t) => tarefaConcluidaEfectiva(t)).length;
     const acao = matricula?.turma.acaoFormacao;
     const limite = acao?.prazoConclusaoLms ?? acao?.dataFim ?? null;
     const msDia = 86_400_000;

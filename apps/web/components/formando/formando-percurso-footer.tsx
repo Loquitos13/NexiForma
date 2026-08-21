@@ -1,6 +1,7 @@
 "use client";
 
-import { CheckCircle2, ChevronDown, Lock, LogOut } from "lucide-react";
+import { CheckCircle2, ChevronDown, LogOut } from "lucide-react";
+import { tarefaConcluidaEfectiva } from "@nexiforma/shared";
 import type { TarefaPercurso, UnidadePercurso } from "./formando-percurso-types";
 import { tarefasDaUnidade } from "./formando-percurso-types";
 
@@ -19,11 +20,14 @@ function podeAvancarModulo(
   tarefas: TarefaPercurso[],
 ): { ok: boolean; motivo: string | null } {
   if (!unidade) return { ok: false, motivo: null };
-  const items = tarefasDaUnidade(tarefas, unidade.id).filter((t) => t.desbloqueado);
-  if (items.length === 0) {
-    return { ok: false, motivo: "Este módulo ainda não tem conteúdos." };
+  const allItems = tarefasDaUnidade(tarefas, unidade.id);
+  const items = allItems.filter((t) => t.desbloqueado);
+
+  if (allItems.length === 0 || items.length === 0) {
+    return { ok: true, motivo: null };
   }
-  const pendentes = items.filter((t) => !t.concluido && t.percentual < 100);
+
+  const pendentes = items.filter((t) => !tarefaConcluidaEfectiva(t));
   if (pendentes.length > 0) {
     return {
       ok: false,
@@ -42,7 +46,7 @@ function podeAvancarModulo(
   }
   for (const t of items) {
     if (t.notaMinima != null && t.notaMinima > 0) {
-      const s = t.pontuacao ?? (t.concluido ? 100 : null);
+      const s = t.pontuacao ?? (tarefaConcluidaEfectiva(t) ? 100 : null);
       if (s == null || s < t.notaMinima) {
         return {
           ok: false,
@@ -68,60 +72,44 @@ export function FormandoPercursoFooter({
   const next = sorted.slice(idx + 1).find((u) => u.desbloqueado);
   const gate = podeAvancarModulo(current, tarefas);
 
-  if (!current) return null;
+  if (!current || !gate.ok) return null;
 
   if (!next) {
     const total = sorted.length;
-    const enabled = gate.ok && !busy;
+    const enabled = !busy;
     return (
       <button
         type="button"
         disabled={!enabled}
         onClick={onSair}
-        className="sticky bottom-0 z-10 flex w-full min-w-0 max-w-full flex-col items-center gap-1 border-t border-teal-500/30 bg-gradient-to-r from-blue-700 to-teal-700 px-4 py-4 pb-[max(1rem,var(--safe-bottom))] text-center text-white transition-all hover:from-blue-600 hover:to-teal-600 disabled:cursor-not-allowed disabled:from-slate-700 disabled:to-slate-800 disabled:opacity-80 sm:px-6"
+        className="shrink-0 z-10 flex w-full min-w-0 max-w-full flex-col items-center gap-1 border-t border-teal-500/30 bg-gradient-to-r from-blue-700 to-teal-700 px-4 py-3 pb-[max(0.75rem,var(--safe-bottom))] text-center text-white transition-all hover:from-blue-600 hover:to-teal-600 disabled:cursor-not-allowed disabled:opacity-70 sm:px-6 sm:py-4"
       >
-        {enabled ? (
-          <CheckCircle2 className="h-5 w-5 shrink-0" />
-        ) : (
-          <Lock className="h-4 w-4 shrink-0 text-slate-400" />
-        )}
+        <CheckCircle2 className="h-5 w-5 shrink-0" />
         <span className="w-full max-w-full break-words text-sm font-bold uppercase tracking-wide">
           {idx + 1} de {total} - {current.titulo}
         </span>
         <span className="inline-flex items-center gap-1.5 text-[11px] opacity-90">
-          {enabled ? (
-            <>
-              <LogOut className="h-3.5 w-3.5" />
-              Concluir e sair dos conteúdos
-            </>
-          ) : (
-            (gate.motivo ?? "Conclui este módulo para sair")
-          )}
+          <LogOut className="h-3.5 w-3.5" />
+          Concluir e sair dos conteúdos
         </span>
       </button>
     );
   }
 
-  const enabled = gate.ok && !busy;
+  const enabled = !busy;
 
   return (
     <button
       type="button"
       disabled={!enabled}
       onClick={onAvancar}
-      className="sticky bottom-0 z-10 flex w-full min-w-0 max-w-full flex-col items-center gap-1 border-t border-blue-500/30 bg-gradient-to-r from-blue-600 to-teal-600 px-4 py-4 pb-[max(1rem,var(--safe-bottom))] text-center text-white transition-all hover:from-blue-500 hover:to-teal-500 disabled:cursor-not-allowed disabled:from-slate-700 disabled:to-slate-800 disabled:opacity-80 sm:px-6"
+      className="shrink-0 z-10 flex w-full min-w-0 max-w-full flex-col items-center gap-1 border-t border-blue-500/30 bg-gradient-to-r from-blue-600 to-teal-600 px-4 py-3 pb-[max(0.75rem,var(--safe-bottom))] text-center text-white transition-all hover:from-blue-500 hover:to-teal-500 disabled:cursor-not-allowed disabled:opacity-70 sm:px-6 sm:py-4"
     >
-      {enabled ? (
-        <ChevronDown className="h-5 w-5 shrink-0 animate-bounce" />
-      ) : (
-        <Lock className="h-4 w-4 shrink-0 text-slate-400" />
-      )}
+      <ChevronDown className="h-5 w-5 shrink-0 animate-bounce" />
       <span className="w-full max-w-full break-words text-sm font-bold uppercase tracking-wide">
         {idx + 2} de {sorted.length} - {next.titulo}
       </span>
-      <span className="text-[11px] opacity-90">
-        {enabled ? "Avançar para o módulo seguinte" : (gate.motivo ?? "Conclui este módulo para avançar")}
-      </span>
+      <span className="text-[11px] opacity-90">Avançar para o módulo seguinte</span>
     </button>
   );
 }

@@ -20,6 +20,7 @@ import { TempoPresencaAoVivo } from "@/components/lms/tempo-presenca-ao-vivo";
 import { SessaoLiveHero } from "@/components/formando/sessao-live-hero";
 import { FormandoCursoView } from "@/components/formando/formando-curso-view";
 import type { PercursoFormando } from "@/components/formando/formando-percurso-types";
+import { percentualProgressoPercurso, tarefaConcluidaEfectiva } from "@nexiforma/shared";
 import { Alert } from "@/components/ui";
 
 type PresencaResumo = {
@@ -348,8 +349,13 @@ export function FormandoAprendizagemView({ matriculaId }: Props) {
   }
 
   const totalMods = percurso?.tarefas.length ?? 0;
-  const doneMods = percurso?.tarefas.filter((t) => t.concluido).length ?? 0;
-  const progressPct = totalMods > 0 ? Math.round((doneMods / totalMods) * 100) : 0;
+  const doneMods = percurso?.tarefas.filter((t) => tarefaConcluidaEfectiva(t)).length ?? 0;
+  const progressPct =
+    percurso?.prazoLms?.percentualConclusao != null
+      ? Math.min(100, Math.floor(percurso.prazoLms.percentualConclusao))
+      : totalMods > 0
+        ? Math.floor(percentualProgressoPercurso(percurso!.tarefas, { decimals: 0 }))
+        : 0;
   const modoCurso = totalMods > 0 && !!block && !!percurso;
 
   const topSlotCurso = block ? (
@@ -475,9 +481,12 @@ export function FormandoAprendizagemView({ matriculaId }: Props) {
               />
             </div>
             <span className="text-sm font-bold text-slate-200 tabular-nums">
-              {doneMods}/{totalMods}
+              {progressPct}%
             </span>
           </div>
+          <p className="text-xs text-slate-500 mt-2">
+            {doneMods}/{totalMods} conteúdos concluídos (inclui bloqueados no total)
+          </p>
           {pendingTasks.length > 0 ? (
             <p className="text-xs text-amber-400/90 mt-2">
               Tens {pendingTasks.length} tarefa(s) por concluir nesta formação.

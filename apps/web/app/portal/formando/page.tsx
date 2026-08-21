@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, GraduationCap } from "lucide-react";
+import { percentualProgressoPercurso } from "@nexiforma/shared";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { useMinhasSessoesPoll } from "@/lib/lms/use-minhas-sessoes-poll";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,6 +36,7 @@ type PercursoResumo = {
   total: number;
   concluidos: number;
   pendentes: number;
+  pct: number;
   prazoLms?: {
     limite: string;
     diasRestantes: number | null;
@@ -59,17 +61,28 @@ export default function FormandoPortalPage() {
           { headers: { accept: "application/json" } },
         );
         if (!pRes.ok) {
-          next[b.matriculaId] = { total: 0, concluidos: 0, pendentes: 0 };
+          next[b.matriculaId] = { total: 0, concluidos: 0, pendentes: 0, pct: 0 };
           return;
         }
         const p = (await pRes.json()) as {
-          tarefas: Array<{ concluido: boolean; desbloqueado: boolean }>;
+          tarefas: Array<{ concluido: boolean; desbloqueado: boolean; percentual: number }>;
           prazoLms?: PercursoResumo["prazoLms"];
         };
         const total = p.tarefas.length;
-        const concluidos = p.tarefas.filter((t) => t.concluido).length;
-        const pendentes = p.tarefas.filter((t) => t.desbloqueado && !t.concluido).length;
-        next[b.matriculaId] = { total, concluidos, pendentes, prazoLms: p.prazoLms ?? null };
+        const concluidos = p.tarefas.filter((t) => t.concluido || t.percentual >= 100).length;
+        const pctBackend = p.prazoLms?.percentualConclusao;
+        const pct =
+          pctBackend != null
+            ? Math.min(100, Math.floor(pctBackend))
+            : Math.floor(percentualProgressoPercurso(p.tarefas, { decimals: 0 }));
+        const pendentes = p.tarefas.filter((t) => t.desbloqueado && !(t.concluido || t.percentual >= 100)).length;
+        next[b.matriculaId] = {
+          total,
+          concluidos,
+          pendentes,
+          prazoLms: p.prazoLms ?? null,
+          pct,
+        };
       }),
     );
     setProgresso(next);
@@ -143,7 +156,8 @@ export default function FormandoPortalPage() {
         <div className="space-y-3">
           {blocks.map((block) => {
             const prog = progresso[block.matriculaId];
-            const pct = prog && prog.total > 0 ? Math.round((prog.concluidos / prog.total) * 100) : 0;
+            const pct = prog?.pct ?? 0;
+            const completo = prog?.prazoLms?.completo ?? (prog && prog.total > 0 && pct >= 100);
             return (
               <Card
                 key={block.matriculaId}
@@ -156,7 +170,7 @@ export default function FormandoPortalPage() {
                       <p className="text-sm text-slate-400">{block.turma}</p>
                       {prog && prog.total > 0 ? (
                         <p className="text-xs text-slate-500 mt-1">
-                          {prog.concluidos}/{prog.total} módulos concluídos
+                          {prog.concluidos}/{prog.total} conteúdos concluídos
                           {prog.pendentes > 0 ? (
                             <span className="text-amber-400/90"> · {prog.pendentes} por fazer</span>
                           ) : null}
@@ -188,7 +202,7 @@ export default function FormandoPortalPage() {
                       href={`/portal/formando/aprendizagem/${block.matriculaId}`}
                       className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white shrink-0"
                     >
-                      Continuar
+                      {completo ? "Rever conteúdos" : "Continuar"}
                       <ArrowRight className="h-3.5 w-3.5" />
                     </Link>
                   </div>

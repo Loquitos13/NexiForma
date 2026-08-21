@@ -2,6 +2,7 @@
 
 import { Check, Circle, Lock } from "lucide-react";
 import { cn } from "@/lib/ui/cn";
+import { tarefaConcluidaEfectiva } from "@nexiforma/shared";
 import type { TarefaPercurso, UnidadePercurso } from "./formando-percurso-types";
 import { tarefasDaUnidade } from "./formando-percurso-types";
 
@@ -21,8 +22,10 @@ type Props = {
 };
 
 function unidadeConcluida(tarefas: TarefaPercurso[], unidadeId: string): boolean {
-  const items = tarefasDaUnidade(tarefas, unidadeId);
-  return items.length > 0 && items.every((t) => t.concluido);
+  const all = tarefasDaUnidade(tarefas, unidadeId);
+  const items = all.filter((t) => t.desbloqueado);
+  if (items.length === 0) return all.length === 0;
+  return items.every((t) => tarefaConcluidaEfectiva(t));
 }
 
 export function FormandoPercursoSidebar({

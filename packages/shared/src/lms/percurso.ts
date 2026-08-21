@@ -190,3 +190,28 @@ export function tarefaDesbloqueada(
 export function notaMinimaParaDesbloquearProximo(unidade: ModuloPercurso): number {
   return unidade.notaMinima ?? DEFAULT_NOTA_MINIMA_MODULO;
 }
+
+/** Tarefa concluída para UI/progresso (concluidoEm ou percentual completo). */
+export type TarefaProgressoUi = {
+  concluido: boolean;
+  percentual: number;
+};
+
+export function tarefaConcluidaEfectiva(t: TarefaProgressoUi): boolean {
+  return t.concluido || t.percentual >= 100;
+}
+
+/**
+ * Percentagem sobre todas as tarefas publicadas (inclui bloqueadas no total).
+ * 2 concluídas em 4 (2 bloqueadas) → 50%.
+ */
+export function percentualProgressoPercurso(
+  tarefas: TarefaProgressoUi[],
+  opts?: { decimals?: 0 | 1 },
+): number {
+  const total = tarefas.length;
+  if (total === 0) return 0;
+  const done = tarefas.filter(tarefaConcluidaEfectiva).length;
+  const raw = (done / total) * 100;
+  return opts?.decimals === 0 ? Math.round(raw) : Math.round(raw * 10) / 10;
+}
