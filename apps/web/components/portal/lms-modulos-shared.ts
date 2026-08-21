@@ -121,9 +121,23 @@ export function globalPubStats(modulos: ModuloNode[]) {
   return { total: modulos.length, pub };
 }
 
-export function metodologiaLabel(m: MetodologiaModulo | null | undefined): string {
-  if (!m) return "Curso";
+export function metodologiaLabel(m: MetodologiaModulo | null | undefined): string | null {
+  if (!m) return null;
   return METODOLOGIA_OPTS.find((o) => o.id === m)?.label ?? m;
+}
+
+/** Resumo de horas teóricas/práticas para cards na sidebar. */
+export function formatHorasModulo(u: UnidadeNode): string {
+  const t = u.cargaHorasTeoricas;
+  const p = u.cargaHorasPraticas;
+  if (t != null || p != null) {
+    const tStr = t != null ? `${t}h T` : "-- T";
+    const pStr = p != null ? `${p}h P` : "-- P";
+    const sum = (t ?? 0) + (p ?? 0);
+    return sum > 0 ? `${tStr} · ${pStr} · ${sum}h` : `${tStr} · ${pStr}`;
+  }
+  const total = u.cargaHoras ?? 0;
+  return total > 0 ? `${total}h` : "--h";
 }
 
 export function quizPonderacaoTotal(modulos: ModuloNode[], unidadeId: string | null): number {

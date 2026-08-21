@@ -27,6 +27,7 @@ type Props = {
   cursoId: string;
   cursoTitulo?: string;
   cursoCargaHoras?: number;
+  cursoModalidade?: string;
   lmsProgressaoSequencial?: boolean;
   acaoTitulo?: string;
   canEdit: boolean;
@@ -53,6 +54,7 @@ export function ActionContentBuilder({
   cursoId,
   cursoTitulo,
   cursoCargaHoras = 0,
+  cursoModalidade,
   lmsProgressaoSequencial = true,
   acaoTitulo,
   canEdit,
@@ -156,7 +158,12 @@ export function ActionContentBuilder({
     const r = await bffFetch("/api/v1/conteudos-lms/unidades", {
       method: "POST",
       headers: { "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ cursoId, titulo: `Módulo ${unidades.length + 1}`, ordem: unidades.length }),
+      body: JSON.stringify({
+        cursoId,
+        titulo: `Módulo ${unidades.length + 1}`,
+        ordem: unidades.length,
+        metodologia: cursoModalidade || undefined,
+      }),
     });
     setBusy(false);
     if (!r.ok) {
@@ -472,7 +479,7 @@ export function ActionContentBuilder({
           onUnidadeDrop={(idx) => void handleUnidadeDrop(idx)}
         />
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
           {!selectedUnidadeId ? (
             <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
               <BookMarked className="mb-3 h-12 w-12 text-slate-600" />

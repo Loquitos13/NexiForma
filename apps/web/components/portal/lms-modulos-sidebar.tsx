@@ -4,6 +4,7 @@ import { BookMarked, GripVertical, Plus } from "lucide-react";
 import { UNIDADE_FLAT_ID } from "@/components/formando/formando-percurso-types";
 import {
   globalPubStats,
+  formatHorasModulo,
   metodologiaLabel,
   pubStats,
   totalHorasUnidades,
@@ -139,7 +140,8 @@ export function LmsModulosSidebar({
             {unidades.map((u, idx) => {
               const active = selectedUnidadeId === u.id;
               const stats = pubStats(modulos, u.id);
-              const horas = u.cargaHoras ?? (u.cargaHorasTeoricas ?? 0) + (u.cargaHorasPraticas ?? 0);
+              const horasLine = formatHorasModulo(u);
+              const metLabel = metodologiaLabel(u.metodologia ?? null);
               return (
                 <div
                   key={u.id}
@@ -179,9 +181,8 @@ export function LmsModulosSidebar({
                       />
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold text-slate-100 line-clamp-2">{u.titulo}</p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">
-                          {horas > 0 ? `${horas}h` : "--h"} · {stats.total} conteúdo(s)
-                        </p>
+                        <p className="text-[10px] text-slate-400 mt-0.5 tabular-nums">{horasLine}</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">{stats.total} conteúdo(s)</p>
                         <p className="text-[10px] mt-0.5">
                           <span className={u.visivel !== false ? "text-teal-500/80" : "text-slate-600"}>
                             {u.visivel !== false ? "Visível" : "Oculto"}
@@ -191,9 +192,15 @@ export function LmsModulosSidebar({
                           ) : null}
                         </p>
                         <div className="mt-1.5 flex flex-wrap gap-1">
-                          <span className="rounded border border-violet-500/25 bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-medium text-violet-300">
-                            {metodologiaLabel(u.metodologia ?? null)}
-                          </span>
+                          {metLabel ? (
+                            <span className="rounded border border-violet-500/25 bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-medium text-violet-300">
+                              {metLabel}
+                            </span>
+                          ) : (
+                            <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-300">
+                              Metodologia?
+                            </span>
+                          )}
                           <span
                             className={`rounded border px-1.5 py-0.5 text-[9px] font-medium ${
                               u.obrigatorio !== false

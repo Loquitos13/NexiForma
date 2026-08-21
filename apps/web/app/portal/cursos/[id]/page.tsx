@@ -261,7 +261,7 @@ export default function CursoDetailPage() {
           <CardHeader>
             <CardTitle>Módulos da formação</CardTitle>
           </CardHeader>
-          <CardContent className="overflow-hidden">
+          <CardContent>
             <p className="text-sm text-slate-400 mb-4">
               Organiza módulos, metodologia e conteúdos do percurso LMS partilhado por todas as acções deste curso.
             </p>
@@ -269,6 +269,7 @@ export default function CursoDetailPage() {
               cursoId={curso.id}
               cursoTitulo={curso.designacao}
               cursoCargaHoras={curso.cargaHoras}
+              cursoModalidade={curso.modalidade}
               lmsProgressaoSequencial={curso.lmsProgressaoSequencial !== false}
               canEdit={canEditContent}
               initialUnidadeId={openUnidadeId}

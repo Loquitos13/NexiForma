@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Eye, EyeOff, Pencil, Star, Trash2, X } from "lucide-react";
+import { Eye, EyeOff, Pencil, Star, Trash2 } from "lucide-react";
 import {
   INPUT_CLASS,
   METODOLOGIA_OPTS,
@@ -183,10 +183,16 @@ export function LmsModuloHeader({
       </div>
 
       <div>
-        <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1.5">Metodologia</p>
-        <div className="inline-flex rounded-lg border border-slate-700/40 p-0.5">
+        <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1.5">
+          Metodologia <span className="text-red-400/90">*</span>
+        </p>
+        <div
+          className={`inline-flex rounded-lg border p-0.5 ${
+            unidade.metodologia ? "border-slate-700/40" : "border-amber-500/40 ring-1 ring-amber-500/20"
+          }`}
+        >
           {METODOLOGIA_OPTS.map((m) => {
-            const active = (unidade.metodologia ?? null) === m.id;
+            const active = unidade.metodologia === m.id;
             return (
               <button
                 key={m.id}
@@ -201,20 +207,10 @@ export function LmsModuloHeader({
               </button>
             );
           })}
-          {unidade.metodologia ? (
-            <button
-              type="button"
-              disabled={!canEdit || busy}
-              title="Herda do curso"
-              onClick={() => onUpdate({ metodologia: null })}
-              className="rounded-md px-2 py-1.5 text-slate-600 hover:text-slate-400"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          ) : (
-            <span className="self-center px-2 text-[10px] text-slate-600">(curso)</span>
-          )}
         </div>
+        {!unidade.metodologia ? (
+          <p className="mt-1.5 text-[10px] text-amber-400">Selecciona presencial, b-learning ou e-learning.</p>
+        ) : null}
       </div>
     </div>
   );

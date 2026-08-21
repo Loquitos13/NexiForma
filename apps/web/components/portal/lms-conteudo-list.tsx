@@ -69,7 +69,7 @@ export function LmsConteudoList({
   const uploadTargetRef = useRef<string | null>(null);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="w-full">
       <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-slate-700/20">
         <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
           Conteúdos · {conteudos.length}
@@ -118,7 +118,7 @@ export function LmsConteudoList({
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-2" data-guided-flow-anchor="lms-lista-conteudos">
+      <div className="p-4 space-y-2 pb-8" data-guided-flow-anchor="lms-lista-conteudos">
         {conteudos.length === 0 ? (
           <p className="py-8 text-center text-sm text-slate-500">Este módulo está vazio. Adiciona conteúdos acima.</p>
         ) : (
@@ -210,7 +210,7 @@ export function LmsConteudoList({
                 </div>
 
                 {expanded ? (
-                  <div className="border-t border-slate-700/30 p-5 space-y-4 min-h-[min(58vh,520px)]">
+                  <div className="border-t border-slate-700/30 p-5 space-y-4 w-full">
                     <div className="grid gap-3 sm:grid-cols-2">
                       <label className="block">
                         <span className="text-[10px] uppercase tracking-wide text-slate-500">Título</span>
