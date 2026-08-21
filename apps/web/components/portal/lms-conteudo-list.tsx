@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { isModuloStorageRef } from "@nexiforma/shared";
 import { ModuloStoredMedia } from "@/components/lms/ModuloStoredMedia";
+import { RichTemplateEditor } from "@/components/settings/rich-template-editor";
 import { QuizPerguntaEditor } from "@/components/portal/QuizPerguntaEditor";
 import {
   INPUT_CLASS,
@@ -264,17 +265,26 @@ export function LmsConteudoList({
                     </div>
 
                     {m.tipo === "TEXTO" ? (
-                      <label className="block">
+                      <div className="block min-w-0">
                         <span className="text-[10px] uppercase tracking-wide text-slate-500">Conteúdo</span>
-                        <textarea
-                          rows={14}
-                          className={`${INPUT_CLASS} mt-1 resize-y min-h-[280px]`}
-                          value={m.conteudoHtml ?? ""}
-                          disabled={!canEdit}
-                          placeholder="Ao completar este módulo o formando será capaz de..."
-                          onChange={(e) => onUpdate(m.id, { conteudoHtml: e.target.value })}
-                        />
-                      </label>
+                        <div className="mt-1.5 min-w-0 rounded-lg border border-slate-700/40 bg-slate-950/40 p-2 sm:p-3">
+                          {canEdit ? (
+                            <RichTemplateEditor
+                              key={m.id}
+                              value={m.conteudoHtml ?? ""}
+                              onChange={(html) => onUpdate(m.id, { conteudoHtml: html })}
+                              formato="html"
+                              pageLayout="fluid"
+                              placeholder="Ao completar este módulo o formando será capaz de..."
+                            />
+                          ) : (
+                            <div
+                              className="prose prose-invert prose-sm max-w-none text-slate-300 px-1 py-2"
+                              dangerouslySetInnerHTML={{ __html: m.conteudoHtml ?? "" }}
+                            />
+                          )}
+                        </div>
+                      </div>
                     ) : null}
 
                     {m.tipo === "VIDEO" ? (

@@ -7,6 +7,7 @@ import { bffFetch } from "@/lib/client/bff-fetch";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { Button } from "@/components/ui";
 import { ModuloStoredMedia } from "@/components/lms/ModuloStoredMedia";
+import { RichTemplateEditor } from "@/components/settings/rich-template-editor";
 import { QuizPerguntaEditor } from "@/components/portal/QuizPerguntaEditor";
 import { isModuloStorageRef, validarModuloConteudoCompleto } from "@nexiforma/shared";
 
@@ -583,20 +584,26 @@ export default function CourseFlowBuilder() {
 
             {/* ── Conteúdo por tipo ── */}
             {selected.tipo === "TEXTO" ? (
-              <div className="rounded-lg border border-slate-700/40 bg-slate-900/50 p-3 space-y-2">
+              <div
+                className="rounded-lg border border-slate-700/40 bg-slate-900/50 p-3 space-y-2"
+                onBlur={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    void updateModulo(selectedIdx, { conteudoHtml: selected.conteudoHtml });
+                  }
+                }}
+              >
                 <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Texto</p>
-                <textarea
+                <RichTemplateEditor
+                  key={selected.id}
                   value={selected.conteudoHtml ?? ""}
-                  onChange={(e) => {
-                    const v = e.target.value || null;
+                  onChange={(html) => {
                     setModulos((prev) =>
-                      prev.map((m, i) => (i === selectedIdx ? { ...m, conteudoHtml: v } : m)),
+                      prev.map((m, i) => (i === selectedIdx ? { ...m, conteudoHtml: html } : m)),
                     );
                   }}
-                  onBlur={() => void updateModulo(selectedIdx, { conteudoHtml: selected.conteudoHtml })}
-                  rows={8}
-                  placeholder="Escreve o conteúdo (HTML permitido)…"
-                  className={`${inputClass} resize-y min-h-[120px]`}
+                  formato="html"
+                  pageLayout="fluid"
+                  placeholder="Escreve o conteúdo do módulo…"
                 />
               </div>
             ) : null}
