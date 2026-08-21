@@ -34,7 +34,7 @@ const STEPS = [
   {
     id: "consent",
     title: "Admin consent (permissões)",
-    desc: "Conceder consentimento de administrador para OnlineMeetings.ReadWrite e Calendars.ReadWrite na app.",
+    desc: "Conceder consentimento de administrador para OnlineMeetings.ReadWrite, OnlineMeetingTranscript.Read.All e User.Read.All na app.",
     manual: true,
   },
   {

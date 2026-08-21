@@ -39,6 +39,8 @@ export type CalendarioEventoRow = {
   reuniaoIniciadaEm?: string | null;
   reuniaoTerminadaEm?: string | null;
   reuniaoDuracaoSegundos?: number | null;
+  teamsTranscricao?: string | null;
+  teamsTranscricaoEstado?: string | null;
   iniciadaEm?: string | null;
   terminadaEm?: string | null;
   formadorEntradaEm?: string | null;
@@ -691,6 +693,8 @@ export function PortalCalendarioView({
                         reuniaoIniciadaEm: e.reuniaoIniciadaEm,
                         reuniaoTerminadaEm: e.reuniaoTerminadaEm,
                         reuniaoDuracaoSegundos: e.reuniaoDuracaoSegundos,
+                        teamsTranscricao: e.teamsTranscricao,
+                        teamsTranscricaoEstado: e.teamsTranscricaoEstado,
                       }}
                       podeCriarSalaTeams={podeCriarSalaTeams}
                       teamsAviso={teamsIntegracaoAviso}

@@ -16,6 +16,8 @@ export type ReuniaoTeamsState = {
   reuniaoIniciadaEm?: string | null;
   reuniaoTerminadaEm?: string | null;
   reuniaoDuracaoSegundos?: number | null;
+  teamsTranscricaoEstado?: string | null;
+  teamsTranscricao?: string | null;
 };
 
 type NotaForm = {
@@ -130,6 +132,7 @@ export function CrmReuniaoTeamsControls({
   const submitTerminar = async () => {
     const payload = {
       registarNota,
+      importarTranscricao: true,
       ...(registarNota
         ? {
             contexto: notaForm.contexto.trim() || undefined,
@@ -150,6 +153,8 @@ export function CrmReuniaoTeamsControls({
     }
   };
 
+  const importarTranscricao = () => void patchLocal("/teams/transcricao");
+
   return (
     <div className="mt-3 space-y-2 border-t border-slate-600/40 pt-3">
       <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-300/80">
@@ -164,12 +169,37 @@ export function CrmReuniaoTeamsControls({
       ) : null}
 
       {concluida ? (
-        <p className="text-xs text-slate-400">
-          Duração:{" "}
-          <span className="font-mono text-slate-200">
-            {formatarDuracaoHhMmSs(reuniao.reuniaoDuracaoSegundos ?? 0)}
-          </span>
-        </p>
+        <div className="space-y-2">
+          <p className="text-xs text-slate-400">
+            Duração:{" "}
+            <span className="font-mono text-slate-200">
+              {formatarDuracaoHhMmSs(reuniao.reuniaoDuracaoSegundos ?? 0)}
+            </span>
+          </p>
+          {reuniao.teamsTranscricaoEstado ? (
+            <p className="text-xs text-slate-500">
+              Transcrição:{" "}
+              <span className="text-slate-300">{reuniao.teamsTranscricaoEstado}</span>
+            </p>
+          ) : null}
+          {reuniao.teamsTranscricao ? (
+            <details className="rounded-lg border border-slate-700/40 bg-slate-900/40 p-2">
+              <summary className="cursor-pointer text-xs text-teal-300">Ver transcrição Teams</summary>
+              <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-[11px] text-slate-300">
+                {reuniao.teamsTranscricao}
+              </pre>
+            </details>
+          ) : reuniao.salaJoinUrl ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void importarTranscricao()}
+            >
+              {busy ? "A importar…" : "Importar transcrição Teams"}
+            </Button>
+          ) : null}
+        </div>
       ) : emCurso && reuniao.reuniaoIniciadaEm ? (
         <div className="flex flex-wrap items-center gap-3">
           <div>
