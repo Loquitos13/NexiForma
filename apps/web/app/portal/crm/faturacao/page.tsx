@@ -381,6 +381,10 @@ export default function CrmFaturacaoConfigPage() {
         }
       />
 
+      <Alert variant="warning">
+        Em desenvolvimento… Brevemente - a faturação AT está a ser preparada para disponibilização completa.
+      </Alert>
+
       {error ? <Alert variant="error">{error}</Alert> : null}
       {msg ? <Alert variant="success">{msg}</Alert> : null}
 

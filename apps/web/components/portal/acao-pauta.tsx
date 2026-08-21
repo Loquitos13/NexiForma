@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, GraduationCap } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
@@ -42,18 +43,29 @@ type PautaData = {
 
 type Props = { acaoId: string };
 
-function notaClass(n: number | null) {
+type AvaliacaoParams = {
+  escalaMaxima: number;
+  notaMinimaAprovacao: number;
+};
+
+const DEFAULT_PARAMS: AvaliacaoParams = {
+  escalaMaxima: 100,
+  notaMinimaAprovacao: 50,
+};
+
+function notaClass(n: number | null, minAprovacao: number, escalaMaxima: number) {
   if (n == null) return "text-slate-500";
-  if (n >= 80) return "text-green-400";
-  if (n >= 50) return "text-yellow-400";
+  const pct = escalaMaxima > 0 ? (n / escalaMaxima) * 100 : n;
+  if (pct >= 80) return "text-green-400";
+  if (pct >= (minAprovacao / escalaMaxima) * 100) return "text-yellow-400";
   return "text-red-400";
 }
 
-function parseNota(raw: string): number | null | "invalid" {
+function parseNota(raw: string, escalaMaxima: number): number | null | "invalid" {
   const t = raw.trim();
   if (t === "") return null;
   const n = Number(t);
-  if (!Number.isFinite(n) || n < 0 || n > 100) return "invalid";
+  if (!Number.isFinite(n) || n < 0 || n > escalaMaxima) return "invalid";
   return n;
 }
 
@@ -73,6 +85,20 @@ export function AcaoPauta({ acaoId }: Props) {
   const [turmaId, setTurmaId] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
+  const [params, setParams] = useState<AvaliacaoParams>(DEFAULT_PARAMS);
+
+  const loadParams = useCallback(async () => {
+    const r = await bffFetch("/api/v1/portal/tenant/avaliacao-parametros", {
+      headers: { accept: "application/json" },
+    });
+    if (!r.ok) return;
+    const json = (await r.json()) as { parametros: AvaliacaoParams };
+    setParams(json.parametros);
+  }, []);
+
+  useEffect(() => {
+    void loadParams();
+  }, [loadParams]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -123,7 +149,7 @@ export function AcaoPauta({ acaoId }: Props) {
       let nFormando = 0;
       for (const m of data.modulos) {
         const key = `${f.matriculaId}:${m.id}`;
-        const parsed = parseNota(drafts[key] ?? "");
+        const parsed = parseNota(drafts[key] ?? "", params.escalaMaxima);
         if (typeof parsed === "number") {
           preenchidas += 1;
           soma += parsed;
@@ -131,7 +157,7 @@ export function AcaoPauta({ acaoId }: Props) {
           nFormando += 1;
         }
       }
-      if (nFormando > 0 && somaFormando / nFormando >= 50) aprovados += 1;
+      if (nFormando > 0 && somaFormando / nFormando >= params.notaMinimaAprovacao) aprovados += 1;
     }
     return {
       celulas,
@@ -139,13 +165,13 @@ export function AcaoPauta({ acaoId }: Props) {
       media: preenchidas ? Math.round((soma / preenchidas) * 10) / 10 : null,
       aprovados,
     };
-  }, [data, formandos, drafts]);
+  }, [data, formandos, drafts, params.notaMinimaAprovacao]);
 
   async function guardar(matriculaId: string, moduloUnidadeId: string) {
     const key = `${matriculaId}:${moduloUnidadeId}`;
-    const parsed = parseNota(drafts[key] ?? "");
+    const parsed = parseNota(drafts[key] ?? "", params.escalaMaxima);
     if (parsed === "invalid") {
-      setError("Nota inválida (0–100).");
+      setError(`Nota inválida (0–${params.escalaMaxima}).`);
       return;
     }
     const cell = data?.formandos
@@ -214,7 +240,7 @@ export function AcaoPauta({ acaoId }: Props) {
         f.turmaCodigo,
         ...data.modulos.map((m) => {
           const key = `${f.matriculaId}:${m.id}`;
-          const parsed = parseNota(drafts[key] ?? "");
+          const parsed = parseNota(drafts[key] ?? "", params.escalaMaxima);
           return typeof parsed === "number" ? String(parsed) : "";
         }),
       ];
@@ -256,9 +282,12 @@ export function AcaoPauta({ acaoId }: Props) {
                 Pauta por módulo
               </CardTitle>
               <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-                Nota do teste final de cada módulo (0–100). As pontuações LMS não entram nesta
-                grelha. O formador só edita módulos das sessões atribuídas; o gestor edita todos.
-                Guarda ao sair da célula (ou Enter).
+                Nota do teste final de cada módulo (0–{params.escalaMaxima}). Aprovação a partir de{" "}
+                {params.notaMinimaAprovacao}. As pontuações LMS não entram nesta grelha. Guarda ao sair
+                da célula (ou Enter).{" "}
+                <Link href="/portal/avaliacoes" className="text-blue-400 hover:text-blue-300">
+                  Editar parâmetros de avaliação
+                </Link>
               </p>
             </div>
             <Button
@@ -286,13 +315,13 @@ export function AcaoPauta({ acaoId }: Props) {
             </div>
             <div className="rounded-xl border border-slate-700/40 bg-slate-950/40 px-3 py-2.5">
               <p className="text-[10px] uppercase tracking-wide text-slate-500">Média</p>
-              <p className={`text-lg font-semibold tabular-nums ${notaClass(resumo.media)}`}>
+              <p className={`text-lg font-semibold tabular-nums ${notaClass(resumo.media, params.notaMinimaAprovacao, params.escalaMaxima)}`}>
                 {resumo.media != null ? resumo.media : "-"}
               </p>
             </div>
             <div className="rounded-xl border border-slate-700/40 bg-slate-950/40 px-3 py-2.5">
               <p className="text-[10px] uppercase tracking-wide text-slate-500">
-                Formandos ≥50
+                Formandos ≥{params.notaMinimaAprovacao}
               </p>
               <p className="text-lg font-semibold tabular-nums text-slate-100">
                 {resumo.aprovados}
@@ -371,9 +400,11 @@ export function AcaoPauta({ acaoId }: Props) {
                             <input
                               type="number"
                               min={0}
-                              max={100}
+                              max={params.escalaMaxima}
                               className={`mx-auto h-7 w-full max-w-[2.75rem] rounded-md border border-slate-600/60 bg-slate-950/80 px-0.5 text-center text-xs tabular-nums sm:h-8 sm:max-w-[3.25rem] sm:text-sm ${notaClass(
                                 drafts[key] === "" ? null : Number(drafts[key]),
+                                params.notaMinimaAprovacao,
+                                params.escalaMaxima,
                               )}`}
                               value={drafts[key] ?? ""}
                               placeholder="-"
@@ -393,7 +424,7 @@ export function AcaoPauta({ acaoId }: Props) {
                             />
                           ) : (
                             <span
-                              className={`text-xs tabular-nums font-medium sm:text-sm ${notaClass(cell?.nota ?? null)}`}
+                              className={`text-xs tabular-nums font-medium sm:text-sm ${notaClass(cell?.nota ?? null, params.notaMinimaAprovacao, params.escalaMaxima)}`}
                               title={m.titulo}
                             >
                               {cell?.nota != null ? cell.nota : "-"}

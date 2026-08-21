@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Shield, Save } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { parseApiError } from "@/lib/ui/backoffice";
@@ -120,6 +120,41 @@ export function SigoTenantConfigPanel({ onSaved }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const dirty = useMemo(() => {
+    if (!cfg || !perfis) return false;
+    if (apiKey.trim() || soapPassword.trim()) return true;
+    return (
+      integracaoAtiva !== cfg.integracaoAtiva ||
+      protocolo !== (cfg.protocolo ?? "soap") ||
+      nifEntidade !== cfg.nifEntidade ||
+      (codigoEntidade || "") !== (cfg.codigoEntidade ?? "") ||
+      (denominacaoEntidade || "") !== (cfg.denominacaoEntidade ?? "") ||
+      (baseUrlOverride || "") !== (cfg.baseUrlOverride ?? "") ||
+      (wsdlUrl || "") !== (cfg.wsdlUrl ?? "") ||
+      (soapEndpoint || "") !== (cfg.soapEndpoint ?? "") ||
+      (soapUsername || "") !== (cfg.soapUsername ?? "") ||
+      (ipAutorizado || "") !== (cfg.ipAutorizado ?? "") ||
+      regiaoPortal !== (cfg.regiaoPortal ?? "CONTINENTE") ||
+      JSON.stringify(perfis) !== JSON.stringify(cfg.perfisAcesso)
+    );
+  }, [
+    cfg,
+    perfis,
+    integracaoAtiva,
+    protocolo,
+    nifEntidade,
+    codigoEntidade,
+    denominacaoEntidade,
+    baseUrlOverride,
+    wsdlUrl,
+    soapEndpoint,
+    soapUsername,
+    ipAutorizado,
+    regiaoPortal,
+    apiKey,
+    soapPassword,
+  ]);
 
   function togglePerfil(acao: SigoAcaoAcesso, role: TenantUserRole) {
     if (!perfis) return;
@@ -371,10 +406,12 @@ export function SigoTenantConfigPanel({ onSaved }: Props) {
         ) : null}
 
         <div className="flex flex-wrap gap-2">
-          <Button type="submit" size="sm" disabled={busy}>
-            <Save className="w-3.5 h-3.5 mr-1" />
-            {busy ? "A guardar…" : "Guardar configuração"}
-          </Button>
+          {dirty ? (
+            <Button type="submit" size="sm" disabled={busy}>
+              <Save className="w-3.5 h-3.5 mr-1" />
+              {busy ? "A guardar…" : "Guardar configuração"}
+            </Button>
+          ) : null}
           <Button type="button" size="sm" variant="secondary" disabled={testBusy} onClick={() => void testar()}>
             {testBusy ? "A testar…" : "Testar ligação"}
           </Button>

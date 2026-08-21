@@ -247,6 +247,10 @@ export default function SigoPage() {
         description="Submissões, reconciliação e trilho de auditoria para importação oficial DGEEC."
       />
 
+      <Alert variant="warning" className="mb-4">
+        <strong>Em desenvolvimento.</strong> A integração SIGO está a ser refinada; algumas funcionalidades podem estar incompletas ou sujeitas a alteração.
+      </Alert>
+
       {error ? <Alert variant="error" className="mb-4">{error}</Alert> : null}
       {msg ? <Alert variant="success" className="mb-4">{msg}</Alert> : null}
 

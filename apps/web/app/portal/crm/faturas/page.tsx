@@ -306,6 +306,10 @@ export default function CrmFaturasPage() {
         }
       />
 
+      <Alert variant="warning">
+        Em desenvolvimento… Brevemente - emissão de faturas, comunicação AT e SAF-T em preparação.
+      </Alert>
+
       {error ? <Alert variant="error">{error}</Alert> : null}
       {msg ? <Alert variant="success">{msg}</Alert> : null}
 

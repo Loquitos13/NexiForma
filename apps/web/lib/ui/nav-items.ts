@@ -431,7 +431,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Faturação",
     module: "faturacao",
-    moduleLabel: BILLING_ADDON_LABELS.faturacao_at,
+    moduleLabel: "Em desenvolvimento · Brevemente",
     icon: "Receipt",
     items: [
       { href: "/portal/crm/faturas", label: "Faturas", icon: "Receipt" },
@@ -480,7 +480,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/portal/compliance", label: "Compliance DGERT", icon: "ShieldCheck", minRole: "coordenador_pedagogico" },
       { href: "/portal/dossie", label: "Dossiê & Exports", icon: "FolderOpen", minRole: "coordenador_pedagogico" },
       { href: "/portal/certificados", label: "Certificados", icon: "Award", minRole: "coordenador_pedagogico" },
-      { href: "/portal/sigo", label: "SIGO", icon: "Upload", minRole: "coordenador_pedagogico" },
+      { href: "/portal/sigo", label: "SIGO (Em desenvolvimento)", icon: "Upload", minRole: "coordenador_pedagogico" },
       { href: "/portal/integracoes", label: "Plugins", icon: "Plug", minRole: "coordenador_pedagogico" },
     ],
   },
@@ -506,7 +506,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/portal/billing", label: "Subscrição", icon: "CreditCard" },
       { href: "/portal/enterprise", label: "Enterprise", icon: "Building2" },
       { href: "/portal/compliance", label: "Auditoria & DGERT", icon: "ShieldAlert" },
-      { href: "/portal/sigo", label: "SIGO & SAF-T", icon: "BookOpen" },
+      { href: "/portal/sigo", label: "SIGO (Em desenvolvimento)", icon: "BookOpen" },
       { href: "/portal/integracoes", label: "Plugins", icon: "Plug", minRole: "coordenador_pedagogico" },
     ],
   },

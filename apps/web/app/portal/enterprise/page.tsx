@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Key, Shield, ExternalLink, Copy, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Key, Shield, ExternalLink, Copy, Trash2, Building2 } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { formatDatePt } from "@/lib/calendar-date";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
 import { Alert, Button, Card, CardContent, PageHeader } from "@/components/ui";
 import { cn } from "@/lib/ui/cn";
 
@@ -32,6 +34,8 @@ const inputClass =
 
 export default function EnterprisePage() {
   const { canManage } = useTenantRole();
+  const { entitlements } = useTenantEntitlements();
+  const hasEnterprise = entitlements?.canAccessEnterpriseFeatures === true;
   const [tab, setTab] = useState<EnterpriseTab>("api");
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
   const [sso, setSso] = useState<SsoConfig | null>(null);
@@ -133,6 +137,40 @@ export default function EnterprisePage() {
       <div className="max-w-3xl">
         <h1 className="text-2xl font-bold text-slate-50">Enterprise</h1>
         <p className="text-sm text-slate-400 mt-2">Apenas gestores podem configurar integrações enterprise.</p>
+      </div>
+    );
+  }
+
+  if (!hasEnterprise) {
+    return (
+      <div className="space-y-6 max-w-3xl">
+        <PageHeader
+          title="Enterprise"
+          description="API pública e autenticação SSO para integrações externas."
+        />
+        <Card className="border-violet-500/20 bg-gradient-to-br from-violet-950/30 to-slate-900/40">
+          <CardContent className="py-8 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/15">
+                <Building2 className="h-5 w-5 text-violet-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-slate-100">Plano Enterprise necessário</h2>
+                <p className="text-sm text-slate-400 mt-1">
+                  Chaves API, SSO OIDC e integrações avançadas estão incluídas no plano Enterprise.
+                </p>
+              </div>
+            </div>
+            <ul className="text-sm text-slate-400 space-y-1 list-disc pl-5">
+              <li>Chaves API para integrações externas</li>
+              <li>Single Sign-On (Azure AD, OIDC)</li>
+              <li>Todos os módulos NexiForma incluídos</li>
+            </ul>
+            <Link href="/portal/billing">
+              <Button>Ver planos e subscrição</Button>
+            </Link>
+          </CardContent>
+        </Card>
       </div>
     );
   }

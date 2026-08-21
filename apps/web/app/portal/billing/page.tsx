@@ -98,6 +98,10 @@ export default function BillingPage() {
         description="Planos NexiForma - pagamento via Stripe Checkout."
       />
 
+      <Alert variant="warning" className="mb-4">
+        Em desenvolvimento… Brevemente - novas opções de subscrição e gestão de planos.
+      </Alert>
+
       {error && <Alert variant="error" className="mb-4">{error}</Alert>}
       {msg && <Alert variant="success" className="mb-4">{msg}</Alert>}
 

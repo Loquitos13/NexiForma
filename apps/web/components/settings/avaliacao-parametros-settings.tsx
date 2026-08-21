@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { Button, Input } from "@/components/ui";
 
@@ -46,6 +46,11 @@ export function AvaliacaoParametrosSettings({ compact = false, onSaved }: Props)
     void load();
   }, [load]);
 
+  const dirty = useMemo(() => {
+    if (!data || !form) return false;
+    return JSON.stringify(form) !== JSON.stringify(data.parametros);
+  }, [data, form]);
+
   function toggleTipo(id: string) {
     setForm((prev) => {
       if (!prev) return prev;
@@ -79,6 +84,7 @@ export function AvaliacaoParametrosSettings({ compact = false, onSaved }: Props)
     }
     const json = (await r.json()) as { parametros: Parametros };
     setForm(json.parametros);
+    setData((prev) => (prev ? { ...prev, parametros: json.parametros } : prev));
     setMsg("Parâmetros de avaliação actualizados.");
     onSaved?.(json.parametros);
     await load();
@@ -191,9 +197,11 @@ export function AvaliacaoParametrosSettings({ compact = false, onSaved }: Props)
           </span>
         </label>
 
-        <Button type="submit" disabled={busy}>
-          {busy ? "A guardar…" : "Guardar parâmetros"}
-        </Button>
+        {dirty ? (
+          <Button type="submit" disabled={busy}>
+            {busy ? "A guardar…" : "Guardar parâmetros"}
+          </Button>
+        ) : null}
       </form>
     </section>
   );
