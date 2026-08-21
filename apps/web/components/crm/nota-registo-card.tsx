@@ -6,6 +6,10 @@ import { useEffect, useState } from "react";
 import { Badge, Button } from "@/components/ui";
 import { cn } from "@/lib/ui/cn";
 import { fmtCrmAutor, fmtDate } from "@/lib/crm/shared";
+import {
+  TeamsTranscricaoPanel,
+  separarNotasLivresTranscricao,
+} from "@/components/integracoes/teams-transcricao-panel";
 
 export type NotaSugestao = {
   id: string;
@@ -103,9 +107,14 @@ export function NotaRegistoCard({
   }
 
   const camposPreenchidos = CAMPOS.filter((c) => {
+    if (c.key === "notasLivres") {
+      const { notas } = separarNotasLivresTranscricao(nota.notasLivres);
+      return Boolean(notas?.trim());
+    }
     const v = nota[c.key];
     return typeof v === "string" && v.trim().length > 0;
   });
+  const transcricaoNota = separarNotasLivresTranscricao(nota.notasLivres).transcricao;
   const passosIa = proximosPassosLista(nota.proximosPassosIa);
   const pendentes = nota.sugestoes.filter((s) => s.estado === "PENDENTE");
 
@@ -180,13 +189,25 @@ export function NotaRegistoCard({
                       <div key={c.key}>
                         <dt className="text-[11px] font-medium text-slate-500">{c.label}</dt>
                         <dd className="mt-0.5 whitespace-pre-wrap text-sm text-slate-200">
-                          {String(nota[c.key])}
+                          {c.key === "notasLivres"
+                            ? separarNotasLivresTranscricao(nota.notasLivres).notas
+                            : String(nota[c.key])}
                         </dd>
                       </div>
                     ))}
                   </dl>
                 )}
               </section>
+
+              {transcricaoNota ? (
+                <TeamsTranscricaoPanel
+                  fonteId={nota.id}
+                  fonte="crm"
+                  teamsTranscricao={transcricaoNota}
+                  teamsTranscricaoEstado="DISPONIVEL"
+                  temSalaTeams
+                />
+              ) : null}
 
               {nota.resumoIa || passosIa.length > 0 ? (
                 <section className="rounded-lg border border-violet-500/20 bg-violet-950/20 px-3 py-3">

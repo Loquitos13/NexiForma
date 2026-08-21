@@ -714,6 +714,8 @@ export function PortalCalendarioView({
                         formadorDuracaoSegundos: e.formadorDuracaoSegundos,
                         lmsAtivo: e.lmsAtivo,
                         modalidade: e.modalidade,
+                        teamsTranscricao: e.teamsTranscricao,
+                        teamsTranscricaoEstado: e.teamsTranscricaoEstado,
                       }}
                       podeGerir={
                         !formandoMode &&

@@ -61,6 +61,7 @@ import {
 import { PresencaQrModal } from "@/components/portal/presenca-qr-modal";
 import { CronogramaImportIaModal } from "@/components/portal/cronograma-import-ia-modal";
 import { FormadorSessaoPicker } from "@/components/portal/formador-sessao-picker";
+import { TeamsTranscricaoPanel } from "@/components/integracoes/teams-transcricao-panel";
 import { AtribuirFormadorAcaoModal } from "@/components/portal/atribuir-formador-acao-modal";
 import { formadorNomeBadge } from "@/lib/formador-display";
 
@@ -119,6 +120,8 @@ type SessaoRow = {
   zoomMeetingId?: string | null;
   teamsMeetingId?: string | null;
   salaJoinUrl?: string | null;
+  teamsTranscricao?: string | null;
+  teamsTranscricaoEstado?: string | null;
   formador?: { id: string; nomeCompleto: string } | null;
   formadorPresente?: boolean | null;
   formadorEntradaEm?: string | null;
@@ -3623,7 +3626,7 @@ export function PortalScheduleSection({
                       ) : null}
                     </div>
                     {sessaoAtiva?.terminadaEm ? (
-                      <div className="space-y-1 text-[11px] text-slate-400">
+                      <div className="space-y-2 text-[11px] text-slate-400">
                         <p>
                           Terminada em{" "}
                           {new Date(sessaoAtiva.terminadaEm).toLocaleString("pt-PT")}
@@ -3635,6 +3638,21 @@ export function PortalScheduleSection({
                               {formatarDuracaoHhMmSs(sessaoAtiva.formadorDuracaoSegundos)}
                             </span>
                           </p>
+                        ) : null}
+                        {sessaoAtiva.teamsMeetingId || sessaoAtiva.salaJoinUrl ? (
+                          <TeamsTranscricaoPanel
+                            fonteId={sessaoAtiva.id}
+                            fonte="sessao"
+                            teamsTranscricao={sessaoAtiva.teamsTranscricao}
+                            teamsTranscricaoEstado={sessaoAtiva.teamsTranscricaoEstado}
+                            temSalaTeams
+                            writeDisabled={!canOperateSessaoAtiva}
+                            onUpdated={() =>
+                              selectedCronogramaId
+                                ? void loadSessoes(selectedCronogramaId, selectedTurmaId || undefined)
+                                : undefined
+                            }
+                          />
                         ) : null}
                       </div>
                     ) : sessaoAtiva?.formadorEntradaEm ? (

@@ -7,6 +7,7 @@ import { bffFetch } from "@/lib/client/bff-fetch";
 import { openMeetingUrl } from "@/lib/client/open-meeting-url";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { TempoPresencaAoVivo } from "@/components/lms/tempo-presenca-ao-vivo";
+import { TeamsTranscricaoPanel } from "@/components/integracoes/teams-transcricao-panel";
 import { Button, Sheet, SheetContent, Textarea } from "@/components/ui";
 
 export type ReuniaoTeamsState = {
@@ -153,7 +154,7 @@ export function CrmReuniaoTeamsControls({
     }
   };
 
-  const importarTranscricao = () => void patchLocal("/teams/transcricao");
+  const temSalaTeams = Boolean(reuniao.salaJoinUrl);
 
   return (
     <div className="mt-3 space-y-2 border-t border-slate-600/40 pt-3">
@@ -176,29 +177,16 @@ export function CrmReuniaoTeamsControls({
               {formatarDuracaoHhMmSs(reuniao.reuniaoDuracaoSegundos ?? 0)}
             </span>
           </p>
-          {reuniao.teamsTranscricaoEstado ? (
-            <p className="text-xs text-slate-500">
-              Transcrição:{" "}
-              <span className="text-slate-300">{reuniao.teamsTranscricaoEstado}</span>
-            </p>
-          ) : null}
-          {reuniao.teamsTranscricao ? (
-            <details className="rounded-lg border border-slate-700/40 bg-slate-900/40 p-2">
-              <summary className="cursor-pointer text-xs text-teal-300">Ver transcrição Teams</summary>
-              <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-[11px] text-slate-300">
-                {reuniao.teamsTranscricao}
-              </pre>
-            </details>
-          ) : reuniao.salaJoinUrl ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={busy}
-              onClick={() => void importarTranscricao()}
-            >
-              {busy ? "A importar…" : "Importar transcrição Teams"}
-            </Button>
-          ) : null}
+          <TeamsTranscricaoPanel
+            fonteId={id}
+            fonte="crm"
+            teamsTranscricao={reuniao.teamsTranscricao}
+            teamsTranscricaoEstado={reuniao.teamsTranscricaoEstado}
+            temSalaTeams={temSalaTeams}
+            writeDisabled={writeDisabled}
+            onUpdated={onUpdated}
+            compact
+          />
         </div>
       ) : emCurso && reuniao.reuniaoIniciadaEm ? (
         <div className="flex flex-wrap items-center gap-3">

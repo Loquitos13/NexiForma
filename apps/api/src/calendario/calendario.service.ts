@@ -129,6 +129,8 @@ export class CalendarioService {
           lmsAtivo: s.lmsAtivo,
           acaoFormacaoId,
           matriculaId: matriculaPorAcao.get(acaoFormacaoId) ?? null,
+          teamsTranscricao: s.teamsTranscricao,
+          teamsTranscricaoEstado: s.teamsTranscricaoEstado,
         });
       }
     }

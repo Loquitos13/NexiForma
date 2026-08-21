@@ -9,6 +9,7 @@ import { openMeetingUrl } from "@/lib/client/open-meeting-url";
 import { terminarSessaoFormacaoComConfirmacao } from "@/lib/client/terminar-sessao-formacao";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { TempoPresencaAoVivo } from "@/components/lms/tempo-presenca-ao-vivo";
+import { TeamsTranscricaoPanel } from "@/components/integracoes/teams-transcricao-panel";
 import { Button } from "@/components/ui";
 
 export type SessaoFormacaoPresencaState = {
@@ -16,6 +17,8 @@ export type SessaoFormacaoPresencaState = {
   /** Para navegar à ficha da acção (cronograma + aside). */
   acaoFormacaoId?: string | null;
   salaJoinUrl?: string | null;
+  teamsTranscricao?: string | null;
+  teamsTranscricaoEstado?: string | null;
   iniciadaEm?: string | null;
   terminadaEm?: string | null;
   formadorEntradaEm?: string | null;
@@ -162,12 +165,26 @@ export function SessaoFormacaoPresencaControls({
       {msg ? <p className="text-xs text-emerald-400">{msg}</p> : null}
 
       {concluida ? (
-        <p className="text-xs text-slate-400">
-          Duração formador:{" "}
-          <span className="font-mono text-slate-200">
-            {formatarDuracaoHhMmSs(sessao.formadorDuracaoSegundos ?? 0)}
-          </span>
-        </p>
+        <div className="space-y-2">
+          <p className="text-xs text-slate-400">
+            Duração formador:{" "}
+            <span className="font-mono text-slate-200">
+              {formatarDuracaoHhMmSs(sessao.formadorDuracaoSegundos ?? 0)}
+            </span>
+          </p>
+          {sessao.salaJoinUrl ? (
+            <TeamsTranscricaoPanel
+              fonteId={sessao.fonteId}
+              fonte="sessao"
+              teamsTranscricao={sessao.teamsTranscricao}
+              teamsTranscricaoEstado={sessao.teamsTranscricaoEstado}
+              temSalaTeams
+              writeDisabled={writeDisabled || !podeGerir}
+              onUpdated={onUpdated}
+              compact
+            />
+          ) : null}
+        </div>
       ) : formadorEmSessao && sessao.formadorEntradaEm ? (
         <div>
           <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-0.5">

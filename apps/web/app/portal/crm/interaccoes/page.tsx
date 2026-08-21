@@ -8,6 +8,8 @@ import { bffFetch } from "@/lib/client/bff-fetch";
 import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { CrmContextNav, NOTAS_NAV } from "@/components/crm/crm-context-nav";
+import { CrmReuniaoTeamsControls } from "@/components/crm/crm-reuniao-teams-controls";
+import { TeamsTranscricaoPanel, separarNotasLivresTranscricao } from "@/components/integracoes/teams-transcricao-panel";
 import {
   CrmListFilters,
   crmListFiltersToParams,
@@ -50,9 +52,18 @@ type Interaccao = {
   tipo: string;
   titulo: string | null;
   resumoIa: string | null;
+  notasLivres: string | null;
   processamentoEstado: string;
   processamentoEngine: string | null;
   createdAt: string;
+  salaJoinUrl?: string | null;
+  reuniaoEstado?: string | null;
+  reuniaoIniciadaEm?: string | null;
+  reuniaoTerminadaEm?: string | null;
+  reuniaoDuracaoSegundos?: number | null;
+  teamsTranscricao?: string | null;
+  teamsTranscricaoEstado?: string | null;
+  agendadoPara?: string | null;
   entidadeCliente: { id: string; nome: string } | null;
   leadComercial: { id: string; codigo: string; empresaNome: string } | null;
   criadoPor?: { displayName: string } | null;
@@ -94,6 +105,7 @@ export default function CrmInteraccoesPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [podeCriarSalaTeams, setPodeCriarSalaTeams] = useState(false);
+  const [teamsIntegracaoAviso, setTeamsIntegracaoAviso] = useState<string | null>(null);
   const [listFilters, setListFilters] = useState<CrmListFiltersValue>(emptyCrmListFilters);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -139,8 +151,9 @@ export default function CrmInteraccoesPage() {
         headers: { accept: "application/json" },
       });
       if (!r.ok) return;
-      const data = (await r.json()) as { podeCriarSalaTeams?: boolean };
+      const data = (await r.json()) as { podeCriarSalaTeams?: boolean; teamsAviso?: string };
       setPodeCriarSalaTeams(Boolean(data.podeCriarSalaTeams));
+      setTeamsIntegracaoAviso(data.teamsAviso ?? null);
     })();
   }, []);
 
@@ -298,6 +311,46 @@ export default function CrmInteraccoesPage() {
                   </div>
                   {item.resumoIa ? (
                     <p className="text-sm text-slate-300 border-l-2 border-violet-500/50 pl-3">{item.resumoIa}</p>
+                  ) : null}
+                  {item.tipo === "NOTA" && item.notasLivres ? (() => {
+                    const { notas, transcricao } = separarNotasLivresTranscricao(item.notasLivres);
+                    return (
+                      <div className="space-y-2 text-sm">
+                        {notas ? (
+                          <p className="text-slate-300 border-l-2 border-slate-600 pl-3 whitespace-pre-wrap">
+                            {notas}
+                          </p>
+                        ) : null}
+                        {transcricao ? (
+                          <TeamsTranscricaoPanel
+                            fonteId={item.id}
+                            fonte="crm"
+                            teamsTranscricao={transcricao}
+                            teamsTranscricaoEstado="DISPONIVEL"
+                            temSalaTeams
+                            compact
+                          />
+                        ) : null}
+                      </div>
+                    );
+                  })() : null}
+                  {item.tipo === "REUNIAO" ? (
+                    <CrmReuniaoTeamsControls
+                      reuniao={{
+                        fonteId: item.id,
+                        salaJoinUrl: item.salaJoinUrl,
+                        reuniaoEstado: item.reuniaoEstado,
+                        reuniaoIniciadaEm: item.reuniaoIniciadaEm,
+                        reuniaoTerminadaEm: item.reuniaoTerminadaEm,
+                        reuniaoDuracaoSegundos: item.reuniaoDuracaoSegundos,
+                        teamsTranscricao: item.teamsTranscricao,
+                        teamsTranscricaoEstado: item.teamsTranscricaoEstado,
+                      }}
+                      podeCriarSalaTeams={podeCriarSalaTeams}
+                      teamsAviso={teamsIntegracaoAviso}
+                      writeDisabled={writeDisabled}
+                      onUpdated={load}
+                    />
                   ) : null}
                   {item.sugestoesIa.length > 0 ? (
                     <p className="text-xs text-violet-400">

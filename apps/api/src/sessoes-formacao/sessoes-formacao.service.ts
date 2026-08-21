@@ -175,6 +175,8 @@ export class SessoesFormacaoService {
         zoomMeetingId: true,
         teamsMeetingId: true,
         salaJoinUrl: true,
+        teamsTranscricao: true,
+        teamsTranscricaoEstado: true,
         minutosPresencaMin: true,
         cronogramaId: true,
         turmaId: true,
