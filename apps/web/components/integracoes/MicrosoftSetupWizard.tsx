@@ -17,6 +17,8 @@ type Props = {
   teamsDraft: Record<string, string>;
   onTeamsDraftChange: (draft: Record<string, string>) => void;
   onSaveTeams: () => Promise<void>;
+  /** Só mostra o botão guardar quando há alterações por persistir. */
+  showSaveTeams?: boolean;
   onTestTeams: () => Promise<void>;
   onActivateOAuth: () => Promise<void>;
   busy: boolean;
@@ -60,6 +62,7 @@ export function MicrosoftSetupWizard({
   teamsDraft,
   onTeamsDraftChange,
   onSaveTeams,
+  showSaveTeams = true,
   onTestTeams,
   onActivateOAuth,
   busy,
@@ -184,9 +187,11 @@ export function MicrosoftSetupWizard({
                         onChange={(e) => onTeamsDraftChange({ ...teamsDraft, organizerId: e.target.value })}
                       />
                     </label>
-                    <button type="button" style={bo.btnSecondary} disabled={busy || !tenantFilled} onClick={() => void onSaveTeams()}>
-                      Guardar credenciais Teams
-                    </button>
+                    {showSaveTeams ? (
+                      <button type="button" style={bo.btnSecondary} disabled={busy || !tenantFilled} onClick={() => void onSaveTeams()}>
+                        Guardar credenciais Teams
+                      </button>
+                    ) : null}
                   </div>
                 ) : null}
 

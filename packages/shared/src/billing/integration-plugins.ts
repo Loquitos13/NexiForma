@@ -6,6 +6,9 @@ export type IntegrationPluginDef = {
   id: IntegrationPluginId;
   title: string;
   description: string;
+  tagline: string;
+  category: "Salas" | "LMS";
+  publisher: string;
   providers: readonly ("ZOOM" | "TEAMS" | "MOODLE")[];
 };
 
@@ -13,13 +16,19 @@ export const INTEGRATION_PLUGINS: readonly IntegrationPluginDef[] = [
   {
     id: "salas_online",
     title: "Salas online",
-    description: "Zoom e Microsoft Teams para sessões síncronas com OAuth.",
+    tagline: "Zoom & Microsoft Teams",
+    description: "Cria salas síncronas no cronograma com OAuth. Formadores e formandos entram pelo link da sessão.",
+    category: "Salas",
+    publisher: "NexiForma",
     providers: ["ZOOM", "TEAMS"],
   },
   {
     id: "moodle",
     title: "Moodle LMS",
-    description: "Sincronização de cursos via Web Services Moodle.",
+    tagline: "Sincronização de cursos",
+    description: "Importa cursos e estrutura via Web Services Moodle para o percurso NexiForma.",
+    category: "LMS",
+    publisher: "NexiForma",
     providers: ["MOODLE"],
   },
 ] as const;

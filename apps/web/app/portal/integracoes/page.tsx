@@ -1,15 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { MicrosoftSetupWizard } from "@/components/integracoes/MicrosoftSetupWizard";
+import { Search } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { bffFetch } from "@/lib/client/bff-fetch";
-import { useTenantRole } from "@/lib/client/use-tenant-role";
-import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
-import { EmptyState, LoadingBlock, PageShell, StatusBadge } from "@/components/portal/page-shell";
+import { PluginDetailPanel } from "@/components/integracoes/plugin-detail-panel";
+import { PluginStoreCard } from "@/components/integracoes/plugin-store-card";
+import { EmptyState, LoadingBlock, PageShell } from "@/components/portal/page-shell";
 import { RateLimitRetryBanner } from "@/components/portal/rate-limit-retry";
-import { bo, parseApiError } from "@/lib/ui/backoffice";
+import { PageHeader } from "@/components/ui";
+import { bffFetch } from "@/lib/client/bff-fetch";
 import { useRateLimitCooldown } from "@/lib/client/use-rate-limit-cooldown";
+import { useTenantEntitlements } from "@/lib/client/use-tenant-entitlements";
+import { useTenantRole } from "@/lib/client/use-tenant-role";
+import { bo, parseApiError } from "@/lib/ui/backoffice";
 import {
   INTEGRATION_PLUGINS,
   isIntegrationPluginAllowed,
@@ -32,40 +35,14 @@ type OAuthReadiness = {
   source: string;
 };
 
-const OAUTH_FIELDS: Record<string, { key: string; label: string; secret?: boolean }[]> = {
-  ZOOM: [
-    { key: "accountId", label: "Account ID" },
-    { key: "clientId", label: "Client ID" },
-    { key: "clientSecret", label: "Client Secret", secret: true },
-    { key: "userId", label: "Email Zoom do anfitrião (ZOOM_USER_ID)" },
-  ],
-  TEAMS: [
-    { key: "tenantId", label: "Azure Tenant ID (M365 do cliente)" },
-    { key: "organizerId", label: "Organizador M365 (email)" },
-  ],
-};
-
-const PLUGIN_BADGE: Record<IntegrationPluginId, string> = {
-  salas_online: "Formação Teams",
-  moodle: "Formação Core",
+const OAUTH_FIELD_KEYS: Record<string, string[]> = {
+  ZOOM: ["accountId", "clientId", "clientSecret", "userId"],
+  TEAMS: ["tenantId", "organizerId"],
 };
 
 export default function IntegracoesPage() {
   const { canManageFormacao: canManage } = useTenantRole();
   const { entitlements, loading: entLoading } = useTenantEntitlements();
-
-  const hasSalasOnline = Boolean(
-    entitlements && isIntegrationPluginAllowed("salas_online", entitlements),
-  );
-  const hasMoodle = Boolean(entitlements && isIntegrationPluginAllowed("moodle", entitlements));
-
-  const visiblePlugins = useMemo(
-    () =>
-      entitlements
-        ? INTEGRATION_PLUGINS.filter((p) => isIntegrationPluginAllowed(p.id, entitlements))
-        : [],
-    [entitlements],
-  );
 
   const [rows, setRows] = useState<Integracao[]>([]);
   const [loading, setLoading] = useState(false);
@@ -74,12 +51,16 @@ export default function IntegracoesPage() {
   const [moodlePreview, setMoodlePreview] = useState<string | null>(null);
   const [oauthDraft, setOauthDraft] = useState<Record<string, Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
-  const [oauthStatus, setOauthStatus] = useState<{ zoom: OAuthReadiness; teams: OAuthReadiness } | null>(
-    null,
-  );
+  const [oauthStatus, setOauthStatus] = useState<{ zoom: OAuthReadiness; teams: OAuthReadiness } | null>(null);
   const [rateLimited, setRateLimited] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<"Todos" | "Salas" | "LMS">("Todos");
+  const [selectedId, setSelectedId] = useState<IntegrationPluginId | null>(null);
   const { remainingSec, isCoolingDown, applyFromResponse, clearCooldown } = useRateLimitCooldown();
+
+  const hasSalasOnline = Boolean(entitlements && isIntegrationPluginAllowed("salas_online", entitlements));
+  const hasMoodle = Boolean(entitlements && isIntegrationPluginAllowed("moodle", entitlements));
 
   const handleApiError = useCallback(
     async (res: Response) => {
@@ -143,12 +124,20 @@ export default function IntegracoesPage() {
   }, [clearCooldown, hasSalasOnline, isCoolingDown, load, loadOAuthStatus]);
 
   useEffect(() => {
-    if (entLoading || visiblePlugins.length === 0) return;
+    if (entLoading) return;
     void (async () => {
       await load();
       if (hasSalasOnline) await loadOAuthStatus();
     })();
-  }, [entLoading, hasSalasOnline, visiblePlugins.length, load, loadOAuthStatus]);
+  }, [entLoading, hasSalasOnline, load, loadOAuthStatus]);
+
+  function oauthDraftDirty(provider: string): boolean {
+    const keys = OAUTH_FIELD_KEYS[provider];
+    if (!keys) return false;
+    const saved = rows.find((r) => r.provider === provider)?.config ?? {};
+    const draft = oauthDraft[provider] ?? {};
+    return keys.some((k) => (draft[k] ?? "").trim() !== String(saved[k] ?? "").trim());
+  }
 
   async function activarOAuthReal() {
     if (!canManage || !hasSalasOnline) return;
@@ -181,11 +170,7 @@ export default function IntegracoesPage() {
     });
     if (!res.ok) await handleApiError(res);
     else {
-      if (provider === "TEAMS" && mode === "DISABLED") {
-        setMsg("Credenciais Teams guardadas. Testa a ligação e depois activa OAuth.");
-      } else {
-        setMsg(`${provider} actualizado para ${mode}.`);
-      }
+      setMsg(`${provider} actualizado para ${mode}.`);
       await load();
     }
   }
@@ -195,12 +180,8 @@ export default function IntegracoesPage() {
     const row = rows.find((r) => r.provider === provider);
     const config =
       provider === "TEAMS"
-        ? {
-            tenantId: draft.tenantId?.trim() ?? "",
-            organizerId: draft.organizerId?.trim() ?? "",
-          }
+        ? { tenantId: draft.tenantId?.trim() ?? "", organizerId: draft.organizerId?.trim() ?? "" }
         : draft;
-    // Guardar credenciais; OAuth activa-se no passo «Activar OAUTH Teams»
     const mode = row?.mode === "OAUTH" ? "OAUTH" : "DISABLED";
     await setMode(provider, mode, config);
   }
@@ -231,13 +212,37 @@ export default function IntegracoesPage() {
     else setMoodlePreview(JSON.stringify(await res.json(), null, 2));
   }
 
-  const modeColor = (m: string) => (m === "OAUTH" ? "#4ade80" : "#94a3b8");
-  const salasRows = rows.filter((r) => r.provider === "ZOOM" || r.provider === "TEAMS");
-  const moodleRow = rows.find((r) => r.provider === "MOODLE");
-  const zoomMode = salasRows.find((r) => r.provider === "ZOOM")?.mode ?? "DISABLED";
-  const teamsMode = salasRows.find((r) => r.provider === "TEAMS")?.mode ?? "DISABLED";
-  const oauthReady = oauthStatus?.zoom.ready || oauthStatus?.teams.ready;
-  const realActive = zoomMode === "OAUTH" || teamsMode === "OAUTH";
+  const pluginCards = useMemo(() => {
+    return INTEGRATION_PLUGINS.filter((p) => {
+      if (category !== "Todos" && p.category !== category) return false;
+      const q = query.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        p.title.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q) ||
+        p.tagline.toLowerCase().includes(q)
+      );
+    });
+  }, [category, query]);
+
+  function pluginStatus(pluginId: IntegrationPluginId): { label: string; tone: "active" | "idle" | "locked" } {
+    const unlocked = Boolean(entitlements && isIntegrationPluginAllowed(pluginId, entitlements));
+    if (!unlocked) return { label: "Plano necessário", tone: "locked" };
+
+    if (pluginId === "salas_online") {
+      const zoom = rows.find((r) => r.provider === "ZOOM")?.mode ?? "DISABLED";
+      const teams = rows.find((r) => r.provider === "TEAMS")?.mode ?? "DISABLED";
+      if (zoom === "OAUTH" || teams === "OAUTH") return { label: "Instalado", tone: "active" };
+      if (oauthStatus?.teams.ready || oauthStatus?.zoom.ready) return { label: "Configurar", tone: "idle" };
+      return { label: "Disponível", tone: "idle" };
+    }
+
+    const moodle = rows.find((r) => r.provider === "MOODLE")?.mode ?? "DISABLED";
+    if (moodle === "OAUTH") return { label: "Instalado", tone: "active" };
+    return { label: "Disponível", tone: "idle" };
+  }
+
+  const selectedPlugin = selectedId ? INTEGRATION_PLUGINS.find((p) => p.id === selectedId) : null;
 
   if (entLoading) {
     return (
@@ -247,22 +252,13 @@ export default function IntegracoesPage() {
     );
   }
 
-  if (!visiblePlugins.length) {
-    return (
-      <PageShell title="Loja de plugins" subtitle="Integrações activas na tua subscrição.">
-        <EmptyState message="Nenhum plugin disponível no plano actual. Active Formação Core ou Formação Teams em Facturação." />
-        <Link href="/portal/billing" className="text-sm text-blue-400 hover:underline">
-          Ver subscrição
-        </Link>
-      </PageShell>
-    );
-  }
-
   return (
-    <PageShell
-      title="Loja de plugins"
-      subtitle="Integrações incluídas no teu plano. Configura e activa cada plugin."
-    >
+    <div className="space-y-6">
+      <PageHeader
+        title="Loja de plugins"
+        description="Descobre, instala e configura integrações - como na Chrome Web Store."
+      />
+
       {rateLimited && error ? (
         <RateLimitRetryBanner
           message={error}
@@ -275,271 +271,92 @@ export default function IntegracoesPage() {
       ) : null}
       {msg ? <p style={bo.ok}>{msg}</p> : null}
 
-      <div
-        style={{
-          display: "grid",
-          gap: "1.25rem",
-          gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-        }}
-      >
-        {visiblePlugins.map((plugin) => {
-          const unlocked = true;
-          return (
-          <section
-            key={plugin.id}
-            style={{
-              ...bo.card,
-              border: "1px solid rgba(148,163,184,0.25)",
-              display: "flex",
-              flexDirection: "column",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-                flexWrap: "wrap",
-                gap: "0.5rem",
-                marginBottom: "0.75rem",
-              }}
-            >
-              <div>
-                <h2 style={{ ...bo.h2, marginBottom: "0.25rem" }}>{plugin.title}</h2>
-                <p style={{ color: "#94a3b8", fontSize: "0.88rem", margin: 0, lineHeight: 1.5 }}>
-                  {plugin.description}
-                </p>
-              </div>
-              <StatusBadge label={PLUGIN_BADGE[plugin.id]} color="#38bdf8" />
+      {selectedPlugin ? (
+        <PluginDetailPanel
+          plugin={selectedPlugin}
+          unlocked={Boolean(entitlements && isIntegrationPluginAllowed(selectedPlugin.id, entitlements))}
+          canManage={canManage}
+          loading={loading}
+          busy={busy}
+          rows={rows}
+          oauthStatus={oauthStatus}
+          oauthDraft={oauthDraft}
+          moodlePreview={moodlePreview}
+          onBack={() => setSelectedId(null)}
+          onOauthDraftChange={(provider, draft) =>
+            setOauthDraft((prev) => ({ ...prev, [provider]: draft }))
+          }
+          onSaveOAuth={(p) => void saveOAuth(p)}
+          oauthDraftDirty={oauthDraftDirty}
+          onSetMode={(p, m, c) => void setMode(p, m, c)}
+          onTest={(p) => void testar(p)}
+          onActivateOAuth={() => void activarOAuthReal()}
+          onSyncMoodle={(e) => void syncMoodle(e)}
+        />
+      ) : (
+        <>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative flex-1 max-w-md">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+              <input
+                type="search"
+                placeholder="Pesquisar plugins..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="w-full rounded-xl border border-slate-700/60 bg-slate-900/80 py-2.5 pl-10 pr-3 text-sm text-slate-200 outline-none focus:border-violet-500/40"
+              />
             </div>
+            <div className="flex rounded-xl border border-slate-700/50 p-0.5">
+              {(["Todos", "Salas", "LMS"] as const).map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setCategory(c)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                    category === c ? "bg-violet-600/30 text-violet-200" : "text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
 
-            {plugin.id === "salas_online" ? (
-              <>
-                {canManage && unlocked ? (
-                  <MicrosoftSetupWizard
-                    enabled
-                    teamsDraft={oauthDraft.TEAMS ?? {}}
-                    onTeamsDraftChange={(d) => setOauthDraft((prev) => ({ ...prev, TEAMS: d }))}
-                    onSaveTeams={() => saveOAuth("TEAMS")}
-                    onTestTeams={() => testar("TEAMS")}
-                    onActivateOAuth={() => activarOAuthReal()}
-                    busy={busy}
+          {loading && !rows.length ? (
+            <LoadingBlock />
+          ) : pluginCards.length === 0 ? (
+            <EmptyState message="Nenhum plugin corresponde à pesquisa." />
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {pluginCards.map((plugin) => {
+                const unlocked = Boolean(entitlements && isIntegrationPluginAllowed(plugin.id, entitlements));
+                const status = pluginStatus(plugin.id);
+                return (
+                  <PluginStoreCard
+                    key={plugin.id}
+                    plugin={plugin}
+                    unlocked={unlocked}
+                    statusLabel={status.label}
+                    statusTone={status.tone}
+                    onSelect={() => setSelectedId(plugin.id)}
                   />
-                ) : null}
+                );
+              })}
+            </div>
+          )}
 
-                {unlocked ? (
-                <div style={{ ...bo.card, marginTop: "0.75rem", border: "1px solid rgba(74,222,128,0.35)" }}>
-                  <h3 style={{ ...bo.h2, fontSize: "1rem" }}>Salas online – Microsoft Teams</h3>
-                  <p style={{ color: "#94a3b8", fontSize: "0.85rem", margin: "0 0 0.75rem", lineHeight: 1.55 }}>
-                    As formações online criam reuniões Teams no cronograma. Formador e formandos entram com conta
-                    Microsoft no link da sessão.
-                  </p>
-                  {oauthStatus ? (
-                    <ul style={{ color: "#cbd5e1", fontSize: "0.85rem", margin: "0 0 0.75rem", paddingLeft: "1.2rem" }}>
-                      <li>
-                        <strong>Zoom</strong> –{" "}
-                        {oauthStatus.zoom.ready ? "OAuth configurado" : oauthStatus.zoom.missing.join(", ")}
-                      </li>
-                      <li>
-                        <strong>Teams</strong> –{" "}
-                        {oauthStatus.teams.ready ? "OAuth configurado" : oauthStatus.teams.missing.join(", ")}
-                      </li>
-                    </ul>
-                  ) : loading ? (
-                    <LoadingBlock />
-                  ) : null}
-                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
-                    {canManage ? (
-                      <button
-                        type="button"
-                        style={bo.btnTeal}
-                        disabled={busy || !oauthReady}
-                        onClick={() => void activarOAuthReal()}
-                      >
-                        Activar salas reais (OAUTH)
-                      </button>
-                    ) : null}
-                    {realActive ? (
-                      <StatusBadge label="Salas reais activas" color="#4ade80" />
-                    ) : oauthReady ? (
-                      <StatusBadge label="Credenciais detectadas" color="#4ade80" />
-                    ) : (
-                      <StatusBadge label="Credenciais em falta" color="#f87171" />
-                    )}
-                  </div>
-                </div>
-                ) : null}
-
-                {loading && unlocked ? (
-                  <LoadingBlock />
-                ) : unlocked ? (
-                  <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.75rem" }}>
-                    {salasRows.map((r) => (
-                      <div key={r.provider} style={{ ...bo.card, background: "rgba(15,23,42,0.45)" }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            flexWrap: "wrap",
-                            gap: "0.5rem",
-                          }}
-                        >
-                          <h3 style={{ ...bo.h2, fontSize: "1rem" }}>{r.provider}</h3>
-                          <StatusBadge label={r.mode} color={modeColor(r.mode)} />
-                        </div>
-                        {canManage ? (
-                          <>
-                            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", margin: "0.65rem 0" }}>
-                              {(["DISABLED", "OAUTH"] as const).map((m) => (
-                                <button
-                                  key={m}
-                                  type="button"
-                                  style={r.mode === m ? bo.btn : bo.btnSecondary}
-                                  onClick={() => void setMode(r.provider, m, oauthDraft[r.provider])}
-                                >
-                                  {m}
-                                </button>
-                              ))}
-                              <button
-                                type="button"
-                                style={bo.btnSecondary}
-                                disabled={busy || r.mode === "DISABLED"}
-                                onClick={() => void testar(r.provider as "ZOOM" | "TEAMS")}
-                              >
-                                Testar ligação
-                              </button>
-                            </div>
-                            {r.mode === "OAUTH" ? (
-                              <div style={{ display: "grid", gap: "0.45rem", maxWidth: 420 }}>
-                                {r.provisionedByPlatform ? (
-                                  <p style={{ color: "#fde047", fontSize: "0.82rem", margin: 0 }}>
-                                    Integração configurada pela NexiForma – usa «Testar ligação».
-                                  </p>
-                                ) : (
-                                  <>
-                                    {OAUTH_FIELDS[r.provider].map((f) => (
-                                      <label key={f.key} style={bo.label}>
-                                        {f.label}
-                                        <input
-                                          style={bo.input}
-                                          type={f.secret ? "password" : "text"}
-                                          value={oauthDraft[r.provider]?.[f.key] ?? ""}
-                                          onChange={(e) =>
-                                            setOauthDraft((prev) => ({
-                                              ...prev,
-                                              [r.provider]: { ...prev[r.provider], [f.key]: e.target.value },
-                                            }))
-                                          }
-                                        />
-                                      </label>
-                                    ))}
-                                    <button type="button" style={bo.btnSecondary} onClick={() => void saveOAuth(r.provider)}>
-                                      Guardar credenciais OAuth
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            ) : null}
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            style={bo.btnSecondary}
-                            disabled={busy || r.mode === "DISABLED"}
-                            onClick={() => void testar(r.provider as "ZOOM" | "TEAMS")}
-                          >
-                            Testar ligação
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.75rem" }}>
-                    {(["ZOOM", "TEAMS"] as const).map((provider) => (
-                      <div key={provider} style={{ ...bo.card, background: "rgba(15,23,42,0.45)" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <h3 style={{ ...bo.h2, fontSize: "1rem" }}>{provider}</h3>
-                          <StatusBadge label="DISABLED" color="#94a3b8" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            ) : null}
-
-            {plugin.id === "moodle" ? (
-              <div>
-                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.65rem" }}>
-                  <h3 style={{ ...bo.h2, fontSize: "1rem", margin: 0 }}>Moodle</h3>
-                  <StatusBadge
-                    label={unlocked ? (moodleRow?.mode ?? "DISABLED") : "DISABLED"}
-                    color={modeColor(unlocked ? (moodleRow?.mode ?? "DISABLED") : "DISABLED")}
-                  />
-                </div>
-                {unlocked ? (
-                  <>
-                    {canManage ? (
-                      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.65rem" }}>
-                        {(["DISABLED", "OAUTH"] as const).map((m) => (
-                          <button
-                            key={m}
-                            type="button"
-                            style={(moodleRow?.mode ?? "DISABLED") === m ? bo.btn : bo.btnSecondary}
-                            onClick={() => void setMode("MOODLE", m)}
-                          >
-                            {m}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                    <form onSubmit={syncMoodle}>
-                      <button
-                        type="submit"
-                        style={bo.btnTeal}
-                        disabled={!canManage && (moodleRow?.mode ?? "DISABLED") === "DISABLED"}
-                      >
-                        Executar sync
-                      </button>
-                    </form>
-                    {moodlePreview ? (
-                      <pre style={{ marginTop: "0.75rem", fontSize: "0.78rem", color: "#cbd5e1", overflow: "auto" }}>
-                        {moodlePreview}
-                      </pre>
-                    ) : (
-                      <EmptyState message="Active o plugin Moodle (OAUTH) e execute sync para ver cursos." />
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.65rem" }}>
-                      {(["DISABLED", "OAUTH"] as const).map((m) => (
-                        <button key={m} type="button" style={m === "DISABLED" ? bo.btn : bo.btnSecondary} disabled>
-                          {m}
-                        </button>
-                      ))}
-                    </div>
-                    <button type="button" style={bo.btnTeal} disabled>
-                      Executar sync
-                    </button>
-                    <EmptyState message="Active o plugin Moodle (OAUTH) e execute sync para ver cursos." />
-                  </>
-                )}
-              </div>
-            ) : null}
-          </section>
-          );
-        })}
-      </div>
-
-      <p style={{ color: "#64748b", fontSize: "0.82rem", marginTop: "1.25rem" }}>
-        Precisa de mais integrações?{" "}
-        <Link href="/portal/billing" className="underline hover:text-slate-300">
-          Gerir subscrição
-        </Link>
-      </p>
-    </PageShell>
+          <p className="text-sm text-slate-500">
+            Precisas de mais integrações?{" "}
+            <Link href="/portal/billing" className="text-violet-400 hover:text-violet-300 underline">
+              Gerir subscrição
+            </Link>
+            {" · "}
+            <Link href="/portal/enterprise" className="text-violet-400 hover:text-violet-300 underline">
+              API & SSO Enterprise
+            </Link>
+          </p>
+        </>
+      )}
+    </div>
   );
 }
