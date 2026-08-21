@@ -282,6 +282,12 @@ export default function CursoDetailPage() {
                 });
                 if (res.ok) {
                   setCurso((c) => (c ? { ...c, lmsProgressaoSequencial: sequencial } : c));
+                  if (sequencial) {
+                    await bffFetch(
+                      `/api/v1/conteudos-lms/unidades/sync-prerequisitos?cursoId=${encodeURIComponent(curso.id)}`,
+                      { method: "POST" },
+                    );
+                  }
                 }
               }}
             />

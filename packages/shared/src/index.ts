@@ -106,10 +106,13 @@ export {
   notaMinimaParaDesbloquearProximo,
   pontuacaoModulo,
   pontuacaoTarefa,
+  prerequisitoUnidadeEfectivo,
   tarefaDesbloqueada,
   tarefasOrdenadas,
+  unidadeConcluida,
   unidadesOrdenadas,
   type ModuloPercurso,
+  type PercursoDesbloqueioOpts,
   type ProgressoPercurso,
   type TarefaPercurso,
 } from "./lms/percurso";

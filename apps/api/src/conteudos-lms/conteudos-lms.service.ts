@@ -15,10 +15,12 @@ import { FormadorNotificacoesService } from "../notificacoes/formador-notificaco
 import { StorageService } from "../storage/storage.service";
 import { sanitizeLmsHtml } from "../common/sanitize-html.util";
 import type { CreateModuloConteudoDto, CreateModuloUnidadeDto, UpdateModuloUnidadeDto, UpdateProgressoModuloDto } from "./dto/conteudos-lms.dto";
-import { moduloDesbloqueado,
+import {
+  moduloDesbloqueado,
   notaMinimaParaDesbloquearProximo,
   pontuacaoModulo,
   pontuacaoTarefa,
+  prerequisitoUnidadeEfectivo,
   tarefaDesbloqueada,
   tarefasOrdenadas,
   unidadesOrdenadas,
@@ -151,7 +153,7 @@ export class ConteudosLmsService {
     const curso = await this.prisma.curso.findFirst({ where: { id: dto.cursoId, tenantId } });
     if (!curso) throw new NotFoundException("Curso nao encontrado.");
 
-    return this.prisma.moduloUnidade.create({
+    const created = await this.prisma.moduloUnidade.create({
       data: {
         tenantId,
         cursoId: dto.cursoId,
@@ -162,8 +164,43 @@ export class ConteudosLmsService {
         formadorId: dto.formadorId ?? null,
         ordem: dto.ordem ?? 0,
         notaMinima: dto.notaMinima ?? 60,
+        lockManual: true,
+        metodologia: dto.metodologia ?? undefined,
       },
     });
+    await this.syncPrerequisitosSequenciaisInternal(tenantId, dto.cursoId);
+    return created;
+  }
+
+  /** Alinha prerequisitoUnidadeId com a ordem quando o curso tem progressão sequencial. */
+  async syncPrerequisitosSequenciais(user: RequestUser, cursoId: string): Promise<void> {
+    const tenantId = requireTenantId(user);
+    await this.formadorScope.assertCanEditCurso(user, cursoId);
+    await this.syncPrerequisitosSequenciaisInternal(tenantId, cursoId);
+  }
+
+  private async syncPrerequisitosSequenciaisInternal(tenantId: string, cursoId: string): Promise<void> {
+    const curso = await this.prisma.curso.findFirst({
+      where: { id: cursoId, tenantId },
+      select: { lmsProgressaoSequencial: true },
+    });
+    if (!curso || curso.lmsProgressaoSequencial === false) return;
+
+    const unidades = await this.prisma.moduloUnidade.findMany({
+      where: { tenantId, cursoId },
+      orderBy: [{ ordem: "asc" }, { createdAt: "asc" }],
+      select: { id: true, prerequisitoUnidadeId: true },
+    });
+
+    for (let i = 0; i < unidades.length; i++) {
+      const expected = i > 0 ? unidades[i - 1]!.id : null;
+      if (unidades[i]!.prerequisitoUnidadeId !== expected) {
+        await this.prisma.moduloUnidade.update({
+          where: { id: unidades[i]!.id },
+          data: { prerequisitoUnidadeId: expected },
+        });
+      }
+    }
   }
 
   async updateUnidade(
@@ -185,7 +222,7 @@ export class ConteudosLmsService {
         ? (teoricas ?? 0) + (praticas ?? 0)
         : null;
 
-    return this.prisma.moduloUnidade.update({
+    const updated = await this.prisma.moduloUnidade.update({
       where: { id },
       data: {
         codigo: dto.codigo !== undefined ? dto.codigo?.trim().toUpperCase() || null : undefined,
@@ -214,6 +251,10 @@ export class ConteudosLmsService {
           dto.prerequisitoUnidadeId !== undefined ? dto.prerequisitoUnidadeId : undefined,
       },
     });
+    if (dto.ordem !== undefined) {
+      await this.syncPrerequisitosSequenciaisInternal(tenantId, existing.cursoId);
+    }
+    return updated;
   }
 
   async deleteUnidade(user: RequestUser, id: string): Promise<void> {
@@ -453,6 +494,7 @@ export class ConteudosLmsService {
       if (!matricula) {
         throw new ForbiddenException("Não tens acesso a este conteúdo.");
       }
+      await this.assertTarefaAcessivel(tenantId, matricula.id, modulo);
       return;
     }
 
@@ -482,6 +524,12 @@ export class ConteudosLmsService {
     // Conteúdos LMS são por curso - todas as acções do mesmo curso partilham o percurso.
     const cursoIdResolved = matricula.turma.acaoFormacao.cursoId;
     const acaoId = matricula.turma.acaoFormacao.id;
+
+    const curso = await this.prisma.curso.findFirst({
+      where: { id: cursoIdResolved, tenantId },
+      select: { lmsProgressaoSequencial: true },
+    });
+    const progressaoSequencial = curso?.lmsProgressaoSequencial !== false;
 
     const [unidades, modulos, progressos, desbloqueios, prazosModulo] = await Promise.all([
       this.prisma.moduloUnidade.findMany({
@@ -531,11 +579,13 @@ export class ConteudosLmsService {
       concluidoEm: p.concluidoEm,
     }));
     const desbloqueiosManuais = new Set(desbloqueios.map((d) => d.moduloUnidadeId));
-    const lockOpts = { desbloqueiosManuais };
+    const lockOpts = { desbloqueiosManuais, progressaoSequencial };
 
     const now = new Date();
-    const unidadesOut = unidadesOrdenadas(unidades).map((u, idx) => {
-      const anterior = idx > 0 ? unidadesOrdenadas(unidades)[idx - 1] : null;
+    const sortedUnidades = unidadesOrdenadas(unidades);
+    const unidadesOut = sortedUnidades.map((u) => {
+      const prereqId = prerequisitoUnidadeEfectivo(unidades, u.id, progressaoSequencial);
+      const anterior = prereqId ? unidades.find((x) => x.id === prereqId) ?? null : null;
       const pontuacao = pontuacaoModulo(modulos, progressoRows, u.id);
       const prazoModulo = prazoPorUnidade.get(u.id) ?? null;
       const prazoAtingido = prazoModulo ? prazoConclusaoAtingido(prazoModulo, now) : false;
@@ -575,6 +625,9 @@ export class ConteudosLmsService {
         ? (prazoPorUnidade.get(m.moduloUnidadeId) ?? null)
         : null;
       const prazoAtingido = prazoModulo ? prazoConclusaoAtingido(prazoModulo, now) : false;
+      const desbloqueado =
+        !prazoAtingido &&
+        tarefaDesbloqueada(unidades, modulos, progressoRows, m.id, lockOpts);
       return {
         id: m.id,
         titulo: m.titulo,
@@ -583,19 +636,20 @@ export class ConteudosLmsService {
         moduloUnidadeId: m.moduloUnidadeId,
         notaMinima: m.notaMinima,
         duracaoMin: m.duracaoMin,
-        urlOuRef: m.urlOuRef,
-        conteudoHtml: m.conteudoHtml,
+        urlOuRef: desbloqueado ? m.urlOuRef : null,
+        conteudoHtml: desbloqueado ? m.conteudoHtml : null,
         metadata:
-          m.metadata && typeof m.metadata === "object" && !Array.isArray(m.metadata)
+          desbloqueado &&
+          m.metadata &&
+          typeof m.metadata === "object" &&
+          !Array.isArray(m.metadata)
             ? (m.metadata as Record<string, unknown>)
             : null,
         prerequisitoModuloId: m.prerequisitoModuloId,
         pontuacao: pontuacaoTarefa(progresso, m),
         percentual: prog?.percentual ?? 0,
         concluido: !!prog?.concluidoEm,
-        desbloqueado:
-          !prazoAtingido &&
-          tarefaDesbloqueada(unidades, modulos, progressoRows, m.id, lockOpts),
+        desbloqueado,
       };
     });
 
@@ -893,7 +947,7 @@ export class ConteudosLmsService {
     matriculaId: string,
     modulo: ModuloConteudo,
   ): Promise<void> {
-    const [unidades, modulos, progressos, desbloqueios, matricula] = await Promise.all([
+    const [unidades, modulos, progressos, desbloqueios, matricula, curso] = await Promise.all([
       this.prisma.moduloUnidade.findMany({ where: { tenantId, cursoId: modulo.cursoId } }),
       this.prisma.moduloConteudo.findMany({
         where: { tenantId, cursoId: modulo.cursoId, publicado: true },
@@ -906,6 +960,10 @@ export class ConteudosLmsService {
       this.prisma.matricula.findFirst({
         where: { id: matriculaId, tenantId },
         select: { turma: { select: { acaoFormacaoId: true } } },
+      }),
+      this.prisma.curso.findFirst({
+        where: { id: modulo.cursoId, tenantId },
+        select: { lmsProgressaoSequencial: true },
       }),
     ]);
 
@@ -932,24 +990,28 @@ export class ConteudosLmsService {
       pontuacao: p.pontuacao,
       concluidoEm: p.concluidoEm,
     }));
-    const lockOpts = { desbloqueiosManuais: new Set(desbloqueios.map((d) => d.moduloUnidadeId)) };
+    const progressaoSequencial = curso?.lmsProgressaoSequencial !== false;
+    const lockOpts = {
+      desbloqueiosManuais: new Set(desbloqueios.map((d) => d.moduloUnidadeId)),
+      progressaoSequencial,
+    };
 
     if (!tarefaDesbloqueada(unidades, modulos, progressoRows, modulo.id, lockOpts)) {
-      const unidade = modulo.moduloUnidadeId
-        ? unidades.find((u) => u.id === modulo.moduloUnidadeId)
-        : null;
-      if (unidade?.lockManual && !lockOpts.desbloqueiosManuais.has(unidade.id)) {
+      const unidadeId = modulo.moduloUnidadeId;
+      if (unidadeId && !lockOpts.desbloqueiosManuais.has(unidadeId)) {
         throw new ForbiddenException(
-          "Este módulo está bloqueado. O gestor ou o formando associado devem libertá-lo para continuares.",
+          "Este módulo ainda está bloqueado. O formador ou o gestor precisam de o libertar em Tarefas.",
         );
       }
-      const unidadeId = modulo.moduloUnidadeId;
-      const prev = unidadeId
-        ? unidadesOrdenadas(unidades).find((u, i, arr) => arr[i + 1]?.id === unidadeId)
+      const prevId = unidadeId
+        ? prerequisitoUnidadeEfectivo(unidades, unidadeId, progressaoSequencial)
         : null;
+      const prev = prevId ? unidades.find((u) => u.id === prevId) : null;
       const minima = prev ? notaMinimaParaDesbloquearProximo(prev) : 60;
       throw new ForbiddenException(
-        `Conclui o módulo anterior com pelo menos ${minima}% para desbloquear este conteúdo.`,
+        prev
+          ? `Conclui «${prev.titulo}» com pelo menos ${minima}% para desbloquear este conteúdo.`
+          : "Este conteúdo ainda não está disponível.",
       );
     }
   }

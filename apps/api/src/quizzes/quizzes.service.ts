@@ -12,8 +12,8 @@ import { FormadorNotificacoesService } from "../notificacoes/formador-notificaco
 import type { CreateQuizPerguntaDto, SubmitQuizDto, UpdateQuizPerguntaDto } from "./dto/quizzes.dto";
 import {
   notaMinimaParaDesbloquearProximo,
+  prerequisitoUnidadeEfectivo,
   tarefaDesbloqueada,
-  unidadesOrdenadas,
 } from "@nexiforma/shared";
 import { prazoConclusaoAtingido } from "../conteudos-lms/lms-prazo.util";
 
@@ -228,7 +228,7 @@ export class QuizzesService {
     matriculaId: string,
     modulo: { id: string; cursoId: string; moduloUnidadeId: string | null },
   ): Promise<void> {
-    const [unidades, modulos, progressos, desbloqueios, matricula] = await Promise.all([
+    const [unidades, modulos, progressos, desbloqueios, matricula, curso] = await Promise.all([
       this.prisma.moduloUnidade.findMany({ where: { tenantId, cursoId: modulo.cursoId } }),
       this.prisma.moduloConteudo.findMany({
         where: { tenantId, cursoId: modulo.cursoId, publicado: true },
@@ -241,6 +241,10 @@ export class QuizzesService {
       this.prisma.matricula.findFirst({
         where: { id: matriculaId, tenantId },
         select: { turma: { select: { acaoFormacaoId: true } } },
+      }),
+      this.prisma.curso.findFirst({
+        where: { id: modulo.cursoId, tenantId },
+        select: { lmsProgressaoSequencial: true },
       }),
     ]);
 
@@ -267,23 +271,28 @@ export class QuizzesService {
       pontuacao: p.pontuacao,
       concluidoEm: p.concluidoEm,
     }));
-    const desbloqueiosManuais = new Set(desbloqueios.map((d) => d.moduloUnidadeId));
+    const progressaoSequencial = curso?.lmsProgressaoSequencial !== false;
+    const lockOpts = {
+      desbloqueiosManuais: new Set(desbloqueios.map((d) => d.moduloUnidadeId)),
+      progressaoSequencial,
+    };
 
-    if (!tarefaDesbloqueada(unidades, modulos, progressoRows, modulo.id, { desbloqueiosManuais })) {
-      const unidade = modulo.moduloUnidadeId
-        ? unidades.find((u) => u.id === modulo.moduloUnidadeId)
-        : null;
-      if (unidade?.lockManual && !desbloqueiosManuais.has(unidade.id)) {
+    if (!tarefaDesbloqueada(unidades, modulos, progressoRows, modulo.id, lockOpts)) {
+      const unidadeId = modulo.moduloUnidadeId;
+      if (unidadeId && !lockOpts.desbloqueiosManuais.has(unidadeId)) {
         throw new ForbiddenException(
           "Este módulo ainda está bloqueado. O formador ou o gestor precisam de o libertar em Tarefas.",
         );
       }
-      const sorted = unidadesOrdenadas(unidades);
-      const idx = sorted.findIndex((u) => u.id === modulo.moduloUnidadeId);
-      const prev = idx > 0 ? sorted[idx - 1] : null;
+      const prevId = unidadeId
+        ? prerequisitoUnidadeEfectivo(unidades, unidadeId, progressaoSequencial)
+        : null;
+      const prev = prevId ? unidades.find((u) => u.id === prevId) : null;
       const minima = prev ? notaMinimaParaDesbloquearProximo(prev) : 60;
       throw new ForbiddenException(
-        `Conclui o módulo anterior com pelo menos ${minima}% para desbloquear este quiz.`,
+        prev
+          ? `Conclui «${prev.titulo}» com pelo menos ${minima}% para desbloquear este quiz.`
+          : "Este quiz ainda não está disponível.",
       );
     }
   }

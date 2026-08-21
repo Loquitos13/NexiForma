@@ -62,6 +62,17 @@ export class ConteudosLmsController {
     return this.conteudos.createUnidade(user, dto);
   }
 
+  @Post("unidades/sync-prerequisitos")
+  @Roles("tenant_manager", "coordenador_pedagogico", "formador")
+  @HttpCode(204)
+  async syncPrerequisitos(
+    @CurrentUser() user: RequestUser,
+    @Query("cursoId") cursoId: string,
+  ): Promise<void> {
+    if (!cursoId?.trim()) throw new BadRequestException("cursoId é obrigatório.");
+    await this.conteudos.syncPrerequisitosSequenciais(user, cursoId.trim());
+  }
+
   @Patch("unidades/:id")
   @Roles("tenant_manager", "coordenador_pedagogico", "formador")
   updateUnidade(

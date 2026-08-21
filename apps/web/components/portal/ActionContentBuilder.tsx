@@ -113,6 +113,12 @@ export function ActionContentBuilder({
       setModulos([]);
       return;
     }
+    if (lmsProgressaoSequencial) {
+      await bffFetch(
+        `/api/v1/conteudos-lms/unidades/sync-prerequisitos?cursoId=${encodeURIComponent(cursoId)}`,
+        { method: "POST" },
+      );
+    }
     const [uRes, mRes] = await Promise.all([
       bffFetch(`/api/v1/conteudos-lms/unidades?cursoId=${encodeURIComponent(cursoId)}`, {
         headers: { accept: "application/json" },
@@ -133,7 +139,7 @@ export function ActionContentBuilder({
     } else {
       setSelectedUnidadeId((prev) => pickInitialUnidadeId(uRows, mRows, prev));
     }
-  }, [cursoId, initialUnidadeId]);
+  }, [cursoId, initialUnidadeId, lmsProgressaoSequencial]);
 
   useEffect(() => {
     void loadAll();
@@ -308,6 +314,12 @@ export function ActionContentBuilder({
         void persistUnidade(u.id, { prerequisitoUnidadeId: null });
       }
     }
+    if (lmsProgressaoSequencial) {
+      await bffFetch(
+        `/api/v1/conteudos-lms/unidades/sync-prerequisitos?cursoId=${encodeURIComponent(cursoId)}`,
+        { method: "POST" },
+      );
+    }
   }
 
   async function handleUnidadeDrop(idx: number) {
@@ -432,6 +444,11 @@ export function ActionContentBuilder({
           patchUnidade(u.id, { prerequisitoUnidadeId: null });
         }
       }
+    } else {
+      void bffFetch(
+        `/api/v1/conteudos-lms/unidades/sync-prerequisitos?cursoId=${encodeURIComponent(cursoId)}`,
+        { method: "POST" },
+      ).then(() => void loadAll());
     }
   }
 

@@ -169,11 +169,14 @@ export function FormandoCursoView({
     const tarefaId = searchParams.get("tarefa");
     if (!tarefaId) return;
     const tarefa = percurso.tarefas.find((t) => t.id === tarefaId);
-    if (!tarefa) return;
-    setActiveUnidadeId(tarefa.moduloUnidadeId ?? UNIDADE_FLAT_ID);
+    if (!tarefa || !tarefa.desbloqueado) return;
+    const unidadeId = tarefa.moduloUnidadeId ?? UNIDADE_FLAT_ID;
+    const unidade = unidadesComConteudo.find((u) => u.id === unidadeId);
+    if (unidade && !unidade.desbloqueado) return;
+    setActiveUnidadeId(unidadeId);
     const t = setTimeout(() => scrollParaTarefa(tarefaId), 400);
     return () => clearTimeout(t);
-  }, [searchParams, percurso.tarefas, scrollParaTarefa]);
+  }, [searchParams, percurso.tarefas, unidadesComConteudo, scrollParaTarefa]);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#070b12]">
