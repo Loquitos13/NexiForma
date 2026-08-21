@@ -41,7 +41,7 @@ function defaultOpcoes(tipo: QuizTipo): Opcao[] {
 const TIPO_BTNS: { id: QuizTipo; label: string }[] = [
   { id: "MULTIPLA", label: "Múltipla" },
   { id: "VF", label: "V/F" },
-  { id: "ABERTA", label: "T Aberta" },
+  { id: "ABERTA", label: "Aberta" },
 ];
 
 type Props = {
