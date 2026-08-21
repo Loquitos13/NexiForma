@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, forwardRef } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { parseVttToPlainText, type TeamsTranscricaoEstado } from "@nexiforma/shared";
 import { PrismaService } from "../prisma/prisma.service";
@@ -15,6 +15,7 @@ export class TeamsTranscriptService {
 
   constructor(
     private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => IntegracoesService))
     private readonly integracoes: IntegracoesService,
     private readonly config: ConfigService,
     private readonly externalEvents: ExternalServiceEventService,
