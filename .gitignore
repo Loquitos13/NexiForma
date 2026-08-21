@@ -42,7 +42,7 @@ pnpm-debug.log*
 # Test
 coverage/
 
-# Testes/documentação AT webservices (local — certificação AT; não versionar)
+# Testes/documentação AT webservices (local - certificação AT; não versionar)
 apps/api/src/faturas/at-contrato-adesao-compliance.spec.ts
 tests/docs/at-contrato-adesao-checklist.md
 tests/docs/faturacao-testes.md

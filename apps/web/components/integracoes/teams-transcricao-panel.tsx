@@ -5,6 +5,7 @@ import { FileText } from "lucide-react";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { Button } from "@/components/ui";
+import { cn } from "@/lib/ui/cn";
 
 const MARKER = "--- Transcrição Teams ---";
 
@@ -31,6 +32,13 @@ export function separarNotasLivresTranscricao(texto: string | null | undefined):
     transcricao: texto.slice(idx + MARKER.length).trim() || null,
   };
 }
+
+const ESTADO_LABEL: Record<string, string> = {
+  DISPONIVEL: "Disponível",
+  PENDENTE: "Pendente",
+  INDISPONIVEL: "Indisponível",
+  ERRO: "Erro de permissão",
+};
 
 type Props = {
   fonteId: string;
@@ -62,7 +70,11 @@ export function TeamsTranscricaoPanel({
 
   const texto = localTexto ?? teamsTranscricao;
   const estado = localEstado ?? teamsTranscricaoEstado;
-  const podeImportar = Boolean(temSalaTeams && !texto);
+  const podeImportar = Boolean(temSalaTeams) && !texto && estado !== "DISPONIVEL";
+  const labelImportar =
+    estado === "ERRO" || estado === "PENDENTE" || estado === "INDISPONIVEL"
+      ? "Tentar novamente"
+      : "Importar transcrição Teams";
 
   const importar = useCallback(async () => {
     setBusy(true);
@@ -84,17 +96,28 @@ export function TeamsTranscricaoPanel({
       const data = (await res.json()) as {
         estado?: string;
         teamsTranscricao?: string | null;
+        mensagem?: string | null;
       };
       if (data.teamsTranscricao) setLocalTexto(data.teamsTranscricao);
       if (data.estado) setLocalEstado(data.estado);
+
       if (data.estado === "DISPONIVEL" && data.teamsTranscricao) {
-        setMsg("Transcrição importada.");
+        setMsg("Transcrição importada com sucesso.");
+      } else if (data.estado === "ERRO") {
+        setError(
+          data.mensagem ??
+            "Sem permissão Microsoft Graph - confirma admin consent e Application Access Policy.",
+        );
       } else if (data.estado === "PENDENTE") {
-        setMsg("Ainda não disponível no Teams - tenta novamente dentro de alguns minutos.");
-      } else if (data.estado === "INDISPONIVEL") {
-        setMsg("Transcrição indisponível (confirma que foi iniciada na reunião Teams).");
+        setMsg(
+          data.mensagem ??
+            "Ainda não disponível no Teams - tenta novamente dentro de alguns minutos.",
+        );
       } else {
-        setMsg(`Estado: ${data.estado ?? "desconhecido"}`);
+        setMsg(
+          data.mensagem ??
+            "Transcrição indisponível - confirma que foi iniciada na reunião Teams.",
+        );
       }
       await onUpdated?.();
     } catch {
@@ -105,6 +128,15 @@ export function TeamsTranscricaoPanel({
   }, [fonte, fonteId, onUpdated]);
 
   if (!temSalaTeams && !texto && !estado) return null;
+
+  const estadoCor =
+    estado === "DISPONIVEL"
+      ? "text-emerald-300"
+      : estado === "ERRO"
+        ? "text-red-300"
+        : estado === "PENDENTE"
+          ? "text-amber-300"
+          : "text-slate-300";
 
   return (
     <div
@@ -122,11 +154,14 @@ export function TeamsTranscricaoPanel({
       ) : null}
 
       {error ? <p className="text-xs text-red-400">{error}</p> : null}
-      {msg ? <p className="text-xs text-emerald-400">{msg}</p> : null}
+      {msg ? <p className="text-xs text-amber-200/90">{msg}</p> : null}
 
-      {estado ? (
+      {estado && !error ? (
         <p className="text-xs text-slate-500">
-          Estado: <span className="text-slate-300">{estado}</span>
+          Estado:{" "}
+          <span className={cn("font-medium", estadoCor)}>
+            {ESTADO_LABEL[estado] ?? estado}
+          </span>
         </p>
       ) : null}
 
@@ -146,19 +181,7 @@ export function TeamsTranscricaoPanel({
           disabled={busy || writeDisabled}
           onClick={() => void importar()}
         >
-          {busy ? "A importar…" : "Importar transcrição Teams"}
-        </Button>
-      ) : null}
-
-      {texto && temSalaTeams && estado !== "DISPONIVEL" ? (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="text-xs"
-          disabled={busy || writeDisabled}
-          onClick={() => void importar()}
-        >
-          Actualizar
+          {busy ? "A importar…" : labelImportar}
         </Button>
       ) : null}
     </div>

@@ -78,20 +78,21 @@ export class CrmReuniaoTeamsService {
   async importarTranscricao(
     user: RequestUser,
     interaccaoId: string,
-  ): Promise<{ estado: string; teamsTranscricao?: string | null }> {
+  ): Promise<{ estado: string; teamsTranscricao?: string | null; mensagem?: string }> {
     const row = await this.getReuniao(user, interaccaoId);
     if (!row.teamsMeetingId) {
       throw new BadRequestException("Reunião sem sala Teams.");
     }
     const tenantId = requireTenantId(user);
-    const estado = await this.teamsTranscript.importarCrm(interaccaoId, tenantId);
+    const result = await this.teamsTranscript.importarCrm(interaccaoId, tenantId);
     const fresh = await this.prisma.interaccaoComercial.findFirst({
       where: { id: interaccaoId, tenantId },
       select: { teamsTranscricao: true, teamsTranscricaoEstado: true },
     });
     return {
-      estado: fresh?.teamsTranscricaoEstado ?? estado,
-      teamsTranscricao: fresh?.teamsTranscricao ?? null,
+      estado: fresh?.teamsTranscricaoEstado ?? result.estado,
+      teamsTranscricao: fresh?.teamsTranscricao ?? result.teamsTranscricao ?? null,
+      mensagem: result.mensagem,
     };
   }
 

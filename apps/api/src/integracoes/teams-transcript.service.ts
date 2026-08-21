@@ -9,6 +9,12 @@ type FetchResult =
   | { ok: true; text: string }
   | { ok: false; retryable: boolean; message: string };
 
+export type TeamsTranscricaoImportResult = {
+  estado: TeamsTranscricaoEstado;
+  mensagem?: string;
+  teamsTranscricao?: string | null;
+};
+
 @Injectable()
 export class TeamsTranscriptService {
   private readonly logger = new Logger(TeamsTranscriptService.name);
@@ -38,22 +44,32 @@ export class TeamsTranscriptService {
   }
 
   /** Importação imediata (CRM) - útil após terminar reunião ou botão manual. */
-  async importarCrm(interaccaoId: string, tenantId: string): Promise<TeamsTranscricaoEstado> {
+  async importarCrm(interaccaoId: string, tenantId: string): Promise<TeamsTranscricaoImportResult> {
     const row = await this.prisma.interaccaoComercial.findFirst({
       where: { id: interaccaoId, tenantId, tipo: "REUNIAO" },
       select: { teamsMeetingId: true, teamsTranscricaoEstado: true },
     });
-    if (!row?.teamsMeetingId) return "INDISPONIVEL";
+    if (!row?.teamsMeetingId) {
+      return {
+        estado: "INDISPONIVEL",
+        mensagem: "Reunião sem identificador Teams - não há transcrição para importar.",
+      };
+    }
     return this.persistCrm(interaccaoId, tenantId, row.teamsMeetingId);
   }
 
   /** Importação imediata (sessão formação). */
-  async importarSessao(sessaoId: string, tenantId: string): Promise<TeamsTranscricaoEstado> {
+  async importarSessao(sessaoId: string, tenantId: string): Promise<TeamsTranscricaoImportResult> {
     const row = await this.prisma.sessaoFormacao.findFirst({
       where: { id: sessaoId, tenantId },
       select: { teamsMeetingId: true },
     });
-    if (!row?.teamsMeetingId) return "INDISPONIVEL";
+    if (!row?.teamsMeetingId) {
+      return {
+        estado: "INDISPONIVEL",
+        mensagem: "Sessão sem sala Teams - não há transcrição para importar.",
+      };
+    }
     return this.persistSessao(sessaoId, tenantId, row.teamsMeetingId);
   }
 
@@ -80,7 +96,7 @@ export class TeamsTranscriptService {
 
     for (const r of reunioes) {
       if (!r.teamsMeetingId) continue;
-      const estado = await this.persistCrm(r.id, r.tenantId, r.teamsMeetingId);
+      const { estado } = await this.persistCrm(r.id, r.tenantId, r.teamsMeetingId);
       if (estado !== "PENDENTE") done += 1;
     }
 
@@ -98,7 +114,7 @@ export class TeamsTranscriptService {
       });
       for (const s of sessoes) {
         if (!s.teamsMeetingId) continue;
-        const estado = await this.persistSessao(s.id, s.tenantId, s.teamsMeetingId);
+        const { estado } = await this.persistSessao(s.id, s.tenantId, s.teamsMeetingId);
         if (estado !== "PENDENTE") done += 1;
       }
     }
@@ -110,7 +126,7 @@ export class TeamsTranscriptService {
     interaccaoId: string,
     tenantId: string,
     meetingId: string,
-  ): Promise<TeamsTranscricaoEstado> {
+  ): Promise<TeamsTranscricaoImportResult> {
     const result = await this.fetchFromGraph(tenantId, meetingId);
     const estado = this.estadoFromResult(result);
     if (result.ok) {
@@ -129,14 +145,18 @@ export class TeamsTranscriptService {
         resourceRef: meetingId,
         code: "TRANSCRIPT_IMPORTED",
       });
-      return estado;
+      return { estado, teamsTranscricao: result.text };
     }
 
+    const mensagem = this.mensagemParaUtilizador(result, estado);
     await this.prisma.interaccaoComercial.update({
       where: { id: interaccaoId },
       data: { teamsTranscricaoEstado: estado },
     });
     if (estado === "ERRO") {
+      this.logger.warn(
+        `Transcrição CRM ${interaccaoId} tenant=${tenantId}: ${result.message}`,
+      );
       this.externalEvents.recordError({
         service: "teams",
         tenantId,
@@ -145,14 +165,14 @@ export class TeamsTranscriptService {
         code: "TRANSCRIPT_ERROR",
       });
     }
-    return estado;
+    return { estado, mensagem };
   }
 
   private async persistSessao(
     sessaoId: string,
     tenantId: string,
     meetingId: string,
-  ): Promise<TeamsTranscricaoEstado> {
+  ): Promise<TeamsTranscricaoImportResult> {
     const result = await this.fetchFromGraph(tenantId, meetingId);
     const estado = this.estadoFromResult(result);
     if (result.ok) {
@@ -171,14 +191,18 @@ export class TeamsTranscriptService {
         resourceRef: meetingId,
         code: "TRANSCRIPT_IMPORTED",
       });
-      return estado;
+      return { estado, teamsTranscricao: result.text };
     }
 
+    const mensagem = this.mensagemParaUtilizador(result, estado);
     await this.prisma.sessaoFormacao.update({
       where: { id: sessaoId },
       data: { teamsTranscricaoEstado: estado },
     });
     if (estado === "ERRO") {
+      this.logger.warn(
+        `Transcrição sessão ${sessaoId} tenant=${tenantId}: ${result.message}`,
+      );
       this.externalEvents.recordError({
         service: "teams",
         tenantId,
@@ -187,7 +211,33 @@ export class TeamsTranscriptService {
         code: "TRANSCRIPT_ERROR",
       });
     }
-    return estado;
+    return { estado, mensagem };
+  }
+
+  private mensagemParaUtilizador(
+    result: Extract<FetchResult, { ok: false }>,
+    estado: TeamsTranscricaoEstado,
+  ): string {
+    if (result.message.includes("403")) {
+      return (
+        "Sem permissão Microsoft Graph para ler transcrições (HTTP 403). " +
+        "Confirma admin consent em OnlineMeetingTranscript.Read.All e a Application Access Policy " +
+        "no PowerShell (App ID + organizador M365)."
+      );
+    }
+    if (estado === "PENDENTE") {
+      return (
+        "Transcrição ainda não disponível no Teams - aguarda alguns minutos após terminar a reunião " +
+        "e confirma que a transcrição foi iniciada na chamada."
+      );
+    }
+    if (estado === "INDISPONIVEL") {
+      return (
+        "Transcrição indisponível - inicia a transcrição manualmente na reunião Teams " +
+        "ou activa a política de transcrição automática no Teams Admin."
+      );
+    }
+    return result.message.slice(0, 280);
   }
 
   private estadoFromResult(result: FetchResult): TeamsTranscricaoEstado {

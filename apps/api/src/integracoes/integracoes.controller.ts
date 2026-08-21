@@ -56,8 +56,12 @@ export class IntegracoesController {
     @Param("sessaoId", ParseUUIDPipe) sessaoId: string,
   ) {
     const tenantId = requireTenantId(user);
-    const estado = await this.teamsTranscript.importarSessao(sessaoId, tenantId);
-    return { estado };
+    const result = await this.teamsTranscript.importarSessao(sessaoId, tenantId);
+    return {
+      estado: result.estado,
+      teamsTranscricao: result.teamsTranscricao ?? null,
+      mensagem: result.mensagem,
+    };
   }
 
   @Get("oauth/status")
