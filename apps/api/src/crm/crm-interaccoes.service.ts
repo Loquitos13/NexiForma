@@ -146,7 +146,21 @@ export class CrmInteraccoesService {
   async create(user: RequestUser, dto: CreateInteraccaoDto): Promise<InteraccaoComercialResposta> {
     const tenantId = requireTenantId(user);
     if (!user.sub) throw new BadRequestException("Utilizador inválido.");
-    if (!dto.entidadeClienteId && !dto.leadComercialId) {
+
+    let entidadeClienteId = dto.entidadeClienteId;
+    let leadComercialId = dto.leadComercialId;
+    if (dto.reuniaoOrigemId && !entidadeClienteId && !leadComercialId) {
+      const origem = await this.prisma.interaccaoComercial.findFirst({
+        where: { id: dto.reuniaoOrigemId, tenantId, tipo: "REUNIAO" },
+        select: { entidadeClienteId: true, leadComercialId: true },
+      });
+      if (origem) {
+        entidadeClienteId = origem.entidadeClienteId ?? undefined;
+        leadComercialId = origem.leadComercialId ?? undefined;
+      }
+    }
+
+    if (!entidadeClienteId && !leadComercialId) {
       const agendamentoCalendario = dto.tipo === "REUNIAO" && !!dto.agendadoPara;
       if (!agendamentoCalendario) {
         throw new BadRequestException("Indique um cliente ou um lead.");
@@ -156,7 +170,7 @@ export class CrmInteraccoesService {
       throw new BadRequestException("Preencha pelo menos um campo de notas.");
     }
 
-    await this.validarFks(tenantId, dto.entidadeClienteId, dto.leadComercialId);
+    await this.validarFks(tenantId, entidadeClienteId, leadComercialId);
 
     const autor = await interaccaoAutorFromUserId(this.prisma, user.sub);
 
@@ -172,8 +186,8 @@ export class CrmInteraccoesService {
         decisor: dto.decisor?.trim() || null,
         proximoPassoNota: dto.proximoPassoNota?.trim() || null,
         notasLivres: dto.notasLivres?.trim() || null,
-        entidadeClienteId: dto.entidadeClienteId ?? null,
-        leadComercialId: dto.leadComercialId ?? null,
+        entidadeClienteId: entidadeClienteId ?? null,
+        leadComercialId: leadComercialId ?? null,
         ...autor,
         agendadoPara: dto.agendadoPara ? new Date(dto.agendadoPara) : null,
         agendadoFim: dto.agendadoFim ? new Date(dto.agendadoFim) : null,

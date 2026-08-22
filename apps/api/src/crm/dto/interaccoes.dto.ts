@@ -57,7 +57,7 @@ export class CreateInteraccaoDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(12000)
+  @MaxLength(100000)
   notasLivres?: string;
 
   @IsOptional()

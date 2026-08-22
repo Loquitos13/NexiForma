@@ -66,6 +66,11 @@ const TeamsTranscricaoJobsContext = createContext<TeamsTranscricaoJobsContextVal
 type InteraccaoPoll = {
   teamsTranscricao?: string | null;
   teamsTranscricaoEstado?: string | null;
+  entidadeClienteId?: string | null;
+  leadComercialId?: string | null;
+  entidadeCliente?: { id: string; nome: string } | null;
+  leadComercial?: { id: string; empresaNome: string } | null;
+  titulo?: string | null;
 };
 
 export function TeamsTranscricaoJobsProvider({ children }: { children: ReactNode }) {
@@ -193,6 +198,13 @@ export function TeamsTranscricaoJobsProvider({ children }: { children: ReactNode
         const data = (await res.json()) as InteraccaoPoll;
         const estado = data.teamsTranscricaoEstado;
         const texto = data.teamsTranscricao;
+        const metaPatch: Partial<TeamsTranscricaoJob> = {
+          entidadeClienteId: data.entidadeClienteId ?? data.entidadeCliente?.id ?? undefined,
+          leadComercialId: data.leadComercialId ?? data.leadComercial?.id ?? undefined,
+          clienteNome:
+            data.entidadeCliente?.nome ?? data.leadComercial?.empresaNome ?? undefined,
+          titulo: data.titulo ?? undefined,
+        };
 
         if (estado === "DISPONIVEL" && texto) {
           patchJob(job.reuniaoId, {
@@ -201,6 +213,7 @@ export function TeamsTranscricaoJobsProvider({ children }: { children: ReactNode
             modalOpen: true,
             pollCount: nextPoll,
             mensagem: null,
+            ...metaPatch,
           });
           return;
         }
@@ -210,11 +223,12 @@ export function TeamsTranscricaoJobsProvider({ children }: { children: ReactNode
             status: "FALHA",
             mensagem: "Sem permissão ou erro ao importar a transcrição Teams.",
             pollCount: nextPoll,
+            ...metaPatch,
           });
           return;
         }
 
-        patchJob(job.reuniaoId, { pollCount: nextPoll });
+        patchJob(job.reuniaoId, { pollCount: nextPoll, ...metaPatch });
       } catch {
         patchJob(job.reuniaoId, { pollCount: nextPoll });
       }
@@ -284,6 +298,23 @@ export async function criarNotaComercialFromTranscricao(
   const transcricao = job.transcricao?.trim();
   if (!transcricao) return { ok: false, erro: "Transcrição em falta." };
 
+  let entidadeClienteId = job.entidadeClienteId ?? undefined;
+  let leadComercialId = job.leadComercialId ?? undefined;
+  if (!entidadeClienteId && !leadComercialId) {
+    try {
+      const res = await bffFetch(`/api/v1/crm/interaccoes/${job.reuniaoId}`, {
+        headers: { accept: "application/json" },
+      });
+      if (res.ok) {
+        const row = (await res.json()) as InteraccaoPoll;
+        entidadeClienteId = row.entidadeClienteId ?? row.entidadeCliente?.id ?? undefined;
+        leadComercialId = row.leadComercialId ?? row.leadComercial?.id ?? undefined;
+      }
+    } catch {
+      // segue - API pode resolver via reuniaoOrigemId
+    }
+  }
+
   const bloco = `--- Transcrição Teams ---\n${transcricao}`;
   const notasLivres = [fields.notasLivres?.trim(), bloco].filter(Boolean).join("\n\n");
 
@@ -300,8 +331,8 @@ export async function criarNotaComercialFromTranscricao(
       decisor: fields.decisor?.trim() || undefined,
       proximoPassoNota: fields.proximoPassoNota?.trim() || undefined,
       notasLivres,
-      entidadeClienteId: job.entidadeClienteId ?? undefined,
-      leadComercialId: job.leadComercialId ?? undefined,
+      entidadeClienteId,
+      leadComercialId,
       reuniaoOrigemId: job.reuniaoId,
     }),
   });
