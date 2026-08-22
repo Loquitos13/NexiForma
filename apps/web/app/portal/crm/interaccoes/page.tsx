@@ -339,8 +339,8 @@ export default function CrmInteraccoesPage() {
                       reuniao={{
                         fonteId: item.id,
                         titulo: item.titulo,
-                        entidadeClienteId: item.entidadeClienteId,
-                        leadComercialId: item.leadComercialId,
+                        entidadeClienteId: item.entidadeCliente?.id ?? null,
+                        leadComercialId: item.leadComercial?.id ?? null,
                         clienteNome:
                           item.entidadeCliente?.nome ?? item.leadComercial?.empresaNome ?? null,
                         salaJoinUrl: item.salaJoinUrl,
