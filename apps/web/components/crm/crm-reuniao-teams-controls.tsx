@@ -8,10 +8,15 @@ import { openMeetingUrl } from "@/lib/client/open-meeting-url";
 import { parseApiError } from "@/lib/ui/backoffice";
 import { TempoPresencaAoVivo } from "@/components/lms/tempo-presenca-ao-vivo";
 import { TeamsTranscricaoPanel } from "@/components/integracoes/teams-transcricao-panel";
+import { useTeamsTranscricaoJobs } from "@/lib/crm/teams-transcricao-jobs-context";
 import { Button, Sheet, SheetContent, Textarea } from "@/components/ui";
 
 export type ReuniaoTeamsState = {
   fonteId: string;
+  titulo?: string | null;
+  entidadeClienteId?: string | null;
+  leadComercialId?: string | null;
+  clienteNome?: string | null;
   salaJoinUrl?: string | null;
   reuniaoEstado?: string | null;
   reuniaoIniciadaEm?: string | null;
@@ -60,8 +65,9 @@ export function CrmReuniaoTeamsControls({
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [terminarOpen, setTerminarOpen] = useState(false);
-  const [registarNota, setRegistarNota] = useState(true);
+  const [registarNota, setRegistarNota] = useState(false);
   const [notaForm, setNotaForm] = useState<NotaForm>(emptyNotaForm);
+  const { agendarImportacaoReuniao } = useTeamsTranscricaoJobs();
 
   const id = reuniao.fonteId;
   const emCurso = reuniao.reuniaoEstado === "EM_CURSO";
@@ -131,6 +137,7 @@ export function CrmReuniaoTeamsControls({
   };
 
   const submitTerminar = async () => {
+    if (busy) return;
     const payload = {
       registarNota,
       importarTranscricao: true,
@@ -150,7 +157,31 @@ export function CrmReuniaoTeamsControls({
     if (data) {
       setTerminarOpen(false);
       setNotaForm(emptyNotaForm());
-      setMsg(registarNota ? "Reunião terminada e nota registada." : "Reunião terminada.");
+      const already = (data as { alreadyTerminated?: boolean }).alreadyTerminated;
+      const reuniaoResp = (data as { reuniao?: ReuniaoTeamsState & { reuniaoDuracaoSegundos?: number } })
+        .reuniao;
+      const notaCriada = Boolean((data as { nota?: unknown }).nota);
+
+      if (temSalaTeams && !already) {
+        agendarImportacaoReuniao({
+          reuniaoId: id,
+          titulo: reuniao.titulo,
+          entidadeClienteId: reuniao.entidadeClienteId,
+          leadComercialId: reuniao.leadComercialId,
+          clienteNome: reuniao.clienteNome,
+          duracaoSegundos: reuniaoResp?.reuniaoDuracaoSegundos ?? reuniao.reuniaoDuracaoSegundos,
+          notaJaCriada: notaCriada || registarNota,
+          temSalaTeams: true,
+        });
+      }
+
+      setMsg(
+        already
+          ? "Reunião já estava terminada."
+          : registarNota
+            ? "Reunião terminada. A importar transcrição em background…"
+            : "Reunião terminada. A transcrição será importada automaticamente.",
+      );
     }
   };
 
@@ -255,7 +286,7 @@ export function CrmReuniaoTeamsControls({
       <Sheet open={terminarOpen} onOpenChange={setTerminarOpen}>
         <SheetContent
           title="Terminar reunião"
-          description="Opcionalmente registe uma nota comercial com o resumo da chamada."
+          description="A transcrição Teams será importada automaticamente. Quando estiver pronta, abriremos um modal para criar a nota comercial."
         >
           <div className="space-y-4">
             <label className="flex items-center gap-2 text-sm text-slate-300">
@@ -300,7 +331,8 @@ export function CrmReuniaoTeamsControls({
                   />
                 </label>
                 <p className="text-[11px] text-slate-500">
-                  A nota incluirá automaticamente duração, comercial e cliente.
+                  Opcional - se preferires, podes criar a nota depois a partir da transcrição no modal
+                  automático.
                 </p>
               </div>
             ) : null}

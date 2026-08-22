@@ -16,6 +16,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useRelatorioJobs } from "@/lib/relatorios/relatorio-jobs-context";
+import { useTeamsTranscricaoJobs } from "@/lib/crm/teams-transcricao-jobs-context";
 import { bffFetch } from "@/lib/client/bff-fetch";
 import { cn } from "@/lib/ui/cn";
 
@@ -64,6 +65,7 @@ export function PortalBackgroundJobsCenter({ allowCronogramaJobs = true }: Props
     descartarRelatorio,
     gerarRelatorio,
   } = useRelatorioJobs();
+  const { jobs: transcricaoJobs } = useTeamsTranscricaoJobs();
 
   const [cronogramaJobs, setCronogramaJobs] = useState<CronogramaJob[]>([]);
   const [pollEnabled, setPollEnabled] = useState(allowCronogramaJobs);
@@ -121,15 +123,22 @@ export function PortalBackgroundJobsCenter({ allowCronogramaJobs = true }: Props
     [cronogramaJobs],
   );
 
-  const totalJobsCount = relatorioJobs.length + activeCronogramas.length;
+  const activeTranscricoes = useMemo(
+    () => transcricaoJobs.filter((j) => j.status === "IMPORTANDO" || j.status === "PRONTO"),
+    [transcricaoJobs],
+  );
+
+  const totalJobsCount = relatorioJobs.length + activeCronogramas.length + activeTranscricoes.length;
 
   const hasProcessing =
     relatorioJobs.some((j) => j.status === "A_GERAR") ||
-    activeCronogramas.some((j) => j.status === "A_PROCESSAR");
+    activeCronogramas.some((j) => j.status === "A_PROCESSAR") ||
+    activeTranscricoes.some((j) => j.status === "IMPORTANDO");
 
   const hasFailures =
     relatorioJobs.some((j) => j.status === "FALHA") ||
-    activeCronogramas.some((j) => j.status === "FALHA");
+    activeCronogramas.some((j) => j.status === "FALHA") ||
+    transcricaoJobs.some((j) => j.status === "FALHA");
 
   const updatePos = useCallback(() => {
     if (!triggerBtnRef.current) return;
@@ -428,6 +437,11 @@ export function PortalBackgroundJobsList({
     descartarRelatorio,
     gerarRelatorio,
   } = useRelatorioJobs();
+  const {
+    jobs: transcricaoJobs,
+    abrirModal: abrirModalTranscricao,
+    descartarJob: descartarTranscricao,
+  } = useTeamsTranscricaoJobs();
 
   const [cronogramaJobs, setCronogramaJobs] = useState<CronogramaJob[]>([]);
   const [busyCronogramaId, setBusyCronogramaId] = useState<string | null>(null);
@@ -468,7 +482,12 @@ export function PortalBackgroundJobsList({
     [cronogramaJobs],
   );
 
-  const totalJobsCount = relatorioJobs.length + activeCronogramas.length;
+  const activeTranscricoes = useMemo(
+    () => transcricaoJobs.filter((j) => j.status === "IMPORTANDO" || j.status === "PRONTO" || j.status === "FALHA"),
+    [transcricaoJobs],
+  );
+
+  const totalJobsCount = relatorioJobs.length + activeCronogramas.length + activeTranscricoes.length;
   if (totalJobsCount === 0) return null;
 
   return (
@@ -613,6 +632,64 @@ export function PortalBackgroundJobsList({
               disabled={busyCronogramaId === job.id}
               onClick={() => void descartarCronograma(job.id)}
               className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors disabled:opacity-50"
+              title="Descartar"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
+      ))}
+
+      {activeTranscricoes.map((job) => (
+        <div
+          key={job.reuniaoId}
+          className={cn(
+            "flex items-center justify-between gap-2.5 rounded-xl border p-2.5 transition-all text-xs",
+            job.status === "IMPORTANDO"
+              ? "border-teal-500/30 bg-teal-950/25"
+              : job.status === "PRONTO"
+                ? "border-emerald-500/30 bg-emerald-950/25"
+                : "border-amber-500/30 bg-amber-950/25",
+          )}
+        >
+          <div className="flex items-start gap-2 min-w-0 flex-1">
+            <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-lg bg-slate-800/80 text-slate-300">
+              <FileText className="h-3 w-3 text-teal-400" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <span className="truncate font-medium text-slate-200 block text-xs">
+                Transcrição · {job.titulo}
+              </span>
+              <p className="text-[10px] text-slate-400 truncate">
+                {job.status === "IMPORTANDO" && "A importar do Teams…"}
+                {job.status === "PRONTO" && "Pronta - criar nota comercial"}
+                {job.status === "FALHA" && (job.mensagem ?? "Falha na importação")}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {job.status === "IMPORTANDO" && (
+              <Loader2 className="h-3 w-3 animate-spin text-teal-300" />
+            )}
+            {job.status === "PRONTO" && (
+              <button
+                type="button"
+                onClick={() => {
+                  abrirModalTranscricao(job.reuniaoId);
+                  onAction?.();
+                }}
+                className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-emerald-500 transition-colors shadow-sm"
+              >
+                Abrir
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                descartarTranscricao(job.reuniaoId);
+                onAction?.();
+              }}
+              className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"
               title="Descartar"
             >
               <X className="h-3 w-3" />

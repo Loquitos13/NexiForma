@@ -29,6 +29,7 @@ import { useTenantRole } from "@/lib/client/use-tenant-role";
 import { PortalPriorityCompanion } from "@/components/portal/portal-priority-companion";
 import { MustChangePasswordModal } from "@/components/portal/must-change-password-modal";
 import { RelatorioJobsProvider } from "@/lib/relatorios/relatorio-jobs-context";
+import { TeamsTranscricaoJobsProvider } from "@/lib/crm/teams-transcricao-jobs-context";
 import { Suspense } from "react";
 import { ActiveGuidedFlowProvider } from "@/lib/client/active-guided-flow-context";
 import { GuidedFlowAnchorBubble } from "@/components/guide/guided-flow-anchor-bubble";
@@ -38,12 +39,14 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   return (
     <TenantEntitlementsProvider>
       <RelatorioJobsProvider>
+        <TeamsTranscricaoJobsProvider>
         <Suspense fallback={null}>
           <ActiveGuidedFlowProvider>
             <PortalLayoutInner>{children}</PortalLayoutInner>
             <NexiGuia />
           </ActiveGuidedFlowProvider>
         </Suspense>
+        </TeamsTranscricaoJobsProvider>
       </RelatorioJobsProvider>
     </TenantEntitlementsProvider>
   );

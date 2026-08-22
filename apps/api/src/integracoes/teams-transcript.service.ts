@@ -218,7 +218,22 @@ export class TeamsTranscriptService {
     result: Extract<FetchResult, { ok: false }>,
     estado: TeamsTranscricaoEstado,
   ): string {
+    const graphCode = this.extractGraphErrorCode(result.message);
+    if (graphCode === "GraphAccessToTranscriptsDisabled") {
+      return (
+        "O tenant Teams ainda não permite acesso Graph às transcrições. " +
+        "No Teams Admin Center: Meetings → Meeting settings → Microsoft Graph access = On. " +
+        "Aguarda 15–30 min após activar e testa numa reunião nova com transcrição iniciada."
+      );
+    }
     if (result.message.includes("403")) {
+      if (graphCode === "Forbidden" || graphCode === "AccessDenied") {
+        return (
+          "Sem permissão Microsoft Graph para ler transcrições (HTTP 403). " +
+          "Confirma admin consent em OnlineMeetingTranscript.Read.All, a Application Access Policy " +
+          "(App ID a2df54bf… + organizador M365) e que a transcrição foi iniciada na reunião."
+        );
+      }
       return (
         "Sem permissão Microsoft Graph para ler transcrições (HTTP 403). " +
         "Confirma admin consent em OnlineMeetingTranscript.Read.All e a Application Access Policy " +
@@ -243,7 +258,19 @@ export class TeamsTranscriptService {
   private estadoFromResult(result: FetchResult): TeamsTranscricaoEstado {
     if (result.ok) return "DISPONIVEL";
     if (result.retryable) return "PENDENTE";
-    return result.message.includes("403") ? "ERRO" : "INDISPONIVEL";
+    if (result.message.includes("403")) {
+      const code = this.extractGraphErrorCode(result.message);
+      if (code === "GraphAccessToTranscriptsDisabled") return "PENDENTE";
+      return "ERRO";
+    }
+    return "INDISPONIVEL";
+  }
+
+  private extractGraphErrorCode(message: string): string | null {
+    const match =
+      message.match(/"code"\s*:\s*"([^"]+)"/) ??
+      message.match(/innerError[^}]*"code"\s*:\s*"([^"]+)"/);
+    return match?.[1] ?? null;
   }
 
   private async fetchFromGraph(tenantId: string, meetingId: string): Promise<FetchResult> {

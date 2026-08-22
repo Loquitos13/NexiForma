@@ -338,6 +338,11 @@ export default function CrmInteraccoesPage() {
                     <CrmReuniaoTeamsControls
                       reuniao={{
                         fonteId: item.id,
+                        titulo: item.titulo,
+                        entidadeClienteId: item.entidadeClienteId,
+                        leadComercialId: item.leadComercialId,
+                        clienteNome:
+                          item.entidadeCliente?.nome ?? item.leadComercial?.empresaNome ?? null,
                         salaJoinUrl: item.salaJoinUrl,
                         reuniaoEstado: item.reuniaoEstado,
                         reuniaoIniciadaEm: item.reuniaoIniciadaEm,

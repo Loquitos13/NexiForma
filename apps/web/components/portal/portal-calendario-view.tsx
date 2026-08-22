@@ -688,6 +688,8 @@ export function PortalCalendarioView({
                     <CrmReuniaoTeamsControls
                       reuniao={{
                         fonteId: e.fonteId,
+                        titulo: e.titulo,
+                        clienteNome: e.subtitulo,
                         salaJoinUrl: e.salaJoinUrl,
                         reuniaoEstado: e.reuniaoEstado ?? e.estado,
                         reuniaoIniciadaEm: e.reuniaoIniciadaEm,

@@ -100,10 +100,17 @@ export class CrmReuniaoTeamsService {
     user: RequestUser,
     interaccaoId: string,
     dto: TerminarReuniaoCrmDto,
-  ): Promise<{ reuniao: InteraccaoComercialResposta; nota?: InteraccaoComercialResposta }> {
+  ): Promise<{
+    reuniao: InteraccaoComercialResposta;
+    nota?: InteraccaoComercialResposta;
+    alreadyTerminated?: boolean;
+  }> {
     const row = await this.getReuniao(user, interaccaoId);
     if (row.reuniaoEstado === "CONCLUIDA") {
-      throw new BadRequestException("Esta reunião já foi terminada.");
+      return {
+        reuniao: mapInteraccaoRow(row as unknown as Record<string, unknown>),
+        alreadyTerminated: true,
+      };
     }
     const fim = new Date();
     const inicio = row.reuniaoIniciadaEm ?? fim;
